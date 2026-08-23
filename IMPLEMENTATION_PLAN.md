@@ -1,0 +1,367 @@
+# Takyon Implementation Plan
+
+The "how" companion to [`ROADMAP.md`](./ROADMAP.md) (what, in what order) and
+[`CONTEXT.md`](./CONTEXT.md) + [`docs/adr/`](./docs/adr/) (why). Written to be
+handed to a coding agent one phase at a time: read the ROADMAP section for the
+checklist, this document for the shape of the code, the ADRs when something is
+ambiguous.
+
+**Rule for whoever picks this up, human or agent:** don't re-derive settled
+decisions. If `CONTEXT.md` defines a term or an ADR settles a tradeoff, it's
+fixed. If you hit a genuine gap this document doesn't cover, flag it rather than
+improvising — several ADRs exist precisely because the obvious default was wrong
+here. `docs/tbc/` records which decisions we expect to revisit and what switching
+each would cost.
+
+**Nothing below is built.** There is no `apps/` directory yet.
+
+---
+
+## 1. Structure
+
+```
+takyon/
+├── apps/desktop/
+│   ├── src/                       React 19 + Vite 7 + Tailwind v4
+│   │   ├── api.ts                 THE seam — the only file that calls invoke()
+│   │   ├── palette/               the Palette
+│   │   ├── settings/              settings window
+│   │   └── chat/                  Chat Surface (v0.9, does not exist yet)
+│   └── src-tauri/
+│       ├── src/
+│       │   ├── lib.rs             builder chain, plugin registration
+│       │   ├── window.rs          warm/trim, show/hide, monitor placement
+│       │   ├── hotkey.rs          global shortcut, rebinding, conflict reporting
+│       │   ├── tray.rs            tray icon, autostart self-heal
+│       │   ├── query.rs           the pipeline (§3)
+│       │   ├── rank.rs            matching, Frecency, the Stability rule
+│       │   ├── bang.rs            parser + Mode registry
+│       │   ├── sources/           apps · files · clipboard · calc · recents
+│       │   ├── index/             walker · watcher · store (mmap)
+│       │   ├── store/             settings · frecency · clips (SQLite)
+│       │   └── icons.rs           extraction into one mmapped blob
+│       └── capabilities/          Tauri capability files
+└── packages/shared/               TS types mirroring the IPC contract
+```
+
+The workspace exists ahead of need so the macOS seams are in place (ROADMAP
+answer, round 4). **The seams that matter are the Rust traits below, not the
+directory layout.**
+
+---
+
+## 2. Core types and traits
+
+One type crosses the IPC boundary for results. Everything else is internal.
+
+```rust
+pub struct Entry {
+    pub id:       EntryId,          // stable across restarts — it is the Frecency key
+    pub title:    String,
+    pub subtitle: Option<String>,
+    pub kind:     EntryKind,        // App | File | Folder | Clip | Calc | Recent
+    pub icon:     Option<IconRef>,  // offset into the icon blob, never a path
+    pub score:    f32,
+    pub actions:  Vec<ActionId>,
+}
+```
+
+`EntryId` **must be stable** or Frecency silently resets: use the resolved target
+path for an App, the full path for a File, the row id for a Clip. Never a hash of
+the display name — display names change when apps update.
+
+```rust
+pub trait Source: Send + Sync {
+    fn id(&self) -> SourceId;
+    /// Must return within `budget` or return nothing. See §3.
+    fn query(&self, q: &Query, budget: Duration) -> Vec<Entry>;
+    fn actions(&self, entry: &Entry) -> Vec<Action>;
+}
+
+pub trait FileIndex: Send + Sync {
+    fn search(&self, q: &str, limit: usize) -> Vec<FileHit>;
+    fn generation(&self) -> u64;          // bumped on any rescan
+    fn status(&self) -> IndexStatus;      // Ready | Building { pct } | Stale
+}
+
+pub trait SearchProvider: Send + Sync {          // v0.8
+    async fn urls(&self, q: &str, n: usize) -> Result<Vec<SearchResult>>;
+}
+
+pub trait ClipboardStore: Send + Sync {          // v0.5
+    fn record(&self, clip: Clip) -> Result<()>;
+    fn search(&self, q: &str, limit: usize) -> Result<Vec<Clip>>;
+    fn sweep(&self, retention: Retention) -> Result<u64>;
+}
+```
+
+**No Source knows anything about the UI.** Sources return Entries; ranking and
+rendering are separate concerns. This is what keeps TBC-0002's escape hatch — a
+native Palette with no webview — affordable, and it's the single most important
+architectural constraint here.
+
+---
+
+## 3. The query pipeline
+
+**One `invoke` per keystroke, never one per Source** (ADR-0009). The Rust side
+fans out, merges, ranks and returns once.
+
+```
+input ──▶ bang::parse ──┬─▶ Bangless ─▶ fan out to Sources (rayon, 20 ms budget)
+                        │                        │
+                        │                        ▼
+                        │               merge ─▶ rank ─▶ stability ─▶ top 12
+                        │
+                        └─▶ Bang(mode, rest) ─▶ that Mode alone, its own semantics
+```
+
+**Budget-bounded fan-out.** Each Source gets a deadline. A Source that misses it
+contributes nothing *for that keystroke* — no partial results, no late insertion.
+This is what makes the Stability rule cheap rather than a special case.
+
+**The Stability rule** (ROADMAP v0.3), concretely:
+
+```rust
+struct StabilityLock { query: String, top: EntryId, locked_at: Instant }
+```
+
+100 ms after the last keystroke, the current top Entry's id is locked for that
+exact query string. Later results for the same string may append below but may
+not displace the locked top. A new keystroke clears the lock. This is directly
+unit-testable and should have a test from the day ranking exists — it is the rule
+that stops the user launching the wrong thing.
+
+**Sequence numbers.** `query(q, seq)` carries a monotonic counter; the frontend
+discards any response whose `seq` is lower than the newest it has seen. Without
+this a slow keystroke's results can overwrite a fast one's.
+
+### Matching (ROADMAP v0.3)
+
+Word-boundary prefix + executable basename + acronym + user aliases. Scoring
+tiers, highest wins, then multiplied by the Frecency weight:
+
+| Tier | Score | Example |
+|---|---|---|
+| Alias exact | 1000 | user maps `ps` → Photoshop |
+| Full-name prefix | 900 | `adobe` → **Adobe** Photoshop |
+| First-word-boundary prefix | 800 | — |
+| Later-word-boundary prefix | 700 | `photo` → Adobe **Photo**shop |
+| Executable basename prefix | 650 | `code` → code.exe |
+| Acronym of initials | 600 | `vsc` → **V**isual **S**tudio **C**ode |
+
+No fuzzy subsequence in V1 — deferred by decision, see `docs/plans/post-v1.md`.
+`EntryKind` ordering is applied after scoring: **Apps always sort above
+documents**, never interleaved by raw score.
+
+### Frecency
+
+`weight = Σ 0.5^(age_days / 30)` — a 30-day half-life. Stored decayed with a
+`decayed_at` stamp and lazily re-decayed on read, so there is no background job
+and no clock-skew problem.
+
+---
+
+## 4. Storage
+
+All under `%LOCALAPPDATA%\v3sper\launcher\` (ADR-0011 — the slug is fixed and
+independent of the display name). One SQLite database per concern, WAL mode.
+
+```sql
+-- settings.db
+CREATE TABLE settings   (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- JSON values, typed in Rust
+CREATE TABLE aliases    (alias TEXT PRIMARY KEY, target TEXT NOT NULL);
+CREATE TABLE roots      (path TEXT PRIMARY KEY, enabled INTEGER NOT NULL);
+CREATE TABLE exclusions (pattern TEXT PRIMARY KEY);
+CREATE TABLE blocklist  (exe TEXT PRIMARY KEY);   -- clipboard capture exclusions
+
+-- frecency.db
+CREATE TABLE usage (
+  entry_id   TEXT PRIMARY KEY,
+  kind       TEXT    NOT NULL,
+  count      INTEGER NOT NULL,
+  last_used  INTEGER NOT NULL,
+  score      REAL    NOT NULL,
+  decayed_at INTEGER NOT NULL
+);
+
+-- clips.db  — PRAGMA secure_delete = ON
+CREATE TABLE clips (
+  id         INTEGER PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  kind       TEXT    NOT NULL,
+  source_exe TEXT,            -- plaintext, and a known metadata leak (ADR-0008)
+  len        INTEGER NOT NULL,
+  nonce      BLOB    NOT NULL,
+  ciphertext BLOB    NOT NULL
+);
+```
+
+**Clipboard encryption** (ADR-0006, ADR-0008): AES-256-GCM per row with a
+per-row nonce. The 32-byte key lives in `creds\clip.key.dpapi`, wrapped with
+Windows DPAPI and bound to the user account. Field-level, not SQLCipher.
+
+**Retention sweeps must actually destroy data.** `DELETE` alone leaves
+recoverable ciphertext in free pages and live content in the WAL. Every sweep
+runs with `PRAGMA secure_delete = ON` and follows with
+`PRAGMA wal_checkpoint(TRUNCATE)`. "The row is deleted" and "the secret is gone"
+are different claims and this feature needs the second one.
+
+---
+
+## 5. The file index (v0.7)
+
+Unelevated scoped directory walk plus `ReadDirectoryChangesW` watchers, no
+service and no raw volume access (ADR-0007, superseding ADR-0004).
+
+**On-disk format** — `index\<generation>.tkx`, memory-mapped, never parsed:
+
+```
+header      magic "TKX1" · format_version · generation · root_count · entry_count
+arena       UTF-8 path strings, NUL-separated
+entries     [ name_off:u32, parent:u32, flags:u8 ]
+postings    lowercased-name trigram → sorted entry-id list
+```
+
+Query: intersect the postings for the query's trigrams, then verify each
+candidate with the real matcher from §3. Queries shorter than three characters
+skip the postings and scan the (small) recent set instead.
+
+`format_version` bumps force a full rebuild. Reading is `mmap` + offset
+arithmetic, so startup cost is a page fault, not a parse.
+
+**Watcher overflow is the correctness problem, not an edge case.** A
+`ReadDirectoryChangesW` buffer overflow returns `ERROR_NOTIFY_ENUM_DIR`, meaning
+events were dropped. On that signal: bump the generation, mark the affected
+subtree stale, rescan just that subtree. **Never serve a known-stale index
+silently** — `IndexStatus::Stale` must surface in the UI. An index that quietly
+misses files is worse than no index, because the user learns not to trust it.
+
+Default roots and exclusions are a *product* decision with a settings UI, not a
+constant — see TBC-0005, which is the least-evidenced call in the whole design.
+
+---
+
+## 6. Icons
+
+Lazy extraction into a single memory-mapped `icons.bin`, keyed by target path +
+mtime. Extraction runs off the UI thread; a missing icon renders a placeholder
+and never blocks a row.
+
+**Pre-warm the top ~50 Entries by Frecency after login**, so icon pop-in only
+ever happens for things you rarely open — where you aren't looking closely
+anyway. Sources: embedded `.exe` resources via `SHGetFileInfo`, `.lnk` targets,
+UWP manifest PNGs, shell fallbacks.
+
+---
+
+## 7. Window and process model
+
+Per ADR-0003, one Palette window is created at startup and hidden, never
+destroyed. On hide, release the working set (`SetProcessWorkingSetSize(-1, -1)`);
+on show, do no allocation and no window creation.
+
+- `tauri-plugin-global-shortcut` — `Alt+Space` default, rebindable, and a taken
+  hotkey must be **reported**, not silently swallowed.
+- `tauri-plugin-single-instance` — required *because of* autostart.
+- `tauri-plugin-autostart` — on by default via first-run prompt. **Never
+  registered in dev builds** (`#[cfg(not(debug_assertions))]` plus
+  `import.meta.env.DEV` on the switch): a debug registration writes a `Run` key
+  pointing at `target\debug\` that survives uninstalling the real app. Autostart
+  state is read from the OS via `isEnabled()`, never mirrored into settings.
+- **UIAccess helper.** A separate signed `uiAccess="true"` executable installed to
+  a trusted location, which the main unelevated process asks to bring the Palette
+  to the foreground. Without it the Palette will not appear over an elevated
+  terminal. Dev builds run without it and accept that limitation.
+
+Deferred init: the hotkey is live within ~50 ms of launch; index, icons and
+databases open afterward.
+
+---
+
+## 8. The IPC contract
+
+`api.ts` is the only file that calls `invoke()`. Every command in one reviewable
+place — which is also what keeps the ADR-0002 guarantee checkable.
+
+```ts
+export const query       = (q: string, seq: number) => invoke<QueryResult>("query", { q, seq });
+export const activate    = (entryId: string, actionId: string) => invoke<void>("activate", { entryId, actionId });
+export const actionsFor  = (entryId: string) => invoke<Action[]>("actions_for", { entryId });
+export const indexStatus = () => invoke<IndexStatus>("index_status");
+export const dismiss     = () => invoke<void>("dismiss");
+```
+
+Types live in `packages/shared` and mirror the Rust structs. **Contract tests
+assert that Rust's serialised output matches these types** — that is the one
+test that catches fixture drift, which is the silent failure mode of the mocked
+visual layer (TBC-0007).
+
+---
+
+## 9. Bang parsing
+
+```
+line := bang? rest
+bang := '!' ident (WS | EOL)
+```
+
+Position 0 only. A Bang consumes the whole line — the rest is that Mode's raw
+query, never a ranked search (ADR-0002 depends on this being trivially
+checkable). No chaining in V1.
+
+`!` alone opens the picker. **Unknown Bang falls through to Bangless**, treating
+the line literally and showing a hint row — provisional, and one of the open
+questions in `docs/plans/bang-registry.md`, which is where the Bang design
+resumes before v0.8.
+
+---
+
+## 10. Performance
+
+| Metric | Budget |
+|---|---|
+| Hotkey → first pixel | < 50 ms |
+| Hotkey → first Entry, Bangless | < 30 ms |
+| Idle RSS, warm and trimmed | < 150 MB |
+| Login → hotkey responsive | < 500 ms |
+| `!e` p95 | < 20 ms |
+
+`bun run bench` measures all of them and **a regression is a failing test**. It
+must include a first-show measurement **after 30+ minutes idle** — a benchmark
+run in a tight loop will completely miss the case where Windows has reclaimed the
+trimmed working set, which is exactly the case a real user hits.
+
+The v0.1 numbers get written into TBC-0002 as the first real evidence for or
+against the warm-window model. That is what v0.1 is *for*.
+
+---
+
+## 11. Testing
+
+Three layers, because no single one can verify a launcher. Use the `/tdd` skill.
+
+1. **Rust unit tests** — matching tiers, Frecency decay, the Stability lock,
+   index round-trips, watcher-overflow handling. Pure logic, no UI, no Tauri.
+2. **Visual regression** — the React UI in the plain Vite dev server with `api.ts`
+   mocked, screenshotted by Playwright against fixtures. Requires that no
+   component calls `invoke()` directly. (Playwright as a dev dependency is
+   unrelated to ADR-0005, which forbids *shipping* a browser engine.)
+3. **Manual script per phase** — hotkey, focus-loss dismissal, tray,
+   multi-monitor, UIAccess over an elevated window. Genuinely not automatable
+   cheaply; write the script as part of the phase.
+
+A **debug-only flag must show the Palette without stealing focus**, or
+dismiss-on-focus-loss destroys the window every time you try to inspect it.
+
+---
+
+## 12. Deliberately not specified here
+
+- **`!c` and the Chat Surface internals.** Session model, working directory and
+  tool policy are unresolved. `docs/plans/v0.9-claude-code.md` gets written before
+  that work starts.
+- **The Bang registry beyond V1's four.** See `docs/plans/bang-registry.md`.
+- **A plugin API.** Designing one before three real plugins exist is guesswork.
+- **The colour palette.** The mark is locked; colour is not (`docs/brand.md`).
+  Needed by v0.6, not before.
