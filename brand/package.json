@@ -1,0 +1,13 @@
+{
+  "name": "@takyon/brand",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Generates every raster and SVG form of the Takyon mark from one locked geometry file.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}
