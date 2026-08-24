@@ -1,0 +1,64 @@
+[workspace]
+members = ["uiaccess"]
+
+[package]
+name = "takyon"
+version = "0.1.0"
+description = "Takyon - a local-first keyboard launcher for Windows"
+authors = ["Nikhil Sah <sah.nikhil11@gmail.com>"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary's. Only an
+# issue on Windows, which is the only platform this targets today.
+# See https://github.com/rust-lang/cargo/issues/8519
+name = "takyon_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `tray-icon` is not a default feature and the tray is not optional here: without
+# it there is no way to quit an app whose only window is a hidden Palette.
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+# A hotkey that failed to register has to be *reported* (IMPLEMENTATION_PLAN §7).
+# The Palette is the wrong place to report it — if the binding is dead, the user
+# never opens the Palette to read the message. Hence a native dialog.
+tauri-plugin-dialog = "2"
+# ADR-0011: the login registration is keyed by the neutral slug, not the display
+# name. `Builder::app_name()` is what makes that possible without hand-rolling the
+# registry write and losing the plugin's `StartupApproved` handling.
+tauri-plugin-autostart = "2"
+# Required *because of* autostart: "one from login, one double-clicked" goes from
+# rare to routine, and two Takyons means two global-shortcut registrations, the
+# second of which silently loses the race.
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+# Pinned to the same major as Tauri's own dependency so the two share one compiled
+# copy rather than each building their own.
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_IO",
+  "Win32_System_Pipes",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+# The product *is* the latency budget. LTO and a single codegen unit are the two
+# cheapest things that move it, and `panic = "abort"` removes unwinding tables
+# from a process whose panic policy is "die visibly" anyway.
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

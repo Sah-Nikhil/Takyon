@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="com.v3sper.launcher.uiaccess" version="1.0.0.0" />
+  <!--
+    There is deliberately NO <trustInfo> block here.
+
+    `/MANIFEST:EMBED` makes the linker author its own manifest fragment carrying
+    `uiAccess="false"`, and `mt.exe` refuses to merge two fragments that disagree
+    about that attribute:
+
+      manifest authoring error c1010001: Values of attribute "uiAccess" not equal
+      in different manifest snippets.
+
+    So the requested execution level is set through the linker's own
+    `/MANIFESTUAC` option in `build.rs` instead — the one place that owns it. This
+    file supplies everything else. Putting the trustInfo back here will not fail
+    at runtime; it will fail the link, which is at least the honest place.
+  -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and 11. -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+</assembly>

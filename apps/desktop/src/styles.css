@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+/*
+  Colour is deliberately not locked until v0.6 (docs/brand.md). These values are
+  the same placeholders `brand/tokens.json` generates the icons from, so the UI
+  and the rasters agree; when the real scheme lands, both change together.
+*/
+@theme {
+  --color-plate: #0b0e12;
+  --color-fg: #e6edf3;
+  --color-accent: #3fc8f5;
+}
+
+:root {
+  /*
+    Mark.tsx paints the particle with this. It is its own token on purpose: in
+    shadcn's vocabulary `--accent` is a hover *surface* sitting ~1.1:1 against the
+    background, so a particle painted with it would vanish.
+  */
+  --mark-particle: var(--color-accent);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+/*
+  The Tauri window is `transparent: true` and undecorated — the rounded panel is
+  drawn by the Palette itself. A background here would render as a hard square
+  behind it.
+*/
+body {
+  background: transparent;
+  color: var(--color-fg);
+  font-family:
+    "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* The Palette is not a document. Selecting its chrome is never useful. */
+  user-select: none;
+  overflow: hidden;
+}
+
+/* The one place text selection is wanted. */
+input {
+  user-select: text;
+}
+
+/*
+  The idle mark.
+
+  While the Palette is open and empty, the mark is alive: the particle breathes
+  and the cone sweeps its tip. It is the only moving thing in the shell, and it
+  moves for one reason: to say the surface is awake and waiting, not frozen
+  mid-open. The first keystroke stops it — from that point the Palette is the one
+  doing work, and continued motion would read as a spinner.
+
+  The two animations share a duration, an easing curve and a start frame, so they
+  stay on one beat. They start together because a single React commit adds both
+  attributes; if either is ever toggled independently they will drift, and the
+  mark will look like two things instead of one.
+
+  Only `opacity` and `transform` animate, so this stays on the compositor and
+  never touches layout. `transform-box: fill-box` is required for both: without
+  it an SVG element transforms about the viewport origin rather than its own box,
+  and the shapes slide across the mark instead of moving in place.
+*/
+@keyframes takyon-particle-breathe {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+}
+
+/*
+  The cone sweeps about the centre of its back edge, not its own centre. That
+  pivot is what makes the *tip* travel: it sits 34 units from the back edge, so
+  eight degrees moves it nearly five units while the wide end barely stirs. With
+  `fill-box` the origin box is the path's bounding box — x from 12 to 46, y from
+  16.5 to 47.5 — which puts `0% 50%` exactly on the back edge midpoint (12, 32).
+
+  Written as a whole cycle through level rather than as an alternating tilt
+  between the two extremes. Both animate identically, but only this version rests
+  at zero degrees on its first frame — and the first frame is what a disabled
+  animation shows. Playwright's screenshots and every reduced-motion user would
+  otherwise see the locked mark permanently five degrees out of true.
+*/
+@keyframes takyon-cone-sweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-8deg);
+  }
+  75% {
+    transform: rotate(8deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/*
+  One beat, two durations. The particle alternates, so its 1.15s covers half a
+  breath; the cone runs a whole sweep in one pass and therefore takes exactly
+  twice as long. Same start frame, harmonically locked — change one number here
+  and you must change the other, which is what the "one beat" test guards.
+*/
+[data-particle-pulse="true"],
+[data-cone-sweep="true"] {
+  transform-box: fill-box;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  animation-iteration-count: infinite;
+}
+
+[data-particle-pulse="true"] {
+  transform-origin: center;
+  animation-name: takyon-particle-breathe;
+  animation-duration: 1.15s;
+  animation-direction: alternate;
+}
+
+[data-cone-sweep="true"] {
+  transform-origin: 0% 50%;
+  animation-name: takyon-cone-sweep;
+  animation-duration: 2.3s;
+}
+
+/*
+  Reduced motion means no motion, not slower motion. The mark is decorative here —
+  the Palette's state is already legible from the caret and the placeholder — so
+  the honest fallback is to hold both shapes at their resting frame.
+
+  Two independent switches, and either one is enough. Windows' own setting is the
+  media query; `data-reduce-motion` on `<html>` is the app's own toggle in
+  Settings, written by `prefs.ts`. It is deliberately a document-level attribute
+  and a wildcard selector rather than a prop, so every animation this app ever
+  grows is covered by the switch the day it is written.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-particle-pulse="true"],
+  [data-cone-sweep="true"] {
+    animation: none;
+  }
+}
+
+[data-reduce-motion] *,
+[data-reduce-motion] *::before,
+[data-reduce-motion] *::after {
+  animation: none !important;
+  transition: none !important;
+}

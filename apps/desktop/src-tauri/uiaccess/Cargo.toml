@@ -1,0 +1,31 @@
+[package]
+name = "takyon-uiaccess-helper"
+version = "0.1.0"
+description = "Brings the Takyon Palette to the foreground over elevated windows"
+edition = "2021"
+
+[[bin]]
+name = "takyon-uiaccess-helper"
+path = "src/main.rs"
+# This binary cannot be executed unsigned. Windows refuses to start a
+# `uiAccess="true"` process that is not signed and in a trusted location, with
+# ERROR_ELEVATION_REQUIRED (740) -- which is a *good* sign, it proves the manifest
+# is embedded, but it also means a Cargo-generated test harness for this bin fails
+# to launch and takes `cargo test --workspace` down with it.
+#
+# So the helper carries no unit tests, and what can be checked about it is checked
+# from the main crate instead: `src/uiaccess.rs` reads this crate's source to
+# assert the two sides agree on the pipe name.
+test = false
+
+[dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_IO",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }

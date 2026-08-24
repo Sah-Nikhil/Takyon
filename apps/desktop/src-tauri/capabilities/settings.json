@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "The Settings window. Separate from the Palette's capability so the Palette never gains a permission it has no reason to hold.",
+  "windows": ["settings"],
+  "permissions": [
+    "core:default",
+    "autostart:default"
+  ]
+}
