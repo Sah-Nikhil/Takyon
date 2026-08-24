@@ -59,9 +59,13 @@ function Find-SignTool {
         "$env:ProgramFiles\Windows Kits\10\bin"
     ) | Where-Object { Test-Path $_ }
 
+    # `-like`, not `-match`. In a regex `\x64` is a hex escape for the character
+    # 0x64 -- the letter "d" -- so `-match '\\x64\\'` searches for "\d\" and finds
+    # nothing, on a machine where signtool is sitting right there. Wildcards have
+    # no such reinterpretation.
     $found = $roots |
         ForEach-Object { Get-ChildItem $_ -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue } |
-        Where-Object { $_.FullName -match '\\x64\\' } |
+        Where-Object { $_.FullName -like '*\x64\*' } |
         Sort-Object FullName -Descending |
         Select-Object -First 1
 

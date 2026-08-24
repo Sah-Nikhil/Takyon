@@ -4,9 +4,15 @@ Why the Palette needs a signed helper to appear over an elevated window, what
 Windows demands before it will honour that, and how to satisfy it — first on a
 development machine, then for real.
 
-**Status (v0.1):** the helper is built and its manifest is verified to work. It is
-signed with a self-signed development certificate on the author's machine only.
-A commercial certificate is a v1.0-ship prerequisite and has not been obtained.
+**Status (2026-08-25, mid v0.1/v0.2):** the helper is built and its manifest is
+verified to work (an unsigned run fails with error 740, which is the proof).
+`scripts/dev-sign-uiaccess.ps1` and `remove-dev-cert.ps1` are written and their
+`signtool.exe` lookup bug is fixed. **Nothing has been signed yet** — no dev
+certificate has been generated, the helper has never been installed to
+`%ProgramFiles%\Takyon\`, and the elevated-window overlay has never been tested
+end to end. That is one elevated PowerShell run away (§5) and is not blocking —
+v0.2 does not touch this path. A commercial certificate is a separate, later
+v1.0-ship prerequisite (§6) and has not been sourced.
 
 ---
 

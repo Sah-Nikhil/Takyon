@@ -116,15 +116,28 @@ drop the claim that trimming recovers most of the memory. Trimming's real value
 here is that it caps the peak and costs nothing on the show path — not that it
 keeps the process small.
 
-### Two things worth chasing before v0.2, neither blocking
+### What faults the pages back — checked, and it is not our code
 
-1. **What faults the pages back?** Nothing should be running in a hidden window.
-   A plausible suspect is the idle mark animation: it is specified to stop while
-   the Palette is hidden, and if it does not, WebView2 keeps compositing a window
-   nobody can see. Worth confirming, since it would also be drawing power.
-2. **7 processes at rest.** Expected for WebView2, but worth re-checking once
-   Sources exist, because that is the count every future memory number scales
-   from.
+The obvious suspect was the idle mark animation: if it kept running against a
+hidden window, WebView2 would keep compositing something nobody can see, and that
+would explain both the refill and a power cost.
+
+**It was checked and ruled out.** `Palette.tsx` subscribes to the hide event and
+clears its `shown` state, which removes the `data-cone-sweep` and
+`data-particle-pulse` attributes the animation is bound to. The pulse genuinely
+stops while hidden.
+
+So the refill is WebView2's own background work — timers, garbage collection,
+compositor bookkeeping — not something this codebase controls. That matters for
+what can be done about it: the ~107 MB resting figure is a property of hosting a
+browser engine, and the only lever that moves it is the native-Palette option in
+the alternatives table below, not a fix in our code.
+
+### One thing worth re-checking at v0.2
+
+**7 processes at rest.** Expected for WebView2, and it is the count every future
+memory number scales from. If it changes once Sources exist, every comparison
+against these figures needs redoing.
 
 ### What the latency numbers include
 
