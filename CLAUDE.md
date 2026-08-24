@@ -110,10 +110,15 @@ seams that actually matter are Rust traits — `FileIndex`, `AppSource`,
   `docs/tbc/0002` affordable.
 - **An outbound request on the Bangless path is a correctness bug** (ADR-0002),
   not a performance issue.
-- **Dev builds must never register autostart.** Gate the Rust side with
-  `#[cfg(not(debug_assertions))]` and the UI switch with `import.meta.env.DEV`.
-  A debug registration writes a `Run` key pointing at `target\debug\` that
-  survives uninstall of the real app. (Learned the hard way in tesseract.)
+- **Nothing running out of `target\` may register autostart.**
+  `#[cfg(not(debug_assertions))]` plus `import.meta.env.DEV` is *not enough* — a
+  **release** binary run from `target\release\` passes both, and `bun run bench`
+  launches exactly that and then injects thirty keystrokes, one of which will
+  answer the first-run dialog for you. `firstrun::should_ask` therefore also
+  refuses when `TAKYON_BENCH_LOG` is set and when `current_exe()` sits under
+  `target\debug\` or `target\release\`. A stray `Run` key pointing into a build
+  directory survives `cargo clean`, deleting the repo, and installing the real
+  product. (Learned the hard way in tesseract, then again here.)
 - **Autostart state lives in the OS, not in our config** — read it via
   `tauri-plugin-autostart`'s `isEnabled()` on mount, never mirror it into SQLite.
 - Use `tauri-plugin-autostart` and `tauri-plugin-single-instance` (autostart is
@@ -178,6 +183,13 @@ the next.
   which is deliberately still open until v0.6.
 
 ## Gotchas
+- **Never build the release binary with bare `cargo build --release`. Always
+  `bun run build`.** A bare cargo build produces a `takyon.exe` that launches,
+  registers the hotkey and shows the Palette — with a **completely dead frontend**:
+  no first-pixel report, Escape does nothing, the window paints nothing. It fails
+  in the one way that looks like a Rust bug. `tauri build` runs
+  `beforeBuildCommand` and sets the `TAURI_ENV_*` the asset embedding depends on;
+  cargo alone does neither. Cost an hour of chasing a phantom regression once.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding

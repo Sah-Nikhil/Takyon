@@ -261,6 +261,14 @@ Per ADR-0003, one Palette window is created at startup and hidden, never
 destroyed. On hide, release the working set (`SetProcessWorkingSetSize(-1, -1)`);
 on show, do no allocation and no window creation.
 
+**The trim walks the whole process tree, not this process** (v0.1). Trimming only
+the Rust host would release a few megabytes: essentially all the resident memory
+this ADR is trading away lives in WebView2's browser, renderer and GPU processes.
+Those are *descendants* rather than children — the renderer's parent is the
+browser process, not us — so the walk is recursive, from one process-table
+snapshot, with a visited set because Windows recycles pids and a table can contain
+a cycle. It runs on a background thread so hide stays instant.
+
 - `tauri-plugin-global-shortcut` — `Alt+Space` default, rebindable, and a taken
   hotkey must be **reported**, not silently swallowed.
 - `tauri-plugin-single-instance` — required *because of* autostart.
@@ -273,6 +281,19 @@ on show, do no allocation and no window creation.
   a trusted location, which the main unelevated process asks to bring the Palette
   to the foreground. Without it the Palette will not appear over an elevated
   terminal. Dev builds run without it and accept that limitation.
+  The protocol is one named pipe, `\\.\pipe\com.v3sper.launcher.uiaccess`,
+  carrying eight bytes: an `HWND`. The helper acts on it **only if that window
+  belongs to the process that launched the helper** — that ownership check is the
+  whole authorisation model, and it caps the damage from the pipe's permissive
+  default DACL at "foregrounds Takyon's own Palette". The helper exits with its
+  parent, so a privileged listener never outlives the app. The request is made on
+  a background thread and only after a cheap `GetForegroundWindow` check shows the
+  ordinary path failed, so a normal show never touches the pipe. Full reasoning
+  and the signing requirements: `docs/plans/uiaccess-signing.md`.
+- **The `Run` value is named `com.v3sper.launcher`**, via
+  `tauri-plugin-autostart`'s `Builder::app_name()`. Without that override the
+  plugin keys it off `productName`, i.e. "Takyon" — which is exactly the coupling
+  ADR-0011 exists to prevent.
 
 Deferred init: the hotkey is live within ~50 ms of launch; index, icons and
 databases open afterward.
@@ -291,6 +312,20 @@ export const actionsFor  = (entryId: string) => invoke<Action[]>("actions_for", 
 export const indexStatus = () => invoke<IndexStatus>("index_status");
 export const dismiss     = () => invoke<void>("dismiss");
 ```
+
+As of v0.1 the implemented surface is smaller, and deliberately so — a declared
+type with no Rust behind it is a fixture that can never drift *into* correctness:
+
+```ts
+export const dismiss          = () => invoke<void>("dismiss");
+export const openSettings     = () => invoke<void>("open_settings");
+export const hotkeyStatus     = () => invoke<HotkeyStatus>("hotkey_status");
+export const reportFirstPixel = (showId: number) => invoke<void>("report_first_pixel", { showId });
+```
+
+plus two events Rust emits, `takyon://show` (carrying `{ showId, noFocusSteal }`)
+and `takyon://hide`. Autostart is not a command here at all: it goes straight to
+the plugin, because the OS owns that state and mirroring it would guarantee drift.
 
 Types live in `packages/shared` and mirror the Rust structs. **Contract tests
 assert that Rust's serialised output matches these types** — that is the one
@@ -331,6 +366,20 @@ resumes before v0.8.
 must include a first-show measurement **after 30+ minutes idle** — a benchmark
 run in a tight loop will completely miss the case where Windows has reclaimed the
 trimmed working set, which is exactly the case a real user hits.
+
+**What the harness measures, stated rather than implied.** Both ends of every span
+are stamped in Rust, on one clock (`src-tauri/src/bench.rs`); the frontend only
+echoes an id back after a double `requestAnimationFrame`. So "hotkey to first
+pixel" is *hotkey handler entry to the IPC call following the frame the renderer
+committed*: it **includes** one IPC hop and **excludes** DWM's final present.
+Reconciling a `performance.now()` with an `Instant` would have produced a
+plausible number with no defined meaning, which is the usual way a latency claim
+becomes fiction. The residual gap is a constant, closed once by a 240fps capture
+and recorded in TBC-0002.
+
+Memory is summed across the **whole process tree** for the same reason the trim
+walks it: a reading that sees only the main process reports roughly the Rust
+binary and quietly claims the budget was met.
 
 The v0.1 numbers get written into TBC-0002 as the first real evidence for or
 against the warm-window model. That is what v0.1 is *for*.

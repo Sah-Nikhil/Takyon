@@ -26,6 +26,68 @@ cleanly when Windows renders the tray monochrome. Verified legible to 18px.
 - **Monospace is for measurement only** — timings, hex values, paths, Bang
   strings. Mono used as atmosphere is the costume every developer tool owns, and
   it is what made an earlier direction read as a terminal.
+- **Motion never changes the geometry, and always returns to it.** The mark may
+  breathe and it may sweep, but its resting frame is the locked drawing above,
+  exactly. Anything that holds the mark off-true when the animation stops is
+  wrong — that frame is what screenshots, print and every reduced-motion user
+  see.
+
+### Motion — the idle beat
+
+The only animation the product has. While the Palette is open with an empty
+query, the mark is alive in two ways at once:
+
+| Shape | What it does | Timing |
+|---|---|---|
+| Particle | opacity 1 → 0.35, scale 1 → 0.72 | 1.15s, alternating |
+| Cone | tip sweeps 0° → −8° → +8° → 0°, pivoting on the midpoint of its back edge | 2.3s, one full cycle |
+
+Same easing (`cubic-bezier(0.4, 0, 0.6, 1)`) and the same start frame, and the
+cone's cycle is exactly two of the particle's passes, so the two read as one beat
+rather than two things happening near each other. Both are defined in
+`apps/desktop/src/styles.css` and switched on by `Mark.tsx`'s `pulse` prop.
+
+The cone is written as a full cycle through level rather than as an alternating
+tilt between −8° and +8° for one reason: the first frame of an alternating tilt is
+an extreme, and the first frame is what a disabled animation shows. That version
+left the locked mark permanently eight degrees out of true everywhere motion is
+off.
+
+What the beat means is narrow and worth keeping narrow: *the surface is awake and
+waiting on you*. It stops on the first keystroke — motion that continues while the
+Palette is searching becomes a spinner, and would be claiming the opposite thing.
+It is also off whenever the window is hidden, since the warm window outlives every
+summon (`docs/tbc/0002`) and animating an invisible mark would cost frames forever.
+
+Two switches turn it off, either one sufficient. Windows' own
+`prefers-reduced-motion: reduce`, and **Settings → Turn off animations**, which is
+the user's own switch and does not require changing an OS-wide setting to quiet
+one app. The second writes `data-reduce-motion` onto `<html>`, and the rule it
+drives is a wildcard, so every animation the app grows later is covered by the
+switch on the day it is written. Nothing is lost when it is off: the state the
+beat signals is already carried by the caret and the placeholder.
+
+## Assets
+
+The mark is generated, not drawn twice. `brand/geometry.js` holds the two shapes
+above and nothing else does; `bun run --cwd brand build` renders every surface
+from it — the installer `.ico`, the Tauri bundle set, the Store tiles, both tray
+polarities, the favicon and the standalone SVGs. `brand/README.md` is the surface
+map.
+
+Consequences worth knowing before touching any of it:
+
+- **Never hand-edit a generated file**, and never run `tauri icon` or let
+  `tauri init` scaffold `src-tauri/icons/` — both replace the set with Tauri's
+  default artwork.
+- **The tray ships in two polarities.** Windows draws the notification area over
+  a taskbar that follows the system theme, so a single light glyph vanishes when
+  someone switches to light. `tray-dark` and `tray-light` are both verified
+  legible at 16 pixels.
+- **There is no vector wordmark.** The typeface is not locked, so drawing a
+  logotype would settle a decision nobody has made. `Lockup.tsx` sets `takyon` in
+  the app's own UI font instead, and is the single place to change when a
+  typeface is chosen.
 
 ## Colour — deliberately not locked
 
@@ -42,6 +104,11 @@ can see rather than read.
 
 Neither is decided. Revisit before v0.6 (Settings), which is the first phase that
 needs a real theme.
+
+Until then `brand/tokens.json` carries three placeholder values so the assets can
+exist at all: a near-white foreground, a near-black plate, and a Cherenkov cyan
+standing in for the accent. They are a stand-in, not a decision. Swapping in the
+real scheme is one edit to that file plus a rebuild — no asset is redrawn.
 
 ## Directions explored
 

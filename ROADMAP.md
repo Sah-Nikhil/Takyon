@@ -17,16 +17,17 @@ live in [`docs/tbc/`](./docs/tbc/); deferred work is in
 
 **Goal:** an empty Palette that appears instantly and proves the core bet.
 
-- [ ] Bun workspace: `apps/desktop` (Tauri 2 + React 19 + Vite 7 + Tailwind v4) and `packages/shared`
-- [ ] Global hotkey (`Alt+Space`, rebindable) via `tauri-plugin-global-shortcut`
-- [ ] **UIAccess helper + code signing** — without `uiAccess="true"` (signed, installed under Program Files) the Palette cannot take foreground over an elevated window (ADR-0007)
-- [ ] One Palette window created at startup, hidden — never destroyed (ADR-0003)
-- [ ] Working-set trim on hide; show path does no allocation or window creation
-- [ ] Dismiss on Escape and on focus loss; always opens empty
-- [ ] Tray icon: settings, quit
-- [ ] Autostart via `tauri-plugin-autostart` + `tauri-plugin-single-instance`, on by default via first-run prompt, **never registered in dev builds**
-- [ ] Deferred init: hotkey live within ~50 ms of launch; everything else after
-- [ ] `bun run bench` — the four budgets in CLAUDE.md, measured and recorded, **including a first-show measurement after 30+ minutes idle**
+- [x] Bun workspace: `apps/desktop` (Tauri 2 + React 19 + Vite 7 + Tailwind v4) and `packages/shared`
+- [x] Global hotkey (`Alt+Space`) via `tauri-plugin-global-shortcut`; a failed registration is reported in a dialog and in the Palette, never swallowed. **Rebinding is v0.6** — it needs the settings UI
+- [ ] **UIAccess helper + code signing** — helper crate, `uiAccess="true"` manifest, named-pipe protocol and `scripts/dev-sign-uiaccess.ps1` all exist and work against a self-signed certificate. **A real certificate is still outstanding and is a v1.0 blocker** — see `docs/plans/uiaccess-signing.md`
+- [x] One Palette window created at startup, hidden — never destroyed (ADR-0003)
+- [x] Working-set trim on hide; show path does no allocation or window creation. The trim walks the **whole process tree**, because essentially all the resident memory is in WebView2's descendants rather than in the Rust host
+- [x] Dismiss on Escape and on focus loss; always opens empty
+- [x] Tray icon: settings, quit — with both glyph polarities and a runtime swap when the system theme changes
+- [x] Autostart via `tauri-plugin-autostart` + `tauri-plugin-single-instance`, on by default via first-run prompt, **never registered in dev builds**. The `Run` value is named `com.v3sper.launcher`, not "Takyon" (ADR-0011)
+- [ ] `bun run bench` — harness built; release numbers measured and written into `docs/tbc/0002` (first pixel p95 **22.6 ms** / 50, start-to-hotkey **311.6 ms** / 500, idle RSS **27.5 MB** / 150 across 7 processes). **The 30+ minute idle run is still outstanding**, and it is the one that decides ADR-0003
+- [x] Deferred init: hotkey live within ~50 ms of launch; everything else after
+- [x] The idle beat: the mark animates while the Palette is open and empty, stops on the first keystroke and while hidden. **Settings → Turn off animations** kills it, as does Windows' own reduce-motion setting. Spec in `docs/brand.md`; storage is `localStorage` behind `src/prefs.ts` until `settings.db` exists
 
 **Exit criteria:** you press `Alt+Space` anywhere in Windows, an empty Palette
 appears in under 50 ms, Escape dismisses it, and the benchmark numbers are written
@@ -100,6 +101,7 @@ the history, verified by inspecting the database.
 - [ ] `settings.db`; UI is the only editor (no hand-edited config file)
 - [ ] **Two-tier navigation, Raycast-style**: a short fixed set of app-level pages (General, Launcher, Keyboard, Advanced, About) above a divider, then one alphabetical page per feature (Applications, Calculator, Clipboard History, File Search, AI…). Every future Source or Mode adds a tier-two page without touching the navigation
 - [ ] Settings search box — tier two becomes unbrowsable once it passes ~15 entries
+- [ ] Migrate the v0.1 "Turn off animations" switch from `localStorage` into `settings.db` — `src/prefs.ts` is the only reader, and it belongs on the Appearance page
 - [ ] Hotkey rebinding, autostart, tray visibility, retention, blocklist, aliases, monitor placement, recents toggle, Bangless-file-search toggle (default off), index roots + exclusions with a live entry count
 - [ ] Appearance: follow system by default, plus a manual light/dark override and pinned interface-size options (full theming is post-V1)
 - [ ] Local crash logs written to disk with a settings button to open the folder — **nothing is ever sent** (ADR-0010)
