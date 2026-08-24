@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Generated brand rasters — binary, never diffed or line-ending normalized.
+*.png binary
+*.ico binary
+*.icns binary
