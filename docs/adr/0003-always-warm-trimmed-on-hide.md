@@ -26,9 +26,21 @@ race this product is trying to win.
 ## Consequences
 
 Latency was chosen over idle RAM deliberately: users feel latency on every single
-invocation and check memory once. This decision was made from reasoning rather
-than measurement, and is explicitly scheduled for revisit with benchmark numbers
-covering all four strategies — see `docs/plans/post-v1.md`.
+invocation and check memory once.
+
+**Measured 2026-08-24 (v0.1), and the conclusion stands while one premise does
+not.** First show after 35 minutes idle: **22.8 ms**, against a 50 ms budget and
+indistinguishable from a warm show — so trimming costs nothing on the show path,
+which is the claim that mattered.
+
+But the sentence above about trimming recovering "most of the memory anyway" is
+wrong over the timescales users actually idle. The trim does drop the process
+tree to ~12 MB, and WebView2 faults it back to **~107 MB within two minutes**,
+where it rests. Trimming caps the peak; it does not keep the process small. The
+150 MB budget is still met, with roughly 40 MB of headroom.
+
+Full curve, method and the amendment this implies: `docs/tbc/0002`. Revisit with
+all four strategies is still scheduled — see `docs/plans/post-v1.md`.
 
 Because the window is warm, any frontend framework's mount cost is paid once at
 boot into a hidden window and never on the hot path. This materially weakens the

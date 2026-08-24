@@ -25,7 +25,7 @@ live in [`docs/tbc/`](./docs/tbc/); deferred work is in
 - [x] Dismiss on Escape and on focus loss; always opens empty
 - [x] Tray icon: settings, quit — with both glyph polarities and a runtime swap when the system theme changes
 - [x] Autostart via `tauri-plugin-autostart` + `tauri-plugin-single-instance`, on by default via first-run prompt, **never registered in dev builds**. The `Run` value is named `com.v3sper.launcher`, not "Takyon" (ADR-0011)
-- [ ] `bun run bench` — harness built; release numbers measured and written into `docs/tbc/0002` (first pixel p95 **22.6 ms** / 50, start-to-hotkey **311.6 ms** / 500, idle RSS **27.5 MB** / 150 across 7 processes). **The 30+ minute idle run is still outstanding**, and it is the one that decides ADR-0003
+- [x] `bun run bench` — all four budgets measured on a release build and written into `docs/tbc/0002`: first pixel p95 **22.6 ms** / 50, **first show after 35 min idle 22.8 ms** / 50, start-to-hotkey **311.6 ms** / 500, idle RSS **~107 MB** / 150. The post-idle show is the one that decided ADR-0003 and it shows no cold-start penalty at all
 - [x] Deferred init: hotkey live within ~50 ms of launch; everything else after
 - [x] The idle beat: the mark animates while the Palette is open and empty, stops on the first keystroke and while hidden. **Settings → Turn off animations** kills it, as does Windows' own reduce-motion setting. Spec in `docs/brand.md`; storage is `localStorage` behind `src/prefs.ts` until `settings.db` exists
 
