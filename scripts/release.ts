@@ -9,7 +9,7 @@
  * Usage: bun run release [--skip-preflight]
  */
 
-import { copyFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { ROOT, preflight, runInherit } from "./lib/release-utils";
@@ -57,9 +57,21 @@ copyFileSync(join(nsisDir, name), dest);
 const bytes = readFileSync(dest);
 const hash = createHash("sha256").update(bytes).digest("hex");
 
+/*
+  Written beside the installer, not only printed: a hash that scrolls out of a
+  terminal answers nothing later. Two spaces between hash and filename is the
+  `sha256sum` format, so `sha256sum -c` verifies it directly and this is the file
+  to publish next to a download link.
+
+  Not a reproducibility check — Rust release builds are not bit-identical between
+  runs, so rebuilding a version yields a different hash.
+*/
+writeFileSync(join(releaseDir, "SHA256SUMS.txt"), `${hash}  ${name}\n`);
+
 console.log(`\nInstaller ready: releases/v${version}/${name}`);
 console.log(`  ${(bytes.length / 1024 / 1024).toFixed(1)} MB`);
 console.log(`  SHA-256: ${hash}`);
+console.log(`  recorded in releases/v${version}/SHA256SUMS.txt`);
 /*
   No `latest.json` or `.sig` yet, unlike tesseract's releases. Those are the
   updater's manifest and signature, and `tauri-plugin-updater` arrives at v1.0
