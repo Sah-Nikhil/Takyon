@@ -1,7 +1,7 @@
 {
   "name": "takyon",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "workspaces": [
     "apps/*",
     "packages/*",
@@ -20,6 +20,7 @@
     "test:ts": "bun test apps/desktop/src packages/shared/src",
     "test:visual": "bun --cwd=apps/desktop run test:visual",
     "bench": "bun scripts/bench.ts",
+    "bump": "bun scripts/bump-version.ts",
     "release": "bun scripts/release.ts",
     "brand": "bun run --cwd brand build"
   },

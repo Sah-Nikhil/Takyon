@@ -25,6 +25,54 @@ const LAUNCHABLE: &[&str] = &["exe", "com", "bat", "cmd"];
 /// thousand files would otherwise stall discovery with no way to tell why.
 const MAX_PER_DIR: usize = 4000;
 
+/// System32 executables that only relaunch a packaged app.
+///
+/// Run one and it exits immediately, having started something under
+/// `Program Files\WindowsApps`. `AppsFolder` already lists that app under its real
+/// name, so keeping the stub puts one application on screen twice.
+///
+/// **Every entry was verified by running it**, because nothing structural
+/// separates a stub from a real tool. File size does not: `notepad.exe` is 360 KB
+/// and still a stub, while `charmap.exe` at 282 KB is real. Neither does the name
+/// being claimed by a Store alias — that set is `bash, notepad, wsl, wslconfig`,
+/// which misses `calc` and would wrongly take the WSL launchers.
+///
+/// A curated list, like `steam.rs`'s `NOT_GAMES`. To extend it, re-run the check:
+/// launch the candidate, and it is a stub if it exits within a second or two while
+/// a `WindowsApps` process appears.
+const SHIMS_TO_PACKAGED_APP: &[&str] = &["calc", "notepad"];
+
+/// Is this a Windows stub whose only job is to start a packaged app?
+///
+/// Anywhere under the Windows directory, not just `System32`: `notepad.exe` ships
+/// in **both** `C:\Windows` and `C:\Windows\System32`, both are on `PATH`, and
+/// both are stubs. Checking only `System32` left the other one on screen.
+///
+/// The directory is still checked, so a `calc.exe` of the user's own elsewhere on
+/// `PATH` is a program they installed, and stays.
+pub fn is_packaged_app_shim(path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    if !SHIMS_TO_PACKAGED_APP
+        .iter()
+        .any(|s| s.eq_ignore_ascii_case(stem))
+    {
+        return false;
+    }
+    is_under_windows_dir(path)
+}
+
+/// Is this path inside the Windows directory?
+///
+/// From `%SystemRoot%` rather than a hardcoded `C:\Windows`, because Windows can be
+/// installed on another volume and the stubs move with it.
+fn is_under_windows_dir(path: &Path) -> bool {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+    let norm = |s: &str| s.to_lowercase().replace('/', "\\");
+    norm(&path.to_string_lossy()).starts_with(&format!("{}\\", norm(&root)))
+}
+
 /// One executable found on `PATH`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathExe {
@@ -90,7 +138,7 @@ pub fn discover_in(dirs: &[PathBuf]) -> Vec<PathExe> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
 
-    for dir in dirs {
+    for dir in dedupe_dirs(dirs) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             // A `PATH` entry pointing at a removed drive or a directory that never
             // existed is completely ordinary. Skip it silently.
@@ -112,6 +160,10 @@ pub fn discover_in(dirs: &[PathBuf]) -> Vec<PathExe> {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 continue;
             }
+            let full = entry.path();
+            if is_packaged_app_shim(&full) {
+                continue;
+            }
             let stem = Path::new(name)
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -121,13 +173,31 @@ pub fn discover_in(dirs: &[PathBuf]) -> Vec<PathExe> {
                 continue;
             }
             taken += 1;
-            out.push(PathExe {
-                stem,
-                path: entry.path(),
-            });
+            out.push(PathExe { stem, path: full });
         }
     }
     out
+}
+
+/// Drop `PATH` directories already walked, comparing case-insensitively.
+///
+/// Not a micro-optimisation: this machine lists `C:\Windows\system32` and
+/// `C:\WINDOWS\system32` and repeats the whole Windows set four times, so the walk
+/// read 627 files four times over. Order is preserved, because
+/// first-occurrence-wins is what makes the result match the shell.
+fn dedupe_dirs(dirs: &[PathBuf]) -> Vec<&PathBuf> {
+    let mut seen = HashSet::new();
+    dirs.iter()
+        .filter(|d| {
+            let key = d
+                .to_string_lossy()
+                .to_lowercase()
+                .replace('/', "\\")
+                .trim_end_matches('\\')
+                .to_string();
+            seen.insert(key)
+        })
+        .collect()
 }
 
 /// Everything launchable on this process's `PATH`.
@@ -189,6 +259,63 @@ mod tests {
         // one keystroke is a footgun.
         assert!(!is_launchable("install.vbs"));
         assert!(!is_launchable("tool.ps1"));
+    }
+
+    /// `calc.exe` in System32 exits immediately having started the packaged
+    /// Calculator, which `AppsFolder` already lists under its real name. Verified
+    /// by running it: the stub exits, `CalculatorApp.exe` appears.
+    #[test]
+    fn v0_2_a_system32_shim_for_a_packaged_app_is_dropped() {
+        // Both copies: `notepad.exe` ships in `C:\Windows` as well as in
+        // `System32`, and both are on `PATH`.
+        for exe in ["calc", "notepad"] {
+            for dir in [r"C:\Windows\System32", r"C:\Windows"] {
+                let p = format!(r"{dir}\{exe}.exe");
+                assert!(is_packaged_app_shim(Path::new(&p)), "{p}");
+            }
+        }
+        // Case-insensitive on the name and the directory.
+        assert!(is_packaged_app_shim(Path::new(r"c:\windows\system32\CALC.EXE")));
+    }
+
+    /// The list has to stay short. These are real programs that live in the same
+    /// directory, and hiding one would be far worse than showing a duplicate.
+    #[test]
+    fn v0_2_real_system32_tools_are_not_treated_as_shims() {
+        // `charmap` and `msinfo32` were checked by running them: both stay up, so
+        // both are real. `bash`, `wsl` and `wslconfig` share a name with a Store
+        // alias but are the launchers people actually type.
+        for exe in ["charmap", "msinfo32", "cmd", "regedit", "where", "wsl", "bash"] {
+            let p = format!(r"C:\Windows\System32\{exe}.exe");
+            assert!(!is_packaged_app_shim(Path::new(&p)), "{exe}");
+        }
+    }
+
+    /// Only Windows' own copies are shims. Someone's `calc.exe` elsewhere on
+    /// `PATH` is a program they installed, and stays.
+    #[test]
+    fn v0_2_a_shim_name_outside_the_windows_directory_is_kept() {
+        for path in [
+            r"C:\tools\calc.exe",
+            r"C:\Users\me\bin\notepad.exe",
+            r"D:\Windows-Utils\calc.exe",
+        ] {
+            assert!(!is_packaged_app_shim(Path::new(path)), "{path}");
+        }
+    }
+
+    /// `PATH` here repeats the Windows directories four times, in two casings.
+    /// Walking each once is the difference between reading 627 files and 2,508.
+    #[test]
+    fn v0_2_repeated_path_directories_are_walked_once() {
+        let dirs = split_path_var(
+            r"C:\Windows\system32;C:\Windows;C:\WINDOWS\system32;C:\Windows\system32\;C:\bin",
+        );
+        let unique = dedupe_dirs(&dirs);
+        assert_eq!(unique.len(), 3, "system32, Windows, bin");
+        // Order survives: first-occurrence-wins is what matches the shell.
+        assert!(unique[0].to_string_lossy().to_lowercase().ends_with("system32"));
+        assert_eq!(unique[2], &PathBuf::from(r"C:\bin"));
     }
 
     /// Shell resolution order, as a test. If two `PATH` directories both hold

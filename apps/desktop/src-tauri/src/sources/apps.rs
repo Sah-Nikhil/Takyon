@@ -288,7 +288,18 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
     // found through a shortcut is dropped by the `seen` set, which is why this
     // ordering is not cosmetic: reversed, `code` would be titled "code" rather
     // than "Visual Studio Code".
+    //
+    // Skipped by title where an application of that name is already known. The
+    // `WindowsApps` aliases are the case that needs it: `notepad.exe` there is a
+    // 0-byte reparse point into the same packaged Notepad that `AppsFolder`
+    // already listed. Matching the *whole* name keeps every CLI tool — `winget`,
+    // `wt`, `python` and `bash` name no application, so none of them collides.
+    let known_titles: std::collections::HashSet<String> =
+        apps.iter().map(|a| a.title.to_lowercase()).collect();
     for exe in path::discover() {
+        if known_titles.contains(&exe.stem.to_lowercase()) {
+            continue;
+        }
         let target = LaunchTarget::Exe {
             path: exe.path.clone(),
             args: None,
