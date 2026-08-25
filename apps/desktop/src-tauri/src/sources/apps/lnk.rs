@@ -147,6 +147,56 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Is this target inside a Squirrel version directory (`...\\app-1.0.9253\\`)?
+///
+/// Squirrel installs — Discord, Slack, Teams classic, GitHub Desktop — ship two
+/// Start Menu shortcuts with the same name: one at the versioned executable, one
+/// at an `Update.exe` stub that always launches the current version. The versioned
+/// path is the wrong one to keep: it dies at the next update, and since it is also
+/// the [`crate::entry::EntryId`], everything v0.3 learned about the app dies with
+/// it (§2 requires that id to be stable).
+pub fn is_versioned_target(target: &Path) -> bool {
+    target.components().any(|c| {
+        let Some(name) = c.as_os_str().to_str() else {
+            return false;
+        };
+        let Some(rest) = name.strip_prefix("app-") else {
+            return false;
+        };
+        // `app-1.0.9253`, not `app-data` — digits and dots only, and at least one
+        // digit, or an ordinary directory called `app-something` is thrown away.
+        !rest.is_empty()
+            && rest.chars().any(|c| c.is_ascii_digit())
+            && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+    })
+}
+
+/// Collapse shortcuts that share a display name.
+///
+/// Two `.lnk` files with one name are two rows for one application, and the user
+/// cannot tell which to press. Where the collision is Squirrel's (see
+/// [`is_versioned_target`]) the stable stub wins; otherwise the first found wins,
+/// which is the per-user tree before the machine-wide one.
+///
+/// Pure, so the rule is testable without a Start Menu.
+pub fn collapse_by_name(shortcuts: Vec<Shortcut>) -> Vec<Shortcut> {
+    let mut out: Vec<Shortcut> = Vec::new();
+    for sc in shortcuts {
+        match out
+            .iter()
+            .position(|kept| kept.name.eq_ignore_ascii_case(&sc.name))
+        {
+            None => out.push(sc),
+            Some(i) => {
+                if is_versioned_target(&out[i].target) && !is_versioned_target(&sc.target) {
+                    out[i] = sc;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The display name for a shortcut path: its filename without `.lnk`.
 pub fn display_name(link: &Path) -> Option<String> {
     link.file_stem()
@@ -242,11 +292,12 @@ mod com {
 /// once per shortcut.
 #[cfg(windows)]
 pub fn discover() -> Vec<Shortcut> {
-    start_menu_roots()
+    let found: Vec<Shortcut> = start_menu_roots()
         .iter()
         .flat_map(|root| find_links(root))
         .filter_map(|link| com::read(&link))
-        .collect()
+        .collect();
+    collapse_by_name(found)
 }
 
 #[cfg(not(windows))]
@@ -347,6 +398,81 @@ mod tests {
         assert!(!names.contains(&"notes".to_string()));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn shortcut(name: &str, target: &str) -> Shortcut {
+        Shortcut {
+            name: name.into(),
+            target: PathBuf::from(target),
+            args: None,
+            working_dir: None,
+            link: PathBuf::from(format!(r"C:\menu\{name}.lnk")),
+        }
+    }
+
+    /// Squirrel's version directory, which is what makes one of the two Discord
+    /// shortcuts a bad Entry: the path dies at the next update, and it is the id.
+    #[test]
+    fn v0_2_a_squirrel_version_directory_is_recognised() {
+        assert!(is_versioned_target(Path::new(
+            r"C:\Users\me\AppData\Local\Discord\app-1.0.9253\Discord.exe"
+        )));
+        assert!(is_versioned_target(Path::new(r"C:\x\app-2.14\a.exe")));
+    }
+
+    /// The check has to be narrow. A directory merely starting with `app-` is
+    /// ordinary, and treating it as versioned would discard the wrong shortcut.
+    #[test]
+    fn v0_2_an_ordinary_app_directory_is_not_versioned() {
+        for path in [
+            r"C:\Users\me\AppData\Local\Discord\Update.exe",
+            r"C:\Program Files\Thing\app-data\thing.exe",
+            r"C:\Program Files\app\thing.exe",
+            r"C:\Program Files\app-\thing.exe",
+        ] {
+            assert!(!is_versioned_target(Path::new(path)), "{path}");
+        }
+    }
+
+    /// The real pair from this machine: two Start Menu shortcuts, both "Discord",
+    /// one at the versioned exe and one at the stub. The stub survives updates, so
+    /// it wins regardless of which was found first.
+    #[test]
+    fn v0_2_the_squirrel_stub_wins_over_the_versioned_executable() {
+        let versioned = r"C:\Users\me\AppData\Local\Discord\app-1.0.9253\Discord.exe";
+        let stub = r"C:\Users\me\AppData\Local\Discord\Update.exe";
+
+        for pair in [
+            vec![shortcut("Discord", versioned), shortcut("Discord", stub)],
+            vec![shortcut("Discord", stub), shortcut("Discord", versioned)],
+        ] {
+            let kept = collapse_by_name(pair);
+            assert_eq!(kept.len(), 1, "one application, one row");
+            assert_eq!(kept[0].target, PathBuf::from(stub));
+        }
+    }
+
+    /// Only the name collides. Two genuinely different applications keep both rows.
+    #[test]
+    fn v0_2_different_names_are_never_collapsed() {
+        let kept = collapse_by_name(vec![
+            shortcut("Discord", r"C:\a\Discord.exe"),
+            shortcut("Discord Canary", r"C:\b\DiscordCanary.exe"),
+        ]);
+        assert_eq!(kept.len(), 2);
+    }
+
+    /// With no Squirrel stub to prefer, the first found wins — the per-user tree
+    /// before the machine-wide one. Arbitrary, but stable between runs, which is
+    /// what stops the list reordering itself.
+    #[test]
+    fn v0_2_a_plain_name_collision_keeps_the_first() {
+        let kept = collapse_by_name(vec![
+            shortcut("Thing", r"C:\user\thing.exe"),
+            shortcut("Thing", r"C:\machine\thing.exe"),
+        ]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].target, PathBuf::from(r"C:\user\thing.exe"));
     }
 
     #[test]
