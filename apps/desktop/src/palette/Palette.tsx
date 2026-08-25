@@ -32,22 +32,22 @@ export function Palette() {
   const [menu, setMenu] = useState<Action[] | null>(null);
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);
   /*
-      Whether the window is on screen. Created hidden in Tauri and alive between
-      summons (docs/tbc/0002), so this starts false and the show event flips it;
-      in the browser there is no window and the app is visible from first paint.
-      It exists to stop the idle pulse animating against a hidden window.
-    */
+    Whether the window is on screen. Created hidden in Tauri and alive between
+    summons (docs/tbc/0002), so this starts false and the show event flips it;
+    in the browser there is no window and the app is visible from first paint.
+    It exists to stop the idle pulse animating against a hidden window.
+   */
   const [shown, setShown] = useState(!api.inTauri);
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
 
   /*
-      Sequence numbers (IMPLEMENTATION_PLAN §3).
-
-      Refs, not state: both are read and written inside the same async callback,
-      and a state update would not be visible to a response arriving before React
-      re-renders — exactly the fast-keystroke case this exists to handle.
-    */
+    Sequence numbers (IMPLEMENTATION_PLAN §3).
+    
+    Refs, not state: both are read and written inside the same async callback,
+    and a state update would not be visible to a response arriving before React
+    re-renders — exactly the fast-keystroke case this exists to handle.
+   */
   const nextSeq = useRef(1);
   const newestSeen = useRef(0);
 
@@ -65,8 +65,8 @@ export function Palette() {
       setSelected(result.entries[0]?.id ?? "");
 
       // §10's "hotkey to first Entry" budget. Reported only when an Entry is
-            // actually on screen — the empty query on every show would otherwise
-            // report a paint of nothing and flatter the number badly.
+      // actually on screen — the empty query on every show would otherwise
+      // report a paint of nothing and flatter the number badly.
       if (result.entries.length > 0) {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => void api.reportFirstEntry(result.seq));
@@ -98,8 +98,8 @@ export function Palette() {
       inputRef.current?.focus();
 
       // Two frames, not one. The first rAF callback runs *before* the browser
-                // paints, so reporting there measures asking for a frame rather than
-                // having one. The second fires after the paint was committed.
+      // paints, so reporting there measures asking for a frame rather than
+      // having one. The second fires after the paint was committed.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           // Focused twice, here and above. The synchronous call is the one that
@@ -118,9 +118,9 @@ export function Palette() {
       setShown(false);
       setMenu(null);
       // Cleared on hide, not just on the next show. `window::hide` resets the
-            // shape and shrinks the window to one row, so eight rows left mounted
-            // behind it disagree with the window for as long as it stays hidden.
-            // No `setActionMenu(null)`: `reset_shape` already did that.
+      // shape and shrinks the window to one row, so eight rows left mounted
+      // behind it disagree with the window for as long as it stays hidden.
+      // No `setActionMenu(null)`: `reset_shape` already did that.
       setValue("");
       setEntries([]);
     });
@@ -129,12 +129,12 @@ export function Palette() {
   useEffect(watchMotionPreference, []);
 
   /*
-      Measure the hotkey-failure banner and tell the window how tall it is.
-
-      Wrapping text below the list in a flex column, so a too-short window takes the
-      difference out of the list and clips its last Entry. A ResizeObserver, not one
-      measurement on mount: a DPI change re-wraps without remounting.
-    */
+    Measure the hotkey-failure banner and tell the window how tall it is.
+    
+    Wrapping text below the list in a flex column, so a too-short window takes the
+    difference out of the list and clips its last Entry. A ResizeObserver, not one
+    measurement on mount: a DPI change re-wraps without remounting.
+   */
   useEffect(() => {
     const el = bannerRef.current;
     if (!el) {
@@ -182,10 +182,10 @@ export function Palette() {
   }, [selected]);
 
   // Bound to the document, not the <Command> element.
-    //
-    // A React `onKeyDown` only fires for events bubbling from inside it, so Escape
-    // did nothing whenever focus sat on `body` — which happens after a hide/show
-    // cycle. Escape is one of three ways out; it cannot depend on that.
+  //
+  // A React `onKeyDown` only fires for events bubbling from inside it, so Escape
+  // did nothing whenever focus sat on `body` — which happens after a hide/show
+  // cycle. Escape is one of three ways out; it cannot depend on that.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -202,11 +202,11 @@ export function Palette() {
 
   /*
     Modifier accelerators, matching Rust's `actions::for_modifiers`.
-
+    
     The chord table lives in Rust so that it is one definition rather than two —
     this reads the state and names the action, it does not decide what the action
     means. Rebinding at v0.6 changes the Rust table and this keeps working.
-  */
+   */
   const actionForEvent = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.shiftKey) return "reveal";
     if (e.ctrlKey) return "run_as_admin";
@@ -214,12 +214,12 @@ export function Palette() {
   };
 
   /*
-      The height Rust reserved for the list, chrome included.
-
-      `LIST_CHROME` is not decoration: border-box with an explicit height puts the
-      `py-1` padding and the 1px top border *inside* it, so `rows * ROW_HEIGHT`
-      alone clips the last row and grows a scrollbar on a list that fits.
-    */
+    The height Rust reserved for the list, chrome included.
+    
+    `LIST_CHROME` is not decoration: border-box with an explicit height puts the
+    `py-1` padding and the 1px top border *inside* it, so `rows * ROW_HEIGHT`
+    alone clips the last row and grows a scrollbar on a list that fits.
+   */
   const listHeight =
     Math.min(entries.length, MAX_VISIBLE_ROWS) * ROW_HEIGHT + LIST_CHROME;
   const showList = entries.length > 0 || (indexing && value.trim().length > 0);
@@ -286,11 +286,18 @@ export function Palette() {
         {showList && (
           <Command.List
             style={{ height: entries.length > 0 ? listHeight : ROW_HEIGHT + LIST_CHROME }}
-            className="overflow-y-auto border-t border-white/5 py-1"
+            /*
+              `px-2` so a selected row's rounded background insets from the panel
+              edge. Without it the highlight ran full width, its corners were
+              never visible, and it collided with the border. The 8px here plus
+              the row's own 8px is the input row's `px-4`, which is what puts an
+              icon directly under the mark.
+             */
+            className="overflow-y-auto border-t border-white/5 px-2 py-1"
           >
             {indexing && entries.length === 0 && (
               <div
-                className="flex items-center px-3 text-[13px] text-fg/40"
+                className="flex items-center px-2 text-[13px] text-fg/40"
                 style={{ height: ROW_HEIGHT }}
               >
                 Indexing applications…

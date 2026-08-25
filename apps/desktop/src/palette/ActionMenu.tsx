@@ -42,7 +42,7 @@ export function ActionMenu({
         `dialog` with a name of its own, not cmdk's `label` prop: that names the
         inner listbox, so "Actions" would land on the search input. Anything
         looking the menu up by name would be handed a text field with no items.
-      */
+       */
       role="dialog"
       aria-label="Actions"
       aria-modal="true"
@@ -50,7 +50,7 @@ export function ActionMenu({
         A backdrop that closes on click, and stops the click reaching the Palette
         underneath. Without the second half, dismissing the menu also activates
         whichever row happened to be under the pointer.
-      */
+       */
       className="absolute inset-0 z-10 flex items-end justify-end bg-black/40 p-2"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();

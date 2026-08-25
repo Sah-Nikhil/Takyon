@@ -168,8 +168,8 @@ export const mock = {
   actionsFor: async (entryId: string): Promise<Action[]> => {
     const entry = FIXTURES.find((e) => e.id === entryId);
     // `flatMap`, not `map().filter(Boolean)`: with `noUncheckedIndexedAccess`
-        // the lookup is `Action | undefined` and `filter` does not narrow it.
-        // Returning `[]` for an unknown id also mirrors Rust.
+    // the lookup is `Action | undefined` and `filter` does not narrow it.
+    // Returning `[]` for an unknown id also mirrors Rust.
     return (entry?.actions ?? []).flatMap((id) => {
       const action = ACTION_LABELS[id];
       return action ? [action] : [];

@@ -33,7 +33,9 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
 
   return (
     <div
-      className="flex items-center gap-3 px-3"
+      // `px-2`, not `px-3`: the list adds 8px of its own, and 8 + 8 matches the
+      // input row's `px-4` so the icon sits directly under the mark.
+      className="flex items-center gap-3 px-2"
       style={{ height: ROW_HEIGHT }}
       data-selected={selected || undefined}
     >
@@ -49,7 +51,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
             painted. Without them the text shifts sideways when an icon arrives
             late — for a list being arrowed through, the difference between
             "loading" and "flickering".
-          */
+           */
           loading="eager"
           decoding="async"
         />
@@ -65,7 +67,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
             `C:\Program Files\Vendor\Suite\Thing.exe` is the right-hand one. CSS has
             no left-truncation, so the text is reversed by direction and the
             ellipsis lands at the start.
-          */
+           */
           <div
             dir="rtl"
             className="truncate text-left text-[11px] leading-tight text-fg/40"
