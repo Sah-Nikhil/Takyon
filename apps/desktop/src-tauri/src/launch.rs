@@ -1,0 +1,266 @@
+//! Starting things, and the other `Ctrl+K` actions.
+//!
+//! **Everything goes through `ShellExecuteW`**, including plain executables. It is
+//! what Explorer does, so an app gets the same environment and `AppUserModelID`
+//! association as a double-click; it is the only way to reach a `steam://` URL or
+//! a `shell:AppsFolder\` item; and `std::process::Command` would hand the child
+//! our standard handles, so a session-long launcher would hold a pipe open for
+//! every app it ever started.
+//!
+//! Elevation is the same call with the `runas` verb. Nothing here runs elevated.
+
+use crate::entry::LaunchTarget;
+
+/// Start something.
+///
+/// **The Palette must already be hidden** (v0.2 task 7): `ShellExecuteW` returns
+/// when the shell accepts the request, not when a window exists — hundreds of
+/// milliseconds for a large app, with the Palette sitting over it.
+pub fn open(target: &LaunchTarget) -> Result<(), String> {
+    match target {
+        LaunchTarget::Exe {
+            path,
+            args,
+            working_dir,
+        } => shell_execute(
+            None,
+            &path.to_string_lossy(),
+            args.as_deref(),
+            working_dir.as_ref().map(|d| d.to_string_lossy().to_string()).as_deref(),
+        ),
+        LaunchTarget::Aumid(aumid) => {
+            shell_execute(None, &format!(r"shell:AppsFolder\{aumid}"), None, None)
+        }
+        // `rungameid`, not `run`. `steam://run/<id>` starts the game without going
+        // through the launch options the user configured for it, which for a
+        // surprising number of games is how mods and controller profiles are
+        // applied — so it appears to work and quietly does the wrong thing.
+        LaunchTarget::SteamGame(app_id) => {
+            shell_execute(None, &format!("steam://rungameid/{app_id}"), None, None)
+        }
+    }
+}
+
+/// Start something elevated, raising the UAC prompt.
+///
+/// Only meaningful for a real executable: there is nothing to elevate about a
+/// packaged app or a Steam URL, and asking the shell to `runas` one of those
+/// produces an error dialog rather than a useful outcome.
+pub fn run_as_admin(target: &LaunchTarget) -> Result<(), String> {
+    match target {
+        LaunchTarget::Exe {
+            path,
+            args,
+            working_dir,
+        } => shell_execute(
+            Some("runas"),
+            &path.to_string_lossy(),
+            args.as_deref(),
+            working_dir.as_ref().map(|d| d.to_string_lossy().to_string()).as_deref(),
+        ),
+        _ => Err("This kind of application cannot be run as administrator.".into()),
+    }
+}
+
+/// Open Explorer with the target selected.
+///
+/// `/select,` needs the path quoted and needs no space after the comma — both are
+/// load-bearing. Without the quotes any path containing a space opens Explorer at
+/// Documents instead, which looks like the feature silently not working.
+pub fn reveal(target: &LaunchTarget) -> Result<(), String> {
+    let LaunchTarget::Exe { path, .. } = target else {
+        return Err("This kind of application has no file to show.".into());
+    };
+    shell_execute(
+        None,
+        "explorer.exe",
+        Some(&format!("/select,\"{}\"", path.display())),
+        None,
+    )
+}
+
+/// The path an Entry points at, for "Copy path".
+pub fn path_of(target: &LaunchTarget) -> Option<String> {
+    match target {
+        LaunchTarget::Exe { path, .. } => Some(path.to_string_lossy().to_string()),
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+fn shell_execute(
+    verb: Option<&str>,
+    file: &str,
+    args: Option<&str>,
+    dir: Option<&str>,
+) -> Result<(), String> {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let verb = verb.map(HSTRING::from);
+    let file = HSTRING::from(file);
+    let args = args.map(HSTRING::from);
+    let dir = dir.map(HSTRING::from);
+
+    // `PCWSTR(h.as_ptr())`, not a `From` conversion: the pointer borrows from the
+        // `HSTRING`, so each must outlive the call. Building them inline would drop
+        // every string at the end of its argument and hand the shell dangling
+        // pointers.
+    let as_pcwstr = |s: &Option<HSTRING>| {
+        s.as_ref()
+            .map(|h| PCWSTR(h.as_ptr()))
+            .unwrap_or(PCWSTR::null())
+    };
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            as_pcwstr(&verb),
+            PCWSTR(file.as_ptr()),
+            as_pcwstr(&args),
+            as_pcwstr(&dir),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    // The documented success test, and it is genuinely this odd: the return is an
+    // `HINSTANCE` for compatibility with 16-bit Windows, and any value of 32 or
+    // below is an error code wearing a pointer's clothes.
+    if result.0 as isize > 32 {
+        Ok(())
+    } else {
+        Err(explain_shell_error(result.0 as isize))
+    }
+}
+
+#[cfg(not(windows))]
+fn shell_execute(
+    _verb: Option<&str>,
+    _file: &str,
+    _args: Option<&str>,
+    _dir: Option<&str>,
+) -> Result<(), String> {
+    Err("launching is only implemented on Windows".into())
+}
+
+/// Turn a `ShellExecuteW` error code into something worth showing.
+///
+/// Pure, so it is testable without launching anything. The two cases that matter
+/// are the ones the user causes: cancelling the UAC prompt, and an application
+/// that has been uninstalled since the walk ran.
+pub fn explain_shell_error(code: isize) -> String {
+    match code {
+        // SE_ERR_ACCESSDENIED, which is also what a cancelled UAC prompt returns.
+        5 => "Cancelled, or Windows refused permission.".into(),
+        2 => "That application is no longer installed.".into(),
+        3 => "The folder that application lived in is gone.".into(),
+        // SE_ERR_NOASSOC
+        31 => "Windows has nothing registered to open that.".into(),
+        other => format!("Windows refused to start it (error {other})."),
+    }
+}
+
+/// Put text on the clipboard.
+///
+/// Done with the Win32 calls rather than `tauri-plugin-clipboard-manager`, which
+/// would mean a plugin, a capability entry and a second route from the webview to
+/// the OS for the sake of one menu item.
+#[cfg(windows)]
+pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
+    use windows::Win32::Foundation::{HANDLE, HGLOBAL};
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::System::Ole::CF_UNICODETEXT;
+
+    let mut wide: Vec<u16> = text.encode_utf16().collect();
+    wide.push(0);
+    let bytes = wide.len() * 2;
+
+    unsafe {
+        OpenClipboard(None).map_err(|e| format!("could not open the clipboard: {e}"))?;
+
+        // Every early return from here has to close the clipboard. Leaving it open
+        // locks it for every other process on the desktop, which presents as
+        // "copy and paste stopped working" with no clue pointing back here.
+        let result = (|| -> Result<(), String> {
+            EmptyClipboard().map_err(|e| format!("could not clear the clipboard: {e}"))?;
+
+            let handle: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, bytes)
+                .map_err(|e| format!("could not allocate for the clipboard: {e}"))?;
+            let ptr = GlobalLock(handle);
+            if ptr.is_null() {
+                return Err("could not lock the clipboard buffer".into());
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr.cast::<u16>(), wide.len());
+            let _ = GlobalUnlock(handle);
+
+            // Ownership of the memory passes to the clipboard on success. Freeing
+            // it here would hand every paste a dangling pointer.
+            SetClipboardData(CF_UNICODETEXT.0 as u32, Some(HANDLE(handle.0)))
+                .map_err(|e| format!("could not set the clipboard: {e}"))?;
+            Ok(())
+        })();
+
+        let _ = CloseClipboard();
+        result
+    }
+}
+
+#[cfg(not(windows))]
+pub fn copy_to_clipboard(_text: &str) -> Result<(), String> {
+    Err("the clipboard is only implemented on Windows".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn exe(path: &str) -> LaunchTarget {
+        LaunchTarget::Exe {
+            path: PathBuf::from(path),
+            args: None,
+            working_dir: None,
+        }
+    }
+
+    /// Elevation only means something for a real file. Offering it for a packaged
+    /// app would produce a menu item whose only outcome is an error dialog —
+    /// `actions::for_app` already withholds it, and this is the other half.
+    #[test]
+    fn v0_2_only_an_executable_can_be_elevated_or_revealed() {
+        let uwp = LaunchTarget::Aumid("Microsoft.Whatever_abc!App".into());
+        let steam = LaunchTarget::SteamGame(440);
+        assert!(run_as_admin(&uwp).is_err());
+        assert!(run_as_admin(&steam).is_err());
+        assert!(reveal(&uwp).is_err());
+        assert!(reveal(&steam).is_err());
+    }
+
+    #[test]
+    fn v0_2_copy_path_has_nothing_to_copy_for_a_pathless_app() {
+        assert_eq!(path_of(&exe(r"C:\a\b.exe")).as_deref(), Some(r"C:\a\b.exe"));
+        assert!(path_of(&LaunchTarget::Aumid("A_b!c".into())).is_none());
+        assert!(path_of(&LaunchTarget::SteamGame(1)).is_none());
+    }
+
+    /// A cancelled UAC prompt is the most likely failure of the elevation action,
+    /// and it is not an error the user needs apologised for. It must not read as a
+    /// crash.
+    #[test]
+    fn v0_2_a_cancelled_elevation_prompt_reads_as_cancelled() {
+        let msg = explain_shell_error(5);
+        assert!(msg.to_lowercase().contains("cancelled"));
+    }
+
+    #[test]
+    fn v0_2_an_uninstalled_app_says_so() {
+        assert!(explain_shell_error(2).contains("no longer installed"));
+        // Anything unrecognised keeps its number, so it can be quoted in a report
+        // rather than flattened into a friendly non-answer.
+        assert!(explain_shell_error(1234).contains("1234"));
+    }
+}

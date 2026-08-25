@@ -10,26 +10,109 @@
 //! anything else, and every other piece of startup runs behind it on another
 //! thread. Adding work above `hotkey::register` is how that budget quietly breaks.
 
+pub mod actions;
 pub mod bench;
+pub mod entry;
 pub mod firstrun;
 pub mod hotkey;
+pub mod icons;
 pub mod identity;
+pub mod launch;
+pub mod query;
+pub mod rank;
 pub mod settings;
+pub mod sources;
 pub mod tray;
 pub mod uiaccess;
 pub mod window;
 
+use std::sync::Arc;
 use std::time::Instant;
 use tauri::{Manager, WindowEvent};
 
 use bench::Bench;
+use entry::{Action, EntryId};
 use hotkey::{HotkeyState, HotkeyStatus};
+use icons::IconStore;
+use query::{Pipeline, QueryResult};
+use sources::apps::AppSource;
 
 /// Hide the Palette. Called by Escape, which is handled in the frontend because
 /// that is where the keystroke lands.
 #[tauri::command]
 fn dismiss(app: tauri::AppHandle) {
     window::hide(&app, "frontend dismiss (Escape)");
+}
+
+/// One keystroke. See `query.rs` — one `invoke` per keystroke (ADR-0009).
+///
+/// The window is resized here, before the response returns: the row count is
+/// already known on this side, and resizing first means rows paint into a window
+/// that is already the right shape rather than one catching up a frame later.
+#[tauri::command]
+fn query(
+    app: tauri::AppHandle,
+    q: String,
+    seq: u64,
+    pipeline: tauri::State<'_, Arc<Pipeline>>,
+    bench: tauri::State<'_, Bench>,
+) -> QueryResult {
+    bench.mark_query(seq);
+    let result = pipeline.query(&q, seq);
+    window::set_rows(&app, result.entries.len(), result.indexing);
+    result
+}
+
+/// The `Ctrl+K` menu for one Entry.
+#[tauri::command]
+fn actions_for(entry_id: String, pipeline: tauri::State<'_, Arc<Pipeline>>) -> Vec<Action> {
+    pipeline.actions_for(&EntryId(entry_id))
+}
+
+/// Tell the window the action menu opened or closed, so it can make room.
+///
+/// Four actions need ~200px against a 120px window. The frontend cannot fix that
+/// from inside the webview — it is the native window that is too short.
+#[tauri::command]
+fn set_action_menu(app: tauri::AppHandle, actions: Option<usize>) {
+    window::set_menu(&app, actions);
+}
+
+/// Report the measured hotkey-banner height, 0 if there is none.
+///
+/// Rust owns `HotkeyState` so it knows *whether* the banner is drawn, but not how
+/// tall wrapping text turned out — and height is the number that matters. A
+/// constant guessed here was 16px short at 150% and clipped the list's last row.
+#[tauri::command]
+fn set_banner_height(app: tauri::AppHandle, height: u32) {
+    window::set_banner(&app, height);
+}
+
+/// Perform an action on an Entry.
+///
+/// **Hides first, then launches** (v0.2 task 7): `ShellExecuteW` returns when the
+/// shell accepts the request, not when a window exists. The launch then moves to a
+/// background thread, so the IPC reply is not held open across a UAC prompt.
+#[tauri::command]
+fn activate(
+    app: tauri::AppHandle,
+    entry_id: String,
+    action_id: String,
+    pipeline: tauri::State<'_, Arc<Pipeline>>,
+) -> Result<(), String> {
+    window::hide(&app, "activation");
+
+    let pipeline = pipeline.inner().clone();
+    let id = EntryId(entry_id);
+    std::thread::spawn(move || {
+        if let Err(e) = pipeline.activate(&id, &action_id) {
+            // Nowhere better to put this yet: the Palette is already hidden and
+            // v0.2 has no toast surface. v0.6's crash-log folder is where this
+            // ends up (ADR-0010 — written locally, never sent).
+            eprintln!("[takyon] {e}");
+        }
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -47,6 +130,15 @@ fn hotkey_status(state: tauri::State<'_, HotkeyState>) -> HotkeyStatus {
 #[tauri::command]
 fn report_first_pixel(show_id: u64, bench: tauri::State<'_, Bench>) {
     bench.first_pixel(show_id);
+}
+
+/// The frontend reporting that it has painted Entries for a query.
+///
+/// The second half of §10's "hotkey to first Entry" budget, and it becomes
+/// measurable at v0.2 because that is when there is a Source to produce one.
+#[tauri::command]
+fn report_first_entry(seq: u64, bench: tauri::State<'_, Bench>) {
+    bench.first_entry(seq);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,11 +167,54 @@ pub fn run() {
                 .app_name(identity::IDENTITY)
                 .build(),
         )
+        // Icons reach the webview as URLs rather than as bytes in the query
+        // response (`icons.rs`). **Asynchronous**, not the synchronous form: a
+        // cache miss extracts from the shell, and the synchronous handler runs on
+        // a thread WebView2 needs, so a slow extraction there stalls rendering.
+        .register_asynchronous_uri_scheme_protocol(icons::SCHEME, |ctx, request, responder| {
+            let store = ctx.app_handle().state::<Arc<IconStore>>().inner().clone();
+            // The key is the last path segment. Everything before it is the
+            // scheme's synthetic host, which differs between platforms and is not
+            // ours to interpret.
+            let key = request
+                .uri()
+                .path()
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+
+            std::thread::spawn(move || {
+                let response = match store.get(&key) {
+                    Some(bytes) => tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", "image/png")
+                        // The key already contains the source's mtime, so a given
+                        // URL's bytes can never change. Caching it hard is what
+                        // makes the second showing of a query cost nothing.
+                        .header("Cache-Control", "public, max-age=31536000, immutable")
+                        .body(bytes),
+                    // A miss is cosmetic: the row is already on screen with its
+                    // placeholder. Never a panic — this path is reachable from the
+                    // webview, so it is reachable from anything the webview loads.
+                    None => tauri::http::Response::builder().status(404).body(Vec::new()),
+                };
+                if let Ok(response) = response {
+                    responder.respond(response);
+                }
+            });
+        })
         .invoke_handler(tauri::generate_handler![
             dismiss,
             open_settings,
             hotkey_status,
-            report_first_pixel
+            report_first_pixel,
+            report_first_entry,
+            query,
+            actions_for,
+            activate,
+            set_action_menu,
+            set_banner_height
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -88,11 +223,28 @@ pub fn run() {
             // on the very first press.
             app.manage(Bench::from_env(started));
 
+            // Managed before the hotkey too, and for the same reason: the first
+            // keystroke after the very first show reaches for the pipeline, and
+            // the walk that fills it has not started yet. An `AppSource` reports
+            // `is_indexing` from construction precisely so this ordering is safe.
+            let apps = Arc::new(AppSource::new());
+            let icons = Arc::new(IconStore::default());
+            app.manage(icons.clone());
+            app.manage(Arc::new(Pipeline::new(apps.clone(), icons.clone())));
+
             // Everything above this line is plugin registration that Tauri has
             // already done. This is the first thing that makes the app useful, and
             // it stays first.
             hotkey::register(&handle);
-            app.state::<Bench>().startup_ready();
+            let bench = app.state::<Bench>();
+            bench.startup_ready();
+            // Every span the harness measures starts at a hotkey press, so a taken
+            // Alt+Space means the run can produce nothing. Said here rather than
+            // left to time out as "no painted frame", which reads as a rendering
+            // bug and is not one.
+            if !app.state::<HotkeyState>().get().registered {
+                bench.hotkey_unavailable();
+            }
 
             if let Err(e) = tray::build(&handle) {
                 // Not fatal, but close to it: the Palette has no taskbar button, so
@@ -109,6 +261,20 @@ pub fn run() {
                 tray::self_heal_autostart(&deferred);
                 uiaccess::start(&deferred);
                 firstrun::maybe_prompt(&deferred);
+            });
+
+            // The application walk, on its own thread: `firstrun::maybe_prompt` can sit
+            // on a modal dialog indefinitely, and queueing discovery behind it would mean
+            // the launcher knows no applications until the prompt is answered. Nothing to
+            // serve in the meantime, deliberately — ADR-0012.
+            std::thread::spawn(move || {
+                apps.refresh(&icons);
+                // Persist whatever the pre-warm extracted, so the next login reads
+                // icons from the blob instead of the shell. Failure here costs one
+                // re-extraction and nothing else, so it is reported and dropped.
+                if let Err(e) = icons.flush() {
+                    eprintln!("[takyon] could not write the icon cache: {e}");
+                }
             });
 
             Ok(())

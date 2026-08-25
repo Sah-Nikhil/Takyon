@@ -12,7 +12,7 @@
 
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('AltSpace', 'Escape')]
+    [ValidateSet('AltSpace', 'CtrlAltF9', 'Escape', 'LetterC')]
     [string]$Key
 )
 
@@ -21,9 +21,12 @@ Add-Type -Namespace Takyon -Name Input -MemberDefinition @'
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
 '@
 
+$VK_CONTROL = 0x11
 $VK_MENU = 0x12   # Alt
 $VK_SPACE = 0x20
 $VK_ESCAPE = 0x1B
+$VK_F9 = 0x78
+$VK_C = 0x43
 $KEYEVENTF_KEYUP = 0x0002
 
 switch ($Key) {
@@ -32,6 +35,25 @@ switch ($Key) {
         [Takyon.Input]::keybd_event($VK_SPACE, 0, 0, [UIntPtr]::Zero)
         [Takyon.Input]::keybd_event($VK_SPACE, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
         [Takyon.Input]::keybd_event($VK_MENU, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+    }
+    # The fallback chord, used when something else already owns Alt+Space --
+    # which is most development machines, since PowerToys Run and Raycast both
+    # claim it. Released in reverse order, as a keyboard would.
+    'CtrlAltF9' {
+        [Takyon.Input]::keybd_event($VK_CONTROL, 0, 0, [UIntPtr]::Zero)
+        [Takyon.Input]::keybd_event($VK_MENU, 0, 0, [UIntPtr]::Zero)
+        [Takyon.Input]::keybd_event($VK_F9, 0, 0, [UIntPtr]::Zero)
+        [Takyon.Input]::keybd_event($VK_F9, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+        [Takyon.Input]::keybd_event($VK_MENU, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+        [Takyon.Input]::keybd_event($VK_CONTROL, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+    }
+    # One character into the focused Palette, for the "first Entry" budget.
+    # `c` because it matches something on any Windows install -- Calculator,
+    # Chrome, cmd, Control Panel -- so the measurement does not depend on what
+    # happens to be installed on the machine running it.
+    'LetterC' {
+        [Takyon.Input]::keybd_event($VK_C, 0, 0, [UIntPtr]::Zero)
+        [Takyon.Input]::keybd_event($VK_C, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
     }
     'Escape' {
         [Takyon.Input]::keybd_event($VK_ESCAPE, 0, 0, [UIntPtr]::Zero)

@@ -2,7 +2,17 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    /*
+      Deliberately empty. This package is the contract shared with the future
+      macOS and mobile targets, so it must not depend on any one runtime's
+      ambient types — pulling in `bun` or `vite/client` here would let a global
+      from one environment compile into a package meant for all of them.
+
+      The unit tests do need `bun:test`, so they are excluded below and
+      typechecked through `tsconfig.test.json` instead.
+    */
     "types": []
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

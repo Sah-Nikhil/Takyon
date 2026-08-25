@@ -38,6 +38,17 @@ tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The fan-out in `query.rs` (§3). Sources are queried in parallel with a shared
+# deadline; a scoped pool means a slow Source burns its own thread rather than
+# blocking the one holding the IPC reply.
+rayon = "1"
+# `icons.bin` is read by offset arithmetic on a mapped page, never parsed. Reading
+# it with normal file IO would put a syscall on the icon path for every row.
+memmap2 = "0.9"
+# Encoding extracted icons. WebView2 will not render a raw BGRA buffer, and PNG is
+# the only lossless format it accepts that is also cheap to produce. MIT/Apache-2,
+# so it stays clear of the GPL question that is still open (ADR-0005).
+png = "0.17"
 
 [target.'cfg(windows)'.dependencies]
 # Pinned to the same major as Tauri's own dependency so the two share one compiled
@@ -52,6 +63,23 @@ windows = { version = "0.61", features = [
   "Win32_System_Registry",
   "Win32_System_Threading",
   "Win32_UI_WindowsAndMessaging",
+  # v0.2. `Win32_System_Com` carries CoInitializeEx and IPersistFile (which is how
+  # a .lnk is loaded); `Win32_UI_Shell` carries IShellLinkW, IShellItem,
+  # IEnumShellItems and IShellItemImageFactory — the last of which is the one API
+  # that yields an icon for a Win32 exe and a UWP package alike, so the icon path
+  # does not fork by app kind. `Win32_Graphics_Gdi` is needed to get the pixels
+  # back out of the HBITMAP it hands over.
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  # "Copy path" writes to the clipboard directly rather than through
+  # `tauri-plugin-clipboard-manager`. One action is not worth a plugin, a
+  # capability entry and a second way for the frontend to reach the OS — and
+  # ADR-0009 wants the number of things the webview can ask for kept small.
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
 ] }
 
 [profile.release]

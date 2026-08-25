@@ -10,15 +10,17 @@
   "scripts": {
     "dev": "bun --cwd=apps/desktop run tauri dev",
     "build": "bun --cwd=apps/desktop run tauri build",
-    "typecheck": "bun run --filter=@takyon/desktop typecheck && tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "bun run --filter=@takyon/shared typecheck && bun run --filter=@takyon/desktop typecheck && tsc --noEmit -p tsconfig.scripts.json",
     "lint": "bun run lint:ts && bun run lint:rust",
     "lint:ts": "bun run --filter=@takyon/desktop lint && bun run --filter=@takyon/shared lint",
     "lint:rust": "cargo clippy --workspace --all-targets --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings",
+    "check:comments": "bun scripts/check-comments.ts",
     "test": "bun run test:rust && bun run test:ts",
     "test:rust": "cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:ts": "bun test apps/desktop/src packages/shared/src",
     "test:visual": "bun --cwd=apps/desktop run test:visual",
     "bench": "bun scripts/bench.ts",
+    "release": "bun scripts/release.ts",
     "brand": "bun run --cwd brand build"
   },
   "devDependencies": {

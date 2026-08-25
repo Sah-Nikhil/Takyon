@@ -144,11 +144,24 @@ tiers, highest wins, then multiplied by the Frecency weight:
 | Tier | Score | Example |
 |---|---|---|
 | Alias exact | 1000 | user maps `ps` → Photoshop |
-| Full-name prefix | 900 | `adobe` → **Adobe** Photoshop |
-| First-word-boundary prefix | 800 | — |
+| Exact full name | 900 | `code` → **Code**, outright |
+| Full-name prefix | 800 | `adobe` → **Adobe** Photoshop |
 | Later-word-boundary prefix | 700 | `photo` → Adobe **Photo**shop |
-| Executable basename prefix | 650 | `code` → code.exe |
+| Executable basename prefix | 650 | `devenv` → devenv.exe (Visual Studio) |
 | Acronym of initials | 600 | `vsc` → **V**isual **S**tudio **C**ode |
+
+**Amended at v0.2.** The original table listed "Full-name prefix (900)" and
+"First-word-boundary prefix (800)" as separate rungs, but they describe the same
+set — a needle prefixing the first word necessarily prefixes the title — so tier
+800 was unreachable and the ladder had five rungs, not six. The repair promotes an
+*exact* name match to its own rung, which is unambiguously right: typing `code`
+must not surface "Code Composer Studio" above "Code". Both original worked
+examples keep their meaning and their relative order.
+
+Note that `code` reaches Visual Studio Code on the **later-word** rung, not the
+executable rung, because "Code" is a word of the display name. The executable rung
+earns its place on the apps whose binary is named nothing like the product —
+`devenv` for Visual Studio, `wt` for Windows Terminal, `subl` for Sublime Text.
 
 No fuzzy subsequence in V1 — deferred by decision, see `docs/plans/post-v1.md`.
 `EntryKind` ordering is applied after scoring: **Apps always sort above
@@ -250,8 +263,42 @@ and never blocks a row.
 
 **Pre-warm the top ~50 Entries by Frecency after login**, so icon pop-in only
 ever happens for things you rarely open — where you aren't looking closely
-anyway. Sources: embedded `.exe` resources via `SHGetFileInfo`, `.lnk` targets,
-UWP manifest PNGs, shell fallbacks.
+anyway.
+
+**Extraction is `IShellItemImageFactory::GetImage`, not `SHGetFileInfo`** (added
+at v0.2). One API covers a Win32 executable, a `.lnk` and a UWP package alike, so
+the icon path does not fork by application kind — a packaged app is named to it as
+`shell:AppsFolder\<aumid>`, the same string used to launch one. Pass
+`SIIGBF_ICONONLY`: without it the shell returns a *thumbnail*, which for a
+shortcut to a document is a picture of the document.
+
+### How the bytes reach the webview (added at v0.2)
+
+`IconRef` is an opaque key, and §2's "an offset into the icon blob" is an
+implementation detail of the Rust side. WebView2 cannot read a mapped file — it
+fetches URLs — so the transport is a **custom URI scheme**: Rust registers
+`takyon-icon` with `register_asynchronous_uri_scheme_protocol`, the query response
+carries one short key per row, and `api.ts` turns it into a URL with
+`convertFileSrc`.
+
+The alternative, base64 data URIs inside the query response, was rejected on the
+numbers: twelve rows of 64px PNG is roughly 35–65 KB of base64 through the IPC
+serialiser **on every keystroke**, measured against the 30 ms first-Entry budget,
+and no row can paint until its icon has serialised. With a scheme the rows paint
+first, each icon arrives on its own fetch, and WebView2 caches it by URL — so the
+second time a query is typed the icons are already decoded in the renderer.
+
+Two details are load-bearing:
+
+- **Asynchronous**, not the synchronous handler. A cache miss extracts from the
+  shell, and the synchronous form runs on a thread WebView2 needs — a slow
+  extraction there stalls page rendering.
+- The key contains the source file's **mtime**, so a given URL's bytes can never
+  change, and the response is served `immutable` with a one-year max-age.
+
+The scheme name appears in three places that cannot see each other — `icons.rs`,
+the CSP in `tauri.conf.json`, and `api.ts` — and a mismatch shows up only as "no
+icons, ever", with nothing in any log. A Rust test asserts all three agree.
 
 ---
 
@@ -323,9 +370,29 @@ export const hotkeyStatus     = () => invoke<HotkeyStatus>("hotkey_status");
 export const reportFirstPixel = (showId: number) => invoke<void>("report_first_pixel", { showId });
 ```
 
-plus two events Rust emits, `takyon://show` (carrying `{ showId, noFocusSteal }`)
-and `takyon://hide`. Autostart is not a command here at all: it goes straight to
-the plugin, because the OS owns that state and mirroring it would guarantee drift.
+v0.2 adds the query surface, plus two commands that exist only because the
+**native window** has a size the webview cannot see:
+
+```ts
+export const query           = (q: string, seq: number) => invoke<QueryResult>("query", { q, seq });
+export const actionsFor      = (entryId: string) => invoke<Action[]>("actions_for", { entryId });
+export const activate        = (entryId: string, actionId: string) => invoke<void>("activate", { entryId, actionId });
+export const setActionMenu   = (actions: number | null) => invoke<void>("set_action_menu", { actions });
+export const setBannerHeight = (height: number) => invoke<void>("set_banner_height", { height });
+```
+
+The window is content-sized (TBC-0006) and Rust resizes it inside `query`, from a
+row count it already has. The last two exist because two pieces of content are
+*not* rows and Rust cannot measure either: the `Ctrl+K` menu, which is taller than
+a one-row Palette and would otherwise be clipped by the window's bottom edge; and
+the hotkey-failure banner, which is wrapping text whose height the layout engine
+decides from the font, the DPI and the window width. A constant reserved for the
+banner on the Rust side was 16px short at 150% scaling, and the flex column took
+the difference out of the Entry list. **The side that laid it out is the side that
+reports it.**
+
+Autostart is not a command here at all: it goes straight to the plugin, because
+the OS owns that state and mirroring it would guarantee drift.
 
 Types live in `packages/shared` and mirror the Rust structs. **Contract tests
 assert that Rust's serialised output matches these types** — that is the one

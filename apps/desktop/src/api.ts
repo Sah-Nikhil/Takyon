@@ -1,29 +1,28 @@
 /**
- * THE seam. This is the only file in the app that talks to Tauri (ADR-0009), and
- * an ESLint rule in `eslint.config.js` enforces it rather than trusting review.
+ * THE seam: the only file that talks to Tauri (ADR-0009). An ESLint rule enforces
+ * it rather than trusting review.
  *
- * It buys two things that are worth a file of one-line wrappers:
- *
- * 1. The UI runs outside Tauri. Every export falls back to `api.mock.ts` when
- *    `__TAURI_INTERNALS__` is absent, so `bun --cwd apps/desktop run dev` opens a
- *    working Palette in an ordinary browser — which is what makes deterministic
- *    visual regression testing possible at all (TBC-0007).
- * 2. Every command the frontend can issue is visible in one reviewable place,
- *    which is how the ADR-0002 "no network on the Bangless path" guarantee stays
- *    checkable by reading rather than by trusting.
- *
- * The cost is one JIT-inlined call. The expensive part — serialising across the
- * WebView2↔Rust boundary — happens identically either way.
+ * It buys two things. The UI runs outside Tauri, falling back to `api.mock.ts`,
+ * which is what makes TBC-0007's visual layer possible at all. And every command
+ * the frontend can issue sits in one reviewable place, which is how ADR-0002's
+ * "no network on the Bangless path" stays checkable by reading.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   isEnabled as autostartIsEnabledPlugin,
   enable as autostartEnablePlugin,
   disable as autostartDisablePlugin,
 } from "@tauri-apps/plugin-autostart";
-import { EVENT_HIDE, EVENT_SHOW, type HotkeyStatus, type ShowPayload } from "@takyon/shared";
+import {
+  EVENT_HIDE,
+  EVENT_SHOW,
+  type Action,
+  type HotkeyStatus,
+  type QueryResult,
+  type ShowPayload,
+} from "@takyon/shared";
 import { mock } from "./api.mock";
 
 /**
@@ -42,12 +41,82 @@ export const hotkeyStatus = () =>
   inTauri ? invoke<HotkeyStatus>("hotkey_status") : mock.hotkeyStatus();
 
 /**
- * Tell Rust this show's frame has been presented. Rust holds *both* timestamps —
- * it stamped the hotkey and it stamps this call — so the two clocks never have to
- * be reconciled, which is the usual way a latency number quietly becomes fiction.
+ * One keystroke, one `invoke` — never one per Source (ADR-0009).
  *
- * The measured span therefore includes one IPC hop and excludes DWM's final
- * present. Both are stated in `docs/tbc/0002` rather than pretended away.
+ * `seq` is monotonic and echoed back. **Discard any response whose `seq` is lower
+ * than the newest seen**, or a slow keystroke's results overwrite a fast one's
+ * and the Palette answers a prefix of what is now typed.
+ */
+export const query = (q: string, seq: number) =>
+  inTauri ? invoke<QueryResult>("query", { q, seq }) : mock.query(q, seq);
+
+/**
+ * Tell Rust the Entries for `seq` have been painted.
+ *
+ * §10's "hotkey to first Entry" budget, measurable from v0.2 because that is
+ * when a Source exists to produce one. Rust holds both timestamps, as with
+ * `reportFirstPixel`.
+ */
+export const reportFirstEntry = (seq: number) =>
+  inTauri ? invoke<void>("report_first_entry", { seq }) : mock.reportFirstEntry(seq);
+
+/** The `Ctrl+K` menu for one Entry. Labels and accelerators live in Rust. */
+export const actionsFor = (entryId: string) =>
+  inTauri ? invoke<Action[]>("actions_for", { entryId }) : mock.actionsFor(entryId);
+
+/**
+ * Tell the window the action menu opened (`n` actions) or closed (`null`).
+ *
+ * The *native window* is too short for it, and nothing inside the webview can
+ * make room. Exactly the class of bug the mocked visual layer cannot see
+ * (TBC-0007); a Rust unit test covers the arithmetic instead.
+ */
+export const setActionMenu = (actions: number | null) =>
+  inTauri
+    ? invoke<void>("set_action_menu", { actions })
+    : mock.setActionMenu(actions);
+
+/**
+ * Report the measured height of the hotkey-failure banner, or 0 if absent.
+ *
+ * Rust knows whether it is drawn, not how tall it came out — wrapping text, so
+ * the layout engine decides. A constant on the Rust side was 16px short at 150%
+ * and clipped the list's last row. The side that laid it out reports it.
+ */
+export const setBannerHeight = (height: number) =>
+  inTauri
+    ? invoke<void>("set_banner_height", { height: Math.ceil(height) })
+    : mock.setBannerHeight(height);
+
+/**
+ * Perform an action on an Entry.
+ *
+ * Rust hides the Palette *before* launching (v0.2 task 7): `ShellExecuteW`
+ * returns when the shell accepts the request, not when a window exists.
+ */
+export const activate = (entryId: string, actionId: string) =>
+  inTauri
+    ? invoke<void>("activate", { entryId, actionId })
+    : mock.activate(entryId, actionId);
+
+/**
+ * The URL for an Entry's icon.
+ *
+ * The response carries an opaque key, not bytes. The key contains the source's
+ * mtime, so the bytes can never change and it is cached immutably. Outside Tauri
+ * it yields "", and the row keeps its placeholder.
+ */
+export const iconUrl = (key: string | undefined): string => {
+  if (!key) return "";
+  return inTauri ? convertFileSrc(key, "takyon-icon") : mock.iconUrl(key);
+};
+
+/**
+ * Tell Rust this show's frame has been presented.
+ *
+ * Rust holds both timestamps, so the two clocks never have to be reconciled —
+ * the usual way a latency number becomes fiction. The span includes one IPC hop
+ * and excludes DWM's final present; `docs/tbc/0002` states both.
  */
 export const reportFirstPixel = (showId: number) =>
   inTauri ? invoke<void>("report_first_pixel", { showId }) : mock.reportFirstPixel(showId);

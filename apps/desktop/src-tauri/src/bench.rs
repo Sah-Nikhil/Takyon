@@ -31,6 +31,12 @@ pub struct Bench {
     /// show is never acknowledged, which happens on every dismissal faster than a
     /// frame, i.e. routinely.
     open_show: Mutex<Option<(u64, Instant)>>,
+    /// The newest keystroke awaiting a painted Entry list, by sequence number.
+    ///
+    /// Separate from `open_show` because the two spans overlap: a query is issued
+    /// while a show may still be unacknowledged, and sharing one slot would let
+    /// whichever finished first cancel the other.
+    open_query: Mutex<Option<(u64, Instant)>>,
     next_id: AtomicU64,
     /// Process start, for the login-to-responsive budget.
     started: Instant,
@@ -56,6 +62,7 @@ impl Bench {
         Self {
             log,
             open_show: Mutex::new(None),
+            open_query: Mutex::new(None),
             next_id: AtomicU64::new(1),
             started,
         }
@@ -94,6 +101,43 @@ impl Bench {
         }
     }
 
+    /// Called at the top of the `query` command, before any Source is asked.
+    ///
+    /// Only the newest keystroke is tracked, for the same reason as `open_show`:
+    /// someone typing quickly abandons queries faster than they complete, and a
+    /// map would grow without bound.
+    pub fn mark_query(&self, seq: u64) {
+        if self.enabled() {
+            *self.open_query.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some((seq, Instant::now()));
+        }
+    }
+
+    /// Called when the frontend reports it has painted Entries for `seq`.
+    ///
+    /// IMPLEMENTATION_PLAN §10's "hotkey to first Entry, Bangless" budget. What is
+    /// actually timed is *keystroke to painted Entry* — from the `query` command
+    /// being entered to the IPC call following the frame that drew its results —
+    /// because the Palette opens empty by design (ADR-0001), so there is no Entry
+    /// to paint until something has been typed. That is also the span worth
+    /// guarding: it is what regresses when a Source gets slow.
+    ///
+    /// A superseded seq is dropped rather than measured, exactly as a superseded
+    /// show is: attributing a newer keystroke's paint to an older one produces a
+    /// number that is too good.
+    pub fn first_entry(&self, seq: u64) {
+        let taken = {
+            let mut slot = self.open_query.lock().unwrap_or_else(|e| e.into_inner());
+            match *slot {
+                Some((open_seq, at)) if open_seq == seq => slot.take().map(|_| at),
+                _ => None,
+            }
+        };
+        if let Some(at) = taken {
+            self.record("query_to_first_entry", at.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+
     /// Process start -> the global hotkey is registered and will answer.
     ///
     /// This is the honest half of the "login -> hotkey responsive < 500 ms" budget.
@@ -104,6 +148,21 @@ impl Bench {
             "start_to_hotkey_ready",
             self.started.elapsed().as_secs_f64() * 1000.0,
         );
+    }
+
+    /// Record that the hotkey could not be registered.
+    ///
+    /// Every span this harness measures starts at a hotkey press, so a taken
+    /// `Alt+Space` means the run cannot produce a single number. Without this the
+    /// harness waits its full timeout and then reports "timed out waiting for the
+    /// Palette to report a painted frame" — which reads as a rendering bug and
+    /// sent one investigation down exactly that path. The binding is contested by
+    /// PowerToys Run, by Raycast and by the classic window menu, so this is a
+    /// routine way for a bench run to be impossible, not an exotic one.
+    ///
+    /// `ms` is meaningless here and written as zero; the event name is the signal.
+    pub fn hotkey_unavailable(&self) {
+        self.record("hotkey_unavailable", 0.0);
     }
 
     pub fn record(&self, event: &str, ms: f64) {

@@ -153,23 +153,52 @@ which is precisely why this needs checking by hand rather than being assumed.
 
 ## 6. Shipping: a real certificate
 
-Unresolved, and a v1.0 blocker rather than a v0.1 one. The options, with what they
-cost:
+Unresolved, and a v1.0 blocker rather than a v0.1 one. Researched 2026-08-25;
+prices and rules move, so re-check before buying.
 
-| Option | Cost | Requires |
-|---|---|---|
-| **Azure Trusted Signing** | ~$10/month | A verified organisation, or an individual with three years of verifiable identity history. Cheapest by a wide margin. |
-| **OV code-signing certificate** | ~$200–400/year | Since mid-2023 the CA/Browser Forum requires the private key on a hardware token or HSM, so there is shipping and a physical device involved. |
-| **EV code-signing certificate** | more | Same hardware requirement; buys immediate SmartScreen reputation, which OV accrues over time. |
+**Any publicly-trusted code-signing certificate satisfies UIAccess.** Condition 1
+in §2 is only "chains to a root the machine trusts", and every option below does.
+So this is a cost-and-friction decision, not a technical one.
 
-Two things to carry forward when this is decided:
+### The options
 
+| Option | Cost | Requires | Notes |
+|---|---|---|---|
+| **Azure Trusted Signing** (renamed **Azure Artifact Signing** in 2026) | **$9.99/mo** Basic, 5,000 signatures | Identity check with photo ID and a biometric selfie. **Individuals** are eligible in the **USA and Canada**; organisations also in the EU and UK | No hardware token at all — Microsoft's own CA issues short-lived certificates on demand. Cheapest and by far the least friction |
+| **OV certificate** (Sectigo, Comodo) | ~$219–400/yr | Since June 2023 the CA/Browser Forum requires the private key on a hardware token or HSM | The token can be a **cloud HSM** — DigiCert KeyLocker, Sectigo cloud signing, SSL.com eSigner — so nothing physical need ship |
+| **EV certificate** | ~$290–685/yr | Same hardware requirement, plus heavier vetting | **No longer worth the premium for SmartScreen.** Microsoft's March 2024 update removed EV's instant-bypass advantage; both OV and EV now accrue reputation organically through download volume |
+
+### If this ends up open source
+
+The licensing question is still open in `ROADMAP.md`, and it changes the cheapest
+path materially:
+
+- **SignPath Foundation** offers free certificates to OSS projects.
+- **Certum Open Source** is roughly €30/year.
+
+Neither is available to a proprietary product. If proprietary is the likely
+answer, **Azure Trusted Signing is the recommendation** — a tenth the price of an
+OV certificate, no token to manage, and eligibility as an individual rather than
+needing a registered company.
+
+One caveat found in the wild: some users report the $9.99 tier prompting for a
+Microsoft Entra ID P2 licence when creating a signing *role*. Worth confirming
+against a trial before committing.
+
+### Carry forward when this is decided
+
+- **Validity is capped at 460 days from 1 March 2026**, down from 39 months. This
+  is a recurring renewal, not a buy-once.
 - **SmartScreen reputation accrues per signed binary**, so it restarts if the
   executable is renamed. ADR-0011's separation of identity from display name is
   what keeps a future rename from costing that.
 - The signing step belongs in the release pipeline, reading the certificate from a
   gitignored `signing.secrets.ps1`. The `.gitignore` already excludes `*.pfx`,
   `*.p12` and that filename.
+
+Sources: [Trusted Signing for individual developers](https://techcommunity.microsoft.com/blog/microsoft-security-blog/trusted-signing-is-now-open-for-individual-developers-to-sign-up-in-public-previ/4273554)
+· [Code signing options for Windows app developers](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options)
+· [Entra ID P2 report](https://learn.microsoft.com/en-us/answers/questions/5595324/i-signed-up-to-generate-certificates-to-sign-my-co)
 
 ## 7. What is not done
 

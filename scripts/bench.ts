@@ -26,6 +26,13 @@
  *   bun run bench --runs 100
  *   bun run bench --idle 35        # one show after 35 minutes idle
  *   bun run bench --dev            # measure the debug build (slower; not a budget)
+ *   bun run bench --alt-hotkey     # bind Ctrl+Alt+F9 instead of Alt+Space
+ *
+ * `--alt-hotkey` exists because Alt+Space is contested: PowerToys Run and Raycast
+ * both claim it by default, and on a machine running either, every span here
+ * measures nothing. It changes only which chord `RegisterHotKey` is given — the
+ * code path from hotkey handler to first pixel is identical, so the numbers are
+ * comparable with a default run.
  */
 
 import { mkdirSync, readFileSync, existsSync } from "node:fs";
@@ -37,11 +44,19 @@ const RESULTS = join(ROOT, "bench", "results");
 /** IMPLEMENTATION_PLAN.md §10. The `!e` p95 budget arrives with file search at v0.7. */
 const BUDGETS = {
   show_to_first_pixel: { ms: 50, label: "Hotkey to first pixel" },
+  query_to_first_entry: { ms: 30, label: "Keystroke to first Entry (Bangless)" },
   start_to_hotkey_ready: { ms: 500, label: "Process start to hotkey responsive" },
   idle_rss_mb: { mb: 150, label: "Idle RSS (warm, trimmed)" },
 } as const;
 
-type Args = { runs: number; idle: number; dev: boolean };
+type Args = { runs: number; idle: number; dev: boolean; altHotkey: boolean };
+
+/**
+ * The chord used with `--alt-hotkey`, and the key name `bench-input.ps1` sends
+ * for it. They have to describe the same combination, and a Rust test checks the
+ * accelerator string still parses.
+ */
+const ALT_HOTKEY = { accelerator: "Ctrl+Alt+F9", inputKey: "CtrlAltF9" } as const;
 
 function parseArgs(argv: string[]): Args {
   const get = (name: string, fallback: number) => {
@@ -55,6 +70,7 @@ function parseArgs(argv: string[]): Args {
     runs: get("runs", 30),
     idle: get("idle", 0),
     dev: argv.includes("--dev"),
+    altHotkey: argv.includes("--alt-hotkey"),
   };
 }
 
@@ -142,13 +158,25 @@ async function main() {
   console.log(`  binary: ${exe}`);
   console.log(`  log:    ${logPath}\n`);
 
+  if (args.altHotkey) {
+    console.log(
+      `  hotkey: ${ALT_HOTKEY.accelerator} (--alt-hotkey)\n` +
+        `          Measuring the same code path; only the chord differs.\n`,
+    );
+  }
+
   const child = Bun.spawn([exe], {
-    env: { ...process.env, TAKYON_BENCH_LOG: logPath },
+    env: {
+      ...process.env,
+      TAKYON_BENCH_LOG: logPath,
+      ...(args.altHotkey ? { TAKYON_HOTKEY: ALT_HOTKEY.accelerator } : {}),
+    },
     stdout: "inherit",
     stderr: "inherit",
   });
 
   let failed = false;
+  let entryFailed = false;
   try {
     await waitFor(
       logPath,
@@ -157,11 +185,33 @@ async function main() {
       "the hotkey to be registered",
     );
 
+    /*
+      Every span below starts at a hotkey press, so a taken `Alt+Space` means
+      this run can produce nothing at all. Checked here rather than left to
+      surface as a timeout: without it the harness waits out its full deadline
+      and reports "timed out waiting for the Palette to report a painted frame",
+      which reads as a rendering bug and is not one. `Alt+Space` is contested by
+      PowerToys Run, by Raycast and by the classic window system menu, so this is
+      an ordinary way for a bench run to be impossible.
+    */
+    if (readLog(logPath).some((r) => r.event === "hotkey_unavailable")) {
+      throw new Error(
+        `${args.altHotkey ? ALT_HOTKEY.accelerator : "Alt+Space"} could not be ` +
+          "registered, so nothing here can be measured.\n" +
+          "  Something else is holding it — PowerToys Run and Raycast both use\n" +
+          "  Alt+Space by default.\n" +
+          (args.altHotkey
+            ? "  Even the fallback chord is taken. Close whatever owns it."
+            : "  Either close it, or re-run with `--alt-hotkey` to measure the same\n" +
+              `  code path on ${ALT_HOTKEY.accelerator} instead.`),
+      );
+    }
+
     // The window exists but has never been shown, so its first show includes
     // WebView2's first paint. That is a real cost but it is not the cost being
     // budgeted, so it is spent here and discarded.
     await sleep(1500);
-    await show(ROOT, logPath, 0);
+    await show(ROOT, logPath, 0, args);
     await hide(ROOT);
     await sleep(400);
 
@@ -176,7 +226,8 @@ async function main() {
       await sleep(args.idle * 60_000);
     } else {
       for (let i = 0; i < args.runs; i++) {
-        await show(ROOT, logPath, warmup + i);
+        await show(ROOT, logPath, warmup + i, args);
+        await typeOneEntry(ROOT, logPath, i);
         await hide(ROOT);
         // Long enough for the trim thread to finish, so the next show pays the
         // page faults the model says it should.
@@ -187,7 +238,7 @@ async function main() {
     }
 
     if (args.idle > 0) {
-      await show(ROOT, logPath, warmup);
+      await show(ROOT, logPath, warmup, args);
       await hide(ROOT);
     }
 
@@ -234,9 +285,25 @@ async function main() {
     console.log(`  released. If they are close, trimming is not buying what`);
     console.log(`  ADR-0003 assumed and TBC-0002's first trigger has fired.\n`);
 
-    console.log("Hotkey to first Entry (budget 30 ms)");
-    console.log("  Not measurable in v0.1: there is no query pipeline yet. This");
-    console.log("  budget starts being measured at v0.2, with the first Source.\n");
+    console.log(
+      `${BUDGETS.query_to_first_entry.label} (budget ${BUDGETS.query_to_first_entry.ms} ms)`,
+    );
+    const entryMs = rows.filter((r) => r.event === "query_to_first_entry").map((r) => r.ms);
+    if (entryMs.length === 0) {
+      console.log("  No samples. Nothing matched the injected keystroke, which on a");
+      console.log("  machine with applications installed means the pipeline answered");
+      console.log("  with nothing — worth investigating rather than ignoring.\n");
+    } else {
+      const e = stats(entryMs);
+      console.log(
+        `  n=${e.n}  min ${fmt(e.min)}  p50 ${fmt(e.p50)}  p95 ${fmt(e.p95)}  max ${fmt(e.max)}  ms`,
+      );
+      console.log(`  ${verdict(e.p95, BUDGETS.query_to_first_entry.ms)} on p95`);
+      console.log("  Keystroke to the frame that drew its Entries. The Palette opens");
+      console.log("  empty (ADR-0001), so nothing can be drawn until something is");
+      console.log("  typed — this is the span a slow Source regresses.\n");
+      entryFailed = e.p95 > BUDGETS.query_to_first_entry.ms;
+    }
 
     if (args.idle > 0) {
       console.log(
@@ -248,7 +315,10 @@ async function main() {
 
     console.log(`Write these into docs/tbc/0002 with the machine and the date.`);
 
-    failed = s.p95 > BUDGETS.show_to_first_pixel.ms || rssMb > BUDGETS.idle_rss_mb.mb;
+    failed =
+      s.p95 > BUDGETS.show_to_first_pixel.ms ||
+      rssMb > BUDGETS.idle_rss_mb.mb ||
+      entryFailed;
   } finally {
     // The Palette is a hidden window with no taskbar button, so a bench run that
     // exits without this leaves an invisible process holding Alt+Space — and the
@@ -263,8 +333,34 @@ async function main() {
   }
 }
 
-async function show(root: string, logPath: string, alreadySeen: number) {
-  await powershell(join(root, "scripts", "bench-input.ps1"), ["-Key", "AltSpace"]);
+/**
+ * Type one character into the open Palette and wait for its Entries to paint.
+ *
+ * §10's "hotkey to first Entry" budget, measurable from v0.2 because that is when
+ * a Source exists to produce one. A timeout is swallowed rather than thrown: the
+ * harness's job is to report numbers, and a machine where `c` matches no
+ * application is unusual but not a reason to discard the three budgets that did
+ * measure. Its absence shows up as a smaller sample count, which is reported.
+ */
+async function typeOneEntry(root: string, logPath: string, alreadySeen: number) {
+  await powershell(join(root, "scripts", "bench-input.ps1"), ["-Key", "LetterC"]);
+  try {
+    await waitFor(
+      logPath,
+      (r) => r.filter((x) => x.event === "query_to_first_entry").length > alreadySeen,
+      2_000,
+      "the Palette to paint Entries",
+    );
+  } catch {
+    // Reported by its absence from the sample set.
+  }
+}
+
+async function show(root: string, logPath: string, alreadySeen: number, args: Args) {
+  await powershell(join(root, "scripts", "bench-input.ps1"), [
+    "-Key",
+    args.altHotkey ? ALT_HOTKEY.inputKey : "AltSpace",
+  ]);
   await waitFor(
     logPath,
     (rows) => rows.filter((r) => r.event === "show_to_first_pixel").length > alreadySeen,

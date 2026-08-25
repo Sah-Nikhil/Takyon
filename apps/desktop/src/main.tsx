@@ -10,7 +10,13 @@ import ReactDOM from "react-dom/client";
 import { Palette } from "./palette/Palette";
 import { Settings } from "./settings/Settings";
 import { inTauri } from "./api";
-import { emitHide, emitShow } from "./api.mock";
+import {
+  bannerRequest,
+  emitHide,
+  emitShow,
+  menuRequest,
+  setIndexing,
+} from "./api.mock";
 import { applyMotionPreference } from "./prefs";
 import "./styles.css";
 
@@ -24,8 +30,17 @@ applyMotionPreference();
 // Outside Tauri there is no hotkey to press, so the show event would never fire
 // and the Palette would sit unfocused forever. Playwright and the browser console
 // drive it through here instead. Never exposed in the real app.
+// `setIndexing` joins them for the same reason: the window between login and the
+// application walk finishing is a few hundred milliseconds long, which no test
+// could catch by timing, and it has its own row in the Palette.
 if (!inTauri) {
-  (window as unknown as Record<string, unknown>).__takyon_mock = { emitShow, emitHide };
+  (window as unknown as Record<string, unknown>).__takyon_mock = {
+    emitShow,
+    emitHide,
+    setIndexing,
+    menuRequest,
+    bannerRequest,
+  };
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

@@ -6,10 +6,13 @@ you go; this file is the tracker.
 
 Domain terms are defined in [`CONTEXT.md`](./CONTEXT.md). Settled tradeoffs live in
 [`docs/adr/`](./docs/adr/); decisions we expect to revisit, with switching costs,
-live in [`docs/tbc/`](./docs/tbc/); deferred work is in
+live in [`docs/tbc/`](./docs/tbc/); **what each phase left undone, and which phase
+owns it, is in [`docs/tbd/`](./docs/tbd/)**; work deferred past V1 is in
 [`docs/plans/post-v1.md`](./docs/plans/post-v1.md).
 
-**Nothing below is built yet.** Every box is unchecked because there is no code.
+**v0.1 and v0.2 are built.** v0.1's outstanding item is a real code-signing
+certificate for the UIAccess helper, which is a v1.0 blocker rather than a v0.1
+one. v0.2's is its manual verification pass.
 
 ---
 
@@ -19,7 +22,7 @@ live in [`docs/tbc/`](./docs/tbc/); deferred work is in
 
 - [x] Bun workspace: `apps/desktop` (Tauri 2 + React 19 + Vite 7 + Tailwind v4) and `packages/shared`
 - [x] Global hotkey (`Alt+Space`) via `tauri-plugin-global-shortcut`; a failed registration is reported in a dialog and in the Palette, never swallowed. **Rebinding is v0.6** — it needs the settings UI
-- [ ] **UIAccess helper + code signing** — helper crate, `uiAccess="true"` manifest, named-pipe protocol and `scripts/dev-sign-uiaccess.ps1` all exist and work against a self-signed certificate. **A real certificate is still outstanding and is a v1.0 blocker** — see `docs/plans/uiaccess-signing.md`
+- [ ] **UIAccess helper + code signing** — helper crate, `uiAccess="true"` manifest, named-pipe protocol and `scripts/dev-sign-uiaccess.ps1` all exist and work against a self-signed certificate. **A real certificate is still outstanding and is a v1.0 blocker** — [`docs/tbd/v0.1.md`](./docs/tbd/v0.1.md), detail in `docs/plans/uiaccess-signing.md`
 - [x] One Palette window created at startup, hidden — never destroyed (ADR-0003)
 - [x] Working-set trim on hide; show path does no allocation or window creation. The trim walks the **whole process tree**, because essentially all the resident memory is in WebView2's descendants rather than in the Rust host
 - [x] Dismiss on Escape and on focus loss; always opens empty
@@ -39,16 +42,18 @@ into `docs/tbc/0002` as the first real evidence for or against the warm model.
 
 **Goal:** it replaces the Start menu for opening things.
 
-- [ ] `AppSource`: Start Menu `.lnk` (user + machine), `shell:AppsFolder` (UWP/Store), bare `.exe` on PATH, Steam games
-- [ ] Matching: word-boundary prefix + executable basename + acronym (`vsc` → Visual Studio Code)
-- [ ] Icon extraction into a single memory-mapped `icons.bin`, lazy fill, off the UI thread, placeholder while missing
-- [ ] Launch on Enter; Palette dismisses immediately, not after the app appears
-- [ ] **`Ctrl+K` action menu** as a shared primitive — every Source and Mode contributes actions to it (open, reveal in Explorer, copy path, run as administrator, open with…)
-- [ ] Modifier accelerators for the common actions, **user-rebindable**, and listed inside the action menu so they're discoverable rather than folklore
-- [ ] Result list virtualised, keyboard-only navigation
+- [x] `AppSource`: Start Menu `.lnk` (user + machine), `shell:AppsFolder` (UWP/Store), bare `.exe` on PATH, Steam games. **1032 applications in ~480 ms** on the dev machine, release build, on the deferred-init thread. No disk cache — PowerToys Run deleted theirs for three bug classes it could not fix (microsoft/PowerToys#6048), and the expensive half is already persisted in `icons.bin`. Revisit with a number if that walk ever exceeds ~1 s. **`.lnk` files are never `Resolve`d**: raw path plus an existence check, because `Resolve` hunts the network for moved UNC targets and can trigger MSI repair
+- [x] Matching: the six-rung ladder from §3, which was **amended** — its 900/800 rungs described the same set, so one was unreachable
+- [x] Icon extraction into a single memory-mapped `icons.bin`, lazy fill, off the UI thread, placeholder while missing. Reaches the webview through a **`takyon-icon://` URI scheme**, not as bytes in the query response; §6 records why
+- [x] Launch on Enter; Palette dismisses immediately, not after the app appears. Everything goes through `ShellExecuteW`, including plain executables, so nothing inherits our handles
+- [x] **`Ctrl+K` action menu** as a shared primitive — every Source and Mode contributes actions to it (open, reveal in Explorer, copy path, run as administrator). A packaged app is offered only Open, because it has no file
+- [x] Modifier accelerators for the common actions, table-driven in `actions.rs` and listed inside the menu so they're discoverable rather than folklore. **The rebinding UI is v0.6** — it needs `settings.db`; the mechanism is data now so that phase is a change of values, not of code
+- [x] Keyboard-only navigation. **The list is not virtualised**, deliberately: §3 caps it at twelve Entries and eight are on screen, so a windowing library would add a dependency and a measurement pass to avoid rendering four rows. Revisit if a Source ever returns an unbounded set
+- [ ] **Run the manual verification script** ([`docs/verify/v0.2.md`](./docs/verify/v0.2.md)). What is open and who owns it: [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md). Short version — Enter has never been pressed against the real binary, and this machine's Steam library holds no game to launch
 
 **Exit criteria:** you use it instead of the Start menu for a full day and don't
-reach for the Start menu once.
+reach for the Start menu once. *Not yet claimed — that is a day of use, not a
+test run.*
 
 ---
 

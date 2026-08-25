@@ -139,6 +139,43 @@ the alternatives table below, not a fix in our code.
 memory number scales from. If it changes once Sources exist, every comparison
 against these figures needs redoing.
 
+## Measured — v0.2, 2026-08-25
+
+Same machine. Release build, `bun run bench --runs 100 --alt-hotkey`, with one
+Source (applications: 1078 discovered), icons, and a content-sized window.
+
+| Metric | Budget | v0.1 | v0.2 | Verdict |
+|---|---|---|---|---|
+| Hotkey to first pixel | < 50 ms | p95 **22.6** (n=30) | p50 22.6 · p95 **25.0** · max 26.4 (n=100) | PASS |
+| Keystroke to first Entry | < 30 ms | not measurable | p50 13.2 · p95 **17.7** · max 31.0 (n=100) | PASS |
+| Process start to hotkey responsive | < 500 ms | **311.6 ms** | **254.4 ms** | PASS |
+| Idle RSS, warm and trimmed | < 150 MB | ~107 MB steady | **37.1 MB** working set, 250.8 MB committed, 8 processes | PASS |
+
+Four things worth stating plainly rather than leaving to be inferred:
+
+- **First pixel moved 22.6 → 25.0 ms at p95.** A real regression, and an expected
+  one: the Palette now mounts a list, a row renderer and an action menu where v0.1
+  mounted an input. Half the budget is still unused. Worth watching rather than
+  acting on.
+- **The first-Entry budget starts here**, because v0.2 is the first phase with a
+  Source to produce an Entry. What is timed is *keystroke to the frame that drew
+  its Entries* — the Palette opens empty by design (ADR-0001), so there is nothing
+  to draw until something is typed. `p95` was 19.7 ms before the icon key was
+  hoisted out of the query path; leaving it lazy meant twelve `fs::metadata` calls
+  per keystroke.
+- **The process count went 7 → 8.** As this section predicted it might. Memory
+  figures before and after this phase are therefore not directly comparable.
+- **The 37 MB working-set figure is not evidence the ~107 MB finding was wrong.**
+  It is a single reading taken three seconds after a hide, whereas the v0.1 number
+  came from a ten-minute curve, and the *committed* figure went the other way
+  (196 → 251 MB). The honest reading is that trimming still works and the resting
+  curve has not been re-measured at v0.2. Anyone quoting a memory number for this
+  phase should run `scripts\bench-idle.ps1` first.
+
+**`Alt+Space` was unavailable on this machine** — Raycast holds it — so the run
+used `--alt-hotkey`, which registers `Ctrl+Alt+F9` instead. Only the chord differs;
+the path from hotkey handler to first pixel is identical.
+
 ### What the latency numbers include
 
 Both ends stamped in Rust on one clock; the frontend echoes an id back after a

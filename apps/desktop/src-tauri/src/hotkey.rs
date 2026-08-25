@@ -17,6 +17,42 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 /// The default binding. Rebindable from v0.6; until then this is it.
 pub const DEFAULT_ACCELERATOR: &str = "Alt+Space";
 
+/// Override the accelerator for one run.
+///
+/// **Not the v0.6 rebinding feature**, which needs a settings UI and persistence.
+/// This is a debug affordance in the same spirit as [`crate::window::NO_FOCUS_STEAL_ENV`]:
+/// something that makes the app measurable on a machine whose state would
+/// otherwise prevent it.
+///
+/// The specific need is `bun run bench`. Every span that harness measures starts
+/// at a hotkey press, so on any machine already running PowerToys Run or Raycast —
+/// both of which take `Alt+Space` by default — the benchmark cannot produce a
+/// single number. That is most machines this will ever be developed on, and a
+/// performance harness that only runs somewhere else is a performance harness
+/// nobody runs.
+pub const ACCELERATOR_ENV: &str = "TAKYON_HOTKEY";
+
+/// The accelerator this process will try to register.
+///
+/// An override that does not parse is ignored with a warning rather than being
+/// fatal: a typo in an environment variable should not stop the launcher starting.
+pub fn accelerator() -> String {
+    match std::env::var(ACCELERATOR_ENV) {
+        Ok(value) if !value.trim().is_empty() => {
+            let value = value.trim().to_string();
+            if value.parse::<Shortcut>().is_ok() {
+                value
+            } else {
+                eprintln!(
+                    "[takyon] {ACCELERATOR_ENV}={value:?} is not a valid accelerator;                      using {DEFAULT_ACCELERATOR}"
+                );
+                DEFAULT_ACCELERATOR.to_string()
+            }
+        }
+        _ => DEFAULT_ACCELERATOR.to_string(),
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HotkeyStatus {
@@ -41,7 +77,7 @@ impl HotkeyState {
 /// < 500 ms" budget is met by ordering, not by speed: everything that is not this
 /// is deferred behind it.
 pub fn register(app: &AppHandle) {
-    let accelerator = DEFAULT_ACCELERATOR.to_string();
+    let accelerator = accelerator();
 
     let status = match accelerator.parse::<Shortcut>() {
         Ok(shortcut) => {
@@ -140,6 +176,14 @@ mod tests {
     #[test]
     fn v0_1_the_default_accelerator_parses() {
         assert!(DEFAULT_ACCELERATOR.parse::<Shortcut>().is_ok());
+    }
+
+    /// The chord `bun run bench` uses when Alt+Space is taken. If this ever stops
+    /// parsing, the benchmark silently falls back to the contested default and
+    /// then reports that the hotkey is unavailable.
+    #[test]
+    fn v0_2_the_bench_override_chord_parses() {
+        assert!("Ctrl+Alt+F9".parse::<Shortcut>().is_ok());
     }
 
     /// The collision is the expected failure, so it gets the explanation that

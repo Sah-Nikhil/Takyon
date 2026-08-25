@@ -16,16 +16,187 @@ use crate::bench::Bench;
 /// The Palette's window label. Also the key its capability file is scoped to.
 pub const PALETTE: &str = "palette";
 
-/// The empty Palette's height in logical pixels: an 8px gutter, a 1px border, a
-/// 48px input row, and the same again below. `tauri.conf.json` must agree.
+/// Empty Palette height, logical pixels. `tauri.conf.json` must agree.
 ///
-/// This is not cosmetic. The window is transparent and undecorated with
-/// `shadow: true`, and Windows draws that shadow around the whole **window rect**,
-/// not around the painted content. A window taller than its content therefore
-/// shows a large empty box outlined in shadow hanging below the input row — which
-/// is what 160px looked like on screen. TBC-0006 says the Palette sizes itself to
-/// its content; until Entries exist to grow it, that means starting here.
+/// Not cosmetic: the window is transparent and undecorated with `shadow: true`,
+/// and Windows draws that shadow around the whole window rect. Too tall means a
+/// shadowed empty box hanging below the input row.
 pub const EMPTY_HEIGHT: u32 = 68;
+
+/// One Entry row, logical pixels. Must match `ROW_HEIGHT` in
+/// `packages/shared/src/ipc.ts`; a test below checks it does.
+pub const ROW_HEIGHT: u32 = 44;
+
+/// Rows visible before the list scrolls instead of the window growing (TBC-0006).
+///
+/// §3 still ranks twelve and all twelve stay arrow-reachable. Eight caps the
+/// window at a shape the eye can anchor to; twelve would swing its height by
+/// nearly 600px across one query.
+pub const MAX_VISIBLE_ROWS: u32 = 8;
+
+/// Space the list adds beyond its rows: 8px padding + a 1px hairline.
+///
+/// The border counts. Border-box with an explicit height puts padding and border
+/// *inside* it, so reserving only the padding grows a scrollbar on a list that
+/// fits. Seen in the real window on a six-row list.
+const LIST_CHROME: u32 = 9;
+
+/// One row of the `Ctrl+K` menu, and the chrome around its list.
+///
+/// **Measured from the rendered menu, not chosen.** A Playwright test measures the
+/// real menu and asserts these still describe it — they are CSS-derived numbers
+/// living in Rust, and nothing else would notice them going stale.
+const ACTION_ROW_HEIGHT: u32 = 33;
+const MENU_CHROME: u32 = 51;
+/// The Palette's own 8px padding, top and bottom, which the menu sits inside.
+const MENU_MARGIN: u32 = 16;
+
+/// The banner's 8px top margin, which its measured box excludes.
+///
+/// Its height is **reported by the frontend**, never reserved here: wrapping text,
+/// so the layout engine decides. A constant measured at 100% was 16px short at
+/// 150% and the flex column clipped the list's last row.
+const BANNER_MARGIN: u32 = 8;
+
+/// What the Palette has to accommodate.
+///
+/// Held here because its parts arrive separately: rows with each query, the menu
+/// as its own event. Without somewhere to remember the other half, every caller
+/// would re-send both and any disagreement is a wrong-sized window.
+#[derive(Clone, Copy, Default)]
+pub struct Shape {
+    pub rows: usize,
+    pub indexing: bool,
+    /// `Some(n)` while the action menu is open, holding `n` actions.
+    pub menu_actions: Option<usize>,
+    /// Measured height of the hotkey-failure banner, 0 when absent.
+    ///
+    /// Rust owns `HotkeyState` so it knows *whether* there is a banner, but only
+    /// the renderer knows how the sentence wrapped — and height is what clips.
+    pub banner_height: u32,
+}
+
+static SHAPE: Mutex<Shape> = Mutex::new(Shape {
+    rows: 0,
+    indexing: false,
+    menu_actions: None,
+    banner_height: 0,
+});
+
+/// How tall the Palette should be for a given shape.
+///
+/// Pure, so window arithmetic is checkable without a window. Mirrors
+/// `paletteHeight` in `packages/shared/src/ipc.ts`; a test asserts the constants
+/// agree.
+pub fn content_height(shape: Shape) -> u32 {
+    // The indexing notice occupies exactly one row, so the window does not jump
+    // when the walk finishes and real Entries replace it.
+    let visible = if shape.rows == 0 && shape.indexing {
+        1
+    } else {
+        (shape.rows as u32).min(MAX_VISIBLE_ROWS)
+    };
+    let content = if visible == 0 {
+        EMPTY_HEIGHT
+    } else {
+        EMPTY_HEIGHT + visible * ROW_HEIGHT + LIST_CHROME
+    };
+
+    let with_menu = match shape.menu_actions {
+        // `max`, never a sum: the menu sits on top of the list rather than below
+        // it, so a tall list already has the room and only a short one has to grow.
+        Some(actions) => content.max(MENU_CHROME + actions as u32 * ACTION_ROW_HEIGHT + MENU_MARGIN),
+        None => content,
+    };
+
+    // The banner, by contrast, *is* a sum: it sits below everything else rather
+    // than over it, so it always needs its own space.
+    if shape.banner_height > 0 {
+        with_menu + shape.banner_height + BANNER_MARGIN
+    } else {
+        with_menu
+    }
+}
+
+/// Record the measured banner height and resize. Zero means no banner.
+pub fn set_banner(app: &AppHandle, height: u32) {
+    let shape = {
+        let mut guard = SHAPE.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.banner_height == height {
+            return;
+        }
+        guard.banner_height = height;
+        *guard
+    };
+    apply(app, shape);
+}
+
+/// Record a new row count and resize.
+pub fn set_rows(app: &AppHandle, rows: usize, indexing: bool) {
+    let shape = {
+        let mut guard = SHAPE.lock().unwrap_or_else(|e| e.into_inner());
+        guard.rows = rows;
+        guard.indexing = indexing;
+        *guard
+    };
+    apply(app, shape);
+}
+
+/// Record the action menu opening or closing, and resize.
+///
+/// Four actions need ~200px against a 120px window, so without this the last two
+/// are cut off. Invisible in the browser, which has no window to clip.
+pub fn set_menu(app: &AppHandle, actions: Option<usize>) {
+    let shape = {
+        let mut guard = SHAPE.lock().unwrap_or_else(|e| e.into_inner());
+        guard.menu_actions = actions;
+        *guard
+    };
+    apply(app, shape);
+}
+
+/// Forget the last query's shape, on hide.
+///
+/// ADR-0001: the Palette opens empty. A shape still describing eight rows would
+/// flash an empty shadowed box on the next summon, then snap shut.
+pub fn reset_shape(app: &AppHandle) {
+    let shape = {
+        let mut guard = SHAPE.lock().unwrap_or_else(|e| e.into_inner());
+        // The banner survives: hiding does not un-take the hotkey, so it is drawn
+        // again on the next show and clearing its height would clip it.
+        *guard = Shape {
+            banner_height: guard.banner_height,
+            ..Shape::default()
+        };
+        *guard
+    };
+    apply(app, shape);
+}
+
+/// Resize the Palette to fit `shape`.
+///
+/// **Snap, never tween** (TBC-0006): a tween reads as instability once height
+/// changes every keystroke, and competes for the 30 ms budget's frames. Height
+/// only — re-centring per keystroke would look like drift.
+fn apply(app: &AppHandle, shape: Shape) {
+    let Some(win) = palette(app) else { return };
+    let height = content_height(shape);
+
+    let Ok(size) = win.inner_size() else { return };
+    let Ok(scale) = win.scale_factor() else { return };
+    // Physical pixels, because that is what `inner_size` reports. Rounded, not
+    // truncated: at 125% a logical 68 is 85 physical, and truncating would fail
+    // the comparison every time and resize on every keystroke.
+    let target = (height as f64 * scale).round() as u32;
+    if size.height == target {
+        return;
+    }
+
+    let _ = win.set_size(tauri::LogicalSize::new(
+        size.width as f64 / scale,
+        height as f64,
+    ));
+}
 
 /// Emitted when the Palette becomes visible. Must match `EVENT_SHOW` in
 /// `packages/shared/src/ipc.ts`; there is a test below that checks it does.
@@ -33,13 +204,12 @@ pub const EVENT_SHOW: &str = "takyon://show";
 /// Emitted when the Palette is hidden. Must match `EVENT_HIDE` in the same file.
 pub const EVENT_HIDE: &str = "takyon://hide";
 
-/// Set to `1` to show the Palette without taking foreground, and to suppress
+/// Set to `1` to show without taking foreground, and suppress
 /// dismiss-on-focus-loss.
 ///
-/// Without this, inspecting the Palette is impossible: the moment devtools takes
-/// focus, the focus-loss rule hides the thing you were inspecting. Deliberately an
-/// environment variable rather than a build flag, so a release binary can be
-/// debugged in the field without a rebuild.
+/// Without it, inspecting the Palette is impossible — devtools takes focus and the
+/// focus-loss rule hides what you were inspecting. An env var rather than a build
+/// flag, so a release binary can be debugged in the field.
 pub const NO_FOCUS_STEAL_ENV: &str = "TAKYON_NO_FOCUS_STEAL";
 
 #[derive(Clone, Serialize)]
@@ -51,16 +221,10 @@ pub struct ShowPayload {
 
 /// How long after a show a focus-loss event is ignored.
 ///
-/// Showing the window and calling `set_focus()` is not one atomic act. The outer
-/// window is activated, then WebView2's own child window takes keyboard focus, and
-/// in between Tauri can deliver a `Focused(false)` for the outer window. Acting on
-/// that hides the Palette microseconds after summoning it — which presented as
-/// "every second press of the hotkey does nothing", because the press *did* show
-/// it and the stray event immediately took it away.
-///
-/// 300 ms is long enough to cover that handover and short enough that a real
-/// click-away is never swallowed: it takes longer than that to summon a launcher
-/// and change your mind.
+/// Show and `set_focus()` are not atomic — WebView2's child takes keyboard focus
+/// after the outer window activates, and Tauri can deliver a `Focused(false)` in
+/// between. Acting on it presented as "every second press does nothing". 300 ms
+/// covers the handover without swallowing a real click-away.
 const FOCUS_GRACE: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// When the Palette was last shown. Read by [`should_hide_on_focus_loss`].
@@ -149,11 +313,9 @@ pub fn show(app: &AppHandle, bench: &Bench) {
 
 /// Hide the Palette. Never destroy it.
 ///
-/// `reason` is logged in debug builds and nowhere else. It earns its place: there
-/// are three routes out (hotkey, Escape, focus loss) and when the Palette vanishes
-/// unexpectedly, the only useful question is which one fired. Without it, an
-/// unrelated window stealing foreground is indistinguishable from a bug in the
-/// hotkey — a distinction that cost real time to make once already.
+/// `reason` is logged in debug builds only, and earns its place: with three routes
+/// out, the one useful question when the Palette vanishes is which fired. Without
+/// it a window stealing foreground looks exactly like a hotkey bug.
 pub fn hide(app: &AppHandle, reason: &str) {
     #[cfg(debug_assertions)]
     eprintln!("[takyon] hide <- {reason}");
@@ -165,6 +327,12 @@ pub fn hide(app: &AppHandle, reason: &str) {
         eprintln!("[takyon] could not hide the Palette: {e}");
         return;
     }
+
+    // Back to one input row, while hidden. The Palette always opens empty
+    // (ADR-0001), so a window still sized for the last query's eight rows would
+    // show an empty shadowed box on the next summon and then snap shut — resize
+    // jank on the one frame the user is definitely looking at.
+    reset_shape(app);
     *LAST_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let _ = win.emit(EVENT_HIDE, ());
 
@@ -172,17 +340,12 @@ pub fn hide(app: &AppHandle, reason: &str) {
     trim_working_set_async();
 }
 
-/// The hotkey toggles: it opens the Palette, and pressing it again closes it.
+/// The hotkey toggles: it opens the Palette and closes it again.
 ///
-/// So there are three ways out — the hotkey, Escape, and clicking away — and all
-/// three must work, because a launcher that is hard to dismiss is worse than one
-/// that is hard to summon. The click-away route is `WindowEvent::Focused(false)`
-/// in `lib.rs`, and it is suppressed only under the debug no-steal-focus flag.
-///
-/// Visibility is read from the window rather than tracked in a flag of our own:
-/// the window can be hidden by the focus-loss handler at any moment, and a
-/// mirrored bool would disagree the first time that happened, making every second
-/// press a no-op.
+/// Three ways out — hotkey, Escape, clicking away — and all three must work; hard
+/// to dismiss is worse than hard to summon. Visibility is read from the window,
+/// never mirrored into a bool: the focus-loss handler can hide it at any moment,
+/// and a stale flag makes every second press a no-op.
 pub fn toggle(app: &AppHandle, bench: &Bench) {
     let visible = palette(app).and_then(|w| w.is_visible().ok()).unwrap_or(false);
     if visible {
@@ -238,16 +401,10 @@ fn is_foreground(win: &WebviewWindow) -> bool {
 
 /// Release the working set of this process **and every process below it**.
 ///
-/// Trimming only our own process would be close to pointless: the Rust host is a
-/// few megabytes, and essentially all of the resident memory ADR-0003 is trading
-/// away lives in WebView2's browser, renderer and GPU processes. Those are
-/// descendants, not children — the renderer's parent is the browser process, not
-/// us — so this walks the tree rather than one level of it.
-///
-/// This is a *hint*. Windows may refuse, and the pages come back on the next show
-/// as soft faults, which is the 5-15 ms TBC-0002 budgets for. The one number that
-/// decides whether the bet was right is the first show after a long idle, when
-/// Windows has genuinely reclaimed rather than merely unmapped.
+/// Trimming only ours is pointless: the memory ADR-0003 trades away lives in
+/// WebView2's browser, renderer and GPU processes, which are descendants rather
+/// than children. A *hint* only — Windows may refuse, and the pages return as
+/// soft faults on the next show. TBC-0002 budgets 5-15 ms for that.
 #[cfg(windows)]
 fn trim_working_set_async() {
     // Off the hide path on purpose. Enumerating the process table costs a couple
@@ -320,10 +477,9 @@ fn process_tree(root: u32) -> Vec<u32> {
 
 /// Pure, so the tree walk is testable without a process table.
 ///
-/// Windows recycles pids, so a table can contain a cycle (a child whose recycled
-/// parent id points back into its own subtree). Walking that naively hangs, which
-/// on this code path would mean a thread spinning forever after every dismissal —
-/// invisible until the machine gets warm. Hence the visited set.
+/// Windows recycles pids, so a table can hold a cycle. Walking that naively spins
+/// a thread forever after every dismissal — invisible until the machine gets
+/// warm. Hence the visited set.
 #[cfg(windows)]
 fn collect_descendants(root: u32, pairs: &[(u32, u32)]) -> Vec<u32> {
     let mut out = vec![root];
@@ -418,6 +574,136 @@ mod tests {
         assert!(!focus_loss_is_stray(Some(std::time::Duration::from_secs(30))));
         // No recorded show at all: nothing to be an artefact of.
         assert!(!focus_loss_is_stray(None));
+    }
+
+    /// TBC-0006: sizes to content, stops growing at eight rows.
+    fn shape(rows: usize, indexing: bool, menu: Option<usize>) -> Shape {
+        Shape {
+            rows,
+            indexing,
+            menu_actions: menu,
+            banner_height: 0,
+        }
+    }
+
+    #[test]
+    fn v0_2_the_window_grows_with_its_rows_and_then_stops() {
+        assert_eq!(content_height(shape(0, false, None)), EMPTY_HEIGHT);
+        assert_eq!(
+            content_height(shape(1, false, None)),
+            EMPTY_HEIGHT + ROW_HEIGHT + LIST_CHROME
+        );
+        assert_eq!(
+            content_height(shape(8, false, None)),
+            EMPTY_HEIGHT + 8 * ROW_HEIGHT + LIST_CHROME
+        );
+        // §3 ranks twelve. The extra four scroll inside the list rather than
+        // pushing the window another 176 pixels down the screen.
+        assert_eq!(
+            content_height(shape(12, false, None)),
+            content_height(shape(8, false, None))
+        );
+        assert_eq!(
+            content_height(shape(100, false, None)),
+            content_height(shape(8, false, None))
+        );
+    }
+
+    /// One row tall, so the window does not jump when the walk finishes.
+    #[test]
+    fn v0_2_the_indexing_notice_occupies_one_row() {
+        assert_eq!(
+            content_height(shape(0, true, None)),
+            content_height(shape(1, false, None))
+        );
+        // Once there are Entries, the notice is no longer what sets the height.
+        assert_eq!(
+            content_height(shape(3, true, None)),
+            content_height(shape(3, false, None))
+        );
+    }
+
+    /// The bug: a ~200px menu against a 120px window cuts off two actions.
+    /// Invisible in the browser, which has no window to clip anything.
+    #[test]
+    fn v0_2_opening_the_action_menu_grows_a_short_palette_to_fit_it() {
+        let one_row = content_height(shape(1, false, None));
+        let with_menu = content_height(shape(1, false, Some(4)));
+        assert!(
+            with_menu > one_row,
+            "a {one_row}px window cannot show a four-action menu"
+        );
+        assert_eq!(with_menu, MENU_CHROME + 4 * ACTION_ROW_HEIGHT + MENU_MARGIN);
+    }
+
+    /// The menu overlays the list, so a tall Palette must not grow further —
+    /// that reads as the window lurching whenever the menu opens.
+    #[test]
+    fn v0_2_a_tall_palette_does_not_grow_further_for_a_menu() {
+        let eight_rows = content_height(shape(8, false, None));
+        assert_eq!(content_height(shape(8, false, Some(4))), eight_rows);
+    }
+
+    /// Drawn below everything else, so its space adds rather than overlaps.
+    /// Found by running the real binary with Raycast holding Alt+Space.
+    #[test]
+    fn v0_2_a_failed_hotkey_banner_gets_its_own_space() {
+        let mut with_banner = shape(1, false, None);
+        with_banner.banner_height = 73;
+        assert_eq!(
+            content_height(with_banner),
+            content_height(shape(1, false, None)) + 73 + BANNER_MARGIN
+        );
+
+        // And it stacks with the menu rather than being swallowed by it.
+        let mut banner_and_menu = shape(1, false, Some(4));
+        banner_and_menu.banner_height = 73;
+        assert_eq!(
+            content_height(banner_and_menu),
+            content_height(shape(1, false, Some(4))) + 73 + BANNER_MARGIN
+        );
+    }
+
+    /// Whatever the renderer measured, not a number chosen here — a banner
+    /// wrapping to three lines is taller than one wrapping to two, and a constant
+    /// cannot know which happened.
+    #[test]
+    fn v0_2_the_window_follows_the_measured_banner_rather_than_a_constant() {
+        let mut two_lines = shape(1, false, None);
+        two_lines.banner_height = 57;
+        let mut three_lines = shape(1, false, None);
+        three_lines.banner_height = 73;
+        assert_eq!(
+            content_height(three_lines) - content_height(two_lines),
+            73 - 57
+        );
+    }
+
+    /// Rust sizes the window from these; the CSS draws rows with them. A
+    /// disagreement clips the last row, and nothing on either side would say so.
+    #[test]
+    fn v0_2_row_geometry_agrees_with_the_typescript_contract() {
+        let ipc = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../packages/shared/src/ipc.ts"),
+        )
+        .expect("packages/shared/src/ipc.ts");
+
+        for (name, value) in [
+            ("ROW_HEIGHT", ROW_HEIGHT),
+            ("MAX_VISIBLE_ROWS", MAX_VISIBLE_ROWS),
+            ("EMPTY_HEIGHT", EMPTY_HEIGHT),
+            ("LIST_CHROME", LIST_CHROME),
+            ("ACTION_ROW_HEIGHT", ACTION_ROW_HEIGHT),
+            ("MENU_CHROME", MENU_CHROME),
+            ("MENU_MARGIN", MENU_MARGIN),
+            ("BANNER_MARGIN", BANNER_MARGIN),
+        ] {
+            assert!(
+                ipc.contains(&format!("{name} = {value}")),
+                "{name} disagrees with packages/shared/src/ipc.ts"
+            );
+        }
     }
 
     #[cfg(windows)]

@@ -5,10 +5,16 @@ on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
 anything leaves the machine.
 
-**Status: design complete, no code yet.** There is no `apps/` directory, no Rust,
-no tests, no CI. What exists is `CONTEXT.md`, `ROADMAP.md`,
-`IMPLEMENTATION_PLAN.md`, `docs/adr/`, `docs/tbc/`, `docs/plans/` and
-`docs/brand.md`. Do not assume any implementation exists.
+**Status: v0.1 and v0.2 built.** The Palette is warm, the hotkey works, and it
+finds and launches applications — Start Menu shortcuts, Store apps, `PATH`
+executables and Steam games — with icons, a `Ctrl+K` action menu and a
+content-sized window. There is no CI. Frecency, the Stability rule, the
+calculator, clipboard history, settings, file search and both network Bangs are
+all still unbuilt; check `ROADMAP.md` before assuming anything past v0.2 exists.
+
+Two things are outstanding rather than done: a real code-signing certificate for
+the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
+Steam steps are blocked because this machine's library holds no game.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
@@ -17,10 +23,44 @@ see ADR-0005).
 ## Communication
 **Always use the `/homonid` skill in this repo.** Invoke it at the start of every
 session, before the first substantive reply, and stay in it — chat prose is terse
-and article-free, technical substance unchanged. It does not apply to written
-artifacts: code, comments, doc-strings, commit messages, PR bodies and everything
-under `docs/` are written normally. The skill's own auto-clarity rules still win
-for destructive-action confirmations and multi-step sequences.
+and article-free, technical substance unchanged. The skill's own auto-clarity rules
+still win for destructive-action confirmations and multi-step sequences.
+
+**Comments and doc-strings follow homonid too.** Drop articles and filler,
+fragments are fine, short synonyms over long ones. Technical substance stays
+exact: identifiers, API names, error strings and numbers are never abbreviated,
+and a comment explaining *why* is still required wherever the reason is not
+obvious from the code. Terse is the goal, not silent.
+
+**A comment gets a summary line plus at most three of detail** — four lines of
+prose, which is the idiomatic doc-comment shape and not an essay. Ten for a module
+doc-string, which orients rather than argues. Delimiters are free: `/**`, `*/` and
+blank `*` lines don't count, so a JSDoc block gets the same room as a Rust `///`.
+
+Reasoning that needs more is not a comment. It belongs in `docs/adr/` (a settled
+tradeoff), `docs/tbc/` (one we expect to revisit) or `IMPLEMENTATION_PLAN.md`,
+with a one-line pointer left at the code. A file where the prose outweighs the
+logic is a file nobody reads either half of.
+
+`bun run check:comments` finds every comment over the ceiling. **Not yet part of
+`lint`**: v0.1's files predate the rule and still fail it. Fold it into `lint`
+once they are brought across, and treat it as blocking from then on.
+
+```rust
+// No: six lines of essay for one guard.
+// The obvious way to read a shortcut is Load then Resolve then GetPath, and it
+// is wrong here in two separate ways. Resolve searches: given a shortcut whose
+// target has moved it will hunt the volume for it, and for a UNC target it will
+// go to the network and block until the connection times out. Several seconds,
+// per dead shortcut, on a walk meant to take a fraction of a second.
+
+// Yes: claim, mechanism, pointer.
+// Never Resolve: hunts the volume, blocks on UNC targets, can trigger MSI
+// repair. Raw path + exists check instead. Reasoning in the module doc.
+```
+
+Still written normally, as prose: commit messages, PR bodies, and everything
+under `docs/`.
 
 ## Stack (locked — don't substitute without a decision)
 - Package manager: **bun** — `bun install`, `bun add`, `bun run <script>`, `bunx`.
@@ -58,7 +98,12 @@ for destructive-action confirmations and multi-step sequences.
 - visual: `bun run test:visual` — Playwright screenshots of the UI running in the
   plain Vite dev server, with the Tauri bridge mocked
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
-  as a failing test, not a nice-to-have.
+  as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
+  already owns `Alt+Space`, which is most machines.
+- release: `bun run release` — preflight (typecheck, lint, test), `tauri build`,
+  then the installer into `releases/v{version}/` with its SHA-256. Same layout as
+  tesseract's `releases/`, and `releases/` is gitignored. No `latest.json` or
+  `.sig` yet; the updater is a v1.0 item.
 
 ## Testing
 Use the **`/tdd` skill** for writing and running tests — test-first, not
@@ -72,7 +117,7 @@ tests-afterwards. Three layers, because a launcher can't be verified by one:
    can't run outside Tauri and this layer becomes impossible. (Playwright as a dev
    dependency is unrelated to ADR-0005, which only forbids *shipping* a browser
    engine in the product.)
-3. **Manual verification script per phase**, tesseract-style — the global hotkey,
+3. **Manual verification script per phase** in `docs/verify/` — the global hotkey,
    focus-loss dismissal, tray, multi-monitor placement and the UIAccess
    elevated-window overlay genuinely cannot be automated cheaply. Write the script
    as part of the phase, don't improvise it at the end.
@@ -174,8 +219,13 @@ the next.
 - `docs/adr/` — settled tradeoffs. Don't re-derive these; if there's a gap, flag it.
 - `docs/tbc/` — decisions we expect to revisit: the assumption under each, the
   trigger that would disprove it, and what switching costs. See `docs/tbc/README.md`.
-- `docs/plans/` — one agent-executable plan per version, plus `post-v1.md` for
-  everything deliberately deferred.
+- `docs/plans/` — one agent-executable build plan per version, plus `post-v1.md`
+  for what is deferred past V1. Consumed once; goes stale after the phase ships.
+- `docs/verify/` — one manual verification script per phase. Unlike a plan, these
+  never go stale: re-run on every regression, and run as one suite at v1.0.
+- `docs/tbd/` — what each phase left undone and **which phase owns it**. A gap,
+  not a decision: `adr/` says why it is built this way, `tbc/` says which of those
+  calls we expect to revisit, `tbd/` says what is not done. See its README.
 - `IMPLEMENTATION_PLAN.md` — canonical architecture: trait boundaries, the query
   pipeline, SQLite schemas, the index format, the IPC contract. Amend it; never
   contradict it silently.
