@@ -57,18 +57,23 @@ test run.*
 
 ---
 
-## v0.3 — Ranking that learns
+## v0.3 — Ranking that learns, and the Sources it ranks
 
-**Goal:** it starts guessing right before you finish typing.
+**Goal:** it starts guessing right before you finish typing, and it knows about
+the things v0.2 could not see.
 
 - [ ] `frecency.db` — per-Entry decayed frequency + recency, updated on every launch
 - [ ] Ranking: Frecency over raw match quality; Apps always sort above documents
 - [ ] **Stability rule**: the top Entry freezes ~100 ms after the last keystroke; late Sources may only append below
 - [ ] User-defined aliases (settings-editable) resolved before matching
 - [ ] Recently-opened files as a cheap Bangless Source (shell recent items, no index), always below apps
+- [ ] **System entries Source** — control panel tasks via the All Tasks shell folder (`{ED7BA470-…}`, **198 items measured** on the dev machine, enumerated with the `IEnumShellItems` path `appsfolder.rs` already uses) plus a curated `ms-settings:` table. A new Kind, always below applications. This is the largest coverage gap found in v0.2: Raycast surfaces 1187 such entries and Takyon surfaces none
+- [ ] **Game launcher Sources**, Epic first — JSON manifests in `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests`. Id is `epic:<AppName>`, never the path. **Existence-check the executable**: all seven manifests on the dev machine are stale and Raycast lists all seven as launchable anyway. EA deferred — its install path exists only in a log, not a manifest
+- [ ] **winget Source — measure first.** 4 apps on the dev machine; if an existing Source already finds all 4, do not build it
 
 **Exit criteria:** after a week of use, your ten most-used applications are all
-reachable in one or two keystrokes.
+reachable in one or two keystrokes — and the new Sources have pushed none of them
+down. `bluetooth` reaches the Bluetooth settings page without the Start menu.
 
 ---
 
