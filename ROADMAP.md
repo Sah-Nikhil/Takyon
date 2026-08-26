@@ -69,6 +69,7 @@ the things v0.2 could not see.
 - [ ] Recently-opened files as a cheap Bangless Source (shell recent items, no index), always below apps
 - [ ] **System entries Source** — control panel tasks via the All Tasks shell folder (`{ED7BA470-…}`, **198 items measured** on the dev machine, enumerated with the `IEnumShellItems` path `appsfolder.rs` already uses) plus a curated `ms-settings:` table. A new Kind, always below applications. This is the largest coverage gap found in v0.2: Raycast surfaces 1187 such entries and Takyon surfaces none
 - [ ] **Game launcher Sources**, Epic first — JSON manifests in `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests`. Id is `epic:<AppName>`, never the path. **Existence-check the executable**: all seven manifests on the dev machine are stale and Raycast lists all seven as launchable anyway. EA deferred — its install path exists only in a log, not a manifest
+- [ ] **Desktop shortcuts**, reusing the `.lnk` walk, **kept only when no other Source already found the app** — 9 shortcuts on the dev machine, 8 duplicates, 1 new. Desktop loses every collision so `EntryId` stays on the Start Menu copy
 - [ ] **winget Source — measure first.** 4 apps on the dev machine; if an existing Source already finds all 4, do not build it
 
 **Exit criteria:** after a week of use, your ten most-used applications are all
