@@ -49,7 +49,7 @@ into `docs/tbc/0002` as the first real evidence for or against the warm model.
 - [x] **`Ctrl+K` action menu** as a shared primitive — every Source and Mode contributes actions to it (open, reveal in Explorer, copy path, run as administrator). A packaged app is offered only Open, because it has no file
 - [x] Modifier accelerators for the common actions, table-driven in `actions.rs` and listed inside the menu so they're discoverable rather than folklore. **The rebinding UI is v0.6** — it needs `settings.db`; the mechanism is data now so that phase is a change of values, not of code
 - [x] Keyboard-only navigation. **The list is not virtualised**, deliberately: §3 caps it at twelve Entries and eight are on screen, so a windowing library would add a dependency and a measurement pass to avoid rendering four rows. Revisit if a Source ever returns an unbounded set
-- [ ] **Run the manual verification script** ([`docs/verify/v0.2.md`](./docs/verify/v0.2.md)). What is open and who owns it: [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md). Short version — Enter has never been pressed against the real binary, and this machine's Steam library holds no game to launch
+- [ ] **Run the manual verification script** ([`docs/verify/v0.2.md`](./docs/verify/v0.2.md)). What is open and who owns it: [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md). Short version — **13 of 41 steps confirmed, 2 partial, 2 blocked, 24 never run**. All of section C (icons) and all of section F (keyboard only) are untouched; Steam stays blocked because this machine's library holds no game
 
 **Exit criteria:** you use it instead of the Start menu for a full day and don't
 reach for the Start menu once. *Not yet claimed — that is a day of use, not a
