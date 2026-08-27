@@ -49,7 +49,7 @@ into `docs/tbc/0002` as the first real evidence for or against the warm model.
 - [x] **`Ctrl+K` action menu** as a shared primitive — every Source and Mode contributes actions to it (open, reveal in Explorer, copy path, run as administrator). A packaged app is offered only Open, because it has no file
 - [x] Modifier accelerators for the common actions, table-driven in `actions.rs` and listed inside the menu so they're discoverable rather than folklore. **The rebinding UI is v0.6** — it needs `settings.db`; the mechanism is data now so that phase is a change of values, not of code
 - [x] Keyboard-only navigation. **The list is not virtualised**, deliberately: §3 caps it at twelve Entries and eight are on screen, so a windowing library would add a dependency and a measurement pass to avoid rendering four rows. Revisit if a Source ever returns an unbounded set
-- [ ] **Run the manual verification script** ([`docs/verify/v0.2.md`](./docs/verify/v0.2.md)). What is open and who owns it: [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md). Short version — **13 of 41 steps confirmed, 2 partial, 2 blocked, 24 never run**. All of section C (icons) and all of section F (keyboard only) are untouched; Steam stays blocked because this machine's library holds no game
+- [ ] **Run the manual verification script** ([`docs/verify/v0.2.md`](./docs/verify/v0.2.md)). What is open and who owns it: [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md). Short version — **26 of 41 steps confirmed, 3 partial, 2 blocked, 1 failed, 9 never run** after two scripted passes on 2026-08-27, repeatable with `scripts/verify-drive.ps1`. All nine remaining need a person: an uninstall, the UAC prompt, a Steam game, or an application actually starting. That pass ran entirely at 150% scaling, which is what the dev machine has always been, so `D7` is nearly closed. **C5 fails**: `icons.bin` is 12 bytes and has never held an icon. Steam stays blocked because this machine's library holds no game
 
 **Exit criteria:** you use it instead of the Start menu for a full day and don't
 reach for the Start menu once. *Not yet claimed — that is a day of use, not a
@@ -62,6 +62,8 @@ test run.*
 **Goal:** it starts guessing right before you finish typing, and it knows about
 the things v0.2 could not see.
 
+- [ ] **Fix `EntryId` first.** Launch arguments are excluded from identity, so nine Start Menu shortcuts collapse onto `cmd.exe`, three onto `javacpl.exe`, three onto x86 `powershell.exe` — **15 distinctly-named applications** dropped, then returned by `AppsFolder` mislabelled `Store app` with a truncated action menu and past `is_noise`. Frecency keys on `EntryId`, so this lands before task 1 or the usage database is wrong from the first launch ([`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md) §9)
+- [ ] **Make `icons.bin` actually persist.** `flush()` runs once per launch, right after the walk, before a single icon has been extracted — the file has always been 12 bytes ([`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md) §10)
 - [ ] `frecency.db` — per-Entry decayed frequency + recency, updated on every launch
 - [ ] Ranking: Frecency over raw match quality; Apps always sort above documents
 - [ ] **Stability rule**: the top Entry freezes ~100 ms after the last keystroke; late Sources may only append below

@@ -60,6 +60,26 @@ so by testing the path rather than by calling `Resolve`. The Epic Source must do
 the same: on the development machine all seven manifests are stale, and a
 competitor that trusts them shows seven rows that cannot launch.
 
+## Amended by evidence, 2026-08-27
+
+One row of the table above is wrong as stated, and the correction is scheduled as
+task 0 of v0.3.
+
+`EntryId::for_launch` treats launch arguments as detail rather than identity, which
+is right for two shortcuts to one application with different switches and wrong for
+a **host binary**. Nine Start Menu shortcuts on the development machine point at
+`cmd.exe` — Command Prompt, four Visual Studio tools prompts, KiCad's, two of
+Node.js' — and the arguments *are* the application. They collapse onto one id and
+fifteen distinctly-named applications disappear, measured in
+[`../tbd/v0.2.md`](../tbd/v0.2.md) §9.
+
+The rule survives; its worked example does not. Durability still decides, but
+"the same executable" turns out not to mean "the same application", and identity
+has to carry whatever distinguishes them. Fold arguments in where they exist,
+leaving the argument-free case byte-identical so nothing already learned is
+invalidated. `v0_2_launch_arguments_do_not_change_identity` is amended in the same
+change, not deleted.
+
 ## What would change this
 
 Title collisions hiding a real application. If two genuinely different tools ever
