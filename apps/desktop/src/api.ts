@@ -125,7 +125,7 @@ export const reportFirstPixel = (showId: number) =>
  * Autostart reads straight from the plugin and is deliberately NOT mirrored into
  * any settings store: Task Manager → Startup apps flips this behind the app's
  * back with no event to observe, so a cached copy would confidently display the
- * wrong state (tesseract ADR-0026).
+ * wrong state (ADR-0015).
  */
 export const autostartIsEnabled = () =>
   inTauri ? autostartIsEnabledPlugin() : mock.autostartIsEnabled();

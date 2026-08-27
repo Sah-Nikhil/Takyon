@@ -40,7 +40,7 @@ export function Settings() {
   // Read the OS on mount, every mount. Autostart state lives in the OS and is
   // never mirrored into our own storage: Task Manager → Startup apps flips it
   // behind the app's back with no event to observe, so a cached copy would be
-  // confidently wrong (tesseract ADR-0026).
+  // confidently wrong (ADR-0015).
   useEffect(() => {
     void api.autostartIsEnabled().then(setAutostart);
     void api.hotkeyStatus().then(setHotkey);

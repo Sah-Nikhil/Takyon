@@ -27,7 +27,7 @@ one. v0.2's is its manual verification pass.
 - [x] Working-set trim on hide; show path does no allocation or window creation. The trim walks the **whole process tree**, because essentially all the resident memory is in WebView2's descendants rather than in the Rust host
 - [x] Dismiss on Escape and on focus loss; always opens empty
 - [x] Tray icon: settings, quit — with both glyph polarities and a runtime swap when the system theme changes
-- [x] Autostart via `tauri-plugin-autostart` + `tauri-plugin-single-instance`, on by default via first-run prompt, **never registered in dev builds**. The `Run` value is named `com.v3sper.launcher`, not "Takyon" (ADR-0011)
+- [x] Autostart via `tauri-plugin-autostart` + `tauri-plugin-single-instance`, on by default via first-run prompt, **never registered in dev builds**. The `Run` value is named `com.v3sper.launcher`, not "Takyon" (ADR-0011), the OS owns the answer and Takyon re-reads it rather than caching it (ADR-0015), `self_heal_autostart` repoints it after an update moves the binary, and the NSIS uninstall hook deletes both the `Run` value and its `StartupApproved` flag. Two gaps carried forward: a refused write is not reported to the user (v0.6) and the value is written unquoted, which starts mattering when v1.0 installs into `C:\Program Files\Takyon` (v1.0) — [`docs/tbd/v0.1.md`](./docs/tbd/v0.1.md) §3 and §4
 - [x] `bun run bench` — all four budgets measured on a release build and written into `docs/tbc/0002`: first pixel p95 **22.6 ms** / 50, **first show after 35 min idle 22.8 ms** / 50, start-to-hotkey **311.6 ms** / 500, idle RSS **~107 MB** / 150. The post-idle show is the one that decided ADR-0003 and it shows no cold-start penalty at all
 - [x] Deferred init: hotkey live within ~50 ms of launch; everything else after
 - [x] The idle beat: the mark animates while the Palette is open and empty, stops on the first keystroke and while hidden. **Settings → Turn off animations** kills it, as does Windows' own reduce-motion setting. Spec in `docs/brand.md`; storage is `localStorage` behind `src/prefs.ts` until `settings.db` exists
@@ -114,6 +114,7 @@ the history, verified by inspecting the database.
 - [ ] Settings search box — tier two becomes unbrowsable once it passes ~15 entries
 - [ ] Migrate the v0.1 "Turn off animations" switch from `localStorage` into `settings.db` — `src/prefs.ts` is the only reader, and it belongs on the Appearance page
 - [ ] Hotkey rebinding, autostart, tray visibility, retention, blocklist, aliases, monitor placement, recents toggle, Bangless-file-search toggle (default off), index roots + exclusions with a live entry count
+- [ ] **Autostart moves to General and gains nothing else.** The registration shipped in v0.1; v0.6 owes it a home, a reported error when the registry write is refused, and the discipline not to mirror it into `settings.db` (ADR-0015). No "close to tray" and no "start hidden" — tesseract has both, the Palette has no ✕ and always starts hidden
 - [ ] Appearance: follow system by default, plus a manual light/dark override and pinned interface-size options (full theming is post-V1)
 - [ ] Local crash logs written to disk with a settings button to open the folder — **nothing is ever sent** (ADR-0010)
 - [ ] Every control offers **pinned, explicit options** — chips rather than free-text or sliders where the option set is small (Raycast's hotkey and interface-size controls are the reference)
@@ -177,7 +178,8 @@ still open. Write `docs/plans/v0.9-claude-code.md` before starting.*
 
 ## v1.0 — Ship
 
-- [ ] NSIS installer, code signing, `tauri-plugin-updater`
+- [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing, `tauri-plugin-updater`
+- [ ] **Quote the `Run` value.** `auto-launch` writes it unquoted; harmless from `%LOCALAPPDATA%`, a fragility once the path contains a space
 - [ ] First-run experience: hotkey introduction, autostart prompt, permissions
 - [ ] Full benchmark pass against all four budgets on a cold machine
 - [ ] Revisit `docs/tbc/0002` with real numbers and resolve or retire it
