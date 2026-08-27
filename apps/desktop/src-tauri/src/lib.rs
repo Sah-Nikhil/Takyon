@@ -269,11 +269,16 @@ pub fn run() {
             // serve in the meantime, deliberately — ADR-0012.
             std::thread::spawn(move || {
                 apps.refresh(&icons);
-                // Persist whatever the pre-warm extracted, so the next login reads
-                // icons from the blob instead of the shell. Failure here costs one
-                // re-extraction and nothing else, so it is reported and dropped.
-                if let Err(e) = icons.flush() {
-                    eprintln!("[takyon] could not write the icon cache: {e}");
+                // Then persist icons on a debounce, forever. Extraction is lazy,
+                // so v0.2's single flush here always wrote an empty blob (tbd
+                // v0.2 §10). Failure costs one re-extraction, so it is dropped.
+                loop {
+                    std::thread::sleep(icons::FLUSH_DEBOUNCE);
+                    if icons::should_flush(icons.pending(), icons.idle()) {
+                        if let Err(e) = icons.flush() {
+                            eprintln!("[takyon] could not write the icon cache: {e}");
+                        }
+                    }
                 }
             });
 

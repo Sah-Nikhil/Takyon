@@ -90,30 +90,9 @@ pub fn expand_env(raw: &str, lookup: &dyn Fn(&str) -> Option<String>) -> String 
     out
 }
 
-/// Shortcuts that are not applications.
-///
-/// Installers drop these beside the thing you want, competing for the same
-/// letters: `chr` must not offer "Uninstall Chrome" above Chrome. Deliberately
-/// short — over-filtering hides real apps, which is far worse than noise.
-pub fn is_noise(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    const PREFIXES: &[&str] = &["uninstall ", "remove ", "modify "];
-    const EXACT: &[&str] = &[
-        "uninstall",
-        "readme",
-        "read me",
-        "license",
-        "licence",
-        "changelog",
-        "release notes",
-        "documentation",
-        "help",
-        "website",
-        "home page",
-        "homepage",
-    ];
-    PREFIXES.iter().any(|p| lower.starts_with(p)) || EXACT.iter().any(|e| lower == *e)
-}
+/// Moved to `noise.rs` at v0.3 so `appsfolder.rs` reaches it too. Re-exported
+/// because this module's callers and tests already name it here.
+pub use super::noise::is_noise;
 
 /// Every `.lnk` under `root`, recursively.
 ///
@@ -341,24 +320,7 @@ mod tests {
         assert_eq!(expand_env(r"C:\100% Orange Juice\game.exe", &none), r"C:\100% Orange Juice\game.exe");
     }
 
-    #[test]
-    fn v0_2_installer_debris_is_filtered_out() {
-        assert!(is_noise("Uninstall Google Chrome"));
-        assert!(is_noise("uninstall"));
-        assert!(is_noise("ReadMe"));
-        assert!(is_noise("Release Notes"));
-    }
 
-    /// The filter must stay timid. An aggressive list starts hiding real
-    /// applications, which is a much worse failure than a little noise in the list.
-    #[test]
-    fn v0_2_the_noise_filter_does_not_eat_real_applications() {
-        assert!(!is_noise("Helper"));
-        assert!(!is_noise("Adobe Photoshop"));
-        assert!(!is_noise("Documentation Generator"));
-        assert!(!is_noise("Website Builder"));
-        assert!(!is_noise("HelpNDoc"));
-    }
 
     #[test]
     fn v0_2_both_start_menu_roots_are_walked() {

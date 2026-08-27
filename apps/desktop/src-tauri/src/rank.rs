@@ -214,10 +214,83 @@ pub fn dedupe(entries: Vec<Entry>) -> Vec<Entry> {
     best.into_values().collect()
 }
 
+/// Drop every subtitle that is not telling two rows apart.
+///
+/// Per query, not per selection: a row that changed height when selected would
+/// resize the content-sized window on every arrow key. Runs last, on the list
+/// the Palette is actually sent. Reasoning in ADR-0016.
+pub fn disambiguate_subtitles(mut entries: Vec<Entry>) -> Vec<Entry> {
+    use std::collections::HashMap;
+
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for e in &entries {
+        *counts.entry(e.title.to_lowercase()).or_default() += 1;
+    }
+    for e in &mut entries {
+        if counts.get(&e.title.to_lowercase()).copied().unwrap_or(0) < 2 {
+            e.subtitle = None;
+        }
+    }
+    entries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::entry::{EntryId, EntryKind};
+
+    fn titled(title: &str, subtitle: &str) -> Entry {
+        Entry {
+            id: EntryId(format!("{title}:{subtitle}").to_lowercase()),
+            title: title.into(),
+            subtitle: Some(subtitle.into()),
+            kind: EntryKind::App,
+            icon: None,
+            score: 800.0,
+            actions: vec![],
+        }
+    }
+
+    /// A row whose title is unique needs nothing under it. The second line is
+    /// disambiguation, and there is nothing to disambiguate.
+    #[test]
+    fn v0_3_a_unique_title_carries_no_second_line() {
+        let out = disambiguate_subtitles(vec![
+            titled("Visual Studio Code", r"C:\vsc\Code.exe"),
+            titled("T3 Code (Alpha)", r"C:\t3\t3code.exe"),
+        ]);
+        assert!(out.iter().all(|e| e.subtitle.is_none()));
+    }
+
+    /// Two rows, one title: without the paths the user cannot tell which is
+    /// which. This is the case the second line exists for.
+    #[test]
+    fn v0_3_a_repeated_title_keeps_its_second_line() {
+        let out = disambiguate_subtitles(vec![
+            titled("Code", r"C:\vsc\Code.exe"),
+            titled("Code", r"C:\other\Code.exe"),
+            titled("Notepad", r"C:\Windows\notepad.exe"),
+        ]);
+        let kept: Vec<&str> = out
+            .iter()
+            .filter_map(|e| e.subtitle.as_deref())
+            .collect();
+        assert_eq!(kept.len(), 2, "both Code rows keep theirs");
+        assert!(kept.iter().all(|s| s.ends_with("Code.exe")));
+        assert!(out.iter().find(|e| e.title == "Notepad").unwrap().subtitle.is_none());
+    }
+
+    /// Titles collide as the user reads them, not as bytes. `mspaint` beside
+    /// "Paint" survives on purpose (ADR-0014), but a casing difference is not a
+    /// difference anyone can see.
+    #[test]
+    fn v0_3_titles_collide_case_insensitively() {
+        let out = disambiguate_subtitles(vec![
+            titled("Discord", r"C:\a\Discord.exe"),
+            titled("discord", r"C:\b\Discord.exe"),
+        ]);
+        assert!(out.iter().all(|e| e.subtitle.is_some()));
+    }
 
     fn hay(name: &str) -> Haystack {
         Haystack::new(name, None)

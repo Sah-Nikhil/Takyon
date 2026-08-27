@@ -82,6 +82,9 @@ impl Pipeline {
         // twelve `fs::metadata` calls per keystroke, on the span the 30 ms
         // first-Entry budget measures.
         let entries = rank::order(rank::dedupe(entries), MAX_ENTRIES);
+        // Last, and after the truncation, so "does this title repeat?" is asked
+        // about the list the Palette is sent rather than a longer one.
+        let entries = rank::disambiguate_subtitles(entries);
 
         QueryResult {
             seq,

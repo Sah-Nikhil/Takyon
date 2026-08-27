@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
+use std::time::{Duration, Instant};
 
 /// The URI scheme the frontend fetches icons from.
 ///
@@ -100,6 +101,9 @@ pub struct IconStore {
     sources: RwLock<HashMap<String, IconSource>>,
     /// Icons produced this session and not yet flushed to disk.
     ready: RwLock<HashMap<String, Vec<u8>>>,
+    /// When the last icon was extracted, for the flush debounce. `None` until one
+    /// has been.
+    extracted_at: RwLock<Option<Instant>>,
     /// The persisted blob, mapped. `None` until the first flush, and on any
     /// machine where the file cannot be created.
     blob: RwLock<Option<Blob>>,
@@ -119,6 +123,22 @@ struct Blob {
 const FORMAT_VERSION: u32 = 1;
 const MAGIC: &[u8; 4] = b"TKI1";
 
+/// How long extraction must be quiet before the blob is written.
+///
+/// Extraction is lazy — one icon per row as it is drawn — so there is no single
+/// moment when "the icons are ready". A flush rewrites the file whole, so doing
+/// it per row would rewrite it once per row.
+pub const FLUSH_DEBOUNCE: Duration = Duration::from_millis(750);
+
+/// Is there anything to write, and has extraction stopped?
+///
+/// The rule v0.2 got wrong: it flushed at a fixed moment (straight after the
+/// walk) instead of after extraction, so the file never held an icon. See
+/// `docs/tbd/v0.2.md` §10.
+pub fn should_flush(pending: usize, idle: Duration) -> bool {
+    pending > 0 && idle >= FLUSH_DEBOUNCE
+}
+
 impl Default for IconStore {
     fn default() -> Self {
         Self::new(crate::identity::data_dir())
@@ -130,6 +150,7 @@ impl IconStore {
         let store = IconStore {
             sources: RwLock::new(HashMap::new()),
             ready: RwLock::new(HashMap::new()),
+            extracted_at: RwLock::new(None),
             blob: RwLock::new(None),
             dir,
         };
@@ -207,12 +228,26 @@ impl IconStore {
         if let Ok(mut guard) = self.ready.write() {
             guard.insert(key.to_string(), bytes.clone());
         }
+        if let Ok(mut guard) = self.extracted_at.write() {
+            *guard = Some(Instant::now());
+        }
         Some(bytes)
     }
 
     /// How many icons have been extracted this session but not yet persisted.
     pub fn pending(&self) -> usize {
         self.ready.read().map(|r| r.len()).unwrap_or(0)
+    }
+
+    /// How long since the last extraction, or [`Duration::MAX`] if there has been
+    /// none. Paired with [`should_flush`].
+    pub fn idle(&self) -> Duration {
+        self.extracted_at
+            .read()
+            .ok()
+            .and_then(|g| *g)
+            .map(|at| at.elapsed())
+            .unwrap_or(Duration::MAX)
     }
 
     /// Write everything known to `icons.bin` and re-map it.
@@ -223,6 +258,13 @@ impl IconStore {
     pub fn flush(&self) -> std::io::Result<()> {
         use std::io::Write;
 
+        // Nothing new: the file on disk already says everything this store knows,
+        // so rewriting it would only replace it with itself. v0.2 called this at
+        // the one moment that was always true and wrote a 12-byte header instead
+        // of an icon cache (tbd v0.2 §10).
+        if self.pending() == 0 {
+            return Ok(());
+        }
         let Some(path) = self.blob_path() else {
             return Ok(());
         };
@@ -564,6 +606,41 @@ mod tests {
         assert!(store.register(None).is_none());
         let icon = store.register(Some(IconSource::Aumid("A_b!c".into())));
         assert!(icon.is_some());
+    }
+
+    /// tbd v0.2 §10, as a regression test.
+    ///
+    /// v0.2 flushed once per launch, immediately after the walk — the one moment
+    /// nothing has been extracted. `icons.bin` was 12 bytes on this machine after
+    /// a full day of use: magic, version, and a count of zero.
+    #[test]
+    fn v0_3_a_flush_with_nothing_extracted_writes_no_blob() {
+        let dir = std::env::temp_dir().join("takyon-icon-empty");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = IconStore::new(Some(dir.clone()));
+        store.flush().unwrap();
+        assert!(
+            !dir.join("icons.bin").exists(),
+            "an empty flush must not leave a 12-byte header behind"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The flush policy, both halves. Extraction happens lazily as rows are
+    /// drawn, so the blob is written on a debounce after it stops rather than at
+    /// one fixed moment.
+    #[test]
+    fn v0_3_icons_are_written_once_extraction_settles() {
+        assert!(!should_flush(0, Duration::from_secs(60)), "nothing to write");
+        assert!(
+            !should_flush(4, Duration::ZERO),
+            "still extracting — a flush per row rewrites the whole file per row"
+        );
+        assert!(should_flush(4, FLUSH_DEBOUNCE));
+        assert!(should_flush(1, Duration::from_secs(60)));
     }
 
     /// The round trip the whole file exists for: write a blob, map it back, read

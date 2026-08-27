@@ -70,6 +70,20 @@ pub struct Entry {
 path for an App, the full path for a File, the row id for a Clip. Never a hash of
 the display name — display names change when apps update.
 
+**Amended at v0.3.** For an App the id is the target path *plus its launch
+arguments where it has them*, joined by `|` (illegal in a Windows path). The
+argument-free form is byte-identical to what v0.2 wrote, so nothing already
+learned is invalidated. The reason is a host binary: nine Start Menu shortcuts on
+the development machine run `cmd.exe` and the arguments are what make them nine
+different applications — they collapsed onto one id and fifteen distinctly-named
+applications disappeared. Measured in [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md)
+§9; the rule is [ADR-0014](./docs/adr/0014-durable-identity-wins-a-collision.md).
+The working directory is *not* part of the id.
+
+`subtitle` is populated by the Source but **shown only when it disambiguates** —
+[ADR-0016](./docs/adr/0016-the-second-line-is-disambiguation.md). The pipeline
+clears it on every Entry whose title is unique in the list being returned.
+
 ```rust
 pub trait Source: Send + Sync {
     fn id(&self) -> SourceId;
@@ -111,7 +125,7 @@ fans out, merges, ranks and returns once.
 input ──▶ bang::parse ──┬─▶ Bangless ─▶ fan out to Sources (rayon, 20 ms budget)
                         │                        │
                         │                        ▼
-                        │               merge ─▶ rank ─▶ stability ─▶ top 12
+                        │      merge ─▶ rank ─▶ stability ─▶ top 12 ─▶ subtitles
                         │
                         └─▶ Bang(mode, rest) ─▶ that Mode alone, its own semantics
 ```

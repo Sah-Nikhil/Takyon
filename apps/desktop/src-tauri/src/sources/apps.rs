@@ -9,6 +9,7 @@
 
 pub mod appsfolder;
 pub mod lnk;
+pub mod noise;
 pub mod path;
 pub mod steam;
 
@@ -261,7 +262,9 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             id: EntryId::for_launch(&target),
             hay: Haystack::new(&app.name, None),
             title: app.name,
-            subtitle: Some("Store app".to_string()),
+            // Detected, not assumed: 74 of 112 AUMIDs here are Win32, and calling
+            // File Explorer a Store app is the v0.2 defect this closes.
+            subtitle: appsfolder::subtitle(&app.aumid),
             target,
             icon_source: None,
             icon: None,
@@ -516,6 +519,36 @@ mod tests {
             "  steam          {:>6}",
             count(|a| matches!(a.target, LaunchTarget::SteamGame(_)))
         );
+
+        // v0.3 task 0: applications that exist only because arguments joined the
+        // id. Fifteen were being dropped by `seen.insert` before it (tbd §9).
+        let with_args: Vec<&App> = apps.iter().filter(|a| a.id.as_str().contains('|')).collect();
+        println!("  argument ids   {:>6}", with_args.len());
+        for host in ["cmd.exe", "javacpl.exe", "powershell.exe"] {
+            let sharing: Vec<&str> = with_args
+                .iter()
+                .filter(|a| a.id.as_str().contains(host))
+                .map(|a| a.title.as_str())
+                .collect();
+            println!("    {host:<16} {} {sharing:?}", sharing.len());
+        }
+
+        // ADR-0016: how often the second line has anything to disambiguate.
+        let mut by_title: std::collections::HashMap<String, Vec<&str>> = Default::default();
+        for a in apps.iter() {
+            by_title
+                .entry(a.title.to_lowercase())
+                .or_default()
+                .push(a.subtitle.as_deref().unwrap_or("-"));
+        }
+        let mut collisions: Vec<(&String, &Vec<&str>)> =
+            by_title.iter().filter(|(_, v)| v.len() > 1).collect();
+        collisions.sort();
+        println!("  colliding titles {:>4}", collisions.len());
+        for (title, subs) in collisions.iter().take(12) {
+            println!("    {title:<28} {subs:?}");
+        }
+
         assert!(!source.is_indexing(), "a completed walk is not still indexing");
     }
 

@@ -50,6 +50,11 @@ A single actionable row in the Palette's result list, regardless of what it came
 from — an application, a file, a clipboard item, a calculation.
 _Avoid_: result, item, hit, match, row
 
+**Subtitle**:
+An Entry's second line. Shown only when another Entry in the same list carries the
+same title, because its one job is telling those two apart (ADR-0016).
+_Avoid_: description, detail, caption, path
+
 **Source**:
 A producer of Entries for Bangless queries (applications, files, clipboard
 history, calculator). Sources are queried in parallel and their Entries compete in

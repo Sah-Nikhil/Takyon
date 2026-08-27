@@ -30,12 +30,21 @@ pub struct EntryId(pub String);
 impl EntryId {
     /// Canonical id for something launchable.
     ///
-    /// Lowercased, because Windows paths are case-insensitive and one exe reached
-    /// two ways must be one id or its Frecency splits. AUMIDs and Steam ids are
-    /// already canonical, so they are prefixed instead.
+    /// Lowercased: one exe reached two ways must be one id or Frecency splits.
+    /// AUMIDs and Steam ids are prefixed instead. **Arguments join it where a
+    /// shortcut has them** — ADR-0014 amended at v0.3, `|` is illegal in a path.
     pub fn for_launch(target: &LaunchTarget) -> Self {
         EntryId(match target {
-            LaunchTarget::Exe { path, .. } => path.to_string_lossy().to_lowercase(),
+            LaunchTarget::Exe { path, args, .. } => {
+                let path = path.to_string_lossy().to_lowercase();
+                // Argument-free stays byte-identical to v0.2, so no learned id is
+                // invalidated. Blank counts as absent — an empty `GetArguments`
+                // must not fork the id.
+                match args.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+                    Some(args) => format!("{path}|{}", args.to_lowercase()),
+                    None => path,
+                }
+            }
             LaunchTarget::Aumid(aumid) => format!("aumid:{aumid}"),
             LaunchTarget::SteamGame(app_id) => format!("steam:{app_id}"),
         })
@@ -238,22 +247,69 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    /// Arguments are launch detail, not identity. Two shortcuts to one exe with
-    /// different switches are one app to the ranking.
+    /// Amended at v0.3: arguments **are** identity where they exist.
+    ///
+    /// Nine Start Menu shortcuts here point at `cmd.exe` and are nine different
+    /// applications. Was `v0_2_launch_arguments_do_not_change_identity`; ADR-0014
+    /// and `docs/tbd/v0.2.md` §9 carry the measurement.
     #[test]
-    fn v0_2_launch_arguments_do_not_change_identity() {
-        let path = PathBuf::from(r"C:\app\thing.exe");
-        let bare = EntryId::for_launch(&LaunchTarget::Exe {
-            path: path.clone(),
+    fn v0_3_launch_arguments_are_part_of_identity() {
+        let path = PathBuf::from(r"C:\Windows\System32\cmd.exe");
+        let id = |args: Option<&str>| {
+            EntryId::for_launch(&LaunchTarget::Exe {
+                path: path.clone(),
+                args: args.map(|a| a.to_string()),
+                working_dir: None,
+            })
+        };
+        assert_ne!(
+            id(Some(r"/k C:\vs\VsDevCmd.bat")),
+            id(Some(r"/k C:\kicad\env.bat"))
+        );
+        assert_ne!(id(None), id(Some("/k thing.bat")));
+    }
+
+    /// The argument-free id stays **byte-identical** to what v0.2 wrote.
+    ///
+    /// Everything already learned is keyed on it, so folding arguments in has to
+    /// be additive rather than a re-spelling of every id that exists.
+    #[test]
+    fn v0_3_an_argument_free_id_is_unchanged_by_the_amendment() {
+        let id = EntryId::for_launch(&LaunchTarget::Exe {
+            path: PathBuf::from(r"C:\Program Files\Microsoft VS Code\Code.exe"),
             args: None,
             working_dir: None,
         });
-        let with_args = EntryId::for_launch(&LaunchTarget::Exe {
-            path,
-            args: Some("--safe-mode".into()),
-            working_dir: Some(PathBuf::from(r"C:\app")),
-        });
-        assert_eq!(bare, with_args);
+        assert_eq!(id.as_str(), r"c:\program files\microsoft vs code\code.exe");
+    }
+
+    /// Blank arguments are no arguments. A shortcut storing an empty string must
+    /// not get a different id from the same shortcut storing nothing.
+    #[test]
+    fn v0_3_blank_arguments_are_the_same_as_none() {
+        let mk = |args: Option<&str>| {
+            EntryId::for_launch(&LaunchTarget::Exe {
+                path: PathBuf::from(r"C:\app\thing.exe"),
+                args: args.map(|a| a.to_string()),
+                working_dir: None,
+            })
+        };
+        assert_eq!(mk(None), mk(Some("")));
+        assert_eq!(mk(None), mk(Some("   ")));
+    }
+
+    /// Working directory is not identity. Two shortcuts differing only in where
+    /// they start are one application.
+    #[test]
+    fn v0_3_the_working_directory_does_not_change_identity() {
+        let mk = |dir: Option<&str>| {
+            EntryId::for_launch(&LaunchTarget::Exe {
+                path: PathBuf::from(r"C:\app\thing.exe"),
+                args: Some("--safe-mode".into()),
+                working_dir: dir.map(PathBuf::from),
+            })
+        };
+        assert_eq!(mk(None), mk(Some(r"C:\app")));
     }
 
     /// No path, so the id is the AUMID — stable across updates by design, unlike

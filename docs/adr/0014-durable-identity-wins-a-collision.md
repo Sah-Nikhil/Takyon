@@ -36,6 +36,7 @@ update, an uninstall-reinstall, or a move.
 | `PATH` shim vs the packaged app it starts | packaged app | `calc.exe` and `notepad.exe` exit immediately having launched the real thing |
 | Desktop shortcut vs Start Menu (v0.3 task 11) | Start Menu | desktop icons are deleted casually; the id must not go with them |
 | Epic manifest (v0.3 task 9) | `epic:<AppName>` | the catalog GUID survives a library move; the install path does not |
+| Two shortcuts to one host binary with different arguments | **both**, id includes the arguments | not a collision at all — see the amendment below |
 
 The first three shipped in v0.2. Two of them were found by a user reporting
 duplicate rows, not by a test, which is the honest reason this ADR exists.
@@ -60,10 +61,13 @@ so by testing the path rather than by calling `Resolve`. The Epic Source must do
 the same: on the development machine all seven manifests are stale, and a
 competitor that trusts them shows seven rows that cannot launch.
 
-## Amended by evidence, 2026-08-27
+## Amended by evidence, 2026-08-27 — landed in v0.3 task 0
 
-One row of the table above is wrong as stated, and the correction is scheduled as
-task 0 of v0.3.
+One row of the table above was wrong as stated. It is corrected below and the
+code now matches: `EntryId::for_launch` folds arguments in where a shortcut has
+them, `v0_3_launch_arguments_are_part_of_identity` asserts it, and
+`v0_3_an_argument_free_id_is_unchanged_by_the_amendment` asserts that every id
+v0.2 wrote is unchanged.
 
 `EntryId::for_launch` treats launch arguments as detail rather than identity, which
 is right for two shortcuts to one application with different switches and wrong for
@@ -75,10 +79,22 @@ fifteen distinctly-named applications disappear, measured in
 
 The rule survives; its worked example does not. Durability still decides, but
 "the same executable" turns out not to mean "the same application", and identity
-has to carry whatever distinguishes them. Fold arguments in where they exist,
-leaving the argument-free case byte-identical so nothing already learned is
-invalidated. `v0_2_launch_arguments_do_not_change_identity` is amended in the same
-change, not deleted.
+has to carry whatever distinguishes them. Arguments are folded in where they
+exist, joined by `|`, and the argument-free case stays byte-identical so nothing
+already learned is invalidated. `v0_2_launch_arguments_do_not_change_identity`
+was amended rather than deleted.
+
+The working directory stays out. It is where an application starts, not which
+application it is, and folding it in would give two ids to one shortcut edited in
+Explorer.
+
+**Confirmed against the real machine after the change**: 34 Entries now carry an
+argument-bearing id, thirteen of them on the three host binaries §9 named — nine
+on `cmd.exe` (Git CMD, KiCad's prompt, both Node.js prompts, and the five Visual
+Studio tools prompts), two on `javacpl.exe`, two on the x86 `powershell.exe`. The
+argument-free member of each family keeps the bare path, which is what makes the
+change additive. The measurement is `v0_2_measure_the_real_walk`, run with
+`--ignored`.
 
 ## What would change this
 
