@@ -66,9 +66,8 @@ pub struct Haystack {
     /// The lowercased executable basename without extension, when there is one.
     /// A UWP app has no executable, so this is `None` and that rung never fires.
     pub exe_stem: Option<String>,
-    /// User-defined aliases resolved before matching. Always empty in v0.2 —
-    /// aliases are v0.3, and the field is here so adding them is a data change
-    /// rather than a change to the ladder.
+    /// User-defined aliases, lowercased. Filled from `settings.db` after the
+    /// walk and refreshable in place, so a new alias works without a re-index.
     pub aliases: Vec<String>,
 }
 

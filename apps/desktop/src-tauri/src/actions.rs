@@ -62,6 +62,15 @@ pub fn for_app(has_path: bool) -> Vec<ActionId> {
     }
 }
 
+/// Default actions for a document or folder (v0.3, Recents).
+///
+/// No **Run as administrator**: elevating a `.docx` is not a thing, and an
+/// action that can only fail teaches users the menu lies — the same rule
+/// [`for_app`] applies to a packaged app with no file.
+pub fn for_file() -> Vec<ActionId> {
+    vec![OPEN, REVEAL, COPY_PATH]
+}
+
 /// Which action a modifier combination triggers on Enter.
 ///
 /// The only definition of what `Ctrl+Enter` means. v0.6 rebinding changes this

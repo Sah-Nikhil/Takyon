@@ -125,6 +125,21 @@ impl AppSource {
         );
     }
 
+    /// Attach user aliases to the applications that already exist.
+    ///
+    /// In place rather than through a re-walk, so v0.6's editor can make a new
+    /// alias live immediately. Discovery happens once at login; an alias that
+    /// needed the next one would look broken for the rest of the session.
+    pub fn apply_aliases(&self, aliases: &crate::aliases::AliasStore) {
+        let by_target = aliases.by_target();
+        let Ok(mut apps) = self.apps.write() else {
+            return;
+        };
+        for app in apps.iter_mut() {
+            app.hay.aliases = by_target.get(&app.id).cloned().unwrap_or_default();
+        }
+    }
+
     /// Look up one App by its id, for launching and for the action menu.
     pub fn find(&self, id: &EntryId) -> Option<App> {
         self.apps.read().ok()?.iter().find(|a| &a.id == id).cloned()
@@ -429,6 +444,44 @@ mod tests {
         assert_eq!(top("phot").as_deref(), Some("Adobe Photoshop"));
         assert_eq!(top("vsc").as_deref(), Some("Visual Studio Code"));
         assert_eq!(top("code").as_deref(), Some("Visual Studio Code"));
+    }
+
+    /// Verification step 2 of the phase: `ps` reaches Photoshop.
+    ///
+    /// The rung matters as much as the hit — an alias must beat a name starting
+    /// with the same letters, or `ps` still finds "PS Remote Play" first and the
+    /// feature looks broken rather than outranked.
+    #[test]
+    fn v0_3_an_alias_outranks_a_name_that_starts_with_the_same_letters() {
+        let photoshop = exe_app("Adobe Photoshop", r"C:\ps\Photoshop.exe", Some("Photoshop"));
+        let source = source_with(vec![
+            photoshop.clone(),
+            exe_app("PS Remote Play", r"C:\sony\RemotePlay.exe", Some("RemotePlay")),
+        ]);
+
+        let store = crate::aliases::AliasStore::open(None).unwrap();
+        store.set("ps", &photoshop.id).unwrap();
+        source.apply_aliases(&store);
+
+        let entries = source.query(&Query::new("ps"), Duration::from_millis(20));
+        assert_eq!(entries[0].title, "Adobe Photoshop");
+    }
+
+    /// Removing an alias takes effect without a re-walk, the same way adding one
+    /// does. Otherwise a deleted alias keeps answering until the next login.
+    #[test]
+    fn v0_3_clearing_an_alias_takes_effect_in_place() {
+        let photoshop = exe_app("Adobe Photoshop", r"C:\ps\Photoshop.exe", Some("Photoshop"));
+        let source = source_with(vec![photoshop.clone()]);
+        let store = crate::aliases::AliasStore::open(None).unwrap();
+
+        store.set("zz", &photoshop.id).unwrap();
+        source.apply_aliases(&store);
+        assert_eq!(source.query(&Query::new("zz"), Duration::from_millis(20)).len(), 1);
+
+        store.remove("zz").unwrap();
+        source.apply_aliases(&store);
+        assert!(source.query(&Query::new("zz"), Duration::from_millis(20)).is_empty());
     }
 
     #[test]

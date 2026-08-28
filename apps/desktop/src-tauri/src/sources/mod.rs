@@ -6,3 +6,4 @@
 //! of whether the [`crate::entry::Source`] trait was drawn in the right place.
 
 pub mod apps;
+pub mod recents;

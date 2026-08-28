@@ -194,14 +194,11 @@ mod com {
 
     /// Read one `.lnk` without resolving it. See the module docs for why.
     ///
-    /// `None` for anything not a launchable file: a UWP shortcut (no stored path),
-    /// a control-panel applet, or a target that is gone. The last is the plan's
-    /// "drop dead ones at index time", so no row can exist that only fails on Enter.
+    /// `None` for anything not a launchable file: a UWP shortcut, a control-panel
+    /// applet, or a target that is gone — so no row can exist that only fails on
+    /// Enter. **No noise filter**; that is `discover`'s policy from v0.3.
     pub fn read(link: &Path) -> Option<Shortcut> {
         let name = display_name(link)?;
-        if is_noise(&name) {
-            return None;
-        }
 
         unsafe {
             let shell_link: IShellLinkW =
@@ -275,6 +272,9 @@ pub fn discover() -> Vec<Shortcut> {
         .iter()
         .flat_map(|root| find_links(root))
         .filter_map(|link| com::read(&link))
+        // Applied here rather than inside the reader: this is the Start Menu's
+        // policy, and Recents reads the same shortcuts under a different one.
+        .filter(|sc| !is_noise(&sc.name))
         .collect();
     collapse_by_name(found)
 }
@@ -282,6 +282,17 @@ pub fn discover() -> Vec<Shortcut> {
 #[cfg(not(windows))]
 pub fn discover() -> Vec<Shortcut> {
     Vec::new()
+}
+
+/// Read one shortcut, unfiltered. The seam `sources/recents.rs` needs.
+#[cfg(windows)]
+pub fn read(link: &Path) -> Option<Shortcut> {
+    com::read(link)
+}
+
+#[cfg(not(windows))]
+pub fn read(_link: &Path) -> Option<Shortcut> {
+    None
 }
 
 #[cfg(test)]

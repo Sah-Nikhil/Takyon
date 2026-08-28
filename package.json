@@ -1,7 +1,7 @@
 {
   "name": "takyon",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "workspaces": [
     "apps/*",
     "packages/*",
@@ -15,7 +15,7 @@
     "lint:ts": "bun run --filter=@takyon/desktop lint && bun run --filter=@takyon/shared lint",
     "lint:rust": "cargo clippy --workspace --all-targets --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings",
     "check:comments": "bun scripts/check-comments.ts",
-    "test": "bun run test:rust && bun run test:ts",
+    "test": "bun run test:rust && bun run test:ts && bun run test:visual",
     "test:rust": "cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:ts": "bun test apps/desktop/src packages/shared/src",
     "test:visual": "bun --cwd=apps/desktop run test:visual",

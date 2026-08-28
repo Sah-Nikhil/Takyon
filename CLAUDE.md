@@ -94,9 +94,12 @@ under `docs/`.
 - dev: `bun run dev`
 - check before "done": `bun run typecheck && bun run lint` (lint covers both TS and
   `cargo clippy`)
-- test: `bun run test`
-- visual: `bun run test:visual` — Playwright screenshots of the UI running in the
-  plain Vite dev server, with the Tauri bridge mocked
+- test: `bun run test` — **all three layers**: Rust, TypeScript, then Playwright.
+  `test:visual` was added to it at v0.3, because a suite that has to be remembered
+  separately is one that gets skipped, and it was.
+- visual alone: `bun run test:visual` — Playwright screenshots of the UI running in
+  the plain Vite dev server, with the Tauri bridge mocked. **Mocked is the point
+  and the limit**: it cannot reach ranking, Frecency or anything else in Rust.
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
   as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
   already owns `Alt+Space`, which is most machines.

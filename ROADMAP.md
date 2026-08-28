@@ -65,6 +65,11 @@ against.
 right application and `explorer` is no longer called a Store app in a build
 labelled 0.2.0. `C5` above is fixed in it: `icons.bin` holds icons.
 
+**0.2.2 carries v0.3 tasks 1 to 3** — the ranker learns. Three patch releases now
+carry v0.3 work, which is awkward and deliberate: release versions move when a
+phase ships, and v0.3 ships as 0.3.0 once its Sources land. The alternative was
+claiming a phase that is a quarter done.
+
 **0.2.1 follows the same day** with the scrollbar the Palette had been leaving to
 Windows — white track, stepper arrows, inside a near-black panel. Now a 4px inset
 thumb drawn from the palette's own token ([ADR-0016 is the sibling
@@ -81,13 +86,13 @@ the things v0.2 could not see.
 
 - [x] **Fix `EntryId` first.** Launch arguments are excluded from identity, so nine Start Menu shortcuts collapse onto `cmd.exe`, three onto `javacpl.exe`, three onto x86 `powershell.exe` — **15 distinctly-named applications** dropped, then returned by `AppsFolder` mislabelled `Store app` with a truncated action menu and past `is_noise`. Frecency keys on `EntryId`, so this lands before task 1 or the usage database is wrong from the first launch ([`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md) §9). **Done:** arguments join the id, `Store app` is detected rather than asserted (38 packaged of 112 AUMIDs), `is_noise` moved to `sources/apps/noise.rs` and now covers both discovery paths
 - [x] **Make `icons.bin` actually persist.** `flush()` runs once per launch, right after the walk, before a single icon has been extracted — the file has always been 12 bytes ([`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md) §10). **Done:** written on a 750 ms debounce after extraction instead; 12 bytes → 492 KB in one driven session
-- [ ] **The second line only when it disambiguates** ([ADR-0016](./docs/adr/0016-the-second-line-is-disambiguation.md)) — landed with task 0. Zero of 1036 applications currently share a title, so the applications list shows none at all; the rule earns its place as this phase's Sources start competing in one list
+- [x] **The second line only when it disambiguates** ([ADR-0016](./docs/adr/0016-the-second-line-is-disambiguation.md)) — landed with task 0. Zero of 1036 applications currently share a title, so the applications list shows none at all; the rule earns its place as this phase's Sources start competing in one list
 - [ ] **Learned identity aliases** ([TBC-0008](./docs/tbc/0008-learned-identity-aliases.md)) — two Entries that start the same application, discovered from icon bytes and from what a launch actually produced, then collapsed. `explorer` beside `File Explorer` is the live case. Needs `frecency.db`, so it lands after the next item
 - [x] `frecency.db` — per-Entry decayed frequency + recency, updated on every launch. `rusqlite` with SQLite bundled in; WAL; the `usage` table from IMPLEMENTATION_PLAN §4. Written only for Open and Run as administrator, never for reveal or copy path
 - [x] Ranking: Frecency over raw match quality; Apps always sort above documents. Saturating lift, `1 + 0.6·w/(w+1)`, applied in the pipeline rather than in a Source — so a Source now hands up 64 candidates against the 12 the Palette shows, or a much-used Entry would be cut one step before its lift
-- [ ] **Stability rule**: the top Entry freezes ~100 ms after the last keystroke; late Sources may only append below
-- [ ] User-defined aliases (settings-editable) resolved before matching
-- [ ] Recently-opened files as a cheap Bangless Source (shell recent items, no index), always below apps
+- [x] **Stability rule**: the top Entry freezes 100 ms after the last keystroke; late Sources may only append below. Keyed on the exact query string, so a new keystroke is a new question and clears it. Inside the delay the list still reorders — the guarantee is about a *stopped* query, not a frozen first answer
+- [x] User-defined aliases resolved before matching, from the `aliases` table in `settings.db`. Applied to the app list **in place**, so a new alias is live without a re-walk — discovery runs once at login, and an alias needing the next one would look broken all session. **The editor is v0.6**; until then an alias is one `INSERT` by hand
+- [x] Recently-opened files as a cheap Bangless Source — `%APPDATA%\Microsoft\Windows\Recent`, no index, no watcher. Always below apps by kind tier. Rebuilt on a 20-second timer rather than per keystroke, because a few hundred shortcuts through COM would blow the 20 ms budget many times over. No **Run as administrator**: a document cannot be elevated
 - [ ] **System entries Source** — control panel tasks via the All Tasks shell folder (`{ED7BA470-…}`, **198 items measured** on the dev machine, enumerated with the `IEnumShellItems` path `appsfolder.rs` already uses) plus a curated `ms-settings:` table. A new Kind, always below applications. This is the largest coverage gap found in v0.2: Raycast surfaces 1187 such entries and Takyon surfaces none
 - [ ] **Game launcher Sources**, Epic first — JSON manifests in `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests`. Id is `epic:<AppName>`, never the path. **Existence-check the executable**: all seven manifests on the dev machine are stale and Raycast lists all seven as launchable anyway. EA deferred — its install path exists only in a log, not a manifest
 - [ ] **Desktop shortcuts**, reusing the `.lnk` walk, **kept only when no other Source already found the app** — 9 shortcuts on the dev machine, 8 duplicates, 1 new. Desktop loses every collision so `EntryId` stays on the Start Menu copy

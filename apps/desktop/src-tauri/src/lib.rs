@@ -11,6 +11,7 @@
 //! thread. Adding work above `hotkey::register` is how that budget quietly breaks.
 
 pub mod actions;
+pub mod aliases;
 pub mod bench;
 pub mod entry;
 pub mod firstrun;
@@ -243,8 +244,21 @@ pub fn run() {
                     })
                     .expect("an in-memory database always opens"),
             );
+            // Same fallback, same reason: a launcher with no aliases still
+            // launches things.
+            let aliases = Arc::new(
+                aliases::AliasStore::open(identity::data_dir())
+                    .or_else(|e| {
+                        eprintln!("[takyon] settings.db could not be opened: {e}");
+                        aliases::AliasStore::open(None)
+                    })
+                    .expect("an in-memory database always opens"),
+            );
+            app.manage(aliases.clone());
+            let recents = Arc::new(sources::recents::RecentsSource::new());
             app.manage(Arc::new(Pipeline::new(
                 apps.clone(),
+                recents.clone(),
                 icons.clone(),
                 frecency.clone(),
             )));
@@ -286,6 +300,19 @@ pub fn run() {
             // serve in the meantime, deliberately — ADR-0012.
             std::thread::spawn(move || {
                 apps.refresh(&icons);
+                // After the walk, because an alias attaches to an application
+                // that has to exist first. Cheap enough to redo whenever the
+                // alias table changes, which is what v0.6's editor will do.
+                apps.apply_aliases(&aliases);
+
+                // Recents are read on a timer rather than per keystroke: a few
+                // hundred shortcuts through COM would blow the 20 ms budget many
+                // times over. A query answers from the last snapshot.
+                let recents_refresh = recents.clone();
+                std::thread::spawn(move || loop {
+                    recents_refresh.refresh();
+                    std::thread::sleep(sources::recents::REFRESH_EVERY);
+                });
                 // Then persist icons on a debounce, forever. Extraction is lazy,
                 // so v0.2's single flush here always wrote an empty blob (tbd
                 // v0.2 §10). Failure costs one re-extraction, so it is dropped.

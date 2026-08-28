@@ -146,6 +146,17 @@ not displace the locked top. A new keystroke clears the lock. This is directly
 unit-testable and should have a test from the day ranking exists — it is the rule
 that stops the user launching the wrong thing.
 
+**Built at v0.3.** `first_seen_ms` rather than an `Instant`, so "now" is a
+monotonic millisecond count a test can supply; a wall clock here would make the
+rule untestable. Three cases, all asserted: a settled top holds against a better
+late answer, a new query string ranks freshly, and inside the delay the list
+still reorders — the guarantee is about a *stopped* query, not a frozen first
+answer. An empty query clears the lock, or a stale one would apply to whatever is
+typed next.
+
+If the locked Entry is absent from a later result set, nothing is promoted. There
+is no case for synthesising a row that the Sources no longer return.
+
 **Sequence numbers.** `query(q, seq)` carries a monotonic counter; the frontend
 discards any response whose `seq` is lower than the newest it has seen. Without
 this a slow keystroke's results can overwrite a fast one's.
@@ -196,7 +207,10 @@ one rung, so a much-used acronym match can pass an exact-name match nobody has
 ever chosen, and nothing can climb further than that. Weight zero returns the
 base score untouched, which keeps a cold install ranked purely on matching.
 
-Both constants are guesses to be tuned from real use, exactly like the half-life.
+Both constants are guesses to be tuned from real use, exactly like the
+half-life. **[TBC-0009](./docs/tbc/0009-frecency-constants.md)** carries the
+triggers, what to read out of `frecency.db` given there is no telemetry, and
+the catch that a stored score already has the old half-life baked into it.
 
 **Frecency is applied in the pipeline, never inside a Source.** Sources return
 match quality alone, which keeps the ladder testable without a usage database and

@@ -22,6 +22,7 @@ use crate::frecency::Frecency;
 use crate::icons::IconStore;
 use crate::rank;
 use crate::sources::apps::AppSource;
+use crate::sources::recents::RecentsSource;
 
 /// What one keystroke gets back.
 #[derive(Debug, Serialize)]
@@ -41,36 +42,77 @@ pub struct QueryResult {
     pub indexing: bool,
 }
 
+/// How long a query must stand still before its top row freezes (§3).
+pub const LOCK_DELAY_MS: u64 = 100;
+
+/// The Stability rule's state (IMPLEMENTATION_PLAN §3).
+///
+/// Not a debounce: results keep arriving and keep being shown. What freezes is
+/// which Entry sits first, and only for the exact string that produced it.
+struct StabilityLock {
+    query: String,
+    top: EntryId,
+    /// When this query string was first answered, in milliseconds since start.
+    first_seen_ms: u64,
+}
+
 /// The registry of Sources, and everything a query needs.
 pub struct Pipeline {
     /// Held concretely as well as in `sources`, because launching and the action
     /// menu need to look an App up by id, which the trait deliberately does not
     /// expose — a `Source` produces Entries and knows nothing else.
     pub apps: Arc<AppSource>,
+    /// Recently-opened files. Held concretely for the same reason `apps` is:
+    /// activation has to find the thing behind an id, which the trait does not
+    /// expose.
+    pub recents: Arc<RecentsSource>,
     pub icons: Arc<IconStore>,
     /// What the user has actually chosen before. Read once per candidate Entry,
     /// written once per activation.
     pub frecency: Arc<Frecency>,
     sources: Vec<Arc<dyn Source>>,
+    /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
+    lock: std::sync::Mutex<Option<StabilityLock>>,
+    /// Process start, so "now" is a monotonic millisecond count the tests can
+    /// supply directly. A wall clock here would make the rule untestable.
+    started: Instant,
 }
 
 impl Pipeline {
-    pub fn new(apps: Arc<AppSource>, icons: Arc<IconStore>, frecency: Arc<Frecency>) -> Self {
-        let sources: Vec<Arc<dyn Source>> = vec![apps.clone()];
+    pub fn new(
+        apps: Arc<AppSource>,
+        recents: Arc<RecentsSource>,
+        icons: Arc<IconStore>,
+        frecency: Arc<Frecency>,
+    ) -> Self {
+        let sources: Vec<Arc<dyn Source>> = vec![apps.clone(), recents.clone()];
         Pipeline {
             apps,
+            recents,
             icons,
             frecency,
             sources,
+            lock: std::sync::Mutex::new(None),
+            started: Instant::now(),
         }
     }
 
     /// Answer one keystroke.
     pub fn query(&self, raw: &str, seq: u64) -> QueryResult {
+        self.query_at(raw, seq, self.started.elapsed().as_millis() as u64)
+    }
+
+    /// Answer one keystroke at a given millisecond, for the Stability tests.
+    pub fn query_at(&self, raw: &str, seq: u64, now_ms: u64) -> QueryResult {
         let q = Query::new(raw);
         let indexing = self.apps.is_indexing();
 
         if q.is_empty() {
+            // An empty Palette has no top row to protect, and leaving a stale
+            // lock behind would apply it to whatever is typed next.
+            if let Ok(mut lock) = self.lock.lock() {
+                *lock = None;
+            }
             return QueryResult {
                 seq,
                 entries: Vec::new(),
@@ -96,6 +138,7 @@ impl Pipeline {
         }
 
         let entries = rank::order(entries, MAX_ENTRIES);
+        let entries = self.apply_stability(raw, entries, now_ms);
         // Last, and after the truncation, so "does this title repeat?" is asked
         // about the list the Palette is sent rather than a longer one.
         let entries = rank::disambiguate_subtitles(entries);
@@ -105,6 +148,47 @@ impl Pipeline {
             entries,
             indexing,
         }
+    }
+
+    /// Hold the top row still once a query has stopped changing (§3).
+    ///
+    /// A different query string starts the clock again — a new keystroke is a new
+    /// question. Inside the delay the list reorders freely; past it the Entry that
+    /// was first stays first, and better answers append below.
+    fn apply_stability(&self, raw: &str, mut entries: Vec<Entry>, now_ms: u64) -> Vec<Entry> {
+        let Ok(mut guard) = self.lock.lock() else {
+            return entries;
+        };
+
+        match guard.as_mut() {
+            // Same question, and it has stood still long enough to be committed
+            // to. Promote the locked Entry back to the top if it is still here;
+            // if it has gone, there is nothing to hold and nothing to fake.
+            Some(lock) if lock.query == raw && now_ms.saturating_sub(lock.first_seen_ms) >= LOCK_DELAY_MS => {
+                if let Some(i) = entries.iter().position(|e| e.id == lock.top) {
+                    let top = entries.remove(i);
+                    entries.insert(0, top);
+                }
+            }
+            // Same question, still settling: let it reorder, and remember what is
+            // currently first so the lock closes on the newest answer.
+            Some(lock) if lock.query == raw => {
+                if let Some(first) = entries.first() {
+                    lock.top = first.id.clone();
+                }
+            }
+            // A new question. Start the clock.
+            _ => {
+                if let Some(first) = entries.first() {
+                    *guard = Some(StabilityLock {
+                        query: raw.to_string(),
+                        top: first.id.clone(),
+                        first_seen_ms: now_ms,
+                    });
+                }
+            }
+        }
+        entries
     }
 
     /// Ask every Source in parallel, with a shared deadline.
@@ -131,22 +215,53 @@ impl Pipeline {
             .collect()
     }
 
+    /// What an Entry launches, and what kind it is.
+    ///
+    /// Sources are asked in registration order. Ids do not collide across them —
+    /// an App is keyed by its executable, a Recent by its document — so the order
+    /// is a formality rather than a precedence rule.
+    fn target_for(&self, id: &EntryId) -> Option<(crate::entry::LaunchTarget, crate::entry::EntryKind)> {
+        if let Some(app) = self.apps.find(id) {
+            return Some((app.target, crate::entry::EntryKind::App));
+        }
+        let recent = self.recents.find(id)?;
+        Some((
+            crate::entry::LaunchTarget::Exe {
+                path: recent.target,
+                args: None,
+                working_dir: None,
+            },
+            recent.kind,
+        ))
+    }
+
     /// The actions offered for one Entry, for the `Ctrl+K` menu.
     pub fn actions_for(&self, id: &EntryId) -> Vec<crate::entry::Action> {
-        let Some(app) = self.apps.find(id) else {
+        if let Some(app) = self.apps.find(id) {
+            return crate::actions::for_entry(&Entry {
+                id: app.id.clone(),
+                title: app.title.clone(),
+                subtitle: app.subtitle.clone(),
+                kind: crate::entry::EntryKind::App,
+                icon: None,
+                score: 0.0,
+                actions: crate::actions::for_app(matches!(
+                    app.target,
+                    crate::entry::LaunchTarget::Exe { .. }
+                )),
+            });
+        }
+        let Some(recent) = self.recents.find(id) else {
             return Vec::new();
         };
         crate::actions::for_entry(&Entry {
-            id: app.id.clone(),
-            title: app.title.clone(),
-            subtitle: app.subtitle.clone(),
-            kind: crate::entry::EntryKind::App,
+            id: recent.id,
+            title: recent.title,
+            subtitle: recent.subtitle,
+            kind: recent.kind,
             icon: None,
             score: 0.0,
-            actions: crate::actions::for_app(matches!(
-                app.target,
-                crate::entry::LaunchTarget::Exe { .. }
-            )),
+            actions: crate::actions::for_file(),
         })
     }
 
@@ -156,22 +271,19 @@ impl Pipeline {
     /// activation failure is the Palette, and by now it is hidden — so the frontend
     /// has to be told in order to bring it back.
     pub fn activate(&self, id: &EntryId, action: &str) -> Result<(), String> {
-        let app = self
-            .apps
-            .find(id)
-            .ok_or_else(|| "That application is no longer in the index.".to_string())?;
+        let (target, kind) = self
+            .target_for(id)
+            .ok_or_else(|| "That Entry is no longer in the index.".to_string())?;
 
         let launched = records_usage(action);
 
         match action {
-            a if a == crate::actions::OPEN.as_str() => crate::launch::open(&app.target),
-            a if a == crate::actions::RUN_AS_ADMIN.as_str() => {
-                crate::launch::run_as_admin(&app.target)
-            }
-            a if a == crate::actions::REVEAL.as_str() => crate::launch::reveal(&app.target),
+            a if a == crate::actions::OPEN.as_str() => crate::launch::open(&target),
+            a if a == crate::actions::RUN_AS_ADMIN.as_str() => crate::launch::run_as_admin(&target),
+            a if a == crate::actions::REVEAL.as_str() => crate::launch::reveal(&target),
             a if a == crate::actions::COPY_PATH.as_str() => {
-                let path = crate::launch::path_of(&app.target)
-                    .ok_or_else(|| "That application has no path to copy.".to_string())?;
+                let path = crate::launch::path_of(&target)
+                    .ok_or_else(|| "That Entry has no path to copy.".to_string())?;
                 crate::launch::copy_to_clipboard(&path)
             }
             other => Err(format!("Unknown action: {other}")),
@@ -181,7 +293,7 @@ impl Pipeline {
         // choice, and recording one would teach the ranker to promote something
         // that cannot start.
         if launched {
-            if let Err(e) = self.frecency.record(id, crate::entry::EntryKind::App) {
+            if let Err(e) = self.frecency.record(id, kind) {
                 // Not fatal: the application did start. Losing one unit of usage
                 // costs a little ranking accuracy and nothing else.
                 eprintln!("[takyon] could not record usage: {e}");
@@ -239,6 +351,7 @@ mod tests {
         source.set_for_test(apps);
         Pipeline::new(
             Arc::new(source),
+            Arc::new(RecentsSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
         )
@@ -249,6 +362,61 @@ mod tests {
         let p = pipeline_with(vec![app("Notepad", r"C:\Windows\notepad.exe")]);
         assert_eq!(p.query("note", 7).seq, 7);
         assert_eq!(p.query("", 8).seq, 8);
+    }
+
+    /// Verification step R5, which no browser could reach.
+    ///
+    /// A second `Pipeline` over the same directory must rank by what the first
+    /// one learned. The write was already proven by `frecency.rs`; what this adds
+    /// is the read-back path — a fresh process consulting that history.
+    #[test]
+    fn v0_3_a_fresh_pipeline_ranks_by_what_an_earlier_one_learned() {
+        let dir = std::env::temp_dir().join("takyon-pipeline-restart");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let apps = || {
+            vec![
+                app("Code Composer", r"C:\cc\composer.exe"),
+                app("Codex", r"C:\cx\codex.exe"),
+            ]
+        };
+        let build = || {
+            let source = AppSource::new();
+            source.set_for_test(apps());
+            Pipeline::new(
+                Arc::new(source),
+                Arc::new(RecentsSource::new()),
+                Arc::new(IconStore::new(None)),
+                Arc::new(Frecency::open(Some(dir.clone())).unwrap()),
+            )
+        };
+
+        let cold_top;
+        let promoted;
+        {
+            let first = build();
+            let entries = first.query("code", 1).entries;
+            cold_top = entries[0].title.clone();
+            promoted = entries
+                .iter()
+                .find(|e| e.title != cold_top)
+                .map(|e| e.id.clone())
+                .expect("two Entries match");
+            for _ in 0..5 {
+                first.frecency.record(&promoted, EntryKind::App).unwrap();
+            }
+            assert_ne!(first.query("code", 2).entries[0].title, cold_top);
+        }
+
+        // A different Pipeline, a different Frecency, the same directory.
+        let second = build();
+        assert_eq!(
+            second.query("code", 1).entries[0].id, promoted,
+            "usage must outlive the process that learned it"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The phase, end to end: the Palette starts guessing right.
@@ -272,6 +440,96 @@ mod tests {
         p.frecency.record(&editor, EntryKind::App).unwrap();
 
         assert_eq!(top(&p), "Visual Studio Code", "one launch settles it");
+    }
+
+    /// The Traps section's test, written the day the lock exists.
+    ///
+    /// Deliver a higher-scoring Entry after the lock settles: the top must hold
+    /// and the newcomer append below. Without it a late Source inserts above
+    /// your selection between eye and finger, and you launch the wrong thing.
+    #[test]
+    fn v0_3_a_settled_top_row_is_not_displaced_by_a_better_late_answer() {
+        let p = pipeline_with(vec![
+            app("Code Composer", r"C:\cc\composer.exe"),
+            app("Codex", r"C:\cx\codex.exe"),
+        ]);
+        let first = p.query_at("code", 1, 0).entries[0].title.clone();
+
+        // Settled: the same query, past the lock delay.
+        let settled = p.query_at("code", 2, LOCK_DELAY_MS).entries[0].title.clone();
+        assert_eq!(settled, first, "nothing has changed yet");
+
+        // Now make the other one genuinely outrank it.
+        let other = p
+            .query_at("code", 3, LOCK_DELAY_MS)
+            .entries
+            .iter()
+            .find(|e| e.title != first)
+            .map(|e| e.id.clone())
+            .expect("two Entries match");
+        for _ in 0..5 {
+            p.frecency.record(&other, EntryKind::App).unwrap();
+        }
+
+        let after = p.query_at("code", 4, LOCK_DELAY_MS + 50);
+        assert_eq!(after.entries[0].title, first, "the locked top must hold");
+        assert!(
+            after.entries.iter().any(|e| e.id == other),
+            "the better answer is appended, not dropped"
+        );
+    }
+
+    /// A new keystroke is a new question, so the lock does not survive it.
+    #[test]
+    fn v0_3_a_new_keystroke_clears_the_lock() {
+        let p = pipeline_with(vec![
+            app("Code Composer", r"C:\cc\composer.exe"),
+            app("Codex", r"C:\cx\codex.exe"),
+        ]);
+        let first = p.query_at("code", 1, 0).entries[0].title.clone();
+        p.query_at("code", 2, LOCK_DELAY_MS);
+
+        let other = p
+            .query_at("code", 3, LOCK_DELAY_MS)
+            .entries
+            .iter()
+            .find(|e| e.title != first)
+            .map(|e| e.id.clone())
+            .expect("two Entries match");
+        for _ in 0..5 {
+            p.frecency.record(&other, EntryKind::App).unwrap();
+        }
+
+        // A different query string entirely: the lock must not apply.
+        let typed_more = p.query_at("cod", 4, LOCK_DELAY_MS + 50);
+        assert_ne!(typed_more.entries[0].title, first, "a new query ranks freshly");
+    }
+
+    /// Before it settles, the list is still allowed to reorder. The lock is a
+    /// guarantee about a *stopped* query, not a freeze on the first answer.
+    #[test]
+    fn v0_3_results_still_reorder_while_the_query_is_settling() {
+        let p = pipeline_with(vec![
+            app("Code Composer", r"C:\cc\composer.exe"),
+            app("Codex", r"C:\cx\codex.exe"),
+        ]);
+        let first = p.query_at("code", 1, 0).entries[0].title.clone();
+        let other = p
+            .query_at("code", 2, 10)
+            .entries
+            .iter()
+            .find(|e| e.title != first)
+            .map(|e| e.id.clone())
+            .expect("two Entries match");
+        for _ in 0..5 {
+            p.frecency.record(&other, EntryKind::App).unwrap();
+        }
+
+        let still_settling = p.query_at("code", 3, LOCK_DELAY_MS - 1);
+        assert_eq!(
+            still_settling.entries[0].id, other,
+            "inside the delay the better answer may take the top"
+        );
     }
 
     /// Verification step R4, as a unit test — the cheaper place to catch it.
@@ -329,6 +587,7 @@ mod tests {
         let source = AppSource::new(); // indexing until refreshed
         let p = Pipeline::new(
             Arc::new(source),
+            Arc::new(RecentsSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
         );
@@ -387,13 +646,20 @@ mod tests {
         assert!(p.actions_for(&EntryId("nothing".into())).is_empty());
     }
 
-    /// ADR-0002, as an assertion that will fail loudly if a future Source is added
-    /// to the registry without thinking about it.
+    /// ADR-0002, as an assertion that fails loudly when a Source is added
+    /// without thinking about it.
+    ///
+    /// **Fired once already, as designed**: v0.3's Recents reads a local folder,
+    /// no network, so 1 became 2 deliberately.
     #[test]
-    fn v0_2_every_bangless_source_is_local() {
+    fn v0_3_every_bangless_source_is_local() {
         assert!(bangless_sources_are_local());
         let p = pipeline_with(vec![]);
-        assert_eq!(p.sources.len(), 1, "adding a Source means revisiting ADR-0002");
+        assert_eq!(
+            p.sources.len(),
+            2,
+            "adding a Source means revisiting ADR-0002 before changing this number"
+        );
     }
 
 }
