@@ -55,6 +55,16 @@ into `docs/tbc/0002` as the first real evidence for or against the warm model.
 reach for the Start menu once. *Not yet claimed — that is a day of use, not a
 test run.*
 
+**Packaged as 0.2.0 on 2026-08-28**, the first release artifact for this phase —
+`releases/` held nothing newer than v0.1.3, dated before five of v0.2's own
+commits. Cut deliberately before the exit criterion is met, because both the
+criterion and the unfinished verification script need an installed build to run
+against.
+
+**That installer also carries v0.3 task 0**, which is why `code` reaches the
+right application and `explorer` is no longer called a Store app in a build
+labelled 0.2.0. `C5` above is fixed in it: `icons.bin` holds icons.
+
 ---
 
 ## v0.3 — Ranking that learns, and the Sources it ranks
