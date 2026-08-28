@@ -193,6 +193,12 @@ impl Source for RecentsSource {
 }
 
 /// Read every shortcut in the Recent folder.
+///
+/// **Files only, for now.** `lnk::read` drops any target that is not a file
+/// (ADR-0013's existence check), so a recently-opened *folder* never arrives
+/// here even though [`recent_from`] would classify one. Recorded in
+/// `docs/tbd/v0.3.md` rather than fixed blind — this machine has recent-items
+/// tracking switched off, so neither branch can be observed.
 fn discover() -> Vec<Recent> {
     let Some(dir) = recent_dir() else {
         return Vec::new();
@@ -254,6 +260,36 @@ mod tests {
         let entries = source.query(&Query::new("notes"), Duration::from_millis(20));
         assert!(!entries[0].actions.contains(&actions::RUN_AS_ADMIN));
         assert!(entries[0].actions.contains(&actions::REVEAL));
+    }
+
+    /// Run the real Recent folder on this machine and report what it found.
+    ///
+    /// `#[ignore]`d for the same reason as the application walk: it depends on
+    /// what the user has opened, so it can never assert. It is the only thing
+    /// that exercises the COM read at all — every other test here is pure.
+    #[test]
+    #[ignore = "measures the host machine; run explicitly with --ignored"]
+    fn v0_3_measure_the_real_recent_folder() {
+        let started = Instant::now();
+        let items = discover();
+        let elapsed = started.elapsed();
+
+        println!("  dir            {:?}", recent_dir());
+        println!("  shortcuts      {:>6}", items.len());
+        println!("  read in        {:>6} ms", elapsed.as_millis());
+        let files = items.iter().filter(|r| r.kind == EntryKind::File).count();
+        println!("  files          {:>6}", files);
+        println!("  folders        {:>6}", items.len() - files);
+        for r in items.iter().take(8) {
+            println!("    {:?}  {}", r.kind, r.title);
+        }
+
+        // The one thing that is true regardless of what is installed: this is
+        // read on a timer, so it must be far cheaper than the interval it runs on.
+        assert!(
+            elapsed < REFRESH_EVERY,
+            "a refresh that outlasts its own interval would never stop running"
+        );
     }
 
     #[test]

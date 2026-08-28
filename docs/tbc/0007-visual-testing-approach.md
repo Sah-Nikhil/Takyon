@@ -63,6 +63,62 @@ The lesson worth keeping: when this layer cannot see something, check whether th
 thing is *UI* before assuming the answer is a bigger browser harness. Twice now it
 has not been.
 
+## Costed properly, 2026-08-28
+
+The two candidates were examined against this repository rather than in general,
+because the answer turns on things that are specific to it.
+
+### What is actually uncovered
+
+194 Rust tests cover pure logic well. What they do not touch is everything that
+calls the OS: `lnk::com::read`, `appsfolder::com::discover`, `icons::extract`,
+`recents::discover`, `path::discover`, and `ShellExecuteW` itself. Above that sit
+ten `#[tauri::command]` handlers, the window lifecycle, the hotkey and the tray.
+
+Only the last group genuinely needs a real window. **Everything below it is
+reachable from `cargo test` today**, which is the finding that decides this.
+
+### `tauri::test` exists and is unused
+
+Tauri 2.11.5 ships a `test` feature with `mock_builder`, `mock_app`,
+`get_ipc_response` and a `MockRuntime`. The ten command handlers can therefore be
+driven with real state, real `Pipeline`, real SQLite — and no browser.
+
+One caveat worth writing down: it goes in `[dev-dependencies]`, and must stay
+there. Cargo excludes dev-dependencies from `cargo build`, so `tauri build` is
+unaffected — but a `test` feature leaking into a shipped binary is exactly the
+kind of thing nobody notices until it ships.
+
+### Why `tauri-driver` is the wrong buy *here*
+
+Not because it is bad, but because three things about this project blunt it:
+
+- **`scripts/verify-drive.ps1` already exists.** It launches the release build,
+  injects real keystrokes, refuses to type unless Takyon has foreground, captures
+  the screen and prints the window size each step produced. The marginal gain of
+  a WebDriver harness over that is DOM assertions instead of screenshots — real,
+  but narrow.
+- **msedgedriver must match the WebView2 runtime**, which is evergreen. This
+  machine is on `151.0.4129.107` and Microsoft moves it roughly monthly. The
+  harness therefore breaks on their schedule, not ours, and with no CI the way
+  you find out is a red suite on an unrelated day.
+- **It cannot live in `bun run test`.** Every run would launch a real window and
+  steal focus, which is hostile in a dev loop — so it would sit outside the
+  default suite. That is precisely the failure this note already recorded: a
+  suite that must be remembered is one that gets skipped, and `test:visual` was
+  skipped for exactly that reason until it was folded in.
+
+### The order that follows
+
+1. **Rust integration tests** — hours each, run in the default suite, reach every
+   COM path. Best value by a distance.
+2. **`tauri::test` command tests** — half a day to stand up, closes the IPC layer,
+   still no browser.
+3. **Playwright over CDP** — only if a bug escapes both, and preferred over
+   `tauri-driver` because it reuses the framework already here.
+4. **`tauri-driver`** — not now. Revisit if the product ever grows a second
+   window whose interaction cannot be checked by hand.
+
 ## Verdict if triggered
 
 Add **contract tests first** — they're a day or two and they eliminate fixture
