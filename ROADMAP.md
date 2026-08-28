@@ -65,6 +65,13 @@ against.
 right application and `explorer` is no longer called a Store app in a build
 labelled 0.2.0. `C5` above is fixed in it: `icons.bin` holds icons.
 
+**0.2.1 follows the same day** with the scrollbar the Palette had been leaving to
+Windows — white track, stepper arrows, inside a near-black panel. Now a 4px inset
+thumb drawn from the palette's own token ([ADR-0016 is the sibling
+rule](./docs/adr/0016-the-second-line-is-disambiguation.md); the scrollbar
+reasoning is a comment in `styles.css`, including why `color-scheme: dark` is the
+wrong fix for a `transparent: true` window).
+
 ---
 
 ## v0.3 — Ranking that learns, and the Sources it ranks
@@ -76,8 +83,8 @@ the things v0.2 could not see.
 - [x] **Make `icons.bin` actually persist.** `flush()` runs once per launch, right after the walk, before a single icon has been extracted — the file has always been 12 bytes ([`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md) §10). **Done:** written on a 750 ms debounce after extraction instead; 12 bytes → 492 KB in one driven session
 - [ ] **The second line only when it disambiguates** ([ADR-0016](./docs/adr/0016-the-second-line-is-disambiguation.md)) — landed with task 0. Zero of 1036 applications currently share a title, so the applications list shows none at all; the rule earns its place as this phase's Sources start competing in one list
 - [ ] **Learned identity aliases** ([TBC-0008](./docs/tbc/0008-learned-identity-aliases.md)) — two Entries that start the same application, discovered from icon bytes and from what a launch actually produced, then collapsed. `explorer` beside `File Explorer` is the live case. Needs `frecency.db`, so it lands after the next item
-- [ ] `frecency.db` — per-Entry decayed frequency + recency, updated on every launch
-- [ ] Ranking: Frecency over raw match quality; Apps always sort above documents
+- [x] `frecency.db` — per-Entry decayed frequency + recency, updated on every launch. `rusqlite` with SQLite bundled in; WAL; the `usage` table from IMPLEMENTATION_PLAN §4. Written only for Open and Run as administrator, never for reveal or copy path
+- [x] Ranking: Frecency over raw match quality; Apps always sort above documents. Saturating lift, `1 + 0.6·w/(w+1)`, applied in the pipeline rather than in a Source — so a Source now hands up 64 candidates against the 12 the Palette shows, or a much-used Entry would be cut one step before its lift
 - [ ] **Stability rule**: the top Entry freezes ~100 ms after the last keystroke; late Sources may only append below
 - [ ] User-defined aliases (settings-editable) resolved before matching
 - [ ] Recently-opened files as a cheap Bangless Source (shell recent items, no index), always below apps

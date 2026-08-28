@@ -214,6 +214,30 @@ pub fn dedupe(entries: Vec<Entry>) -> Vec<Entry> {
     best.into_values().collect()
 }
 
+/// The most Frecency can multiply a match score by, less one.
+///
+/// 0.6 lets a well-used Entry climb roughly one rung of the ladder — a much-used
+/// acronym match can pass an exact-name match nobody has ever chosen, which is
+/// ROADMAP v0.3's "Frecency over raw match quality" stated as a number.
+pub const FRECENCY_LIFT: f32 = 0.6;
+
+/// The weight at which half the lift is reached, so one launch is worth a lot
+/// and the hundredth is worth almost nothing.
+const FRECENCY_HALF: f32 = 1.0;
+
+/// Fold usage into a match score.
+///
+/// Saturating rather than linear: `w / (w + half)` approaches 1, so the lift is
+/// bounded and a decade of launches cannot push an Entry arbitrarily far. Weight
+/// zero returns the base score untouched, which keeps a cold install honest.
+pub fn with_frecency(base: f32, weight: f64) -> f32 {
+    let w = weight.max(0.0) as f32;
+    if w == 0.0 {
+        return base;
+    }
+    base * (1.0 + FRECENCY_LIFT * (w / (w + FRECENCY_HALF)))
+}
+
 /// Drop every subtitle that is not telling two rows apart.
 ///
 /// Per query, not per selection: a row that changed height when selected would
@@ -238,6 +262,57 @@ pub fn disambiguate_subtitles(mut entries: Vec<Entry>) -> Vec<Entry> {
 mod tests {
     use super::*;
     use crate::entry::{EntryId, EntryKind};
+
+    /// No usage, no opinion. An Entry nobody has chosen must score exactly what
+    /// matching gave it, or Frecency silently reweights a cold install.
+    #[test]
+    fn v0_3_an_unused_entry_keeps_its_match_score() {
+        let base = score(&q("code"), &hay("Visual Studio Code")).unwrap();
+        assert_eq!(with_frecency(base, 0.0), base);
+    }
+
+    /// More use, more lift, and never unbounded — the lift saturates so a decade
+    /// of launches cannot push an Entry arbitrarily far up the ladder.
+    #[test]
+    fn v0_3_the_frecency_lift_rises_and_saturates() {
+        let base = 700.0;
+        let (one, ten, huge) = (
+            with_frecency(base, 1.0),
+            with_frecency(base, 10.0),
+            with_frecency(base, 10_000.0),
+        );
+        assert!(one > base && ten > one && huge > ten);
+        assert!(huge <= base * (1.0 + FRECENCY_LIFT) + 1e-3);
+    }
+
+    /// tbd v0.2 §2, the case that justified this whole phase.
+    ///
+    /// `code` matched both at the later-word rung, and with no usage data the
+    /// only tiebreak was name length — so the shorter "T3 Code (Alpha)" won and
+    /// the editor sat second. One launch of the editor must settle it.
+    #[test]
+    fn v0_3_one_launch_settles_the_code_collision() {
+        let t3 = score(&q("code"), &hay("T3 Code (Alpha)")).unwrap();
+        let vsc = score(&q("code"), &hay("Visual Studio Code")).unwrap();
+        assert!(t3 > vsc, "without usage the shorter name still wins");
+        assert!(
+            with_frecency(vsc, 1.0) > with_frecency(t3, 0.0),
+            "one launch of the editor must put it on top"
+        );
+    }
+
+    /// Kind ordering is a product rule, not a score. No amount of use may lift a
+    /// document above an application — §3, and task 4's whole point.
+    #[test]
+    fn v0_3_frecency_never_lifts_a_file_above_an_app() {
+        let mut file = titled("Notes", "C:\\notes.txt");
+        file.kind = EntryKind::File;
+        file.score = with_frecency(900.0, 10_000.0);
+        let mut app = titled("Nothing", "C:\\n.exe");
+        app.score = 1.0;
+        let ordered = order(vec![file, app], 8);
+        assert_eq!(ordered[0].kind, EntryKind::App);
+    }
 
     fn titled(title: &str, subtitle: &str) -> Entry {
         Entry {

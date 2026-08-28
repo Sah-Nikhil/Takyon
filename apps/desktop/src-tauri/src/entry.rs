@@ -19,6 +19,18 @@ pub const SOURCE_BUDGET: Duration = Duration::from_millis(20);
 /// How many Entries the Palette is ever sent (§3).
 pub const MAX_ENTRIES: usize = 12;
 
+/// How many a Source hands the pipeline before Frecency has been applied.
+///
+/// Wider than [`MAX_ENTRIES`]: usage folds in after the fan-out, so cutting to
+/// twelve on match quality alone could discard a much-used Entry one step before
+/// its lift. `rank::FRECENCY_LIFT` bounds that lift, so wider is enough.
+pub const SOURCE_SHORTLIST: usize = 64;
+
+/// The shortlist must leave the pipeline something to choose from. A `const`
+/// block, so narrowing it below the visible limit fails the build rather than a
+/// test run nobody did.
+const _: () = assert!(SOURCE_SHORTLIST > MAX_ENTRIES);
+
 /// Stable identity for an Entry, and the Frecency key from v0.3.
 ///
 /// §2: resolved target path for an App, full path for a File, row id for a Clip.

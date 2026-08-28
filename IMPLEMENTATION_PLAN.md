@@ -185,7 +185,28 @@ documents**, never interleaved by raw score.
 
 `weight = Σ 0.5^(age_days / 30)` — a 30-day half-life. Stored decayed with a
 `decayed_at` stamp and lazily re-decayed on read, so there is no background job
-and no clock-skew problem.
+and no clock-skew problem. Negative elapsed time is clamped: a clock that jumps
+backwards would otherwise raise `0.5` to a negative power and *grow* a score.
+
+**Composition, added at v0.3.** The match score is multiplied by
+`1 + 0.6 · w/(w+1)`, saturating rather than linear — so one launch is worth a
+great deal, the hundredth almost nothing, and the lift is bounded at 1.6×. That
+bound is the product rule stated as a number: a well-used Entry climbs roughly
+one rung, so a much-used acronym match can pass an exact-name match nobody has
+ever chosen, and nothing can climb further than that. Weight zero returns the
+base score untouched, which keeps a cold install ranked purely on matching.
+
+Both constants are guesses to be tuned from real use, exactly like the half-life.
+
+**Frecency is applied in the pipeline, never inside a Source.** Sources return
+match quality alone, which keeps the ladder testable without a usage database and
+keeps ADR-0009's "nothing UI-aware in a Source" honest. The consequence is that a
+Source must hand up more than the Palette shows — `SOURCE_SHORTLIST` (64) against
+`MAX_ENTRIES` (12) — or a much-used Entry is discarded one step before its lift.
+
+Only launches are recorded. Open and Run as administrator write usage; Open file
+location and Copy path do not, because those are things people do while looking
+*for* something rather than choosing it.
 
 ---
 

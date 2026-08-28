@@ -14,6 +14,7 @@ pub mod actions;
 pub mod bench;
 pub mod entry;
 pub mod firstrun;
+pub mod frecency;
 pub mod hotkey;
 pub mod icons;
 pub mod identity;
@@ -230,7 +231,23 @@ pub fn run() {
             let apps = Arc::new(AppSource::new());
             let icons = Arc::new(IconStore::default());
             app.manage(icons.clone());
-            app.manage(Arc::new(Pipeline::new(apps.clone(), icons.clone())));
+
+            // A usage database that cannot be opened must not stop the launcher.
+            // In memory it learns for this session and forgets at exit, which is
+            // a worse Palette rather than no Palette.
+            let frecency = Arc::new(
+                frecency::Frecency::open(identity::data_dir())
+                    .or_else(|e| {
+                        eprintln!("[takyon] frecency.db could not be opened: {e}");
+                        frecency::Frecency::open(None)
+                    })
+                    .expect("an in-memory database always opens"),
+            );
+            app.manage(Arc::new(Pipeline::new(
+                apps.clone(),
+                icons.clone(),
+                frecency.clone(),
+            )));
 
             // Everything above this line is plugin registration that Tauri has
             // already done. This is the first thing that makes the app useful, and

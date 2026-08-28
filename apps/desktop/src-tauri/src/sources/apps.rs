@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 
 use crate::actions;
 use crate::entry::{
-    Action, Entry, EntryId, EntryKind, IconRef, LaunchTarget, Query, Source, SourceId, MAX_ENTRIES,
+    Action, Entry, EntryId, EntryKind, IconRef, LaunchTarget, Query, Source, SourceId,
+    SOURCE_SHORTLIST,
 };
 use crate::icons::{IconSource, IconStore};
 use crate::rank::{self, Haystack};
@@ -184,8 +185,9 @@ impl Source for AppSource {
 
         // Trimmed here as well as in `query.rs`. Without this a two-letter query
         // hands several hundred Entries to the merge step, and every one of them
-        // is cloned across the fan-out for nothing.
-        rank::order(out, MAX_ENTRIES)
+        // is cloned across the fan-out for nothing. `SOURCE_SHORTLIST`, not
+        // `MAX_ENTRIES`: Frecency is applied after the fan-out and needs room.
+        rank::order(out, SOURCE_SHORTLIST)
     }
 
     fn actions(&self, entry: &Entry) -> Vec<Action> {
@@ -479,14 +481,18 @@ mod tests {
         assert!(entries.len() < 500);
     }
 
+    /// Amended at v0.3: a Source stops at the **shortlist**, not at what the
+    /// Palette shows. Frecency is applied after the fan-out, so cutting to twelve
+    /// here would discard a much-used Entry one step before its lift. `query.rs`
+    /// enforces `MAX_ENTRIES` on the way out.
     #[test]
-    fn v0_2_the_source_never_returns_more_than_the_entry_limit() {
+    fn v0_3_the_source_stops_at_the_shortlist_not_the_entry_limit() {
         let apps: Vec<App> = (0..200)
             .map(|i| exe_app(&format!("Photo {i}"), &format!(r"C:\p{i}.exe"), None))
             .collect();
         let source = source_with(apps);
         let entries = source.query(&Query::new("photo"), Duration::from_millis(50));
-        assert_eq!(entries.len(), MAX_ENTRIES);
+        assert_eq!(entries.len(), SOURCE_SHORTLIST);
     }
 
     /// Run the real discovery walk on this machine and report what it found.

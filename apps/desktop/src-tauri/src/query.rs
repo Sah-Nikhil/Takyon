@@ -18,6 +18,7 @@ use std::time::Instant;
 use serde::Serialize;
 
 use crate::entry::{Entry, EntryId, Query, Source, MAX_ENTRIES, SOURCE_BUDGET};
+use crate::frecency::Frecency;
 use crate::icons::IconStore;
 use crate::rank;
 use crate::sources::apps::AppSource;
@@ -47,15 +48,19 @@ pub struct Pipeline {
     /// expose — a `Source` produces Entries and knows nothing else.
     pub apps: Arc<AppSource>,
     pub icons: Arc<IconStore>,
+    /// What the user has actually chosen before. Read once per candidate Entry,
+    /// written once per activation.
+    pub frecency: Arc<Frecency>,
     sources: Vec<Arc<dyn Source>>,
 }
 
 impl Pipeline {
-    pub fn new(apps: Arc<AppSource>, icons: Arc<IconStore>) -> Self {
+    pub fn new(apps: Arc<AppSource>, icons: Arc<IconStore>, frecency: Arc<Frecency>) -> Self {
         let sources: Vec<Arc<dyn Source>> = vec![apps.clone()];
         Pipeline {
             apps,
             icons,
+            frecency,
             sources,
         }
     }
@@ -76,12 +81,21 @@ impl Pipeline {
             };
         }
 
-        let entries = self.fan_out(&q);
         // Icon keys are already on the Entries: each Source resolves its own at
-        // discovery time, so nothing here stats a file. Doing it lazily meant
-        // twelve `fs::metadata` calls per keystroke, on the span the 30 ms
+        // discovery time, so nothing here stats a file. Lazily that was twelve
+        // `fs::metadata` calls per keystroke, on the exact span the 30 ms
         // first-Entry budget measures.
-        let entries = rank::order(rank::dedupe(entries), MAX_ENTRIES);
+        let entries = self.fan_out(&q);
+
+        // Frecency folds in here rather than inside a Source: the ladder stays
+        // testable without a usage database, and no Source has to know what the
+        // user has launched. One indexed read per candidate.
+        let mut entries = rank::dedupe(entries);
+        for entry in &mut entries {
+            entry.score = rank::with_frecency(entry.score, self.frecency.weight(&entry.id));
+        }
+
+        let entries = rank::order(entries, MAX_ENTRIES);
         // Last, and after the truncation, so "does this title repeat?" is asked
         // about the list the Palette is sent rather than a longer one.
         let entries = rank::disambiguate_subtitles(entries);
@@ -147,6 +161,8 @@ impl Pipeline {
             .find(id)
             .ok_or_else(|| "That application is no longer in the index.".to_string())?;
 
+        let launched = records_usage(action);
+
         match action {
             a if a == crate::actions::OPEN.as_str() => crate::launch::open(&app.target),
             a if a == crate::actions::RUN_AS_ADMIN.as_str() => {
@@ -159,8 +175,29 @@ impl Pipeline {
                 crate::launch::copy_to_clipboard(&path)
             }
             other => Err(format!("Unknown action: {other}")),
+        }?;
+
+        // After the launch succeeded, never before. A failed activation is not a
+        // choice, and recording one would teach the ranker to promote something
+        // that cannot start.
+        if launched {
+            if let Err(e) = self.frecency.record(id, crate::entry::EntryKind::App) {
+                // Not fatal: the application did start. Losing one unit of usage
+                // costs a little ranking accuracy and nothing else.
+                eprintln!("[takyon] could not record usage: {e}");
+            }
         }
+        Ok(())
     }
+}
+
+/// Does this action count as choosing the application?
+///
+/// Only a launch teaches the ranker. Revealing a file or copying its path is
+/// something people do while looking *for* something, and counting it would
+/// train the Palette on the search rather than on the choice.
+pub fn records_usage(action: &str) -> bool {
+    action == crate::actions::OPEN.as_str() || action == crate::actions::RUN_AS_ADMIN.as_str()
 }
 
 /// Present so a future Source cannot quietly become a network client.
@@ -200,7 +237,11 @@ mod tests {
     fn pipeline_with(apps: Vec<App>) -> Pipeline {
         let source = AppSource::new();
         source.set_for_test(apps);
-        Pipeline::new(Arc::new(source), Arc::new(IconStore::new(None)))
+        Pipeline::new(
+            Arc::new(source),
+            Arc::new(IconStore::new(None)),
+            Arc::new(Frecency::open(None).unwrap()),
+        )
     }
 
     #[test]
@@ -208,6 +249,53 @@ mod tests {
         let p = pipeline_with(vec![app("Notepad", r"C:\Windows\notepad.exe")]);
         assert_eq!(p.query("note", 7).seq, 7);
         assert_eq!(p.query("", 8).seq, 8);
+    }
+
+    /// The phase, end to end: the Palette starts guessing right.
+    ///
+    /// tbd v0.2 §2's real case. `code` matches both at the later-word rung, and
+    /// the shorter name wins on a cold install. One launch of the editor must
+    /// reverse it — through the whole pipeline, not just the score function.
+    #[test]
+    fn v0_3_launching_an_application_puts_it_on_top_next_time() {
+        let p = pipeline_with(vec![
+            app("T3 Code (Alpha)", r"C:\t3\t3code.exe"),
+            app("Visual Studio Code", r"C:\vsc\Code.exe"),
+        ]);
+        let top = |p: &Pipeline| p.query("code", 1).entries[0].title.clone();
+        assert_eq!(top(&p), "T3 Code (Alpha)", "cold, the shorter name wins");
+
+        let editor = p.query("code", 2).entries.iter()
+            .find(|e| e.title == "Visual Studio Code")
+            .map(|e| e.id.clone())
+            .expect("the editor is in the list, just not first");
+        p.frecency.record(&editor, EntryKind::App).unwrap();
+
+        assert_eq!(top(&p), "Visual Studio Code", "one launch settles it");
+    }
+
+    /// Verification step R4, as a unit test — the cheaper place to catch it.
+    ///
+    /// A silent failure otherwise: copying a path would quietly promote whatever
+    /// you copied, and the only symptom would be a ranker that slowly learns the
+    /// wrong things over weeks.
+    #[test]
+    fn v0_3_only_launching_teaches_the_ranker() {
+        assert!(records_usage(crate::actions::OPEN.as_str()));
+        assert!(records_usage(crate::actions::RUN_AS_ADMIN.as_str()));
+        assert!(!records_usage(crate::actions::REVEAL.as_str()));
+        assert!(!records_usage(crate::actions::COPY_PATH.as_str()));
+        assert!(!records_usage("teleport"));
+    }
+
+    /// The shortlist is an internal width, never something the Palette sees.
+    #[test]
+    fn v0_3_the_palette_is_still_sent_at_most_the_entry_limit() {
+        let apps: Vec<App> = (0..200)
+            .map(|i| app(&format!("Photo {i}"), &format!(r"C:\p{i}.exe")))
+            .collect();
+        let p = pipeline_with(apps);
+        assert_eq!(p.query("photo", 1).entries.len(), MAX_ENTRIES);
     }
 
     #[test]
@@ -239,7 +327,11 @@ mod tests {
     #[test]
     fn v0_2_a_query_during_the_first_walk_says_it_is_still_indexing() {
         let source = AppSource::new(); // indexing until refreshed
-        let p = Pipeline::new(Arc::new(source), Arc::new(IconStore::new(None)));
+        let p = Pipeline::new(
+            Arc::new(source),
+            Arc::new(IconStore::new(None)),
+            Arc::new(Frecency::open(None).unwrap()),
+        );
         let result = p.query("anything", 1);
         assert!(result.indexing);
         assert!(result.entries.is_empty());

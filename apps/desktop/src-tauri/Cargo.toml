@@ -3,7 +3,7 @@ members = ["uiaccess"]
 
 [package]
 name = "takyon"
-version = "0.2.0"
+version = "0.2.1"
 description = "Takyon - a local-first keyboard launcher for Windows"
 authors = ["Nikhil Sah <sah.nikhil11@gmail.com>"]
 edition = "2021"
@@ -49,6 +49,10 @@ memmap2 = "0.9"
 # the only lossless format it accepts that is also cheap to produce. MIT/Apache-2,
 # so it stays clear of the GPL question that is still open (ADR-0005).
 png = "0.17"
+# `frecency.db` (v0.3), and the storage IMPLEMENTATION_PLAN §4 already specifies
+# for settings and clips. `bundled` compiles SQLite in: no DLL to ship, find or
+# version-match. MIT crate over a public-domain engine, so ADR-0005 stays open.
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 # Pinned to the same major as Tauri's own dependency so the two share one compiled
