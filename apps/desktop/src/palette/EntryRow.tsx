@@ -60,7 +60,20 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
       )}
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] leading-tight text-fg">{entry.title}</div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="truncate text-[14px] leading-tight text-fg">{entry.title}</span>
+          {entry.version && (
+            /*
+              Only present where two same-named executables disagree, so it is
+              never decoration — it is the only thing separating two Node
+              installs. `shrink-0` because the title truncates first: losing the
+              version turns two identical rows back into two identical rows.
+             */
+            <span className="shrink-0 text-[11px] leading-tight tabular-nums text-fg/40">
+              {entry.version}
+            </span>
+          )}
+        </div>
         {entry.subtitle && (
           /*
             Truncated from the *left* for paths, because the informative end of

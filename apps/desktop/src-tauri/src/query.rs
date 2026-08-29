@@ -70,9 +70,6 @@ pub struct Pipeline {
     /// What the user has actually chosen before. Read once per candidate Entry,
     /// written once per activation.
     pub frecency: Arc<Frecency>,
-    /// What each Entry has been seen to *start* (v0.3 task 1b). Written after an
-    /// activation, never read on the query path.
-    pub collapse: Arc<crate::collapse::CollapseStore>,
     sources: Vec<Arc<dyn Source>>,
     /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
     lock: std::sync::Mutex<Option<StabilityLock>>,
@@ -87,7 +84,6 @@ impl Pipeline {
         recents: Arc<RecentsSource>,
         icons: Arc<IconStore>,
         frecency: Arc<Frecency>,
-        collapse: Arc<crate::collapse::CollapseStore>,
     ) -> Self {
         let sources: Vec<Arc<dyn Source>> = vec![apps.clone(), recents.clone()];
         Pipeline {
@@ -95,7 +91,6 @@ impl Pipeline {
             recents,
             icons,
             frecency,
-            collapse,
             sources,
             lock: std::sync::Mutex::new(None),
             started: Instant::now(),
@@ -254,6 +249,7 @@ impl Pipeline {
                     app.target,
                     crate::entry::LaunchTarget::Exe { .. }
                 )),
+                version: None,
             });
         }
         let Some(recent) = self.recents.find(id) else {
@@ -267,6 +263,7 @@ impl Pipeline {
             icon: None,
             score: 0.0,
             actions: crate::actions::for_file(),
+            version: None,
         })
     }
 
@@ -280,7 +277,9 @@ impl Pipeline {
             .target_for(id)
             .ok_or_else(|| "That Entry is no longer in the index.".to_string())?;
 
-        let image = match action {
+        // The image path of what started, kept for TBC-0010 (a recents list Takyon
+        // owns) — nothing consumes it yet.
+        let _image = match action {
             a if a == crate::actions::OPEN.as_str() => crate::launch::open(&target),
             a if a == crate::actions::RUN_AS_ADMIN.as_str() => crate::launch::run_as_admin(&target),
             a if a == crate::actions::REVEAL.as_str() => crate::launch::reveal(&target).map(|_| None),
@@ -292,7 +291,7 @@ impl Pipeline {
             other => Err(format!("Unknown action: {other}")),
         }?;
 
-        self.record_activation(id, kind, action, image.as_deref());
+        self.record_activation(id, kind, action);
         Ok(())
     }
 
@@ -301,13 +300,7 @@ impl Pipeline {
     /// Split out because the launch itself cannot be tested and this can. Both
     /// writes are best-effort: the application already started, and losing a unit
     /// of usage costs a little ranking accuracy and nothing else.
-    pub fn record_activation(
-        &self,
-        id: &EntryId,
-        kind: crate::entry::EntryKind,
-        action: &str,
-        image: Option<&std::path::Path>,
-    ) {
+    pub fn record_activation(&self, id: &EntryId, kind: crate::entry::EntryKind, action: &str) {
         // Never before the launch succeeded. A failed activation is not a choice,
         // and recording one would teach the ranker to promote something that
         // cannot start.
@@ -316,11 +309,6 @@ impl Pipeline {
         }
         if let Err(e) = self.frecency.record(id, kind) {
             eprintln!("[takyon] could not record usage: {e}");
-        }
-        if let Some(image) = image {
-            if let Err(e) = self.collapse.observe(id, image) {
-                eprintln!("[takyon] could not record what started: {e}");
-            }
         }
     }
 }
@@ -365,6 +353,7 @@ mod tests {
             target,
             icon_source: None,
             icon: None,
+            version: None,
         }
     }
 
@@ -376,7 +365,6 @@ mod tests {
             Arc::new(RecentsSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
-            Arc::new(crate::collapse::CollapseStore::open(None).unwrap()),
         )
     }
 
@@ -412,7 +400,6 @@ mod tests {
                 Arc::new(RecentsSource::new()),
                 Arc::new(IconStore::new(None)),
                 Arc::new(Frecency::open(Some(dir.clone())).unwrap()),
-                Arc::new(crate::collapse::CollapseStore::open(None).unwrap()),
             )
         };
 
@@ -614,7 +601,6 @@ mod tests {
             Arc::new(RecentsSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
-            Arc::new(crate::collapse::CollapseStore::open(None).unwrap()),
         );
         let result = p.query("anything", 1);
         assert!(result.indexing);

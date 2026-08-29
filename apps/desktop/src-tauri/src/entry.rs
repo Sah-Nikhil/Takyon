@@ -145,6 +145,11 @@ pub struct Entry {
     /// Ids only. Labels live in `actions.rs`, so the query response does not
     /// re-ship the same strings every keystroke.
     pub actions: Vec<ActionId>,
+    /// Shown beside the title where two same-named executables disagree — two
+    /// Node installs, two R installs. Absent everywhere else, which is most
+    /// rows: see `version.rs` for why it is not read for everything.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 /// Id of one `Ctrl+K` action.
@@ -382,6 +387,7 @@ mod tests {
             icon: None,
             score: 1.0,
             actions: vec![],
+            version: None,
         };
         let v: serde_json::Value = serde_json::to_value(&e).unwrap();
         assert!(v.get("subtitle").is_none());

@@ -79,6 +79,29 @@ const FIXTURES: Entry[] = [
     score: 800,
     actions: ["open"],
   },
+  /*
+    Two installs of one tool, which is the only case that carries a version. The
+    titles differ and the paths differ, so nothing else on the row tells them
+    apart — see `version.rs`.
+   */
+  {
+    id: "c:\\nvm4w\\nodejs\\node.exe",
+    title: "node",
+    subtitle: "C:\\nvm4w\\nodejs\\node.exe",
+    kind: "app",
+    score: 700,
+    actions: ["open", "run_as_admin", "reveal", "copy_path"],
+    version: "24.14.1",
+  },
+  {
+    id: "c:\\program files\\nodejs\\node.exe",
+    title: "Node.js",
+    subtitle: "C:\\Program Files\\nodejs\\node.exe",
+    kind: "app",
+    score: 700,
+    actions: ["open", "run_as_admin", "reveal", "copy_path"],
+    version: "26.7",
+  },
   {
     id: "steam:440",
     title: "Team Fortress 2",

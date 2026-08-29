@@ -381,3 +381,29 @@ test("a working hotkey draws no banner and reserves no space", async ({ page }) 
   expect(reported).toBe(0);
   expect(paletteHeight(1, false, null, 0)).toBe(paletteHeight(1));
 });
+
+/**
+ * Two installs of one tool, told apart only by their version.
+ *
+ * The row renderer's job here is narrow and load-bearing: the version must be
+ * visible and must survive a long title, because losing it turns two
+ * distinguishable rows back into two identical ones.
+ */
+test("two installs of one tool show their versions", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("node");
+
+  const rows = page.getByRole("option");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasText: "24.14.1" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: "26.7" })).toHaveCount(1);
+
+  // The path must survive as a path. `dir="rtl"` reorders neutral characters,
+  // and a backslash is neutral — if it ever stops rendering, this catches it.
+  const nvm = rows.filter({ hasText: "24.14.1" });
+  await expect(nvm).toContainText("nvm4w");
+  expect(await nvm.innerText()).toContain(String.fromCharCode(92));
+
+  await fitTo(page, 2);
+  await expect(page).toHaveScreenshot("palette-versions.png");
+});

@@ -78,6 +78,12 @@ export interface Entry {
   score: number;
   /** Ids only. The labels live in Rust's `actions.rs` and arrive via `actionsFor`. */
   actions: string[];
+  /**
+   * Shown beside the title, and only where two same-named executables disagree
+   * about theirs — two Node installs, two R installs. Absent on almost every
+   * row: `version.rs` explains why it is not read for everything.
+   */
+  version?: string;
 }
 
 /** One row of the `Ctrl+K` action menu. */

@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 
 use common::{real_apps, TempDir};
 use takyon_lib::aliases::AliasStore;
-use takyon_lib::collapse::CollapseStore;
 use takyon_lib::entry::{EntryId, EntryKind, MAX_ENTRIES};
 use takyon_lib::frecency::Frecency;
 use takyon_lib::icons::IconStore;
@@ -27,13 +26,11 @@ use takyon_lib::sources::recents::{recent_from, RecentsSource};
 fn pipeline_in(dir: &TempDir) -> Arc<Pipeline> {
     let (apps, icons) = real_apps();
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).expect("frecency.db"));
-    let collapse = Arc::new(CollapseStore::open(Some(dir.to_owned())).expect("collapse tables"));
     Arc::new(Pipeline::new(
         apps,
         Arc::new(RecentsSource::new()),
         icons,
         frecency,
-        collapse,
     ))
 }
 
@@ -91,14 +88,7 @@ fn v0_3_icons_extract_through_com_and_survive_a_restart() {
     apps.refresh(&icons);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let collapse = Arc::new(CollapseStore::open(None).unwrap());
-    let p = Pipeline::new(
-        apps,
-        Arc::new(RecentsSource::new()),
-        icons.clone(),
-        frecency,
-        collapse,
-    );
+    let p = Pipeline::new(apps, Arc::new(RecentsSource::new()), icons.clone(), frecency);
 
     let mut keys = Vec::new();
     for entry in p.query(BROAD, 1).entries.iter().take(6) {
@@ -183,8 +173,7 @@ fn v0_3_applications_outrank_documents_in_one_real_list() {
     ]);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let collapse = Arc::new(CollapseStore::open(None).unwrap());
-    let p = Pipeline::new(apps, recents, icons, frecency, collapse);
+    let p = Pipeline::new(apps, recents, icons, frecency);
     let entries = p.query(&word, 1).entries;
     let kinds: Vec<_> = entries.iter().map(|e| e.kind).collect();
 
@@ -254,7 +243,6 @@ fn v0_3_an_alias_puts_its_target_first_in_the_real_list() {
         Arc::new(RecentsSource::new()),
         icons,
         frecency,
-        Arc::new(CollapseStore::open(None).unwrap()),
     );
 
     // A real id the Palette already reaches, aliased to a string matching
@@ -329,85 +317,346 @@ fn v0_3_every_id_the_palette_shows_resolves_to_actions() {
 
 // ------------------------------------------------------------------ identity
 
-/// Every candidate the icon signal produces on this machine, and what stops it.
+
+
+
+/// What the Palette actually holds for one query: ids, icon keys, icon sharing.
 ///
-/// `#[ignore]`d because it reads the real `icons.bin` and depends on what is
-/// installed. It is the measurement TBC-0008 asks for before trusting anything.
+/// `#[ignore]`d — it reads the real walk and the real `icons.bin`, so it can
+/// only report. Written to explain duplicate rows without guessing at them.
 #[test]
 #[ignore = "measures the host machine; run explicitly with --ignored"]
-fn v0_3_measure_the_real_icon_pairs() {
-    use takyon_lib::collapse::pairs_by_icon;
-
+fn v0_3_measure_what_a_query_returns() {
     let (apps, _) = real_apps();
     let Some(data) = takyon_lib::identity::data_dir() else {
-        eprintln!("  no data directory");
         return;
     };
-    let icons = IconStore::new(Some(data));
-    let bytes = icons.extracted();
-    eprintln!("  icons.bin holds {} icons", bytes.len());
+    let store = IconStore::new(Some(data));
+    let bytes = store.extracted();
 
-    let with_icons: Vec<(EntryId, Vec<u8>)> = apps
-        .icon_keys()
-        .into_iter()
-        .filter_map(|(id, key)| bytes.get(&key).map(|b| (id, b.clone())))
-        .collect();
-    eprintln!("  {} of {} Entries have one", with_icons.len(), apps.len());
-
-    let pairs = pairs_by_icon(&with_icons);
-    eprintln!("  {} candidate pairs after the generic-icon rule:", pairs.len());
-    for (a, b) in &pairs {
-        eprintln!("    {}\n      {}", a.as_str(), b.as_str());
-    }
-}
-
-/// The safety property, on the real machine: icons alone can hide nothing.
-///
-/// Seven pairs share icon bytes here and only one is a genuine duplicate. What
-/// stops the other six is that neither half has ever been seen starting the
-/// other's executable, so nothing is collapsed until a launch says so.
-#[test]
-fn v0_3_matching_icons_alone_never_hide_a_row() {
-    let dir = TempDir::new("collapse-safety");
-    let (apps, icons) = real_apps();
-    let before = apps.len();
-
-    let store = CollapseStore::open(Some(dir.to_owned())).unwrap();
-    let frecency = Frecency::open(Some(dir.to_owned())).unwrap();
-    let decided = takyon_lib::collapse::learn(&apps, &icons, &store, &frecency, Some(dir.path()));
-
-    assert!(decided.is_empty(), "collapsed {decided:?} with no launch evidence");
-    assert_eq!(apps.len(), before, "a row disappeared on the icon signal alone");
-    assert!(store.active().is_empty());
-}
-
-/// A corroborated duplicate does collapse, so the safety test above is not
-/// passing simply because nothing ever collapses.
-///
-/// The evidence is injected rather than launched: a test that starts real
-/// applications is not a test.
-#[test]
-fn v0_3_a_corroborated_duplicate_does_collapse() {
-    let dir = TempDir::new("collapse-acts");
-    let image = r"c:\windows\system32\control.exe";
-    let winner = EntryId(image.to_string());
-    let loser = EntryId("aumid:Microsoft.Windows.AdministrativeTools".into());
-
-    let store = CollapseStore::open(Some(dir.to_owned())).unwrap();
-    let frecency = Frecency::open(Some(dir.to_owned())).unwrap();
-    for id in [&winner, &loser] {
-        for _ in 0..2 {
-            store.observe(id, std::path::Path::new(image)).unwrap();
+    // How many Entries share each icon, so the generic-icon rule is visible.
+    let mut shares: std::collections::HashMap<Vec<u8>, usize> = std::collections::HashMap::new();
+    for (_, key) in apps.icon_keys() {
+        if let Some(b) = bytes.get(&key) {
+            *shares.entry(b.clone()).or_default() += 1;
         }
     }
 
-    let found = store.collapses(&[(loser.clone(), winner.clone())]);
-    assert_eq!(found.len(), 1, "a corroborated pair did not collapse");
-    assert_eq!(found[0].winner, winner, "the AUMID beat the real path");
-    assert_eq!(found[0].loser, loser);
+    let by_id: std::collections::HashMap<EntryId, String> = apps.icon_keys().into_iter().collect();
+    let dir = TempDir::new("measure-query");
+    let p = pipeline_in(&dir);
 
-    // And the decision is durable, which is what makes suppression survive a walk.
-    assert_eq!(store.apply(&found, &frecency).len(), 1);
-    assert_eq!(store.active().len(), 1);
-    assert!(store.apply(&found, &frecency).is_empty());
+    for q in ["explorer", "node", "administrative"] {
+        eprintln!("\n  {q:?}");
+        for e in p.query(q, 1).entries.iter() {
+            let icon = by_id.get(&e.id).and_then(|k| bytes.get(k));
+            let shared = icon.and_then(|b| shares.get(b)).copied().unwrap_or(0);
+            eprintln!(
+                "    {:<38} shares icon with {} entries{}",
+                e.title,
+                shared.saturating_sub(1),
+                if icon.is_none() { "  (icon not cached)" } else { "" }
+            );
+            eprintln!("      id {}", e.id.as_str());
+        }
+    }
+}
+
+/// Is a given id in the walked list at all, whatever a query does with it?
+#[test]
+#[ignore = "measures the host machine; run explicitly with --ignored"]
+fn v0_3_measure_whether_an_aumid_survives_discovery() {
+    let (apps, _) = real_apps();
+    for id in [
+        "aumid:Microsoft.Windows.AdministrativeTools",
+        "aumid:Microsoft.Windows.Explorer",
+        r"c:\windows\explorer.exe",
+    ] {
+        let found = apps.find(&EntryId(id.to_string()));
+        eprintln!(
+            "  {:<48} {}",
+            id,
+            match &found {
+                Some(a) => format!("in the list as {:?}", a.title),
+                None => "NOT in the list".to_string(),
+            }
+        );
+    }
+    let aumids = apps
+        .icon_keys()
+        .into_iter()
+        .filter(|(id, _)| id.as_str().starts_with("aumid:"))
+        .count();
+    eprintln!("  {aumids} AUMID Entries survived discovery in total");
+}
+
+
+/// What a version column would cost and cover on this machine.
+#[test]
+#[ignore = "measures the host machine; run explicitly with --ignored"]
+fn v0_3_measure_executable_versions() {
+    let (apps, _) = real_apps();
+    let paths: Vec<String> = apps
+        .icon_keys()
+        .into_iter()
+        .map(|(id, _)| id.as_str().split('|').next().unwrap_or_default().to_string())
+        .filter(|p| p.ends_with(".exe"))
+        .collect();
+
+    let started = Instant::now();
+    let versions: Vec<Option<String>> = paths
+        .iter()
+        .map(|p| takyon_lib::version::of(std::path::Path::new(p)))
+        .collect();
+    let elapsed = started.elapsed();
+
+    let have = versions.iter().filter(|v| v.is_some()).count();
+    eprintln!(
+        "  {} executables, {} carry a version ({}%), read in {} ms",
+        paths.len(),
+        have,
+        have * 100 / paths.len().max(1),
+        elapsed.as_millis()
+    );
+
+    for needle in ["node.exe", "powershell.exe", "explorer.exe", "odbcad32.exe"] {
+        eprintln!("  {needle}:");
+        for (p, v) in paths.iter().zip(&versions) {
+            if p.ends_with(needle) {
+                eprintln!("    {:<52} {}", p, v.clone().unwrap_or("-".into()));
+            }
+        }
+    }
+}
+
+/// How many executables actually collide by filename? That is the set a version
+/// column would have to read, and the cost of the feature.
+#[test]
+#[ignore = "measures the host machine; run explicitly with --ignored"]
+fn v0_3_measure_executables_sharing_a_filename() {
+    let (apps, _) = real_apps();
+    let paths: Vec<String> = apps
+        .icon_keys()
+        .into_iter()
+        .map(|(id, _)| id.as_str().split('|').next().unwrap_or_default().to_string())
+        .filter(|p| p.ends_with(".exe"))
+        .collect();
+
+    let mut by_name: std::collections::HashMap<&str, Vec<&String>> =
+        std::collections::HashMap::new();
+    for p in &paths {
+        let name = p.rsplit('\\').next().unwrap_or(p);
+        by_name.entry(name).or_default().push(p);
+    }
+    // Distinct paths only: one binary listed twice is not a collision.
+    let colliding: Vec<(&str, Vec<&String>)> = by_name
+        .into_iter()
+        .map(|(n, mut v)| {
+            v.sort();
+            v.dedup();
+            (n, v)
+        })
+        .filter(|(_, v)| v.len() > 1)
+        .collect();
+
+    let files: usize = colliding.iter().map(|(_, v)| v.len()).sum();
+    let started = Instant::now();
+    let mut differing = 0usize;
+    for (name, group) in &colliding {
+        let versions: Vec<Option<String>> = group
+            .iter()
+            .map(|p| takyon_lib::version::of(std::path::Path::new(p)))
+            .collect();
+        let distinct: std::collections::HashSet<_> = versions.iter().collect();
+        if distinct.len() > 1 {
+            differing += 1;
+            eprintln!("    {name}");
+            for (p, v) in group.iter().zip(&versions) {
+                eprintln!("      {:<52} {}", p, v.clone().unwrap_or("-".into()));
+            }
+        }
+    }
+    eprintln!(
+        "\n  {} names collide over {} files, read in {} ms",
+        colliding.len(),
+        files,
+        started.elapsed().as_millis()
+    );
+    eprintln!("  {differing} of those are told apart by their version");
+}
+
+/// Versions land on the rows that need them and nowhere else.
+#[test]
+fn v0_3_only_ambiguous_executables_carry_a_version() {
+    let dir = TempDir::new("versions");
+    let p = pipeline_in(&dir);
+    let (apps, _) = real_apps();
+
+    let mut with_version = 0usize;
+    for q in ["node", "chrome", "powershell", "explorer", "notepad"] {
+        for e in p.query(q, 1).entries.iter() {
+            if let Some(v) = &e.version {
+                with_version += 1;
+                eprintln!("  {:<32} {v}", e.title);
+                assert!(!v.is_empty(), "an empty version is worse than none");
+            }
+        }
+    }
+    assert!(with_version > 0, "nothing carried a version at all");
+    // The cost control: a version everywhere would mean reading 1233 files.
+    let total = apps.len();
+    assert!(
+        with_version < total / 10,
+        "{with_version} of {total} carry a version, which is not a collision set"
+    );
+}
+
+/// Why did each row match? The rung, computed before Frecency touches it.
+///
+/// Scores in a `QueryResult` are already lifted by usage and already reduced by
+/// the length penalty, which overlaps the tier bands — reading a rung off them
+/// is guesswork. This re-scores each Entry's own `Haystack` instead.
+#[test]
+#[ignore = "measures the host machine; run explicitly with --ignored"]
+fn v0_3_measure_why_rows_match() {
+    use takyon_lib::entry::Query;
+    use takyon_lib::rank::{
+        self, TIER_ACRONYM, TIER_ALIAS_EXACT, TIER_EXACT_NAME, TIER_EXE_PREFIX, TIER_NAME_PREFIX,
+        TIER_WORD_PREFIX,
+    };
+
+    // Base tiers only, so a penalised score still lands in its own band.
+    let rung = |s: f32| {
+        for (base, name) in [
+            (TIER_ALIAS_EXACT, "alias"),
+            (TIER_EXACT_NAME, "exact name"),
+            (TIER_NAME_PREFIX, "name prefix"),
+            (TIER_WORD_PREFIX, "word prefix"),
+            (TIER_EXE_PREFIX, "EXE STEM"),
+            (TIER_ACRONYM, "acronym"),
+        ] {
+            if s > base - 25.0 {
+                return name;
+            }
+        }
+        "other"
+    };
+
+    let dir = TempDir::new("why");
+    let p = pipeline_in(&dir);
+    let (apps, _) = real_apps();
+
+    for q in ["chrome", "code", "photo", "term"] {
+        eprintln!("
+  {q:?}");
+        for e in p.query(q, 1).entries.iter().take(6) {
+            let Some(app) = apps.find(&e.id) else { continue };
+            let base = rank::score(&Query::new(q), &app.hay).unwrap_or(0.0);
+            eprintln!(
+                "    {:<34} {:>11} {:>6.0}   stem {:?}",
+                e.title,
+                rung(base),
+                base,
+                app.hay.exe_stem.as_deref().unwrap_or("-")
+            );
+        }
+    }
+}
+
+/// Which bare-PATH executables live under the Windows dir, and would any of
+/// them vanish entirely if the PATH walk skipped that directory?
+#[test]
+#[ignore = "measures the host machine; run explicitly with --ignored"]
+fn v0_3_measure_windows_dir_path_exes() {
+    use takyon_lib::sources::apps::path;
+
+    let sysroot = std::env::var("SystemRoot")
+        .unwrap_or_else(|_| r"C:\Windows".into())
+        .to_lowercase();
+
+    // Everything the other three Sources already know, by lowercased title/stem.
+    let (apps, _) = real_apps();
+    let dir = TempDir::new("winexe");
+    let p = pipeline_in(&dir);
+
+    let mut under = 0usize;
+    let mut unique = 0usize;
+    for exe in path::discover() {
+        let full = exe.path.to_string_lossy().to_lowercase();
+        if !full.starts_with(&sysroot) {
+            continue;
+        }
+        under += 1;
+        // Is this stem reachable any other way? Query it and see if a non-PATH
+        // row answers.
+        let others = p
+            .query(&exe.stem, 1)
+            .entries
+            .into_iter()
+            .any(|e| {
+                e.title.eq_ignore_ascii_case(&exe.stem)
+                    && e.id.as_str() != full
+            });
+        let tag = if others { "" } else { "  <-- ONLY here" };
+        if !others {
+            unique += 1;
+        }
+        eprintln!("  {:<24} {}{}", exe.stem, full, tag);
+        let _ = &apps;
+    }
+    eprintln!("
+  {under} bare-PATH exes under {sysroot}; {unique} reachable no other way");
+}
+
+/// After the fix: `explorer` returns File Explorer, and no bare `explorer` row.
+#[test]
+fn v0_3_explorer_is_one_row_not_two() {
+    let dir = TempDir::new("explorer-fix");
+    let p = pipeline_in(&dir);
+    let titles: Vec<(String, String)> = p
+        .query("explorer", 1)
+        .entries
+        .into_iter()
+        .map(|e| (e.title, e.id.as_str().to_string()))
+        .collect();
+    for (t, id) in &titles {
+        eprintln!("  {t:<34} {id}");
+    }
+    // The bare PATH exe (id is exactly the plain path, no args) must be gone.
+    assert!(
+        !titles.iter().any(|(_, id)| id == r"c:\windows\explorer.exe"),
+        "the bare explorer.exe row is still here"
+    );
+    // File Explorer (the shell app) must survive.
+    assert!(
+        titles.iter().any(|(t, _)| t.eq_ignore_ascii_case("File Explorer")),
+        "File Explorer disappeared"
+    );
+}
+
+/// The SDK shortcut left `explorer`'s results but must stay findable by name.
+#[test]
+fn v0_3_the_sdk_shortcut_is_still_reachable_by_its_name() {
+    let dir = TempDir::new("sdk");
+    let p = pipeline_in(&dir);
+    let hit = p
+        .query("development", 1)
+        .entries
+        .into_iter()
+        .any(|e| e.title.to_lowercase().contains("software development kit"));
+    assert!(hit, "the SDK shortcut vanished entirely");
+}
+
+/// What titles actually mention "development"? Diagnostic.
+#[test]
+#[ignore = "measures the host machine"]
+fn v0_3_measure_sdk_titles() {
+    let dir = TempDir::new("sdk2");
+    let p = pipeline_in(&dir);
+    for q in ["software", "development", "kit", "windows software"] {
+        eprintln!("  {q:?}");
+        for e in p.query(q, 1).entries.iter().take(6) {
+            eprintln!("    {}", e.title);
+        }
+    }
 }

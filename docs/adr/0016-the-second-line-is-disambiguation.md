@@ -93,3 +93,25 @@ A week of use where two rows look identical and the user picks wrong. The rule
 keys on the exact title, and titles that differ by a character — "HWiNFO® 64" and
 "HWiNFO 64" — read as the same row to a person and as two to the comparison. If
 that happens the comparison needs normalising, not the rule reversing.
+
+## Extended by the same principle, 2026-08-29 — the version beside the title
+
+Two Node installs are two applications with different titles (`node`,
+`Node.js`), so the second-line rule never fires — it triggers on a shared
+*title*, and these do not share one. Nothing on either row said which was which.
+
+The version does, and it follows this ADR rather than bending it: **shown only
+where it disambiguates.** Two same-named executables that report the same version
+get nothing, because `powershell.exe` ships identically in `System32` and
+`SysWOW64` and stamping `6.2.26100.8875` on both rows costs width and says
+nothing. Measured on the dev machine: 8 filenames collide over 16 files, and only
+4 of those are actually told apart by their version.
+
+It sits beside the title rather than on the second line, because it is part of
+identifying the row rather than an explanation beneath it — and because the
+second line is a path, which is a different question.
+
+**The cost is why it is scoped this tightly.** Reading the version resource of
+every executable found takes **13.3 seconds** against a 450 ms walk. Reading only
+the colliding names takes **3 ms**. The rule is not a style preference; it is
+what makes the feature affordable at all. See `version.rs`.

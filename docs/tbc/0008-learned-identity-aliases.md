@@ -1,10 +1,24 @@
 ---
-status: watching
+status: retired
 pairs-with: ADR-0014
 built: v0.3 task 1b, 2026-08-29
+retired: 2026-08-29
 ---
 
 # TBC-0008 — Learning that two Entries are one application
+
+> **Retired the day it shipped.** Built, measured, and then removed in favour of
+> static index-time rules that are correct on first launch instead of after two
+> learned launches. The two cases that actually occur are handled without it:
+> a Windows-dir binary the shell already lists as an app is dropped at discovery
+> (`path.rs` `WINDOWS_DIR_APP_DUPLICATES` — `explorer` joins `calc`/`notepad`),
+> and two genuinely different same-named executables stay two rows disambiguated
+> by version (`version.rs`). The learned-collapse machinery — `collapse.rs`, the
+> `launched`/`collapsed` tables, `collapses.txt`, the four-launch flow — is gone.
+> Neither Raycast nor PowerToys learns-and-merges either
+> ([`../prior-art/ranking-and-dedup.md`](../prior-art/ranking-and-dedup.md)); the
+> reason to retire was the counterintuitive fresh-machine behaviour it required.
+> The note below is kept as the record of what was tried and why it did not last.
 
 ## The bet
 
@@ -167,6 +181,36 @@ order: an id with no path at all (AUMID, Steam) loses; a versioned path loses,
 because it dies at the next update; the id that *is* the observed image wins,
 because it is a real path and so supports reveal, elevate and copy. Otherwise the
 first stands.
+
+### The generic-icon rule blocks this note's own headline example
+
+`explorer` beside **File Explorer** is the case the bet opens with. It cannot be
+learned, and the reason is the guard rather than the evidence. Three Entries
+match `explorer` here and all three wear the same folder icon:
+
+```
+File Explorer                     aumid:Microsoft.Windows.Explorer
+explorer                          c:\windows\explorer.exe
+Windows Software Development Kit  c:\windows\explorer.exe|"c:\program files (x86)\windows kits\10\"
+```
+
+Three sharers, so the icon reads as generic and the pair never surfaces. But the
+third is not a third *binary* — it is `explorer.exe` opening a folder, which task
+0 correctly gave its own id. **The rule counts Entries where it should count
+distinct binaries.** Two argument-variants of one executable are one thing
+wearing one icon, and counting them separately inflates every group they appear
+in.
+
+The fix is small and principled: canonicalise to `path_of` before counting group
+size, so the group above becomes two and the genuine pair surfaces.
+`differ_only_by_arguments` still refuses to collapse the SDK Entry with
+`explorer`, so nothing task 0 separated is at risk. Not yet made — it changes
+what the feature can hide, and the safety measurement should be re-run against
+the new candidate list first.
+
+Worth recording as a shape, not just a bug: **the two guards interact.** The
+argument guard was added to stop a collapse; it also has to apply to the
+generic-icon count, or it silently suppresses true positives instead.
 
 ### What is still unproven, and it is the important half
 

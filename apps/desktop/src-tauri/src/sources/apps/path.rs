@@ -25,36 +25,22 @@ const LAUNCHABLE: &[&str] = &["exe", "com", "bat", "cmd"];
 /// thousand files would otherwise stall discovery with no way to tell why.
 const MAX_PER_DIR: usize = 4000;
 
-/// System32 executables that only relaunch a packaged app.
+/// Windows-directory exes the shell already offers as an app.
 ///
-/// Run one and it exits immediately, having started something under
-/// `Program Files\WindowsApps`. `AppsFolder` already lists that app under its real
-/// name, so keeping the stub puts one application on screen twice.
-///
-/// **Every entry was verified by running it**, because nothing structural
-/// separates a stub from a real tool. File size does not: `notepad.exe` is 360 KB
-/// and still a stub, while `charmap.exe` at 282 KB is real. Neither does the name
-/// being claimed by a Store alias — that set is `bash, notepad, wsl, wslconfig`,
-/// which misses `calc` and would wrongly take the WSL launchers.
-///
-/// A curated list, like `steam.rs`'s `NOT_GAMES`. To extend it, re-run the check:
-/// launch the candidate, and it is a stub if it exits within a second or two while
-/// a `WindowsApps` process appears.
-const SHIMS_TO_PACKAGED_APP: &[&str] = &["calc", "notepad"];
+/// `calc`/`notepad` stub into packaged apps; `explorer` is File Explorer's real
+/// binary. All appear in `AppsFolder`, so the bare exe duplicates a row no path
+/// match can catch (an `AppsFolder` app has no path). Curated; `docs/tbd/v0.3.md` §7.
+const WINDOWS_DIR_APP_DUPLICATES: &[&str] = &["calc", "notepad", "explorer"];
 
-/// Is this a Windows stub whose only job is to start a packaged app?
+/// Is this a Windows-directory exe the shell already surfaces as its own app?
 ///
-/// Anywhere under the Windows directory, not just `System32`: `notepad.exe` ships
-/// in **both** `C:\Windows` and `C:\Windows\System32`, both are on `PATH`, and
-/// both are stubs. Checking only `System32` left the other one on screen.
-///
-/// The directory is still checked, so a `calc.exe` of the user's own elsewhere on
-/// `PATH` is a program they installed, and stays.
-pub fn is_packaged_app_shim(path: &Path) -> bool {
+/// Under the Windows dir, not just `System32` (`notepad.exe` ships in both). The
+/// directory is checked, so someone's own `calc.exe` elsewhere on `PATH` stays.
+pub fn is_windows_app_duplicate(path: &Path) -> bool {
     let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
         return false;
     };
-    if !SHIMS_TO_PACKAGED_APP
+    if !WINDOWS_DIR_APP_DUPLICATES
         .iter()
         .any(|s| s.eq_ignore_ascii_case(stem))
     {
@@ -161,7 +147,7 @@ pub fn discover_in(dirs: &[PathBuf]) -> Vec<PathExe> {
                 continue;
             }
             let full = entry.path();
-            if is_packaged_app_shim(&full) {
+            if is_windows_app_duplicate(&full) {
                 continue;
             }
             let stem = Path::new(name)
@@ -265,17 +251,30 @@ mod tests {
     /// Calculator, which `AppsFolder` already lists under its real name. Verified
     /// by running it: the stub exits, `CalculatorApp.exe` appears.
     #[test]
-    fn v0_2_a_system32_shim_for_a_packaged_app_is_dropped() {
+    fn v0_2_a_windows_dir_app_duplicate_is_dropped() {
         // Both copies: `notepad.exe` ships in `C:\Windows` as well as in
         // `System32`, and both are on `PATH`.
         for exe in ["calc", "notepad"] {
             for dir in [r"C:\Windows\System32", r"C:\Windows"] {
                 let p = format!(r"{dir}\{exe}.exe");
-                assert!(is_packaged_app_shim(Path::new(&p)), "{p}");
+                assert!(is_windows_app_duplicate(Path::new(&p)), "{p}");
             }
         }
         // Case-insensitive on the name and the directory.
-        assert!(is_packaged_app_shim(Path::new(r"c:\windows\system32\CALC.EXE")));
+        assert!(is_windows_app_duplicate(Path::new(r"c:\windows\system32\CALC.EXE")));
+    }
+
+    /// `explorer.exe` is File Explorer's binary, and File Explorer is already a
+    /// shell app (the `AppsFolder` AUMID). The bare exe is the duplicate the user
+    /// sees as a second "File Explorer".
+    #[test]
+    fn v0_3_the_bare_explorer_exe_is_a_shell_app_duplicate() {
+        for p in [r"C:\Windows\explorer.exe", r"c:\windows\EXPLORER.EXE"] {
+            assert!(is_windows_app_duplicate(Path::new(p)), "{p}");
+        }
+        // A shortcut that runs explorer.exe with arguments is a different Entry
+        // (task 0) and is not touched here — this predicate only sees the bare
+        // PATH walk, never the `.lnk` walk.
     }
 
     /// The list has to stay short. These are real programs that live in the same
@@ -287,7 +286,7 @@ mod tests {
         // alias but are the launchers people actually type.
         for exe in ["charmap", "msinfo32", "cmd", "regedit", "where", "wsl", "bash"] {
             let p = format!(r"C:\Windows\System32\{exe}.exe");
-            assert!(!is_packaged_app_shim(Path::new(&p)), "{exe}");
+            assert!(!is_windows_app_duplicate(Path::new(&p)), "{exe}");
         }
     }
 
@@ -300,7 +299,7 @@ mod tests {
             r"C:\Users\me\bin\notepad.exe",
             r"D:\Windows-Utils\calc.exe",
         ] {
-            assert!(!is_packaged_app_shim(Path::new(path)), "{path}");
+            assert!(!is_windows_app_duplicate(Path::new(path)), "{path}");
         }
     }
 

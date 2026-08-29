@@ -109,6 +109,7 @@ mod tests {
             icon: None,
             score: 800.0,
             actions,
+            version: None,
         }
     }
 

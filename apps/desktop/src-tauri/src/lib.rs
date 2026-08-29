@@ -13,7 +13,6 @@
 pub mod actions;
 pub mod aliases;
 pub mod bench;
-pub mod collapse;
 pub mod entry;
 pub mod firstrun;
 pub mod frecency;
@@ -27,6 +26,7 @@ pub mod settings;
 pub mod sources;
 pub mod tray;
 pub mod uiaccess;
+pub mod version;
 pub mod window;
 
 use std::sync::Arc;
@@ -256,23 +256,12 @@ pub fn run() {
                     .expect("an in-memory database always opens"),
             );
             app.manage(aliases.clone());
-            // Same file as Frecency, same fallback: learned identity is learned
-            // usage, and neither is worth refusing to launch over (TBC-0008).
-            let collapses = Arc::new(
-                collapse::CollapseStore::open(identity::data_dir())
-                    .or_else(|e| {
-                        eprintln!("[takyon] the collapse tables could not be opened: {e}");
-                        collapse::CollapseStore::open(None)
-                    })
-                    .expect("an in-memory database always opens"),
-            );
             let recents = Arc::new(sources::recents::RecentsSource::new());
             app.manage(Arc::new(Pipeline::new(
                 apps.clone(),
                 recents.clone(),
                 icons.clone(),
                 frecency.clone(),
-                collapses.clone(),
             )));
 
             // Everything above this line is plugin registration that Tauri has
@@ -316,25 +305,6 @@ pub fn run() {
                 // that has to exist first. Cheap enough to redo whenever the
                 // alias table changes, which is what v0.6's editor will do.
                 apps.apply_aliases(&aliases);
-
-                // Then hide anything learned to be a duplicate. After the walk
-                // for the same reason aliases are, and after them rather than
-                // before so an alias on a suppressed Entry is simply unused
-                // rather than briefly live.
-                for c in collapse::learn(
-                    &apps,
-                    &icons,
-                    &collapses,
-                    &frecency,
-                    identity::data_dir().as_deref(),
-                ) {
-                    eprintln!(
-                        "[takyon] hiding {} in favour of {}: {}",
-                        c.loser.as_str(),
-                        c.winner.as_str(),
-                        c.evidence
-                    );
-                }
 
                 // Recents are read on a timer rather than per keystroke: a few
                 // hundred shortcuts through COM would blow the 20 ms budget many

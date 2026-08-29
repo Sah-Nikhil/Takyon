@@ -26,10 +26,10 @@ use tauri::Manager;
 
 /// `interface QueryResult` in `packages/shared/src/ipc.ts`.
 const QUERY_RESULT_KEYS: [&str; 3] = ["seq", "entries", "indexing"];
-/// `interface Entry`. `subtitle` and `icon` are optional and must be absent
-/// rather than null when Rust has none.
+/// `interface Entry`. The optionals must be absent rather than null when Rust
+/// has none, or the frontend's `field?: T` types become `T | null`.
 const ENTRY_REQUIRED: [&str; 5] = ["id", "title", "kind", "score", "actions"];
-const ENTRY_OPTIONAL: [&str; 2] = ["subtitle", "icon"];
+const ENTRY_OPTIONAL: [&str; 3] = ["subtitle", "icon", "version"];
 /// `type EntryKind`.
 const ENTRY_KINDS: [&str; 6] = ["app", "file", "folder", "clip", "calc", "recent"];
 /// `interface Action`.
@@ -68,7 +68,6 @@ fn mock_palette() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>
         Arc::new(RecentsSource::new()),
         icons,
         frecency,
-        Arc::new(takyon_lib::collapse::CollapseStore::open(None).unwrap()),
     )));
 
     let webview = tauri::WebviewWindowBuilder::new(&app, "palette", Default::default())

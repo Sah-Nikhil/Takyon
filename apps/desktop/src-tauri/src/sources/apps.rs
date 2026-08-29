@@ -13,6 +13,8 @@ pub mod noise;
 pub mod path;
 pub mod steam;
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -51,12 +53,18 @@ pub struct App {
     /// `fs::metadata` calls per keypress — I/O on the span the 30 ms first-Entry
     /// budget measures — plus a linear scan of the app list per drawn row.
     pub icon: Option<IconRef>,
+    /// Shown beside the title, and **only where two same-named executables
+    /// disagree** — two Node installs, two R installs. Resolved once at
+    /// discovery for the handful of colliding names; reading it for everything
+    /// costs 13 s against a 450 ms walk.
+    pub version: Option<String>,
 }
 
 impl App {
     fn has_path(&self) -> bool {
         matches!(self.target, LaunchTarget::Exe { .. })
     }
+
 }
 
 /// The application Source.
@@ -140,26 +148,8 @@ impl AppSource {
         }
     }
 
-    /// Drop the losing half of every learned collapse (v0.3 task 1b, TBC-0008).
-    ///
-    /// In place and after every walk, for the same reason aliases are: discovery
-    /// rebuilds the list and would otherwise bring the suppressed Entry back.
-    /// Only the row goes — `frecency.db` keeps the decision and the merged usage.
-    pub fn apply_collapses(&self, collapses: &[crate::collapse::Collapse]) {
-        if collapses.is_empty() {
-            return;
-        }
-        let losers: std::collections::HashSet<&EntryId> =
-            collapses.iter().map(|c| &c.loser).collect();
-        if let Ok(mut apps) = self.apps.write() {
-            apps.retain(|app| !losers.contains(&app.id));
-        }
-    }
-
-    /// Every App that has an icon, paired with its key.
-    ///
-    /// The join v0.3 task 1b needs: icons are stored by key and collapses are
-    /// decided between `EntryId`s.
+    /// Every App that has an icon, paired with its key. Used by the measurement
+    /// tests that compare what shares an icon on the real machine.
     pub fn icon_keys(&self) -> Vec<(EntryId, String)> {
         let Ok(apps) = self.apps.read() else {
             return Vec::new();
@@ -203,6 +193,7 @@ impl Source for AppSource {
         };
 
         let mut out = Vec::new();
+        let mut binary_only: Vec<bool> = Vec::new();
         for (i, app) in apps.iter().enumerate() {
             // Checked in blocks rather than per app: `Instant::now()` is a real
             // syscall on some Windows configurations, and calling it three hundred
@@ -214,6 +205,7 @@ impl Source for AppSource {
             let Some(score) = rank::score(q, &app.hay) else {
                 continue;
             };
+            binary_only.push(rank::matched_only_by_binary(q, &app.hay));
             out.push(Entry {
                 id: app.id.clone(),
                 title: app.title.clone(),
@@ -224,7 +216,17 @@ impl Source for AppSource {
                 icon: app.icon.clone(),
                 score,
                 actions: actions::for_app(app.has_path()),
+                version: app.version.clone(),
             });
+        }
+
+        // A binary name is a way in, not an answer. Where anything matched by its
+        // *name*, the rows that matched only through an executable's filename are
+        // a different product wearing a shared filename — `chrome` reaching a
+        // Chromium fork. Where nothing did, they are the only way in and stay.
+        if binary_only.iter().any(|only| !only) {
+            let mut keep = binary_only.iter();
+            out.retain(|_| !keep.next().copied().unwrap_or(false));
         }
 
         // Trimmed here as well as in `query.rs`. Without this a two-letter query
@@ -285,6 +287,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             target,
             icon_source: Some(sc.link),
             icon: None,
+            version: None,
         });
     }
 
@@ -314,6 +317,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             target,
             icon_source: None,
             icon: None,
+            version: None,
         });
     }
 
@@ -329,6 +333,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
                 target,
                 icon_source: None,
                 icon: None,
+                version: None,
             });
         }
     }
@@ -366,10 +371,54 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             target,
             icon_source: Some(exe.path),
             icon: None,
+            version: None,
         });
     }
 
+    attach_versions(&mut apps, crate::version::of);
     apps
+}
+
+/// Stamp a version on same-named executables that disagree about theirs.
+///
+/// **Only the colliding names are read.** Measured on the dev machine: 16 files
+/// in 3 ms, against 13.3 seconds to read all 1233 — which is thirty times the
+/// whole walk. The reader is a parameter so the rule is testable without files.
+fn attach_versions(apps: &mut [App], read: impl FnMut(&Path) -> Option<String>) {
+    let mut read = read;
+
+    let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, app) in apps.iter().enumerate() {
+        let LaunchTarget::Exe { path, .. } = &app.target else {
+            continue;
+        };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        by_name.entry(name.to_lowercase()).or_default().push(i);
+    }
+
+    for (_, group) in by_name.into_iter().filter(|(_, g)| g.len() > 1) {
+        // One read per distinct path: the same binary reached by two shortcuts is
+        // not a collision, and reading it twice would say it agrees with itself.
+        let mut versions: HashMap<PathBuf, Option<String>> = HashMap::new();
+        for &i in &group {
+            if let LaunchTarget::Exe { path, .. } = &apps[i].target {
+                versions
+                    .entry(path.clone())
+                    .or_insert_with(|| read(path.as_path()));
+            }
+        }
+        let distinct: Vec<Option<String>> = versions.values().cloned().collect();
+        if !crate::version::tells_apart(&distinct) {
+            continue;
+        }
+        for &i in &group {
+            if let LaunchTarget::Exe { path, .. } = &apps[i].target {
+                apps[i].version = versions.get(path).cloned().flatten();
+            }
+        }
+    }
 }
 
 /// Where an App's icon comes from.
@@ -442,6 +491,7 @@ mod tests {
             target,
             icon_source: None,
             icon: None,
+            version: None,
         }
     }
 
@@ -452,56 +502,83 @@ mod tests {
         s
     }
 
-    fn aumid_app(title: &str, aumid: &str) -> App {
-        let target = LaunchTarget::Aumid(aumid.to_string());
-        App {
-            id: EntryId::for_launch(&target),
-            hay: Haystack::new(title, None),
-            title: title.to_string(),
-            subtitle: Some("Store app".to_string()),
-            target,
-            icon_source: None,
-            icon: None,
-        }
+    /// Two installs of one tool are two applications, and the version is the only
+    /// thing on the machine that separates them (measured: `node.exe` 24.14.1
+    /// against 26.7).
+    #[test]
+    fn v0_3_same_named_executables_get_a_version_where_they_differ() {
+        let mut apps = vec![
+            exe_app("node", r"C:\nvm4w\nodejs\node.exe", Some("node")),
+            exe_app("Node.js", r"C:\program files\nodejs\node.exe", Some("node")),
+        ];
+        attach_versions(&mut apps, |p| {
+            Some(if p.to_string_lossy().contains("nvm4w") {
+                "24.14.1".into()
+            } else {
+                "26.7".into()
+            })
+        });
+        assert_eq!(apps[0].version.as_deref(), Some("24.14.1"));
+        assert_eq!(apps[1].version.as_deref(), Some("26.7"));
     }
 
-    /// v0.3 task 1b: the losing half of a learned collapse leaves the list.
-    ///
-    /// Nothing is deleted — `frecency.db` keeps the decision and the merged
-    /// usage, so a wrong collapse costs a row rather than a history (TBC-0008).
+    /// One Windows binary shipped for two architectures carries one version, so
+    /// stamping it on both rows adds width and no information (ADR-0016).
     #[test]
-    fn v0_3_a_collapsed_entry_is_suppressed_from_the_list() {
-        let winner = exe_app("explorer", r"C:\Windows\explorer.exe", Some("explorer"));
-        let loser = aumid_app("File Explorer", "Microsoft.Windows.Explorer");
-        let source = source_with(vec![winner.clone(), loser.clone()]);
-        assert_eq!(source.len(), 2);
-
-        source.apply_collapses(&[crate::collapse::Collapse {
-            winner: winner.id.clone(),
-            loser: loser.id.clone(),
-            evidence: "test".into(),
-        }]);
-
-        assert_eq!(source.len(), 1);
-        assert!(source.find(&winner.id).is_some(), "the winner must survive");
-        assert!(source.find(&loser.id).is_none(), "the loser is still listed");
+    fn v0_3_identical_versions_are_not_shown_at_all() {
+        let mut apps = vec![
+            exe_app("Windows PowerShell", r"C:\windows\system32\powershell.exe", None),
+            exe_app("Windows PowerShell (x86)", r"C:\windows\syswow64\powershell.exe", None),
+        ];
+        attach_versions(&mut apps, |_| Some("6.2.26100.8875".into()));
+        assert!(apps.iter().all(|a| a.version.is_none()));
     }
 
-    /// A collapse naming an Entry this machine does not have must not disturb the
-    /// list. The table outlives an uninstall.
+    /// An executable whose name is unique is never read at all. That is the whole
+    /// cost control: 16 files instead of 1233.
     #[test]
-    fn v0_3_a_collapse_for_an_unknown_entry_changes_nothing() {
-        let app = exe_app("explorer", r"C:\Windows\explorer.exe", Some("explorer"));
-        let source = source_with(vec![app.clone()]);
+    fn v0_3_a_unique_filename_is_never_read_for_its_version() {
+        let mut apps = vec![exe_app("Notepad", r"C:\windows\notepad.exe", None)];
+        let mut reads = 0;
+        attach_versions(&mut apps, |_| {
+            reads += 1;
+            Some("1.0".into())
+        });
+        assert_eq!(reads, 0, "a unique name was read anyway");
+        assert!(apps[0].version.is_none());
+    }
 
-        source.apply_collapses(&[crate::collapse::Collapse {
-            winner: EntryId("aumid:Gone.App".into()),
-            loser: EntryId("aumid:Also.Gone".into()),
-            evidence: "test".into(),
-        }]);
+    /// A product name must return that product, not a fork that kept upstream's
+    /// binary name. Measured live: `chrome` returned Helium at the exe rung.
+    #[test]
+    fn v0_3_a_name_match_hides_rows_that_only_matched_a_binary_name() {
+        let source = source_with(vec![
+            exe_app("Google Chrome", r"C:\chrome\chrome.exe", Some("chrome")),
+            exe_app("Helium", r"C:\imput\helium\application\chrome.exe", Some("chrome")),
+        ]);
+        let titles: Vec<String> = source
+            .query(&Query::new("chrome"), Duration::from_millis(20))
+            .into_iter()
+            .map(|e| e.title)
+            .collect();
+        assert_eq!(titles, vec!["Google Chrome"], "Helium is a different product");
 
-        assert_eq!(source.len(), 1);
-        assert!(source.find(&app.id).is_some());
+        // And it is still reachable by its own name.
+        let by_name = source.query(&Query::new("helium"), Duration::from_millis(20));
+        assert_eq!(by_name[0].title, "Helium");
+    }
+
+    /// With upstream absent, the binary name is the only way in and must work.
+    #[test]
+    fn v0_3_a_binary_name_still_finds_a_fork_when_nothing_matches_by_name() {
+        let source = source_with(vec![exe_app(
+            "Helium",
+            r"C:\imput\helium\application\chrome.exe",
+            Some("chrome"),
+        )]);
+        let found = source.query(&Query::new("chrome"), Duration::from_millis(20));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].title, "Helium");
     }
 
     /// The three matching cases from the phase's manual verification script, run
@@ -585,6 +662,7 @@ mod tests {
             target,
             icon_source: None,
             icon: None,
+            version: None,
         }]);
         let entries = source.query(&Query::new("calc"), Duration::from_millis(20));
         assert_eq!(entries.len(), 1);

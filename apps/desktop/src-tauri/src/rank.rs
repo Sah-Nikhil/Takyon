@@ -137,6 +137,29 @@ pub fn score(q: &Query, hay: &Haystack) -> Option<f32> {
     Some(tier - penalty)
 }
 
+/// Did this Entry match only through its executable's filename?
+///
+/// A binary name is an implementation detail: `chrome` reaches Helium through
+/// `chrome.exe`. The rung still earns its place where no title answers —
+/// `devenv`, `mmc` — so this reports rather than decides.
+pub fn matched_only_by_binary(q: &Query, hay: &Haystack) -> bool {
+    let needle = q.needle.as_str();
+    if needle.is_empty() {
+        return false;
+    }
+    let Some(stem) = &hay.exe_stem else {
+        return false;
+    };
+    if !stem.starts_with(needle) {
+        return false;
+    }
+    // Everything else on the ladder is derived from the title or from an alias
+    // the user wrote. If any of those also fire, the row was reachable by name.
+    let mut without_exe = hay.clone();
+    without_exe.exe_stem = None;
+    tier_of(needle, &without_exe).is_none()
+}
+
 /// Which rung of the ladder this needle reaches, highest wins.
 ///
 /// Split out from [`score`] so the ladder can be asserted directly, without the
@@ -262,6 +285,42 @@ mod tests {
     use super::*;
     use crate::entry::{EntryId, EntryKind};
 
+    fn exe_hay(name: &str, stem: &str) -> Haystack {
+        Haystack::new(name, Some(stem))
+    }
+
+    /// Helium is a Chromium fork that kept upstream's binary name, so `chrome`
+    /// reaches it through `chrome.exe` and nothing else. A product name typed by
+    /// a user must not return a different product because of a shared filename.
+    #[test]
+    fn v0_3_a_binary_name_match_yields_to_a_real_name_match() {
+        let chrome = exe_hay("Google Chrome", "chrome");
+        let helium = exe_hay("Helium", "chrome");
+        let q = q("chrome");
+
+        assert!(!matched_only_by_binary(&q, &chrome), "Chrome matches by its name");
+        assert!(matched_only_by_binary(&q, &helium), "Helium matches only by its exe");
+    }
+
+    /// The rung still earns its place where no title answers. `devenv` names no
+    /// application on this machine and is how people reach Visual Studio.
+    #[test]
+    fn v0_3_a_binary_name_is_still_a_way_in_when_no_name_matches() {
+        let vs = exe_hay("Visual Studio 2022", "devenv");
+        assert!(matched_only_by_binary(&q("devenv"), &vs));
+        // Nothing matched by name, so the caller keeps it. That decision is the
+        // list's, not this function's.
+        assert!(score(&q("devenv"), &vs).is_some());
+    }
+
+    /// An acronym comes from the title, so it is a name match despite ranking
+    /// below the executable rung.
+    #[test]
+    fn v0_3_an_acronym_counts_as_matching_by_name() {
+        let vsc = exe_hay("Visual Studio Code", "code");
+        assert!(!matched_only_by_binary(&q("vsc"), &vsc));
+    }
+
     /// No usage, no opinion. An Entry nobody has chosen must score exactly what
     /// matching gave it, or Frecency silently reweights a cold install.
     #[test]
@@ -322,6 +381,7 @@ mod tests {
             icon: None,
             score: 800.0,
             actions: vec![],
+            version: None,
         }
     }
 
@@ -604,6 +664,7 @@ mod tests {
             icon: None,
             score,
             actions: vec![],
+            version: None,
         }
     }
 
