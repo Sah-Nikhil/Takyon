@@ -68,6 +68,7 @@ fn mock_palette() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>
         Arc::new(RecentsSource::new()),
         icons,
         frecency,
+        Arc::new(takyon_lib::collapse::CollapseStore::open(None).unwrap()),
     )));
 
     let webview = tauri::WebviewWindowBuilder::new(&app, "palette", Default::default())

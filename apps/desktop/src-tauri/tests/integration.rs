@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use common::{real_apps, TempDir};
 use takyon_lib::aliases::AliasStore;
+use takyon_lib::collapse::CollapseStore;
 use takyon_lib::entry::{EntryId, EntryKind, MAX_ENTRIES};
 use takyon_lib::frecency::Frecency;
 use takyon_lib::icons::IconStore;
@@ -26,11 +27,13 @@ use takyon_lib::sources::recents::{recent_from, RecentsSource};
 fn pipeline_in(dir: &TempDir) -> Arc<Pipeline> {
     let (apps, icons) = real_apps();
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).expect("frecency.db"));
+    let collapse = Arc::new(CollapseStore::open(Some(dir.to_owned())).expect("collapse tables"));
     Arc::new(Pipeline::new(
         apps,
         Arc::new(RecentsSource::new()),
         icons,
         frecency,
+        collapse,
     ))
 }
 
@@ -88,7 +91,14 @@ fn v0_3_icons_extract_through_com_and_survive_a_restart() {
     apps.refresh(&icons);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let p = Pipeline::new(apps, Arc::new(RecentsSource::new()), icons.clone(), frecency);
+    let collapse = Arc::new(CollapseStore::open(None).unwrap());
+    let p = Pipeline::new(
+        apps,
+        Arc::new(RecentsSource::new()),
+        icons.clone(),
+        frecency,
+        collapse,
+    );
 
     let mut keys = Vec::new();
     for entry in p.query(BROAD, 1).entries.iter().take(6) {
@@ -173,7 +183,8 @@ fn v0_3_applications_outrank_documents_in_one_real_list() {
     ]);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let p = Pipeline::new(apps, recents, icons, frecency);
+    let collapse = Arc::new(CollapseStore::open(None).unwrap());
+    let p = Pipeline::new(apps, recents, icons, frecency, collapse);
     let entries = p.query(&word, 1).entries;
     let kinds: Vec<_> = entries.iter().map(|e| e.kind).collect();
 
@@ -243,6 +254,7 @@ fn v0_3_an_alias_puts_its_target_first_in_the_real_list() {
         Arc::new(RecentsSource::new()),
         icons,
         frecency,
+        Arc::new(CollapseStore::open(None).unwrap()),
     );
 
     // A real id the Palette already reaches, aliased to a string matching
@@ -313,4 +325,89 @@ fn v0_3_every_id_the_palette_shows_resolves_to_actions() {
             "{id} resolves to no actions"
         );
     }
+}
+
+// ------------------------------------------------------------------ identity
+
+/// Every candidate the icon signal produces on this machine, and what stops it.
+///
+/// `#[ignore]`d because it reads the real `icons.bin` and depends on what is
+/// installed. It is the measurement TBC-0008 asks for before trusting anything.
+#[test]
+#[ignore = "measures the host machine; run explicitly with --ignored"]
+fn v0_3_measure_the_real_icon_pairs() {
+    use takyon_lib::collapse::pairs_by_icon;
+
+    let (apps, _) = real_apps();
+    let Some(data) = takyon_lib::identity::data_dir() else {
+        eprintln!("  no data directory");
+        return;
+    };
+    let icons = IconStore::new(Some(data));
+    let bytes = icons.extracted();
+    eprintln!("  icons.bin holds {} icons", bytes.len());
+
+    let with_icons: Vec<(EntryId, Vec<u8>)> = apps
+        .icon_keys()
+        .into_iter()
+        .filter_map(|(id, key)| bytes.get(&key).map(|b| (id, b.clone())))
+        .collect();
+    eprintln!("  {} of {} Entries have one", with_icons.len(), apps.len());
+
+    let pairs = pairs_by_icon(&with_icons);
+    eprintln!("  {} candidate pairs after the generic-icon rule:", pairs.len());
+    for (a, b) in &pairs {
+        eprintln!("    {}\n      {}", a.as_str(), b.as_str());
+    }
+}
+
+/// The safety property, on the real machine: icons alone can hide nothing.
+///
+/// Seven pairs share icon bytes here and only one is a genuine duplicate. What
+/// stops the other six is that neither half has ever been seen starting the
+/// other's executable, so nothing is collapsed until a launch says so.
+#[test]
+fn v0_3_matching_icons_alone_never_hide_a_row() {
+    let dir = TempDir::new("collapse-safety");
+    let (apps, icons) = real_apps();
+    let before = apps.len();
+
+    let store = CollapseStore::open(Some(dir.to_owned())).unwrap();
+    let frecency = Frecency::open(Some(dir.to_owned())).unwrap();
+    let decided = takyon_lib::collapse::learn(&apps, &icons, &store, &frecency, Some(dir.path()));
+
+    assert!(decided.is_empty(), "collapsed {decided:?} with no launch evidence");
+    assert_eq!(apps.len(), before, "a row disappeared on the icon signal alone");
+    assert!(store.active().is_empty());
+}
+
+/// A corroborated duplicate does collapse, so the safety test above is not
+/// passing simply because nothing ever collapses.
+///
+/// The evidence is injected rather than launched: a test that starts real
+/// applications is not a test.
+#[test]
+fn v0_3_a_corroborated_duplicate_does_collapse() {
+    let dir = TempDir::new("collapse-acts");
+    let image = r"c:\windows\system32\control.exe";
+    let winner = EntryId(image.to_string());
+    let loser = EntryId("aumid:Microsoft.Windows.AdministrativeTools".into());
+
+    let store = CollapseStore::open(Some(dir.to_owned())).unwrap();
+    let frecency = Frecency::open(Some(dir.to_owned())).unwrap();
+    for id in [&winner, &loser] {
+        for _ in 0..2 {
+            store.observe(id, std::path::Path::new(image)).unwrap();
+        }
+    }
+
+    let found = store.collapses(&[(loser.clone(), winner.clone())]);
+    assert_eq!(found.len(), 1, "a corroborated pair did not collapse");
+    assert_eq!(found[0].winner, winner, "the AUMID beat the real path");
+    assert_eq!(found[0].loser, loser);
+
+    // And the decision is durable, which is what makes suppression survive a walk.
+    assert_eq!(store.apply(&found, &frecency).len(), 1);
+    assert_eq!(store.active().len(), 1);
+    assert!(store.apply(&found, &frecency).is_empty());
 }

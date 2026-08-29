@@ -9,6 +9,8 @@
 //!
 //! Elevation is the same call with the `runas` verb. Nothing here runs elevated.
 
+use std::path::PathBuf;
+
 use crate::entry::LaunchTarget;
 
 /// Start something.
@@ -16,7 +18,7 @@ use crate::entry::LaunchTarget;
 /// **The Palette must already be hidden** (v0.2 task 7): `ShellExecuteW` returns
 /// when the shell accepts the request, not when a window exists — hundreds of
 /// milliseconds for a large app, with the Palette sitting over it.
-pub fn open(target: &LaunchTarget) -> Result<(), String> {
+pub fn open(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
     match target {
         LaunchTarget::Exe {
             path,
@@ -46,7 +48,7 @@ pub fn open(target: &LaunchTarget) -> Result<(), String> {
 /// Only meaningful for a real executable: there is nothing to elevate about a
 /// packaged app or a Steam URL, and asking the shell to `runas` one of those
 /// produces an error dialog rather than a useful outcome.
-pub fn run_as_admin(target: &LaunchTarget) -> Result<(), String> {
+pub fn run_as_admin(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
     match target {
         LaunchTarget::Exe {
             path,
@@ -77,6 +79,7 @@ pub fn reveal(target: &LaunchTarget) -> Result<(), String> {
         Some(&format!("/select,\"{}\"", path.display())),
         None,
     )
+    .map(|_| ())
 }
 
 /// The path an Entry points at, for "Copy path".
@@ -87,15 +90,23 @@ pub fn path_of(target: &LaunchTarget) -> Option<String> {
     }
 }
 
+/// Start something and, where Windows will say, report what actually started.
+///
+/// `ShellExecuteExW` rather than `ShellExecuteW` purely for `SEE_MASK_NOCLOSEPROCESS`,
+/// which is the only way to learn the image path of what was launched (v0.3 task
+/// 1b). Same verb, file, arguments and show command, so behaviour is unchanged.
 #[cfg(windows)]
 fn shell_execute(
     verb: Option<&str>,
     file: &str,
     args: Option<&str>,
     dir: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Option<PathBuf>, String> {
     use windows::core::{HSTRING, PCWSTR};
-    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
     let verb = verb.map(HSTRING::from);
@@ -104,34 +115,71 @@ fn shell_execute(
     let dir = dir.map(HSTRING::from);
 
     // `PCWSTR(h.as_ptr())`, not a `From` conversion: the pointer borrows from the
-        // `HSTRING`, so each must outlive the call. Building them inline would drop
-        // every string at the end of its argument and hand the shell dangling
-        // pointers.
+    // `HSTRING`, so each must outlive the call. Building them inline would drop
+    // every string at the end of its argument and hand the shell dangling
+    // pointers.
     let as_pcwstr = |s: &Option<HSTRING>| {
         s.as_ref()
             .map(|h| PCWSTR(h.as_ptr()))
             .unwrap_or(PCWSTR::null())
     };
 
-    let result = unsafe {
-        ShellExecuteW(
-            None,
-            as_pcwstr(&verb),
-            PCWSTR(file.as_ptr()),
-            as_pcwstr(&args),
-            as_pcwstr(&dir),
-            SW_SHOWNORMAL,
-        )
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        lpVerb: as_pcwstr(&verb),
+        lpFile: PCWSTR(file.as_ptr()),
+        lpParameters: as_pcwstr(&args),
+        lpDirectory: as_pcwstr(&dir),
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
     };
 
-    // The documented success test, and it is genuinely this odd: the return is an
+    let started = unsafe { ShellExecuteExW(&mut info) };
+
+    // The documented success test, and it is genuinely this odd: `hInstApp` is an
     // `HINSTANCE` for compatibility with 16-bit Windows, and any value of 32 or
     // below is an error code wearing a pointer's clothes.
-    if result.0 as isize > 32 {
-        Ok(())
-    } else {
-        Err(explain_shell_error(result.0 as isize))
+    if started.is_err() || info.hInstApp.0 as isize <= 32 {
+        return Err(explain_shell_error(info.hInstApp.0 as isize));
     }
+
+    let image = image_of(info.hProcess);
+    if !info.hProcess.is_invalid() {
+        // `SEE_MASK_NOCLOSEPROCESS` hands us the handle to close. Closing it does
+        // not end the process; leaking it would hold a dead one alive all session.
+        unsafe { let _ = CloseHandle(info.hProcess); };
+    }
+    Ok(image)
+}
+
+/// The executable behind a process handle, if Windows gave us one.
+///
+/// `None` is routine rather than an error: a packaged app is activated through a
+/// broker and returns no handle, and a `steam://` URL starts nothing of ours.
+/// Task 1b treats a missing observation as no evidence, never as a negative.
+#[cfg(windows)]
+fn image_of(handle: windows::Win32::Foundation::HANDLE) -> Option<PathBuf> {
+    use windows::core::PWSTR;
+    use windows::Win32::System::Threading::{QueryFullProcessImageNameW, PROCESS_NAME_WIN32};
+
+    if handle.is_invalid() {
+        return None;
+    }
+    let mut buffer = [0u16; 32_768];
+    let mut len = buffer.len() as u32;
+    unsafe {
+        QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        )
+        .ok()?;
+    }
+    Some(PathBuf::from(String::from_utf16_lossy(
+        &buffer[..len as usize],
+    )))
 }
 
 #[cfg(not(windows))]
@@ -140,7 +188,7 @@ fn shell_execute(
     _file: &str,
     _args: Option<&str>,
     _dir: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Option<PathBuf>, String> {
     Err("launching is only implemented on Windows".into())
 }
 

@@ -116,6 +116,53 @@ impl Frecency {
         }
     }
 
+    /// Fold `loser`'s usage into `winner` and forget the loser.
+    ///
+    /// Both scores are decayed to the same instant before they are added, or a
+    /// stale row would contribute a weight it no longer has. Called once, when a
+    /// collapse is first decided (TBC-0008); the `collapsed` table makes that
+    /// idempotent.
+    pub fn merge_at(&self, loser: &EntryId, winner: &EntryId, now: i64) -> Result<()> {
+        let carried = self.weight_at(loser, now);
+        let kept = self.weight_at(winner, now);
+        if carried <= 0.0 {
+            return Ok(());
+        }
+
+        let conn = self.conn.lock().expect("frecency mutex");
+        let kind: String = conn
+            .query_row(
+                "SELECT kind FROM usage WHERE entry_id = ?1",
+                [loser.as_str()],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or_else(|| kind_name(EntryKind::App).to_string());
+        let count: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(count), 0) FROM usage WHERE entry_id IN (?1, ?2)",
+                params![loser.as_str(), winner.as_str()],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+
+        conn.execute(
+            "INSERT INTO usage (entry_id, kind, count, last_used, score, decayed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?4)
+             ON CONFLICT(entry_id) DO UPDATE
+                SET count = ?3, last_used = ?4, score = ?5, decayed_at = ?4",
+            params![winner.as_str(), kind, count, now, kept + carried],
+        )?;
+        conn.execute("DELETE FROM usage WHERE entry_id = ?1", [loser.as_str()])?;
+        Ok(())
+    }
+
+    /// Merge now. See [`Frecency::merge_at`].
+    pub fn merge(&self, loser: &EntryId, winner: &EntryId) -> Result<()> {
+        self.merge_at(loser, winner, unix_now())
+    }
+
     /// Record one activation now.
     pub fn record(&self, id: &EntryId, kind: EntryKind) -> Result<()> {
         self.record_at(id, kind, unix_now())
@@ -155,6 +202,44 @@ fn kind_name(kind: EntryKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A collapse must not lose what the suppressed Entry taught (TBC-0008).
+    ///
+    /// Nothing is deleted from the user's point of view: the loser's weight moves
+    /// into the winner, so a collapse costs a row rather than a history.
+    #[test]
+    fn v0_3_a_merge_moves_the_losers_weight_into_the_winner() {
+        let f = Frecency::open(None).unwrap();
+        let winner = EntryId(r"c:\windows\explorer.exe".into());
+        let loser = EntryId("aumid:Microsoft.Windows.Explorer".into());
+        let now = 1_700_000_000;
+
+        f.record_at(&winner, EntryKind::App, now).unwrap();
+        for _ in 0..3 {
+            f.record_at(&loser, EntryKind::App, now).unwrap();
+        }
+        let before = f.weight_at(&winner, now) + f.weight_at(&loser, now);
+
+        f.merge_at(&loser, &winner, now).unwrap();
+
+        assert!((f.weight_at(&winner, now) - before).abs() < 1e-9, "weight was lost");
+        assert_eq!(f.weight_at(&loser, now), 0.0, "the loser still has a history");
+    }
+
+    /// Merging into an Entry nobody has chosen must still carry the weight over,
+    /// which is the common case: you launched the duplicate, not the survivor.
+    #[test]
+    fn v0_3_a_merge_into_an_unused_winner_still_carries_the_weight() {
+        let f = Frecency::open(None).unwrap();
+        let winner = EntryId(r"c:\windows\explorer.exe".into());
+        let loser = EntryId("aumid:Microsoft.Windows.Explorer".into());
+        let now = 1_700_000_000;
+
+        f.record_at(&loser, EntryKind::App, now).unwrap();
+        f.merge_at(&loser, &winner, now).unwrap();
+
+        assert!(f.weight_at(&winner, now) > 0.0);
+    }
 
     /// The half-life, as the two numbers anyone can check by hand.
     #[test]

@@ -140,6 +140,35 @@ impl AppSource {
         }
     }
 
+    /// Drop the losing half of every learned collapse (v0.3 task 1b, TBC-0008).
+    ///
+    /// In place and after every walk, for the same reason aliases are: discovery
+    /// rebuilds the list and would otherwise bring the suppressed Entry back.
+    /// Only the row goes — `frecency.db` keeps the decision and the merged usage.
+    pub fn apply_collapses(&self, collapses: &[crate::collapse::Collapse]) {
+        if collapses.is_empty() {
+            return;
+        }
+        let losers: std::collections::HashSet<&EntryId> =
+            collapses.iter().map(|c| &c.loser).collect();
+        if let Ok(mut apps) = self.apps.write() {
+            apps.retain(|app| !losers.contains(&app.id));
+        }
+    }
+
+    /// Every App that has an icon, paired with its key.
+    ///
+    /// The join v0.3 task 1b needs: icons are stored by key and collapses are
+    /// decided between `EntryId`s.
+    pub fn icon_keys(&self) -> Vec<(EntryId, String)> {
+        let Ok(apps) = self.apps.read() else {
+            return Vec::new();
+        };
+        apps.iter()
+            .filter_map(|a| a.icon.as_ref().map(|i| (a.id.clone(), i.0.clone())))
+            .collect()
+    }
+
     /// Look up one App by its id, for launching and for the action menu.
     pub fn find(&self, id: &EntryId) -> Option<App> {
         self.apps.read().ok()?.iter().find(|a| &a.id == id).cloned()
@@ -421,6 +450,58 @@ mod tests {
         *s.apps.write().unwrap() = apps;
         s.indexing.store(false, Ordering::Release);
         s
+    }
+
+    fn aumid_app(title: &str, aumid: &str) -> App {
+        let target = LaunchTarget::Aumid(aumid.to_string());
+        App {
+            id: EntryId::for_launch(&target),
+            hay: Haystack::new(title, None),
+            title: title.to_string(),
+            subtitle: Some("Store app".to_string()),
+            target,
+            icon_source: None,
+            icon: None,
+        }
+    }
+
+    /// v0.3 task 1b: the losing half of a learned collapse leaves the list.
+    ///
+    /// Nothing is deleted — `frecency.db` keeps the decision and the merged
+    /// usage, so a wrong collapse costs a row rather than a history (TBC-0008).
+    #[test]
+    fn v0_3_a_collapsed_entry_is_suppressed_from_the_list() {
+        let winner = exe_app("explorer", r"C:\Windows\explorer.exe", Some("explorer"));
+        let loser = aumid_app("File Explorer", "Microsoft.Windows.Explorer");
+        let source = source_with(vec![winner.clone(), loser.clone()]);
+        assert_eq!(source.len(), 2);
+
+        source.apply_collapses(&[crate::collapse::Collapse {
+            winner: winner.id.clone(),
+            loser: loser.id.clone(),
+            evidence: "test".into(),
+        }]);
+
+        assert_eq!(source.len(), 1);
+        assert!(source.find(&winner.id).is_some(), "the winner must survive");
+        assert!(source.find(&loser.id).is_none(), "the loser is still listed");
+    }
+
+    /// A collapse naming an Entry this machine does not have must not disturb the
+    /// list. The table outlives an uninstall.
+    #[test]
+    fn v0_3_a_collapse_for_an_unknown_entry_changes_nothing() {
+        let app = exe_app("explorer", r"C:\Windows\explorer.exe", Some("explorer"));
+        let source = source_with(vec![app.clone()]);
+
+        source.apply_collapses(&[crate::collapse::Collapse {
+            winner: EntryId("aumid:Gone.App".into()),
+            loser: EntryId("aumid:Also.Gone".into()),
+            evidence: "test".into(),
+        }]);
+
+        assert_eq!(source.len(), 1);
+        assert!(source.find(&app.id).is_some());
     }
 
     /// The three matching cases from the phase's manual verification script, run

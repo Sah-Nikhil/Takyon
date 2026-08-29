@@ -66,6 +66,12 @@ A per-Entry score combining how often and how recently the user has chosen it,
 decayed over time. Used to rank Entries above raw match quality.
 _Avoid_: popularity, usage score, weight, ranking
 
+**Collapse**:
+Two Entries learned to be one application, so the less durable one is hidden and
+its Frecency merged into the other. Learned from evidence — identical icon bytes
+plus the same executable actually starting — never from spelling (TBC-0008).
+_Avoid_: dedupe, merge, alias, suppress
+
 **Stability**:
 The guarantee that the Palette's top Entry does not change once the user has
 stopped typing, even as slower Sources report late. Prevents launching the wrong

@@ -70,6 +70,9 @@ pub struct Pipeline {
     /// What the user has actually chosen before. Read once per candidate Entry,
     /// written once per activation.
     pub frecency: Arc<Frecency>,
+    /// What each Entry has been seen to *start* (v0.3 task 1b). Written after an
+    /// activation, never read on the query path.
+    pub collapse: Arc<crate::collapse::CollapseStore>,
     sources: Vec<Arc<dyn Source>>,
     /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
     lock: std::sync::Mutex<Option<StabilityLock>>,
@@ -84,6 +87,7 @@ impl Pipeline {
         recents: Arc<RecentsSource>,
         icons: Arc<IconStore>,
         frecency: Arc<Frecency>,
+        collapse: Arc<crate::collapse::CollapseStore>,
     ) -> Self {
         let sources: Vec<Arc<dyn Source>> = vec![apps.clone(), recents.clone()];
         Pipeline {
@@ -91,6 +95,7 @@ impl Pipeline {
             recents,
             icons,
             frecency,
+            collapse,
             sources,
             lock: std::sync::Mutex::new(None),
             started: Instant::now(),
@@ -275,31 +280,48 @@ impl Pipeline {
             .target_for(id)
             .ok_or_else(|| "That Entry is no longer in the index.".to_string())?;
 
-        let launched = records_usage(action);
-
-        match action {
+        let image = match action {
             a if a == crate::actions::OPEN.as_str() => crate::launch::open(&target),
             a if a == crate::actions::RUN_AS_ADMIN.as_str() => crate::launch::run_as_admin(&target),
-            a if a == crate::actions::REVEAL.as_str() => crate::launch::reveal(&target),
+            a if a == crate::actions::REVEAL.as_str() => crate::launch::reveal(&target).map(|_| None),
             a if a == crate::actions::COPY_PATH.as_str() => {
                 let path = crate::launch::path_of(&target)
                     .ok_or_else(|| "That Entry has no path to copy.".to_string())?;
-                crate::launch::copy_to_clipboard(&path)
+                crate::launch::copy_to_clipboard(&path).map(|_| None)
             }
             other => Err(format!("Unknown action: {other}")),
         }?;
 
-        // After the launch succeeded, never before. A failed activation is not a
-        // choice, and recording one would teach the ranker to promote something
-        // that cannot start.
-        if launched {
-            if let Err(e) = self.frecency.record(id, kind) {
-                // Not fatal: the application did start. Losing one unit of usage
-                // costs a little ranking accuracy and nothing else.
-                eprintln!("[takyon] could not record usage: {e}");
+        self.record_activation(id, kind, action, image.as_deref());
+        Ok(())
+    }
+
+    /// What an activation teaches, after it has succeeded.
+    ///
+    /// Split out because the launch itself cannot be tested and this can. Both
+    /// writes are best-effort: the application already started, and losing a unit
+    /// of usage costs a little ranking accuracy and nothing else.
+    pub fn record_activation(
+        &self,
+        id: &EntryId,
+        kind: crate::entry::EntryKind,
+        action: &str,
+        image: Option<&std::path::Path>,
+    ) {
+        // Never before the launch succeeded. A failed activation is not a choice,
+        // and recording one would teach the ranker to promote something that
+        // cannot start.
+        if !records_usage(action) {
+            return;
+        }
+        if let Err(e) = self.frecency.record(id, kind) {
+            eprintln!("[takyon] could not record usage: {e}");
+        }
+        if let Some(image) = image {
+            if let Err(e) = self.collapse.observe(id, image) {
+                eprintln!("[takyon] could not record what started: {e}");
             }
         }
-        Ok(())
     }
 }
 
@@ -354,6 +376,7 @@ mod tests {
             Arc::new(RecentsSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
+            Arc::new(crate::collapse::CollapseStore::open(None).unwrap()),
         )
     }
 
@@ -389,6 +412,7 @@ mod tests {
                 Arc::new(RecentsSource::new()),
                 Arc::new(IconStore::new(None)),
                 Arc::new(Frecency::open(Some(dir.clone())).unwrap()),
+                Arc::new(crate::collapse::CollapseStore::open(None).unwrap()),
             )
         };
 
@@ -590,6 +614,7 @@ mod tests {
             Arc::new(RecentsSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
+            Arc::new(crate::collapse::CollapseStore::open(None).unwrap()),
         );
         let result = p.query("anything", 1);
         assert!(result.indexing);

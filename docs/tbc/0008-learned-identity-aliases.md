@@ -1,6 +1,7 @@
 ---
 status: watching
 pairs-with: ADR-0014
+built: v0.3 task 1b, 2026-08-29
 ---
 
 # TBC-0008 — Learning that two Entries are one application
@@ -85,6 +86,102 @@ This is the cheap half of the feature doing its job before a line of it was
 written. It does not kill the note; it removes the version of it that would have
 shipped a regression.
 
+## Built 2026-08-29, and the corpus forced two more guards
+
+The note said the generic-icon rule left "the pairs, of which there are four
+here, and each still needs corroboration". Both halves of that turned out to be
+wrong once the rule was run over the whole corpus rather than over `icons.bin`
+alone.
+
+### The measurement that changed it again
+
+`v0_3_measure_the_real_icon_pairs` — `cargo test --test integration -- --ignored`
+— joins the real application walk against the real `icons.bin`. 1321
+applications, 272 cached icons, 259 Entries carrying one. The rule as written
+produced **eleven** candidate pairs, not four. One was a genuine duplicate:
+
+```
+aumid:Microsoft.Windows.AdministrativeTools
+c:\windows\system32\control.exe|/name microsoft.administrativetools
+```
+
+Three of the other ten were dangerous rather than merely wrong, because process
+observation would have **agreed** with them:
+
+| Pair | What it actually is |
+|---|---|
+| `rar.txt` + `whatsnew.txt` | two documents sharing the generic text icon — and both start `notepad.exe` |
+| `winrar.chm` + `hh.exe` | a help file and its viewer; the `.chm` *is* started by `hh.exe` |
+| `uwpappssamples.url` + `uwpappstoolsdocumentation.url` | generic `.url` icon, and both start the browser |
+| `wsl.ico` + `wsl.ico\|--cd ~` | one binary, two argument sets — **exactly what task 0 separated** |
+
+That last one is the serious one. Corroboration cannot save a pair whose two
+halves genuinely start the same executable, and "two shortcuts to one host binary
+with different arguments" is precisely that case — the case ADR-0014 was amended
+to protect. Left alone, this feature would have undone task 0 by a third route.
+
+### The two guards that follow
+
+- **Only an executable's icon can identify it.** A document wears its file
+  type's icon, so `.txt` matches `.txt` and `.url` matches `.url`, and both
+  halves start the same viewer. `icon_can_identify` keeps `.exe`, AUMIDs and
+  Steam ids and drops everything else.
+- **Two ids differing only by arguments are never collapsed.** Checked in
+  `pairs_by_icon` and again in `CollapseStore::collapses`, because this is the
+  guard that keeps task 0 intact and it must hold however a pair arrived.
+
+Re-measured: **eleven candidates became seven.** The document cases and the
+argument case are gone. Of the seven that remain, one is the genuine
+`AdministrativeTools` duplicate and six are pairs of genuinely different
+executables — `devicepairingwizard` beside `hdwwiz`, 64-bit `powershell_ise`
+beside the 32-bit one, two Node installs, two AMD tools, two Docker binaries, two
+Visual Studio graphics engines. Every one of those six is stopped by
+corroboration, because their halves start different images.
+
+**So the icon signal on its own is worth roughly one true positive in seven.**
+It is a narrowing filter and nothing more, which is what this note already
+suspected and can now say with a number.
+
+### What is built
+
+- `src/collapse.rs` — the store (`launched`, `collapsed`, both in `frecency.db`),
+  the two signals, the guards, the winner rule and `learn`, which runs after each
+  walk on the discovery thread. Nothing on the query path.
+- `Frecency::merge_at` — the loser's decayed weight folds into the winner and the
+  loser's row is deleted. Merged once, at the moment a collapse is first decided;
+  the `collapsed` primary key is what makes that idempotent.
+- `AppSource::apply_collapses` — in place after each walk, beside
+  `apply_aliases`, for the same reason: discovery rebuilds the list and would
+  otherwise bring the suppressed Entry back.
+- `collapses.txt` beside `frecency.db`, rewritten whole on every startup, naming
+  every hidden Entry, the one kept and the evidence. Written even when empty,
+  because an absent file reads as a broken launcher.
+- `launch::open` now goes through `ShellExecuteExW` with `SEE_MASK_NOCLOSEPROCESS`
+  rather than `ShellExecuteW`, purely to learn the image path of what started.
+  Same verb, file, arguments and show command.
+
+### The winner rule
+
+ADR-0014 still decides, sharpened by the evidence rather than replaced by it. In
+order: an id with no path at all (AUMID, Steam) loses; a versioned path loses,
+because it dies at the next update; the id that *is* the observed image wins,
+because it is a real path and so supports reveal, elevate and copy. Otherwise the
+first stands.
+
+### What is still unproven, and it is the important half
+
+**No observation has ever been recorded on a real machine.** The launch path
+changed but nothing has been launched through it, so it is not known whether
+`ShellExecuteExW` returns a usable `hProcess` for a `shell:AppsFolder\` item.
+If it does not, the AUMID half of the one genuine pair here can never reach
+`OBSERVATIONS_REQUIRED`, and the feature is correct but permanently inert on this
+machine. `docs/tbd/v0.3.md` §7 owns that question and `docs/verify/v0.3.md` §C
+has the steps.
+
+The safety property *is* proven, and by a test that runs in the default suite:
+`v0_3_matching_icons_alone_never_hide_a_row` runs `learn` over the real machine
+with an empty observation table and asserts that not one row disappears.
+
 ## How we'd know we were wrong
 
 - **A real application disappears** and the alias table is why. One occurrence is
@@ -95,8 +192,15 @@ shipped a regression.
   another. The signal is kept only with the generic-icon exclusion; if a pair
   still collapses wrongly under that rule, the signal is dead and only process
   observation survives.
+- ~~**Icon identity is noisy between unrelated apps.**~~ **Fired a second time,
+  2026-08-29.** Over the whole corpus rather than `icons.bin` alone the rule
+  produced eleven candidates for one true positive, three of them documents that
+  process observation would have confirmed. Two further guards were added rather
+  than dropping the signal; see above. **A third firing kills it** and leaves
+  process observation alone.
 - **Process attribution is wrong more than rarely.** Measurable the same way:
   record the mapping without acting on it for a week, then read the table.
+  Nothing has been recorded yet — see `docs/tbd/v0.3.md` §7.
 - **It stops being free.** Any measurable cost on the query path, or a resident
   cost against the 150 MB idle ceiling, kills it — the feature is worth one
   redundant row, not one millisecond of latency.
@@ -124,7 +228,7 @@ cost is that a pair is only learned once both halves have been launched.
 If the whole thing proves not worth it: the fallback is the curated list, which is
 half a day and already has a working precedent in `steam.rs` and `path.rs`.
 
-## Why it is not built yet
+## Why it was not built until v0.3
 
 It needs `frecency.db`, which is v0.3 task 1, and it needs somewhere to merge a
 losing Entry's usage into a winner's, which is task 3. Building it before those

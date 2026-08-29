@@ -234,6 +234,32 @@ impl IconStore {
         Some(bytes)
     }
 
+    /// Every icon this store can produce without touching the shell.
+    ///
+    /// The blob from previous sessions plus whatever this one extracted. Used by
+    /// v0.3 task 1b to compare icons where they are already in memory, which is
+    /// what keeps that signal free (TBC-0008).
+    pub fn extracted(&self) -> HashMap<String, Vec<u8>> {
+        let mut out = HashMap::new();
+        if let Ok(guard) = self.blob.read() {
+            if let Some(blob) = guard.as_ref() {
+                for (key, (offset, len)) in &blob.index {
+                    let start = *offset as usize;
+                    let end = start + *len as usize;
+                    if end <= blob.map.len() {
+                        out.insert(key.clone(), blob.map[start..end].to_vec());
+                    }
+                }
+            }
+        }
+        if let Ok(guard) = self.ready.read() {
+            for (key, bytes) in guard.iter() {
+                out.insert(key.clone(), bytes.clone());
+            }
+        }
+        out
+    }
+
     /// How many icons have been extracted this session but not yet persisted.
     pub fn pending(&self) -> usize {
         self.ready.read().map(|r| r.len()).unwrap_or(0)
