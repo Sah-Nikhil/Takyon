@@ -119,10 +119,132 @@ Not because it is bad, but because three things about this project blunt it:
 4. **`tauri-driver`** — not now. Revisit if the product ever grows a second
    window whose interaction cannot be checked by hand.
 
+## Built, 2026-08-29
+
+The order above was followed, and the first two steps are done. Both were
+cheaper than the estimate; one of them was blocked by something no amount of
+planning would have found.
+
+### What now exists
+
+`apps/desktop/src-tauri/tests/`, three binaries, sixteen tests, ~2.5 seconds
+inside `bun run test`:
+
+- **`integration.rs`** — the real COM walk, real icon extraction through
+  `IShellItemImageFactory`, the `icons.bin` round trip, Frecency across two
+  `Pipeline`s over one directory, kind ordering with both Sources competing for
+  one list, the Stability lock against the real clock, and the alias round trip
+  applied to the real application list.
+- **`recents_shell.rs`** — the Recents Source, which had never executed here at
+  all (see below).
+- **`ipc.rs`** — the contract test, via `tauri::test`.
+
+A shared `common/mod.rs` holds two things worth naming. The application walk is
+taken once per binary behind a `OnceLock`, because it costs ~450 ms and every
+test wants the same one. And every directory a test writes to is a `TempDir`
+that removes itself on drop, including when the test panics.
+
+### The blocker: a test binary has no application manifest
+
+`tauri::test` did not work by adding the dev-dependency. `mock_app()` alone
+died before `main`:
+
+```
+process didn't exit successfully: probe_min.exe (exit code: 0xc0000139,
+STATUS_ENTRYPOINT_NOT_FOUND)
+```
+
+The import table explains it. The binary imports `TaskDialogIndirect`, which
+only **comctl32 v6** exports. A cargo test binary carries no application
+manifest, so the loader binds comctl32 v5 out of `system32` and the process
+never starts. `tauri-build` gives the real `takyon.exe` a manifest; it gives
+test targets nothing.
+
+Two lines in `build.rs` fix it, scoped to test targets:
+
+```rust
+println!(
+    "cargo:rustc-link-arg-tests=/MANIFESTDEPENDENCY:type='win32' \
+     name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+     processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+);
+```
+
+Worth recording because the symptom points nowhere near the cause: an exit code
+before `main`, on a test that does nothing but build a mock app.
+
+### Where `MockRuntime` stops
+
+Measured rather than assumed. `scale_factor`, `set_size`, `show`, `set_focus`,
+`emit` and `hwnd` all work. `inner_size` returns 0×0, so any assertion about
+measured window size is meaningless there — `content_height` is pure and is the
+right seam for that anyway. And `monitor_from_point` and `primary_monitor` are
+`unimplemented!()`, so they panic: `window::show`, `window::toggle` and
+`place_on_cursor_monitor` cannot run under the mock at all.
+
+The remaining cost of driving the *real* handlers is that `window.rs` and its
+neighbours take a concrete `&AppHandle`, which is `&AppHandle<Wry>`. Making them
+generic over `R: Runtime` is about 40 signatures across six files, plus lifting
+the `invoke_handler!` list out of `run()`. Mechanical, no behaviour change, half
+a day — and deferred, because the handler bodies are two or three lines over
+`Pipeline` and `Pipeline` is now covered directly. The contract test drives a
+copy of the handler instead, which is enough for the failure this note called
+most dangerous: the serialised shape drifting from `packages/shared/src/ipc.ts`.
+
+### Two things the tests found on the way
+
+**The Recents Source had never run.** Not under-tested — never executed. Its
+only exercise was an `#[ignore]`d measurement, and `Start_TrackDocs = 0` means
+the real folder is empty (`docs/tbd/v0.3.md` §1). `recents_shell.rs` now points
+`%APPDATA%` at a temp tree and writes real shortcuts through `IShellLinkW`, so
+the shell's own writer feeds the shell's own reader. That closes the logic half
+of verification steps N1 and N4, and turns tbd §2 — a recently-opened folder can
+never arrive — from something deduced by reading `lnk::read` into a test that
+will go red the day it is fixed.
+
+**`lnk::discover` depends on ambient COM.** Called on a thread with no
+apartment it returns an empty `Vec`, silently: 154 `.lnk` files on disk, zero
+read. Production is safe because `discover_all` opens a `ComScope` first, so
+this is a testability hazard rather than a live bug — but the failure is an
+empty list, which is indistinguishable from a machine with no Start Menu. It is
+recorded in `docs/tbd/v0.3.md`. There is no test for it: the trap only springs
+on a thread that has not already run something else, which no test in a shared
+binary can guarantee.
+
+### `tauri-driver`, re-examined and still not adopted
+
+One argument from 2026-08-28 has genuinely weakened. `@wdio/tauri-service` now
+reads Edge's version from the registry, downloads the matching `msedgedriver`
+and caches it, so the manual version-pinning chore is mostly gone. It also
+offers an embedded W3C server (`tauri-plugin-wdio-webdriver`) as an alternative
+to `tauri-driver` itself.
+
+The rest holds, and one part is sharper than before:
+
+- The service matches against the **Edge browser** registry key, not the
+  WebView2 Runtime key. Both read `151.0.4129.107` here today, and they are
+  updated on separate cadences; when they diverge the driver is matched to the
+  wrong thing. For reference, `msedgedriver` LATEST_STABLE is already
+  `152.0.4191.53`, a major version ahead of the runtime installed here.
+- The embedded route compiles a WebDriver server into the application. Nothing
+  documents whether it is gated out of release builds, and this is a launcher
+  that takes foreground over elevated windows.
+- It still cannot live inside `bun run test`, because every run launches a real
+  window and steals focus. That is the failure this note already recorded once.
+- `scripts/verify-drive.ps1` already drives the release binary with real
+  keystrokes and a foreground check. The marginal gain is DOM assertions.
+- Two frictions specific to Takyon: the Palette starts `visible: false` and is
+  summoned by a global hotkey WebDriver cannot send, and `activate` launches
+  real applications.
+
 ## Verdict if triggered
 
-Add **contract tests first** — they're a day or two and they eliminate fixture
-drift, which is the failure mode most likely to bite and least likely to be
-noticed. Reach for `tauri-driver` only when a bug escapes that both layers should
-have caught, and scope it to a handful of smoke tests rather than a suite; a flaky
+**Contract tests came first and are done**, which was the recommendation and
+took an afternoon rather than a day or two. What remains open, in order:
+Playwright over CDP if a bug escapes both existing layers, and the
+generic-over-`R` refactor if the command handlers ever grow bodies worth
+testing — v0.6's Settings window is the likely trigger for both.
+
+`tauri-driver` stays closed. Reach for it only when a bug escapes every layer
+above, and scope it to a handful of smoke tests rather than a suite; a flaky
 end-to-end suite that people learn to re-run until green is worse than no suite.

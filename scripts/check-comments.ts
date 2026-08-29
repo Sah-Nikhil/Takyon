@@ -18,6 +18,7 @@ const MODULE_MAX = 10;
 const ROOTS = [
   "apps/desktop/src",
   "apps/desktop/src-tauri/src",
+  "apps/desktop/src-tauri/tests",
   "apps/desktop/tests",
   "packages/shared/src",
   "scripts",

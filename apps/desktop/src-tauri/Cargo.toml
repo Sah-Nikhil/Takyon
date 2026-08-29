@@ -54,6 +54,22 @@ png = "0.17"
 # version-match. MIT crate over a public-domain engine, so ADR-0005 stays open.
 rusqlite = { version = "0.32", features = ["bundled"] }
 
+[dev-dependencies]
+# `mock_builder`/`get_ipc_response`, for the IPC contract test. **Must stay a
+# dev-dependency**: cargo excludes those from `cargo build`, so `tauri build` is
+# unaffected, and a `test` feature in a shipped binary is not noticed until it
+# ships. See docs/tbc/0007.
+tauri = { version = "2", features = ["test"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+# Authoring `.lnk` fixtures for the Recents tests. Same version and a subset of
+# the features the real dependency already asks for, so nothing extra compiles.
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+] }
+
 [target.'cfg(windows)'.dependencies]
 # Pinned to the same major as Tauri's own dependency so the two share one compiled
 # copy rather than each building their own.

@@ -94,7 +94,8 @@ under `docs/`.
 - dev: `bun run dev`
 - check before "done": `bun run typecheck && bun run lint` (lint covers both TS and
   `cargo clippy`)
-- test: `bun run test` — **all three layers**: Rust, TypeScript, then Playwright.
+- test: `bun run test` — **every layer**: Rust unit and integration, TypeScript,
+  then Playwright.
   `test:visual` was added to it at v0.3, because a suite that has to be remembered
   separately is one that gets skipped, and it was.
 - visual alone: `bun run test:visual` — Playwright screenshots of the UI running in
@@ -110,17 +111,25 @@ under `docs/`.
 
 ## Testing
 Use the **`/tdd` skill** for writing and running tests — test-first, not
-tests-afterwards. Three layers, because a launcher can't be verified by one:
+tests-afterwards. Four layers, because a launcher can't be verified by one:
 
 1. **Rust unit tests** — matching, ranking, Frecency decay, index correctness,
    watcher-overflow handling. All pure logic, no UI, no Tauri.
-2. **Visual regression** — the React UI runs in the ordinary Vite dev server with
+
+2. **Rust integration tests** (`src-tauri/tests/`) — everything that calls the
+   OS and cannot be reached any other way: the COM walk, icon extraction, the
+   `icons.bin` round trip, SQLite on disk, the Recents Source against a Recent
+   folder the test writes itself. Plus the IPC contract, driven through
+   `tauri::test`'s `MockRuntime` with no window. **Machine-dependent**, so assert
+   shape and ordering, never which applications are installed. Anything writing
+   to disk uses `common::TempDir`, which cleans up after itself.
+3. **Visual regression** — the React UI runs in the ordinary Vite dev server with
    the Tauri IPC layer mocked, driven by Playwright for screenshots. This requires
    an `api.ts` seam: **no component may call `invoke()` directly**, or the UI
    can't run outside Tauri and this layer becomes impossible. (Playwright as a dev
    dependency is unrelated to ADR-0005, which only forbids *shipping* a browser
    engine in the product.)
-3. **Manual verification script per phase** in `docs/verify/` — the global hotkey,
+4. **Manual verification script per phase** in `docs/verify/` — the global hotkey,
    focus-loss dismissal, tray, multi-monitor placement and the UIAccess
    elevated-window overlay genuinely cannot be automated cheaply. Write the script
    as part of the phase, don't improvise it at the end.
