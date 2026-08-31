@@ -391,6 +391,52 @@ mod tests {
         )
     }
 
+    /// A settings page beats a weakly-matching app on merit (task 8 ranking).
+    ///
+    /// The real case: `display` put `DisplaySwitch` (bare `System32` exe, matches
+    /// only by filename stem, 650) above the `Display` page (exact name, 900).
+    /// System and App share a tier now, so score decides and the page wins.
+    #[test]
+    fn v0_3_a_settings_page_beats_an_app_that_only_matches_by_exe_stem() {
+        let ds_target = LaunchTarget::Exe {
+            path: PathBuf::from(r"C:\Windows\System32\displayswitch.exe"),
+            args: None,
+            working_dir: None,
+        };
+        let display_switch = App {
+            id: EntryId::for_launch(&ds_target),
+            // A bare PATH exe has no display name, so it matches only by stem —
+            // exactly the DisplaySwitch case. `app()` would give it a real name.
+            hay: Haystack::for_executable("displayswitch"),
+            title: "DisplaySwitch".into(),
+            subtitle: None,
+            target: ds_target,
+            icon_source: None,
+            icon: None,
+            version: None,
+        };
+
+        let apps = AppSource::new();
+        apps.set_for_test(vec![display_switch]);
+        let system = SystemSource::new();
+        system.set_for_test(crate::sources::system::settings_catalog());
+        let p = Pipeline::new(
+            Arc::new(apps),
+            Arc::new(RecentsSource::new()),
+            Arc::new(system),
+            Arc::new(IconStore::new(None)),
+            Arc::new(Frecency::open(None).unwrap()),
+        );
+
+        let entries = p.query("display", 1).entries;
+        assert_eq!(
+            entries[0].id.as_str(),
+            "ms-settings:display",
+            "the settings page should win on match quality: {:?}",
+            entries.iter().map(|e| (e.title.clone(), e.score)).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn v0_2_the_sequence_number_is_echoed_so_a_stale_response_can_be_discarded() {
         let p = pipeline_with(vec![app("Notepad", r"C:\Windows\notepad.exe")]);

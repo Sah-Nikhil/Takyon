@@ -64,8 +64,9 @@ _Avoid_: provider, index, backend, plugin
 **System entry**:
 An Entry that opens a Windows settings page or a control-panel task rather than
 launching a program: `bluetooth` reaches the Bluetooth page, "Change how your
-keyboard works" opens its task. Its own Kind, always ranked below applications and
-never interleaved with them.
+keyboard works" opens its task. Its own Kind, but a launch destination like an
+app: it competes with applications on match quality and Frecency — same rank tier,
+interleaved by score — and ranks above documents.
 _Avoid_: setting, command, control panel item, shortcut
 
 **Frecency**:

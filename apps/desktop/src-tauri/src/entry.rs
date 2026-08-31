@@ -86,7 +86,8 @@ pub enum EntryKind {
     Clip,
     Calc,
     Recent,
-    /// A Windows settings page or control-panel task (v0.3 task 8). Below apps.
+    /// A Windows settings page or control-panel task (v0.3 task 8). Competes with
+    /// apps on merit — same rank tier, not below them.
     System,
 }
 
@@ -98,17 +99,17 @@ impl EntryKind {
             // Wins outright: an expression is unambiguous. Nobody typing `17*23`
             // meant an app.
             EntryKind::Calc => 0,
-            EntryKind::App => 1,
-            // Below apps by product rule (task 8), above ad-hoc documents: a
-            // system entry is an intentional destination — you type `bluetooth`
-            // to go there — not an incidental file. Tunable, not a knob.
-            EntryKind::System => 2,
-            EntryKind::Folder => 3,
-            EntryKind::File => 4,
-            EntryKind::Recent => 5,
+            // App and System share a tier: both are launch destinations, so they
+            // compete on match quality and Frecency rather than one gating the
+            // other. "Apps above documents" is about incidental files, not a
+            // settings page you deliberately go to. See IMPLEMENTATION_PLAN §3.
+            EntryKind::App | EntryKind::System => 1,
+            EntryKind::Folder => 2,
+            EntryKind::File => 3,
+            EntryKind::Recent => 4,
             // Unreachable from Bangless (ADR-0006). Last anyway, so a future
             // mistake surfaces at the bottom rather than promoting a secret.
-            EntryKind::Clip => 6,
+            EntryKind::Clip => 5,
         }
     }
 }

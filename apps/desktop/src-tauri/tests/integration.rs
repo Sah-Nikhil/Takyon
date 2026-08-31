@@ -729,29 +729,6 @@ fn v0_3_a_refreshed_system_source_holds_settings_and_tasks() {
     assert!(source.find(&bt).is_some(), "the settings half went missing");
 }
 
-/// System entries lose to applications in one real, mixed list — the kind rule
-/// where the ranker actually assembles it, not over synthetic Entries.
-#[test]
-fn v0_3_system_entries_rank_below_apps_in_one_real_list() {
-    let dir = TempDir::new("system-rank");
-    let (apps, icons) = real_apps();
-    let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let system = Arc::new(SystemSource::new());
-    system.refresh();
-    let p = Pipeline::new(apps, Arc::new(RecentsSource::new()), system, icons, frecency);
-
-    // A query that matches both an app and a settings page. If any app matched,
-    // no System row may sit above it.
-    for q in ["s", "d", "c", "a", "p"] {
-        let entries = p.query(q, 1).entries;
-        let first_app = entries.iter().position(|e| e.kind == EntryKind::App);
-        let first_system = entries.iter().position(|e| e.kind == EntryKind::System);
-        if let (Some(a), Some(s)) = (first_app, first_system) {
-            assert!(a < s, "a System row outranked an App for {q:?}");
-        }
-    }
-}
-
 #[test]
 #[ignore = "measures the host machine"]
 fn v0_3_measure_control_panel_tasks() {

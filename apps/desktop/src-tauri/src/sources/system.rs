@@ -367,11 +367,13 @@ mod tests {
         assert!(task_from("Something", Vec::new()).is_none());
     }
 
-    /// The kind rule, where the Source meets the ranker: a system entry never
-    /// outranks an application, however well it matches.
+    /// A system entry competes with applications on merit — same rank tier, so
+    /// score decides — and still sits above incidental documents.
     #[test]
-    fn v0_3_a_system_entry_ranks_below_an_application() {
-        assert!(EntryKind::System.tier() > EntryKind::App.tier());
+    fn v0_3_a_system_entry_competes_with_applications_on_merit() {
+        assert_eq!(EntryKind::System.tier(), EntryKind::App.tier());
+        assert!(EntryKind::System.tier() < EntryKind::File.tier());
+        assert!(EntryKind::System.tier() < EntryKind::Recent.tier());
     }
 
     /// A settings page has no file, so it is offered Open alone — no reveal, no

@@ -408,7 +408,7 @@ test("two installs of one tool show their versions", async ({ page }) => {
   await expect(page).toHaveScreenshot("palette-versions.png");
 });
 
-test("a system settings page draws below apps with an Open-only menu", async ({ page }) => {
+test("a system settings page draws with an Open-only menu", async ({ page }) => {
   const input = await open(page);
   // Matches the Bluetooth settings page (a system entry) and nothing else.
   await input.fill("bluetooth");

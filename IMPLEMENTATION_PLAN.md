@@ -59,7 +59,7 @@ pub struct Entry {
     pub id:       EntryId,          // stable across restarts — it is the Frecency key
     pub title:    String,
     pub subtitle: Option<String>,
-    pub kind:     EntryKind,        // App | System | Folder | File | Recent | Calc | Clip
+    pub kind:     EntryKind,        // App = System > Folder > File > Recent > Clip; Calc wins outright
     pub icon:     Option<IconRef>,  // offset into the icon blob, never a path
     pub score:    f32,
     pub actions:  Vec<ActionId>,
@@ -191,14 +191,27 @@ earns its place on the apps whose binary is named nothing like the product —
 No fuzzy subsequence in V1 — deferred by decision, see `docs/plans/post-v1.md`.
 `EntryKind` ordering is applied after scoring: **Apps always sort above
 documents**, never interleaved by raw score. The tier ladder is
-`App < System < Folder < File < Recent < Clip` (Calc wins outright). **System
-entries** — settings pages and control-panel tasks (v0.3 task 8) — sit just below
-apps: an intentional destination like an app, above an incidental document. Their
-ids are `ms-settings:<page>` and `system:<task name>`, stable across reinstalls.
-A settings page launches through its `ms-settings:` URI; a control-panel task has
-no reparseable name (it is positional in the shell namespace), so its absolute
-PIDL is captured at enumeration and launched by `SEE_MASK_IDLIST` —
-`LaunchTarget::Uri` and `LaunchTarget::ShellItem` respectively.
+`App = System < Folder < File < Recent < Clip` (Calc wins outright).
+
+**System entries share the App tier.** Settings pages and control-panel tasks
+(v0.3 task 8) are launch destinations, not documents — you type `bluetooth` to go
+to it — so they compete with apps on match quality and Frecency rather than one
+gating the other. This corrects the task-8 plan's "ranked below applications":
+observed live, that pinned `DisplaySwitch` (a bare `System32` exe matching only by
+its filename stem, 650) above the `Display` settings page (exact-name, 900), and
+no amount of use could move it, because Frecency reorders within a tier and never
+across one. The "apps above documents" rule is about incidental files surfaced in
+the default view, not a destination the user asked for by name. Their ids are
+`ms-settings:<page>` and `system:<task name>`, stable across reinstalls. A settings
+page launches through its `ms-settings:` URI; a control-panel task has no
+reparseable name (it is positional in the shell namespace), so its absolute PIDL
+is captured at enumeration and launched by `SEE_MASK_IDLIST` — `LaunchTarget::Uri`
+and `LaunchTarget::ShellItem` respectively.
+
+The App-vs-document ordering itself is a **still-open refinement**: "apps above
+documents" is really a default-view rule, and even there a 1:1 app/document match
+should be resolved by the query rather than by a blind tier. Deferred until
+recents and files exist to test it against (v0.7); recorded in `docs/tbd/v0.3.md`.
 
 ### Frecency
 
