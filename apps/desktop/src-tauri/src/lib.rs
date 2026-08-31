@@ -13,6 +13,7 @@
 pub mod actions;
 pub mod aliases;
 pub mod bench;
+pub mod com;
 pub mod entry;
 pub mod firstrun;
 pub mod frecency;
@@ -257,9 +258,11 @@ pub fn run() {
             );
             app.manage(aliases.clone());
             let recents = Arc::new(sources::recents::RecentsSource::new());
+            let system = Arc::new(sources::system::SystemSource::new());
             app.manage(Arc::new(Pipeline::new(
                 apps.clone(),
                 recents.clone(),
+                system.clone(),
                 icons.clone(),
                 frecency.clone(),
             )));
@@ -305,6 +308,12 @@ pub fn run() {
                 // that has to exist first. Cheap enough to redo whenever the
                 // alias table changes, which is what v0.6's editor will do.
                 apps.apply_aliases(&aliases);
+
+                // System entries: the curated settings table plus one COM walk of
+                // the All Tasks folder. Static, so read once here rather than on a
+                // timer. After the app walk because it is not on any budget and
+                // the app list is what the first keystroke wants.
+                system.refresh();
 
                 // Recents are read on a timer rather than per keystroke: a few
                 // hundred shortcuts through COM would blow the 20 ms budget many

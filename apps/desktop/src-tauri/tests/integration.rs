@@ -15,12 +15,13 @@ use std::time::{Duration, Instant};
 
 use common::{real_apps, TempDir};
 use takyon_lib::aliases::AliasStore;
-use takyon_lib::entry::{EntryId, EntryKind, MAX_ENTRIES};
+use takyon_lib::entry::{EntryId, EntryKind, LaunchTarget, MAX_ENTRIES};
 use takyon_lib::frecency::Frecency;
 use takyon_lib::icons::IconStore;
 use takyon_lib::query::{Pipeline, LOCK_DELAY_MS};
 use takyon_lib::sources::apps::AppSource;
 use takyon_lib::sources::recents::{recent_from, RecentsSource};
+use takyon_lib::sources::system::SystemSource;
 
 /// A Pipeline over the shared walk, with usage stored in `dir`.
 fn pipeline_in(dir: &TempDir) -> Arc<Pipeline> {
@@ -29,6 +30,7 @@ fn pipeline_in(dir: &TempDir) -> Arc<Pipeline> {
     Arc::new(Pipeline::new(
         apps,
         Arc::new(RecentsSource::new()),
+        Arc::new(SystemSource::new()),
         icons,
         frecency,
     ))
@@ -88,7 +90,7 @@ fn v0_3_icons_extract_through_com_and_survive_a_restart() {
     apps.refresh(&icons);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let p = Pipeline::new(apps, Arc::new(RecentsSource::new()), icons.clone(), frecency);
+    let p = Pipeline::new(apps, Arc::new(RecentsSource::new()), Arc::new(SystemSource::new()), icons.clone(), frecency);
 
     let mut keys = Vec::new();
     for entry in p.query(BROAD, 1).entries.iter().take(6) {
@@ -173,7 +175,7 @@ fn v0_3_applications_outrank_documents_in_one_real_list() {
     ]);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let p = Pipeline::new(apps, recents, icons, frecency);
+    let p = Pipeline::new(apps, recents, Arc::new(SystemSource::new()), icons, frecency);
     let entries = p.query(&word, 1).entries;
     let kinds: Vec<_> = entries.iter().map(|e| e.kind).collect();
 
@@ -241,6 +243,7 @@ fn v0_3_an_alias_puts_its_target_first_in_the_real_list() {
     let p = Pipeline::new(
         apps.clone(),
         Arc::new(RecentsSource::new()),
+        Arc::new(SystemSource::new()),
         icons,
         frecency,
     );
@@ -657,6 +660,112 @@ fn v0_3_measure_sdk_titles() {
         eprintln!("  {q:?}");
         for e in p.query(q, 1).entries.iter().take(6) {
             eprintln!("    {}", e.title);
+        }
+    }
+}
+
+// ----------------------------------------------------------- system entries
+
+/// The All Tasks folder, walked for real (task 8).
+///
+/// COM produced something or it did not: an apartment or interface mistake shows
+/// up here as an empty list, not a crash. No count is asserted — the tasks are
+/// whatever this Windows build ships — only that the walk ran and every task has
+/// a name and a launch target.
+#[test]
+fn v0_3_the_control_panel_walk_yields_named_tasks() {
+    let tasks = takyon_lib::sources::system::control_panel_tasks();
+    assert!(
+        !tasks.is_empty(),
+        "the All Tasks folder yielded nothing — COM or the folder GUID is wrong"
+    );
+    for t in &tasks {
+        assert!(!t.title.is_empty(), "a task came back with no name");
+        assert!(
+            matches!(t.target, LaunchTarget::ShellItem(_)),
+            "{} is not launchable by shell item",
+            t.title
+        );
+        assert!(t.id.as_str().starts_with("system:"));
+    }
+}
+
+/// The launch path's first half, proven without opening a window.
+///
+/// Every captured PIDL must bind back to a live shell item through exactly the
+/// call `launch::shell_execute_idlist` makes — otherwise the row is a dead button.
+/// A sample, because binding all ~200 is slow and one class of failure is enough
+/// to catch.
+#[test]
+fn v0_3_control_panel_pidls_bind_for_launch() {
+    let tasks = takyon_lib::sources::system::control_panel_tasks();
+    for t in tasks.iter().take(10) {
+        let LaunchTarget::ShellItem(pidl) = &t.target else {
+            continue;
+        };
+        assert!(
+            takyon_lib::launch::shell_item_is_bindable(pidl),
+            "{:?} did not bind to a shell item",
+            t.title
+        );
+    }
+}
+
+/// A full refresh carries both halves: the curated settings and the walked tasks.
+#[test]
+fn v0_3_a_refreshed_system_source_holds_settings_and_tasks() {
+    use takyon_lib::sources::system::{settings_catalog, SystemSource};
+
+    let source = SystemSource::new();
+    source.refresh();
+    assert!(source.is_ready());
+    assert!(
+        source.len() > settings_catalog().len(),
+        "refresh added no control-panel tasks on top of the settings table"
+    );
+
+    // The settings half is machine-independent: bluetooth always reaches its page.
+    let bt = EntryId("ms-settings:bluetooth".into());
+    assert!(source.find(&bt).is_some(), "the settings half went missing");
+}
+
+/// System entries lose to applications in one real, mixed list — the kind rule
+/// where the ranker actually assembles it, not over synthetic Entries.
+#[test]
+fn v0_3_system_entries_rank_below_apps_in_one_real_list() {
+    let dir = TempDir::new("system-rank");
+    let (apps, icons) = real_apps();
+    let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
+    let system = Arc::new(SystemSource::new());
+    system.refresh();
+    let p = Pipeline::new(apps, Arc::new(RecentsSource::new()), system, icons, frecency);
+
+    // A query that matches both an app and a settings page. If any app matched,
+    // no System row may sit above it.
+    for q in ["s", "d", "c", "a", "p"] {
+        let entries = p.query(q, 1).entries;
+        let first_app = entries.iter().position(|e| e.kind == EntryKind::App);
+        let first_system = entries.iter().position(|e| e.kind == EntryKind::System);
+        if let (Some(a), Some(s)) = (first_app, first_system) {
+            assert!(a < s, "a System row outranked an App for {q:?}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "measures the host machine"]
+fn v0_3_measure_control_panel_tasks() {
+    let tasks = takyon_lib::sources::system::control_panel_tasks();
+    eprintln!("  {} tasks", tasks.len());
+    for t in tasks.iter().take(8) {
+        if let LaunchTarget::ShellItem(pidl) = &t.target {
+            let ok = takyon_lib::launch::shell_item_is_bindable(pidl);
+            eprintln!(
+                "  [{}] {} ({} pidl bytes)",
+                if ok { "ok" } else { "XX" },
+                t.title,
+                pidl.len()
+            );
         }
     }
 }

@@ -110,6 +110,22 @@ const FIXTURES: Entry[] = [
     score: 700,
     actions: ["open"],
   },
+  // A settings page (task 8). Its own kind, Open only, no icon and no path —
+  // it sorts below applications and never carries a version.
+  {
+    id: "ms-settings:bluetooth",
+    title: "Bluetooth",
+    kind: "system",
+    score: 900,
+    actions: ["open"],
+  },
+  {
+    id: "system:change how your keyboard works",
+    title: "Change how your keyboard works",
+    kind: "system",
+    score: 700,
+    actions: ["open"],
+  },
 ];
 
 const ACTION_LABELS: Record<string, Action> = {

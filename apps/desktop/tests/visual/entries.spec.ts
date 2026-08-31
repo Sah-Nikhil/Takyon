@@ -407,3 +407,28 @@ test("two installs of one tool show their versions", async ({ page }) => {
   await fitTo(page, 2);
   await expect(page).toHaveScreenshot("palette-versions.png");
 });
+
+test("a system settings page draws below apps with an Open-only menu", async ({ page }) => {
+  const input = await open(page);
+  // Matches the Bluetooth settings page (a system entry) and nothing else.
+  await input.fill("bluetooth");
+
+  const rows = page.getByRole("option");
+  await expect(rows).toHaveCount(1);
+  const bt = rows.first();
+  await expect(bt).toContainText("Bluetooth");
+
+  // A settings page has no file, so the action menu offers Open alone — no
+  // reveal, no copy path, nothing to elevate.
+  await input.press("Control+k");
+  const menu = page.getByLabel("Actions");
+  await expect(menu.getByText("Open", { exact: true })).toBeVisible();
+  await expect(menu.getByText("Open file location")).toHaveCount(0);
+  await expect(menu.getByText("Run as administrator")).toHaveCount(0);
+
+  // Escape closes the menu; the single system row remains for the screenshot.
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await fitTo(page, 1);
+  await expect(page).toHaveScreenshot("palette-system-entry.png");
+});

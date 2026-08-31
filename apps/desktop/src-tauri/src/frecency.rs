@@ -149,6 +149,7 @@ fn kind_name(kind: EntryKind) -> &'static str {
         EntryKind::Clip => "clip",
         EntryKind::Calc => "calc",
         EntryKind::Recent => "recent",
+        EntryKind::System => "system",
     }
 }
 

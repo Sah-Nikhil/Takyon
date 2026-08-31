@@ -59,6 +59,12 @@ impl EntryId {
             }
             LaunchTarget::Aumid(aumid) => format!("aumid:{aumid}"),
             LaunchTarget::SteamGame(app_id) => format!("steam:{app_id}"),
+            // System entries mint their own ids (`system:` / `ms-settings:`) in
+            // `sources/system.rs`, like recents — PIDL and URI are launch detail,
+            // not identity, and a PIDL is per-session. These arms keep the
+            // constructor total; a system entry never reaches them.
+            LaunchTarget::ShellItem(_) => "shell-item".to_string(),
+            LaunchTarget::Uri(uri) => uri.to_lowercase(),
         })
     }
 
@@ -80,6 +86,8 @@ pub enum EntryKind {
     Clip,
     Calc,
     Recent,
+    /// A Windows settings page or control-panel task (v0.3 task 8). Below apps.
+    System,
 }
 
 impl EntryKind {
@@ -91,12 +99,16 @@ impl EntryKind {
             // meant an app.
             EntryKind::Calc => 0,
             EntryKind::App => 1,
-            EntryKind::Folder => 2,
-            EntryKind::File => 3,
-            EntryKind::Recent => 4,
+            // Below apps by product rule (task 8), above ad-hoc documents: a
+            // system entry is an intentional destination — you type `bluetooth`
+            // to go there — not an incidental file. Tunable, not a knob.
+            EntryKind::System => 2,
+            EntryKind::Folder => 3,
+            EntryKind::File => 4,
+            EntryKind::Recent => 5,
             // Unreachable from Bangless (ADR-0006). Last anyway, so a future
             // mistake surfaces at the bottom rather than promoting a secret.
-            EntryKind::Clip => 5,
+            EntryKind::Clip => 6,
         }
     }
 }
@@ -125,6 +137,15 @@ pub enum LaunchTarget {
     Aumid(String),
     /// A Steam app id, launched via `steam://rungameid/<id>`.
     SteamGame(u32),
+    /// A shell item as its absolute PIDL in bytes (task 8 control-panel tasks).
+    /// No path, no AUMID, no reparseable name — an All Tasks item is positional,
+    /// so the PIDL captured at enumeration is the only handle. Per-session, never
+    /// persisted; launched by its default verb through `SEE_MASK_IDLIST`.
+    ShellItem(Vec<u8>),
+    /// A URI the shell knows how to open — `ms-settings:bluetooth` (task 8's
+    /// settings pages). Launched straight through `ShellExecuteW`, like a
+    /// `steam://` URL.
+    Uri(String),
 }
 
 /// One actionable row (CONTEXT.md: Entry, never "result").

@@ -71,6 +71,15 @@ pub fn for_file() -> Vec<ActionId> {
     vec![OPEN, REVEAL, COPY_PATH]
 }
 
+/// Default actions for a system entry (task 8).
+///
+/// Open only: a settings page or control-panel task has no file to reveal or
+/// copy and nothing to elevate. Same "no action that can only fail" rule as a
+/// packaged app.
+pub fn for_system() -> Vec<ActionId> {
+    vec![OPEN]
+}
+
 /// Which action a modifier combination triggers on Enter.
 ///
 /// The only definition of what `Ctrl+Enter` means. v0.6 rebinding changes this
@@ -91,6 +100,10 @@ pub fn for_modifiers(ctrl: bool, shift: bool) -> ActionId {
 pub fn permitted(kind: EntryKind, id: &ActionId) -> bool {
     match kind {
         EntryKind::Clip => id == &COPY_PATH || id == &OPEN,
+        // A system entry can only be opened. Elevating or revealing one hits a
+        // launch arm that errors, so a Ctrl+Enter accelerator would raise a
+        // useless dialog; refuse it here instead.
+        EntryKind::System => id == &OPEN,
         _ => true,
     }
 }

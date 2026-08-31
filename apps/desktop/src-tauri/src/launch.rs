@@ -40,6 +40,13 @@ pub fn open(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
         LaunchTarget::SteamGame(app_id) => {
             shell_execute(None, &format!("steam://rungameid/{app_id}"), None, None)
         }
+        // A URI the shell resolves itself — `ms-settings:bluetooth`. Same call as
+        // a `steam://` URL; the shell picks the handler.
+        LaunchTarget::Uri(uri) => shell_execute(None, uri, None, None),
+        // A control-panel task, identified only by an absolute PIDL. No path
+        // `ShellExecuteW` accepts, so invoke its default verb (`open`) through the
+        // id-list directly.
+        LaunchTarget::ShellItem(pidl) => shell_execute_idlist(pidl),
     }
 }
 
@@ -190,6 +197,86 @@ fn shell_execute(
     _dir: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
     Err("launching is only implemented on Windows".into())
+}
+
+/// Invoke a shell item's default verb by its absolute PIDL (task 8).
+///
+/// A control-panel task has no path or reparseable name, so the PIDL captured at
+/// enumeration is the handle: launch it through `SEE_MASK_IDLIST`, which runs the
+/// default verb. Opens its own COM scope; no image path, nothing of ours ran.
+#[cfg(windows)]
+fn shell_execute_idlist(pidl_bytes: &[u8]) -> Result<Option<PathBuf>, String> {
+    use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_IDLIST, SHELLEXECUTEINFOW};
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let _com = crate::com::ComScope::new();
+    with_aligned_pidl(pidl_bytes, |pidl| {
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_IDLIST,
+            lpIDList: pidl,
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        let started = unsafe { ShellExecuteExW(&mut info) };
+        if started.is_err() || info.hInstApp.0 as isize <= 32 {
+            return Err(explain_shell_error(info.hInstApp.0 as isize));
+        }
+        Ok(None)
+    })
+}
+
+/// Copy PIDL bytes into a `CoTaskMemAlloc` buffer, run `f` with the aligned
+/// pointer, free it. A `Vec<u8>` is only byte-aligned; an id-list wants 2, and the
+/// shell owns the free contract for id-lists it is handed.
+#[cfg(windows)]
+fn with_aligned_pidl<T>(
+    bytes: &[u8],
+    f: impl FnOnce(*mut core::ffi::c_void) -> Result<T, String>,
+) -> Result<T, String> {
+    use windows::Win32::System::Com::{CoTaskMemAlloc, CoTaskMemFree};
+
+    if bytes.is_empty() {
+        return Err("That system entry is no longer available.".into());
+    }
+    unsafe {
+        let buf = CoTaskMemAlloc(bytes.len());
+        if buf.is_null() {
+            return Err("Out of memory launching that system entry.".into());
+        }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf as *mut u8, bytes.len());
+        let result = f(buf);
+        CoTaskMemFree(Some(buf as *const _));
+        result
+    }
+}
+
+#[cfg(not(windows))]
+fn shell_execute_idlist(_pidl_bytes: &[u8]) -> Result<Option<PathBuf>, String> {
+    Err("launching is only implemented on Windows".into())
+}
+
+/// Does a captured PIDL still bind to a live shell item, without launching it?
+///
+/// The half of [`shell_execute_idlist`] short of `ShellExecuteEx`, so an
+/// integration test can prove the walk's PIDLs are launchable —
+/// `SHCreateItemFromIDList` accepting what enumeration captured — window-free.
+#[cfg(windows)]
+pub fn shell_item_is_bindable(pidl_bytes: &[u8]) -> bool {
+    use windows::Win32::UI::Shell::{IShellItem, SHCreateItemFromIDList};
+
+    let _com = crate::com::ComScope::new();
+    with_aligned_pidl(pidl_bytes, |pidl| {
+        let item: Result<IShellItem, _> =
+            unsafe { SHCreateItemFromIDList(pidl as *const _) };
+        Ok(item.is_ok())
+    })
+    .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+pub fn shell_item_is_bindable(_pidl_bytes: &[u8]) -> bool {
+    false
 }
 
 /// Turn a `ShellExecuteW` error code into something worth showing.

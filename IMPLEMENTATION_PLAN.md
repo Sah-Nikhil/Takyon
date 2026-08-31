@@ -59,7 +59,7 @@ pub struct Entry {
     pub id:       EntryId,          // stable across restarts — it is the Frecency key
     pub title:    String,
     pub subtitle: Option<String>,
-    pub kind:     EntryKind,        // App | File | Folder | Clip | Calc | Recent
+    pub kind:     EntryKind,        // App | System | Folder | File | Recent | Calc | Clip
     pub icon:     Option<IconRef>,  // offset into the icon blob, never a path
     pub score:    f32,
     pub actions:  Vec<ActionId>,
@@ -190,7 +190,15 @@ earns its place on the apps whose binary is named nothing like the product —
 
 No fuzzy subsequence in V1 — deferred by decision, see `docs/plans/post-v1.md`.
 `EntryKind` ordering is applied after scoring: **Apps always sort above
-documents**, never interleaved by raw score.
+documents**, never interleaved by raw score. The tier ladder is
+`App < System < Folder < File < Recent < Clip` (Calc wins outright). **System
+entries** — settings pages and control-panel tasks (v0.3 task 8) — sit just below
+apps: an intentional destination like an app, above an incidental document. Their
+ids are `ms-settings:<page>` and `system:<task name>`, stable across reinstalls.
+A settings page launches through its `ms-settings:` URI; a control-panel task has
+no reparseable name (it is positional in the shell namespace), so its absolute
+PIDL is captured at enumeration and launched by `SEE_MASK_IDLIST` —
+`LaunchTarget::Uri` and `LaunchTarget::ShellItem` respectively.
 
 ### Frecency
 

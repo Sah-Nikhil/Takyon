@@ -187,7 +187,7 @@ fn v0_3_a_recent_never_outranks_an_application_that_matches_as_well() {
     let frecency =
         Arc::new(takyon_lib::frecency::Frecency::open(Some(dir.to_owned())).unwrap());
 
-    let p = takyon_lib::query::Pipeline::new(apps, recents, icons, frecency);
+    let p = takyon_lib::query::Pipeline::new(apps, recents, Arc::new(takyon_lib::sources::system::SystemSource::new()), icons, frecency);
     let kinds: Vec<_> = p.query("notepad", 1).entries.iter().map(|e| e.kind).collect();
     eprintln!("  notepad -> {kinds:?}");
 

@@ -248,7 +248,7 @@ impl Source for AppSource {
 /// the real display name, a bare `PATH` executable knows only its basename.
 fn discover_all(icons: &IconStore) -> Vec<App> {
     #[cfg(windows)]
-    let _com = ComScope::new();
+    let _com = crate::com::ComScope::new();
 
     let mut apps: Vec<App> = Vec::new();
     let mut seen: std::collections::HashSet<EntryId> = std::collections::HashSet::new();
@@ -436,41 +436,12 @@ pub fn icon_source_for(app: &App) -> Option<IconSource> {
         // from the app id, and reading it is a v0.3 nicety rather than something
         // v0.2 owes. The row renders its placeholder until then.
         LaunchTarget::SteamGame(_) => None,
+        // System entries never reach this path — they are their own Source, not
+        // Apps. Present for exhaustiveness; they render a placeholder.
+        LaunchTarget::ShellItem(_) | LaunchTarget::Uri(_) => None,
     }
 }
 
-/// COM initialised for the lifetime of one discovery pass.
-///
-/// Once per walk, not per shortcut. **Apartment-threaded**, because `AppsFolder`
-/// is a shell namespace extension and several are known to deadlock when
-/// enumerated from an MTA.
-#[cfg(windows)]
-struct ComScope {
-    initialised: bool,
-}
-
-#[cfg(windows)]
-impl ComScope {
-    fn new() -> Self {
-        use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-        let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-        // `RPC_E_CHANGED_MODE` means someone already initialised this thread into
-        // the other apartment. That is a working COM thread, so carry on — but do
-        // not uninitialise it on the way out, because we did not initialise it.
-        ComScope {
-            initialised: hr.is_ok(),
-        }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for ComScope {
-    fn drop(&mut self) {
-        if self.initialised {
-            unsafe { windows::Win32::System::Com::CoUninitialize() };
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -23,6 +23,7 @@ use crate::icons::IconStore;
 use crate::rank;
 use crate::sources::apps::AppSource;
 use crate::sources::recents::RecentsSource;
+use crate::sources::system::SystemSource;
 
 /// What one keystroke gets back.
 #[derive(Debug, Serialize)]
@@ -66,6 +67,10 @@ pub struct Pipeline {
     /// activation has to find the thing behind an id, which the trait does not
     /// expose.
     pub recents: Arc<RecentsSource>,
+    /// System settings pages and control-panel tasks. Held concretely for the
+    /// same reason as the others: activation looks the entry up by id, which the
+    /// `Source` trait does not expose.
+    pub system: Arc<SystemSource>,
     pub icons: Arc<IconStore>,
     /// What the user has actually chosen before. Read once per candidate Entry,
     /// written once per activation.
@@ -82,13 +87,15 @@ impl Pipeline {
     pub fn new(
         apps: Arc<AppSource>,
         recents: Arc<RecentsSource>,
+        system: Arc<SystemSource>,
         icons: Arc<IconStore>,
         frecency: Arc<Frecency>,
     ) -> Self {
-        let sources: Vec<Arc<dyn Source>> = vec![apps.clone(), recents.clone()];
+        let sources: Vec<Arc<dyn Source>> = vec![apps.clone(), recents.clone(), system.clone()];
         Pipeline {
             apps,
             recents,
+            system,
             icons,
             frecency,
             sources,
@@ -224,6 +231,9 @@ impl Pipeline {
         if let Some(app) = self.apps.find(id) {
             return Some((app.target, crate::entry::EntryKind::App));
         }
+        if let Some(entry) = self.system.find(id) {
+            return Some((entry.target, crate::entry::EntryKind::System));
+        }
         let recent = self.recents.find(id)?;
         Some((
             crate::entry::LaunchTarget::Exe {
@@ -249,6 +259,18 @@ impl Pipeline {
                     app.target,
                     crate::entry::LaunchTarget::Exe { .. }
                 )),
+                version: None,
+            });
+        }
+        if let Some(entry) = self.system.find(id) {
+            return crate::actions::for_entry(&Entry {
+                id: entry.id,
+                title: entry.title,
+                subtitle: None,
+                kind: crate::entry::EntryKind::System,
+                icon: None,
+                score: 0.0,
+                actions: crate::actions::for_system(),
                 version: None,
             });
         }
@@ -363,6 +385,7 @@ mod tests {
         Pipeline::new(
             Arc::new(source),
             Arc::new(RecentsSource::new()),
+            Arc::new(SystemSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
         )
@@ -398,6 +421,7 @@ mod tests {
             Pipeline::new(
                 Arc::new(source),
                 Arc::new(RecentsSource::new()),
+                Arc::new(SystemSource::new()),
                 Arc::new(IconStore::new(None)),
                 Arc::new(Frecency::open(Some(dir.clone())).unwrap()),
             )
@@ -599,6 +623,7 @@ mod tests {
         let p = Pipeline::new(
             Arc::new(source),
             Arc::new(RecentsSource::new()),
+            Arc::new(SystemSource::new()),
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
         );
@@ -668,7 +693,7 @@ mod tests {
         let p = pipeline_with(vec![]);
         assert_eq!(
             p.sources.len(),
-            2,
+            3,
             "adding a Source means revisiting ADR-0002 before changing this number"
         );
     }
