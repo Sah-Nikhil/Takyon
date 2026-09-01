@@ -927,3 +927,93 @@ fn v0_3_measure_what_the_desktop_adds() {
         }
     }
 }
+
+// ------------------------------------------------ the verify script, driven
+
+/// Every step of `docs/verify/v0.3.md` that needs no window and no launch.
+///
+/// Machine-dependent by nature — it names Discord and Obsidian — so it is
+/// `#[ignore]`d and prints a verdict per step. Frecency is a temp database, so
+/// every app scores as if never launched: the conservative case.
+#[test]
+#[ignore = "drives the manual script against the host machine"]
+fn v0_3_run_the_verify_steps_that_need_no_launch() {
+    let dir = TempDir::new("verify");
+    let (apps, icons) = real_apps();
+    let system = Arc::new(SystemSource::new());
+    system.refresh();
+    let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).expect("frecency.db"));
+    let p = Arc::new(Pipeline::new(
+        apps.clone(),
+        Arc::new(RecentsSource::new()),
+        system,
+        icons,
+        frecency,
+    ));
+
+    let mut failed = 0usize;
+    let mut report = |step: &str, ok: bool, detail: String| {
+        if !ok {
+            failed += 1;
+        }
+        eprintln!("  [{}] {step:<5} {detail}", if ok { "pass" } else { "FAIL" });
+    };
+
+    let titles = |q: &str| -> Vec<String> {
+        p.query(q, 1).entries.iter().map(|e| e.title.clone()).collect()
+    };
+    let top_is = |q: &str, want: &str| -> (bool, String) {
+        let rows = titles(q);
+        let got = rows.first().cloned().unwrap_or_else(|| "(nothing)".into());
+        (got == want, format!("{q:?} -> {}", rows.join(" | ")))
+    };
+
+    // --- RK: the System weight and the keyword rung.
+    for (step, q, want) in [
+        ("RK1", "dis", "Discord"),
+        ("RK2", "blu", "Bluetooth"),
+        ("RK3", "display", "Display"),
+        ("RK4", "disk", "Disk Cleanup"),
+        ("RK7", "not", "Notepad"),
+    ] {
+        let (ok, detail) = top_is(q, want);
+        report(step, ok, detail);
+    }
+    // RK6 asks only that an application leads, not which one.
+    let kb = p.query("keyboard", 1).entries;
+    let ok = kb.first().is_some_and(|e| e.kind == EntryKind::App);
+    report("RK6", ok, format!("keyboard -> {:?}", titles("keyboard")));
+
+    // --- DK: Desktop shortcuts add no duplicate row.
+    for name in ["Obsidian", "Postman", "GitHub Desktop"] {
+        let rows = titles(name);
+        let n = rows.iter().filter(|t| t.eq_ignore_ascii_case(name)).count();
+        report("DK1", n == 1, format!("{name} -> {n} row(s): {}", rows.join(" | ")));
+    }
+
+    // DK2 is the one with teeth: the Desktop copies point at a dead
+    // `C:\Program Files\Roblox`, so the kept row must be the one that exists.
+    for name in ["Roblox Player", "Roblox Studio"] {
+        let rows = p.query(name, 1).entries;
+        let hit = rows.iter().find(|e| e.title.eq_ignore_ascii_case(name));
+        let detail = match hit.and_then(|e| apps.find(&e.id)) {
+            Some(a) => match &a.target {
+                LaunchTarget::Exe { path, .. } => {
+                    format!("{name} -> {} (exists: {})", path.display(), path.is_file())
+                }
+                other => format!("{name} -> {other:?}"),
+            },
+            None => format!("{name} -> (no row)"),
+        };
+        let ok = detail.ends_with("exists: true)");
+        report("DK2", ok, detail);
+    }
+
+    // --- EP3: a stale Epic manifest must never become a row.
+    for game in ["fall guys", "dying light", "nba 2k21"] {
+        let rows = titles(game);
+        report("EP3", rows.is_empty(), format!("{game:?} -> {:?}", rows));
+    }
+
+    assert_eq!(failed, 0, "{failed} step(s) failed — see the log above");
+}
