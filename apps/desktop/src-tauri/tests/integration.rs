@@ -1017,3 +1017,71 @@ fn v0_3_run_the_verify_steps_that_need_no_launch() {
 
     assert_eq!(failed, 0, "{failed} step(s) failed — see the log above");
 }
+
+// ------------------------------------------------------- winget (task 11)
+
+/// Task 11, measure-first: would a winget Source add anything?
+///
+/// Input is `winget list --source winget`, checked in beside this file so the
+/// measurement reproduces without running winget. Version and architecture noise
+/// is trimmed first: `Signal 8.23.0` is reachable as `Signal`.
+#[test]
+#[ignore = "measures the host machine"]
+fn v0_3_measure_what_winget_would_add() {
+    let listing = include_str!("winget-list.txt");
+    let dir = TempDir::new("winget");
+    let p = pipeline_in(&dir);
+
+    // winget appends the installer's own version string and bitness. Keep words
+    // until one starts with a digit or looks like an arch tag.
+    let stem = |name: &str| -> String {
+        let mut kept: Vec<&str> = Vec::new();
+        for word in name.split_whitespace() {
+            let w = word.trim_matches(|c: char| c == '(' || c == ')' || c == ',');
+            let versionish = w.chars().next().is_some_and(|c| c.is_ascii_digit())
+                || matches!(w.to_lowercase().as_str(), "x64" | "x86" | "64-bit" | "32-bit");
+            if versionish {
+                break;
+            }
+            kept.push(word);
+        }
+        if kept.is_empty() { name.to_string() } else { kept.join(" ") }
+    };
+
+    let mut missing = Vec::new();
+    let mut total = 0usize;
+    for raw in listing.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        total += 1;
+        let needle = stem(raw);
+        let reached = p
+            .query(&needle, 1)
+            .entries
+            .iter()
+            .any(|e| e.title.to_lowercase().starts_with(&needle.to_lowercase()));
+        if !reached {
+            missing.push((raw, needle));
+        }
+    }
+
+    eprintln!("  {total} winget packages, {} not reachable", missing.len());
+    for (raw, needle) in &missing {
+        eprintln!("    {raw:<52} (queried {needle:?})");
+    }
+}
+
+/// The winget names that looked like real applications, queried the way a person
+/// would type them rather than the way winget prints them.
+#[test]
+#[ignore = "measures the host machine"]
+fn v0_3_measure_whether_winget_apps_are_already_reachable() {
+    let dir = TempDir::new("wingetreach");
+    let p = pipeline_in(&dir);
+    for q in [
+        "terminal", "visual studio code", "outlook", "onedrive", "roblox",
+        "ollama", "nvm", "rustup", "gh", "wsl", "java", "r 4", "signal",
+        "powertoys", "winrar", "zen", "docker", "f.lux", "hwinfo", "github cli",
+    ] {
+        let rows: Vec<String> = p.query(q, 1).entries.iter().take(2).map(|e| e.title.clone()).collect();
+        eprintln!("  {:<20} {}", format!("{q:?}"), if rows.is_empty() { "(nothing)".into() } else { rows.join(" | ") });
+    }
+}

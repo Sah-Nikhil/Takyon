@@ -1,0 +1,115 @@
+App Installer
+BCUninstaller 6.2.0.0
+Claude
+cloc
+Copilot CLI
+DirectX
+DirectX
+Discord
+Docker Desktop
+EA app
+Epic Games Launcher
+Epic Online Services
+Epson Connect Printer Setup
+Epson Scan 2
+f.lux
+Git
+GitHub CLI
+GitHub Desktop
+Google Chrome
+Helium
+HWiNFO® 64
+Java 8 Update 503 (64-bit)
+Java(TM) SE Development Kit 26.0.2 (64-bit)
+Microsoft .Net Native Runtime Package 2.2
+Microsoft .Net Native Runtime Package 2.2
+Microsoft 365 Apps for enterprise - en-us
+Microsoft Edge
+Microsoft GameInput
+Microsoft OneDrive
+Microsoft Server Speech Platform Runtime (x64)
+Microsoft Visual C++ 2005 Redistributable - x86 8.0.61001
+Microsoft Visual C++ 2008 Redistributable - x64 9.0.30729.6161 Microsoft.VCRedist.2008.x64
+Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729.6161 Microsoft.VCRedist.2008.x86
+Microsoft Visual C++ 2010 Redistributable - x64 10.0.40219
+Microsoft Visual C++ 2010 Redistributable - x86 10.0.40219
+Microsoft Visual C++ 2015 UWP Desktop Runtime Package
+Microsoft Visual C++ 2015 UWP Desktop Runtime Package
+Microsoft Visual C++ 2015 UWP Runtime Package
+Microsoft Visual C++ 2015 UWP Runtime Package
+Microsoft Visual C++ v14 Redistributable (x64) - 14.51.36247
+Microsoft Visual C++ v14 Redistributable (x86) - 14.51.36247
+Microsoft Visual Studio Code (User)
+Microsoft Windows Desktop Runtime - 6.0.36 (x64)
+Microsoft Windows Desktop Runtime - 8.0.30 (x64)
+Microsoft Windows Desktop Runtime - 9.0.19 (x64)
+Microsoft.UI.Xaml.2.7
+Microsoft.UI.Xaml.2.7
+Microsoft.UI.Xaml.2.8
+Microsoft.UI.Xaml.2.8
+MiKTeX
+MongoDB Compass
+Node.js
+NVIDIA PhysX System Software 9.23.1019
+NVM for Windows 1.2.2
+Obsidian
+Ollama version 0.32.13
+Outlook for Windows
+Poppler
+Postman x64 12.24.1
+PowerShell
+PowerShell 7.6.5.0-x64
+PowerToys (Preview) x64
+Quick Share
+R for Windows 4.5.2
+R for Windows 4.6.1
+Roblox Player
+Roblox Player
+Roblox Player for sahni
+RStudio
+Rustup: the Rust toolchain installer
+scrcpy
+Signal 8.23.0
+Spotify
+starship
+Steam
+SteelSeries GG 118.0.0
+T3 Code (Alpha) 0.0.33
+Tailscale
+Universal Adb Driver
+Visual Studio Build Tools 2022
+Windows Software Development Kit - Windows 10.0.26100.7705
+Windows Subsystem for Linux
+Windows Terminal
+WindowsAppRuntime.1.1
+WindowsAppRuntime.1.1
+WindowsAppRuntime.1.2
+WindowsAppRuntime.1.2
+WindowsAppRuntime.1.3
+WindowsAppRuntime.1.3
+WindowsAppRuntime.1.4
+WindowsAppRuntime.1.4
+WindowsAppRuntime.1.5
+WindowsAppRuntime.1.5
+WindowsAppRuntime.1.6
+WindowsAppRuntime.1.6
+WindowsAppRuntime.1.7
+WindowsAppRuntime.1.7
+WindowsAppRuntime.1.7
+WindowsAppRuntime.1.7
+WindowsAppRuntime.1.7
+WindowsAppRuntime.1.8
+WindowsAppRuntime.1.8
+WindowsAppRuntime.1.8
+WindowsAppRuntime.1.8
+WindowsAppRuntime.1.8
+WindowsAppRuntime.1.8
+WindowsAppRuntime.1.8
+WindowsAppRuntime.1.8
+WindowsAppRuntime.2
+WindowsAppRuntime.2
+WindowsAppRuntime.2
+WindowsAppRuntime.2
+WindowsAppRuntime.2
+WinRAR 7.23 (64-bit)
+Zen Browser (x64 en-US)
