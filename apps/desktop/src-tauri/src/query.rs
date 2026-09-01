@@ -441,6 +441,33 @@ mod tests {
         );
     }
 
+    /// RK4 from the live pass: `disk` selected the Storage settings page.
+    ///
+    /// Storage carries a shipped keyword "disk". That keyword sat on the *user
+    /// alias* rung (1000), so it beat an application literally named "Disk
+    /// Cleanup". Shipped keywords have their own rung now (`TIER_KEYWORD`).
+    #[test]
+    fn v0_3_a_shipped_keyword_does_not_beat_an_app_named_for_the_same_word() {
+        let apps = AppSource::new();
+        apps.set_for_test(vec![app("Disk Cleanup", r"C:\Windows\System32\cleanmgr.exe")]);
+        let system = SystemSource::new();
+        system.set_for_test(crate::sources::system::settings_catalog());
+        let p = Pipeline::new(
+            Arc::new(apps),
+            Arc::new(RecentsSource::new()),
+            Arc::new(system),
+            Arc::new(IconStore::new(None)),
+            Arc::new(Frecency::open(None).unwrap()),
+        );
+
+        let entries = p.query("disk", 1).entries;
+        let seen: Vec<(String, f32)> =
+            entries.iter().map(|e| (e.title.clone(), e.score)).collect();
+        assert_eq!(entries[0].title, "Disk Cleanup", "{seen:?}");
+        // Still reachable — the keyword works, it just does not win.
+        assert!(entries.iter().any(|e| e.title == "Storage"), "{seen:?}");
+    }
+
     /// A control-panel task sits below every app, whatever it scores.
     ///
     /// 198 of these walk in, all long sentences that match only by word prefix.

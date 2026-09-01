@@ -838,7 +838,7 @@ fn v0_3_measure_how_apps_and_settings_compete() {
         frecency,
     ));
 
-    for q in ["dis", "disc", "blu", "bluet", "display"] {
+    for q in ["dis", "disk", "blu", "wifi", "display", "keyboard", "not"] {
         eprintln!("\n  {q:?}");
         for e in p.query(q, 1).entries.iter().take(6) {
             let hay = apps

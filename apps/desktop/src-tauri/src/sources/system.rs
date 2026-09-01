@@ -90,9 +90,10 @@ pub fn settings_catalog() -> Vec<SystemEntry> {
         .iter()
         .map(|(title, page, keywords)| {
             let mut hay = Haystack::new(title, None);
-            // Keywords are exact-match aliases (TIER_ALIAS_EXACT). `wifi` reaches
-            // Network though the title never says it.
-            hay.aliases = keywords.iter().map(|k| k.to_lowercase()).collect();
+            // Exact-match keywords (TIER_KEYWORD): `wifi` reaches Network though
+            // the title never says it. Not `aliases` — that rung is the user's
+            // own naming, and it must outrank one we shipped.
+            hay.keywords = keywords.iter().map(|k| k.to_lowercase()).collect();
             SystemEntry {
                 id: EntryId(format!("ms-settings:{page}")),
                 title: title.to_string(),

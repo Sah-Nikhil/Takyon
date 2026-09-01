@@ -186,10 +186,19 @@ tiers, highest wins, then multiplied by the Frecency weight:
 |---|---|---|
 | Alias exact | 1000 | user maps `ps` → Photoshop |
 | Exact full name | 900 | `code` → **Code**, outright |
+| Shipped keyword | 850 | `wifi` → the Network settings page |
 | Full-name prefix | 800 | `adobe` → **Adobe** Photoshop |
 | Later-word-boundary prefix | 700 | `photo` → Adobe **Photo**shop |
 | Executable basename prefix | 650 | `devenv` → devenv.exe (Visual Studio) |
 | Acronym of initials | 600 | `vsc` → **V**isual **S**tudio **C**ode |
+
+**Amended again at v0.3.** The curated `ms-settings:` keywords (task 8) were put
+on the *alias* rung, which is the user's own naming and outranks everything. Live,
+`disk` then reached the **Storage** page above an application called **Disk
+Cleanup** — a keyword we shipped beating a name the user can see. Keywords have
+their own rung at 850: above a name prefix, below an exact name, and always below
+an alias the user wrote. This also took the `Display` page off 1000 and onto its
+honest exact-name 900.
 
 **Amended at v0.2.** The original table listed "Full-name prefix (900)" and
 "First-word-boundary prefix (800)" as separate rungs, but they describe the same
@@ -225,7 +234,7 @@ noise. They are `EntryKind::SystemTask`, below every app and above documents.
 
 The shared tier corrects the task-8 plan's "ranked below applications":
 observed live, that pinned `DisplaySwitch` (a bare `System32` exe matching only by
-its filename stem, 650) above the `Display` settings page (exact-name, 900), and
+its filename stem, 650) above the `Display` settings page (exact name, 900), and
 no amount of use could move it, because Frecency reorders within a tier and never
 across one. The "apps above documents" rule is about incidental files surfaced in
 the default view, not a destination the user asked for by name. Their ids are

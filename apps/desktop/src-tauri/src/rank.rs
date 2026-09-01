@@ -17,6 +17,9 @@ use crate::entry::{Entry, Query};
 /// one in the tier beneath it.
 pub const TIER_ALIAS_EXACT: f32 = 1000.0;
 pub const TIER_EXACT_NAME: f32 = 900.0;
+/// A keyword we shipped, not one the user wrote. Below an exact name on purpose:
+/// `disk` reaching the Storage page must not beat an app called "Disk Cleanup".
+pub const TIER_KEYWORD: f32 = 850.0;
 pub const TIER_NAME_PREFIX: f32 = 800.0;
 pub const TIER_WORD_PREFIX: f32 = 700.0;
 pub const TIER_EXE_PREFIX: f32 = 650.0;
@@ -44,6 +47,8 @@ const _: () = {
     assert!(LENGTH_PENALTY_MAX < TIER_EXE_PREFIX - TIER_ACRONYM);
     assert!(TIER_NAME_PREFIX - LENGTH_PENALTY_MAX > TIER_WORD_PREFIX);
     assert!(TIER_ALIAS_EXACT > TIER_EXACT_NAME);
+    assert!(TIER_EXACT_NAME > TIER_KEYWORD);
+    assert!(TIER_KEYWORD - LENGTH_PENALTY_MAX > TIER_NAME_PREFIX);
     assert!(TIER_EXACT_NAME > TIER_NAME_PREFIX);
     assert!(TIER_NAME_PREFIX > TIER_WORD_PREFIX);
     assert!(TIER_WORD_PREFIX > TIER_EXE_PREFIX);
@@ -69,6 +74,9 @@ pub struct Haystack {
     /// User-defined aliases, lowercased. Filled from `settings.db` after the
     /// walk and refreshable in place, so a new alias works without a re-index.
     pub aliases: Vec<String>,
+    /// Keywords Takyon ships, lowercased — `wifi` for the Network page. Separate
+    /// from `aliases` because the user's own name for a thing outranks ours.
+    pub keywords: Vec<String>,
 }
 
 impl Haystack {
@@ -85,6 +93,7 @@ impl Haystack {
             acronym,
             exe_stem: exe_stem.map(|s| s.to_lowercase()),
             aliases: Vec::new(),
+            keywords: Vec::new(),
         }
     }
 
@@ -100,6 +109,7 @@ impl Haystack {
             acronym: String::new(),
             exe_stem: Some(stem.to_lowercase()),
             aliases: Vec::new(),
+            keywords: Vec::new(),
         }
     }
 }
@@ -170,6 +180,9 @@ pub fn tier_of(needle: &str, hay: &Haystack) -> Option<f32> {
     }
     if hay.name == needle {
         return Some(TIER_EXACT_NAME);
+    }
+    if hay.keywords.iter().any(|k| k == needle) {
+        return Some(TIER_KEYWORD);
     }
     if hay.name.starts_with(needle) {
         return Some(TIER_NAME_PREFIX);
@@ -541,6 +554,32 @@ mod tests {
         let by_exe = score(&q("devenv"), &hay_exe("Visual Studio", "devenv")).unwrap();
         let by_acronym = score(&q("cod"), &hay("Chrome Optimised Debugger")).unwrap();
         assert!(by_exe > by_acronym);
+    }
+
+    /// A keyword we ship must not outrank an application named for the same word.
+    ///
+    /// `disk` reached the Storage settings page above "Disk Cleanup", because
+    /// task 8 put its curated keywords on the *user alias* rung. The user's own
+    /// naming outranks ours; ours sits below an exact name.
+    #[test]
+    fn v0_3_a_shipped_keyword_ranks_below_a_users_own_alias_and_an_exact_name() {
+        let mut storage = hay("Storage");
+        storage.keywords = vec!["storage".into(), "disk".into()];
+        assert_eq!(tier_of("disk", &storage), Some(TIER_KEYWORD));
+
+        // An app whose name merely *starts* with the word still loses to the
+        // keyword rung on tier — the 0.8 kind weight is what settles that pair,
+        // and `query.rs` owns the test for it.
+        assert_eq!(tier_of("disk", &hay("Disk Cleanup")), Some(TIER_NAME_PREFIX));
+
+        // A user alias still wins outright, and an exact name still beats ours.
+        let mut both = hay("Storage");
+        both.keywords = vec!["disk".into()];
+        both.aliases = vec!["disk".into()];
+        assert_eq!(tier_of("disk", &both), Some(TIER_ALIAS_EXACT));
+        let mut named = hay("disk");
+        named.keywords = vec!["disk".into()];
+        assert_eq!(tier_of("disk", &named), Some(TIER_EXACT_NAME));
     }
 
     #[test]
