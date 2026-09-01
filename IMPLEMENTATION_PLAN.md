@@ -218,6 +218,20 @@ No fuzzy subsequence in V1 — deferred by decision, see `docs/plans/post-v1.md`
 documents**, never interleaved by raw score. The tier ladder is
 `App = System < SystemTask < Folder < File < Recent < Clip` (Calc wins outright).
 
+**Calc winning outright is load-bearing and has a price, paid since v0.4.** An
+expression is unambiguous, so nobody typing `17*23` meant an application — but a
+*bare number* is not unambiguous, and `2022` is both a number and half of "Adobe
+Photoshop 2022". The tier means the answer takes the row and Enter with it. The
+calculator's own conservatism is therefore the only thing standing between the
+tier and a launcher that argues with you: `sources/calc/mod.rs` is where that
+policy lives, and `docs/tbd/v0.4.md` §1 carries the collision it does not solve.
+
+The calculator also carries a **Policy** — `automatic` or `explicit` — deciding
+whether it may answer a Bangless query at all, or only input prefixed with `=`.
+It is not a Mode: `CONTEXT.md` reserves that word for what a Bang selects. Held
+in Rust because it is enforced on the keystroke path, pushed from the frontend
+until `settings.db` exists at v0.6.
+
 **A tier is not the only lever.** `EntryKind::weight` multiplies the
 Frecency-lifted score — App 1.0, System and SystemTask 0.8 — so two Kinds can
 share a tier and still not compete evenly. This is PowerToys' plugin-weight model

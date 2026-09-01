@@ -40,6 +40,7 @@ use hotkey::{HotkeyState, HotkeyStatus};
 use icons::IconStore;
 use query::{Pipeline, QueryResult};
 use sources::apps::AppSource;
+use sources::calc::Policy as CalcPolicy;
 
 /// Hide the Palette. Called by Escape, which is handled in the frontend because
 /// that is where the keystroke lands.
@@ -117,6 +118,16 @@ fn activate(
         }
     });
     Ok(())
+}
+
+/// When the calculator may answer (v0.4).
+///
+/// Pushed from the frontend, like `prefs.ts`'s motion switch: no `settings.db`
+/// until v0.6. Default is Automatic and an unrecognised value parses back to it,
+/// so a keystroke arriving before the first push still behaves.
+#[tauri::command]
+fn set_calc_policy(policy: String, pipeline: tauri::State<'_, Arc<Pipeline>>) {
+    pipeline.calc.set_policy(CalcPolicy::parse(&policy));
 }
 
 #[tauri::command]
@@ -218,7 +229,8 @@ pub fn run() {
             actions_for,
             activate,
             set_action_menu,
-            set_banner_height
+            set_banner_height,
+            set_calc_policy
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

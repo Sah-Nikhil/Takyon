@@ -19,6 +19,7 @@ import {
   EVENT_HIDE,
   EVENT_SHOW,
   type Action,
+  type CalcPolicy,
   type HotkeyStatus,
   type QueryResult,
   type ShowPayload,
@@ -59,6 +60,16 @@ export const query = (q: string, seq: number) =>
  */
 export const reportFirstEntry = (seq: number) =>
   inTauri ? invoke<void>("report_first_entry", { seq }) : mock.reportFirstEntry(seq);
+
+/**
+ * Tell Rust when the calculator may answer (v0.4).
+ *
+ * Pushed rather than read: the rule is enforced inside the Source on the
+ * keystroke path, so Rust has to hold it. `prefs.ts` remembers the choice, and
+ * both windows push, so they cannot disagree.
+ */
+export const setCalcPolicy = (policy: CalcPolicy) =>
+  inTauri ? invoke<void>("set_calc_policy", { policy }) : mock.setCalcPolicy(policy);
 
 /** The `Ctrl+K` menu for one Entry. Labels and accelerators live in Rust. */
 export const actionsFor = (entryId: string) =>

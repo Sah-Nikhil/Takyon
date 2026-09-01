@@ -16,16 +16,24 @@ pub const RUN_AS_ADMIN: ActionId = ActionId("run_as_admin");
 pub const REVEAL: ActionId = ActionId("reveal");
 /// Copy the resolved target path to the clipboard.
 pub const COPY_PATH: ActionId = ActionId("copy_path");
+/// Copy a calculated answer to the clipboard (v0.4).
+///
+/// Separate from [`COPY_PATH`] because they are different promises: one hands
+/// over a location, the other a value. Sharing an id would also mean a Clip could
+/// reach it, which [`permitted`] deliberately allows for paths.
+pub const COPY_ANSWER: ActionId = ActionId("copy_answer");
 
 /// Every action, with label and default accelerator.
 ///
-/// `Enter` is listed for [`OPEN`] though the Palette handles it directly: a blank
-/// accelerator on the one action users know reads as broken, not intentional.
+/// `Enter` appears twice — [`OPEN`] and [`COPY_ANSWER`] — because what it does
+/// depends on what is selected, which is [`for_modifiers`]'s job. Uniqueness is
+/// per-menu, and a test asserts it there.
 const TABLE: &[(ActionId, &str, Option<&str>)] = &[
     (OPEN, "Open", Some("Enter")),
     (RUN_AS_ADMIN, "Run as administrator", Some("Ctrl+Enter")),
     (REVEAL, "Open file location", Some("Ctrl+Shift+Enter")),
     (COPY_PATH, "Copy path", Some("Ctrl+Shift+C")),
+    (COPY_ANSWER, "Copy answer", Some("Enter")),
 ];
 
 /// Resolve an id into a menu row.
@@ -80,11 +88,23 @@ pub fn for_system() -> Vec<ActionId> {
     vec![OPEN]
 }
 
-/// Which action a modifier combination triggers on Enter.
+/// Default actions for a calculation (v0.4).
 ///
-/// The only definition of what `Ctrl+Enter` means. v0.6 rebinding changes this
-/// function's data, not its callers.
-pub fn for_modifiers(ctrl: bool, shift: bool) -> ActionId {
+/// One action, and it is not [`OPEN`]: there is nothing to launch. The answer
+/// travels inside the EntryId, so copying needs no lookup — `sources/calc`.
+pub fn for_calc() -> Vec<ActionId> {
+    vec![COPY_ANSWER]
+}
+
+/// Which action a modifier combination triggers on Enter, for one Kind.
+///
+/// The only definition of what `Enter` and `Ctrl+Enter` mean. Kind-aware since
+/// v0.4: a calculation has nothing to open, so every chord copies its answer
+/// instead of reaching an action it does not have.
+pub fn for_modifiers(kind: EntryKind, ctrl: bool, shift: bool) -> ActionId {
+    if kind == EntryKind::Calc {
+        return COPY_ANSWER;
+    }
     match (ctrl, shift) {
         (true, true) => REVEAL,
         (true, false) => RUN_AS_ADMIN,
@@ -100,6 +120,9 @@ pub fn for_modifiers(ctrl: bool, shift: bool) -> ActionId {
 pub fn permitted(kind: EntryKind, id: &ActionId) -> bool {
     match kind {
         EntryKind::Clip => id == &COPY_PATH || id == &OPEN,
+        // A calculation has no file and no target. Everything but copying its
+        // answer would hit a launch arm that can only fail.
+        EntryKind::Calc => id == &COPY_ANSWER,
         // A system entry can only be opened. Elevating or revealing one hits a
         // launch arm that errors, so a Ctrl+Enter accelerator would raise a
         // useless dialog; refuse it here instead.
@@ -156,14 +179,22 @@ mod tests {
         }
     }
 
+    /// Amended at v0.4: uniqueness is **per menu**, not across the table.
+    ///
+    /// `Enter` is on both `Open` and `Copy answer` by design, and no Entry offers
+    /// both. Sharing a chord *within one menu* is still the bug it always was:
+    /// one action becomes unreachable, and which one depends on match order.
     #[test]
-    fn v0_2_no_two_actions_share_an_accelerator() {
-        // One chord, two actions: one is unreachable, and which one depends on
-        // match order. Invisible in review, maddening in use.
-        let mut seen = std::collections::HashSet::new();
-        for (id, _, accel) in TABLE {
-            if let Some(a) = accel {
-                assert!(seen.insert(*a), "{a} is bound twice, once by {}", id.as_str());
+    fn v0_2_no_two_actions_in_one_menu_share_an_accelerator() {
+        for menu in [for_app(true), for_app(false), for_file(), for_system(), for_calc()] {
+            let mut seen = std::collections::HashSet::new();
+            for action in menu.iter().filter_map(describe) {
+                let Some(accel) = action.accelerator else { continue };
+                assert!(
+                    seen.insert(accel.clone()),
+                    "{accel} is bound twice in one menu, once by {}",
+                    action.id.as_str()
+                );
             }
         }
     }
@@ -172,18 +203,55 @@ mod tests {
     fn v0_2_modifier_accelerators_agree_with_the_table() {
         // The menu's accelerator column and the key handler must not drift. Same
         // data today; this stops someone splitting them later.
-        assert_eq!(for_modifiers(false, false), OPEN);
-        assert_eq!(for_modifiers(true, false), RUN_AS_ADMIN);
-        assert_eq!(for_modifiers(true, true), REVEAL);
+        assert_eq!(for_modifiers(EntryKind::App, false, false), OPEN);
+        assert_eq!(for_modifiers(EntryKind::App, true, false), RUN_AS_ADMIN);
+        assert_eq!(for_modifiers(EntryKind::App, true, true), REVEAL);
 
         for (id, _, accel) in TABLE {
             let Some(accel) = accel else { continue };
+            // `Enter` on a calculation is the kind-aware branch, asserted on its
+            // own below rather than against the launchable mapping.
+            if id == &COPY_ANSWER {
+                continue;
+            }
             let ctrl = accel.contains("Ctrl");
             let shift = accel.contains("Shift");
             if accel.ends_with("Enter") {
-                assert_eq!(&for_modifiers(ctrl, shift), id, "{accel} disagrees");
+                assert_eq!(&for_modifiers(EntryKind::App, ctrl, shift), id, "{accel} disagrees");
             }
         }
+    }
+
+    /// v0.4: Enter against a calculation copies rather than launching, and the
+    /// modifiers do not reach actions a calculation does not have. Raycast says
+    /// the same thing in its footer — "Copy Answer", not "Open Application".
+    #[test]
+    fn v0_4_enter_on_a_calculation_copies_its_answer_whatever_the_modifiers() {
+        for (ctrl, shift) in [(false, false), (true, false), (true, true)] {
+            assert_eq!(for_modifiers(EntryKind::Calc, ctrl, shift), COPY_ANSWER);
+        }
+        assert!(permitted(EntryKind::Calc, &COPY_ANSWER));
+        assert!(!permitted(EntryKind::Calc, &OPEN));
+        assert!(!permitted(EntryKind::Calc, &REVEAL));
+    }
+
+    /// The menu a calculation gets: one row, labelled for what it does, with the
+    /// key that does it shown beside it.
+    #[test]
+    fn v0_4_a_calculation_offers_exactly_one_action() {
+        let menu = for_entry(&Entry {
+            id: EntryId("calc:14.16".into()),
+            title: "14.16".into(),
+            subtitle: Some("12*1.18".into()),
+            kind: EntryKind::Calc,
+            icon: None,
+            score: 1000.0,
+            actions: for_calc(),
+            version: None,
+        });
+        assert_eq!(menu.len(), 1);
+        assert_eq!(menu[0].label, "Copy answer");
+        assert_eq!(menu[0].accelerator.as_deref(), Some("Enter"));
     }
 
     /// Every accelerator the menu advertises is actually bound to something.

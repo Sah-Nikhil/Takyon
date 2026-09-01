@@ -12,11 +12,17 @@
  * will ever grow, not just the two that exist today.
  */
 
+import type { CalcPolicy } from "@takyon/shared";
+import * as api from "@/api";
+
 /**
  * Namespaced with the identity slug, never the display name (ADR-0011).
  * Renaming the product must not orphan the user's setting.
  */
 const KEY = "com.v3sper.launcher.reduce-motion";
+
+/** Same namespacing rule, same reason (ADR-0011). */
+const CALC_KEY = "com.v3sper.launcher.calc-policy";
 
 /** Whether Windows itself is asking for less motion. Independent of our switch. */
 export function systemReducesMotion(): boolean {
@@ -60,4 +66,28 @@ export function watchMotionPreference(): () => void {
   };
   window.addEventListener("storage", onStorage);
   return () => window.removeEventListener("storage", onStorage);
+}
+
+/**
+ * When the calculator may answer. Read on mount and pushed across the seam.
+ *
+ * Enforced in Rust, so localStorage only remembers the choice and
+ * `api.setCalcPolicy` makes it take effect. Rust defaults to `automatic`, which
+ * is what this returns when storage is unreadable, so the two agree.
+ */
+export function calcPolicy(): CalcPolicy {
+  try {
+    return window.localStorage.getItem(CALC_KEY) === "explicit" ? "explicit" : "automatic";
+  } catch {
+    return "automatic";
+  }
+}
+
+export function setCalcPolicy(mode: CalcPolicy): void {
+  try {
+    window.localStorage.setItem(CALC_KEY, mode);
+  } catch {
+    // Nothing to do but keep this session honest: the push below still lands.
+  }
+  void api.setCalcPolicy(mode);
 }

@@ -286,6 +286,13 @@ pub fn disambiguate_subtitles(mut entries: Vec<Entry>) -> Vec<Entry> {
         *counts.entry(e.title.to_lowercase()).or_default() += 1;
     }
     for e in &mut entries {
+        // A calculation is exempt (ADR-0016, amended at v0.4). Its second line is
+        // the expression, which answers "is this the sum I typed?" rather than
+        // "which of these two is which" — and there is only ever one Calc row, so
+        // it could never have a twin to be told apart from.
+        if e.kind == crate::entry::EntryKind::Calc {
+            continue;
+        }
         if counts.get(&e.title.to_lowercase()).copied().unwrap_or(0) < 2 {
             e.subtitle = None;
         }

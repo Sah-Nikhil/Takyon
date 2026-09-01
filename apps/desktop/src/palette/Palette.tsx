@@ -16,10 +16,11 @@ import {
   ROW_HEIGHT,
   type Action,
   type Entry,
+  type EntryKind,
 } from "@takyon/shared";
 import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
-import { applyMotionPreference, watchMotionPreference } from "@/prefs";
+import { applyMotionPreference, calcPolicy, watchMotionPreference } from "@/prefs";
 import type { HotkeyStatus } from "@takyon/shared";
 import { EntryRow } from "./EntryRow";
 import { ActionMenu } from "./ActionMenu";
@@ -79,6 +80,13 @@ export function Palette() {
     void api.hotkeyStatus().then(setHotkey);
   }, []);
 
+  // Rust holds the calculator's Mode because the rule is enforced inside the
+  // Source, on the keystroke path. Pushing it once on mount is what restores the
+  // remembered choice after a restart; Settings pushes again when it changes.
+  useEffect(() => {
+    void api.setCalcPolicy(calcPolicy());
+  }, []);
+
   useEffect(() => {
     runQuery(value);
   }, [value, runQuery]);
@@ -95,6 +103,10 @@ export function Palette() {
       // was hidden. Re-reading here is what makes the two windows agree without
       // any cross-window plumbing (see prefs.ts).
       applyMotionPreference();
+      // Same sync point, same reason: Settings may have changed the calculator's
+      // Mode while the Palette was hidden, and the next keystroke is about to ask
+      // Rust a question that depends on it.
+      void api.setCalcPolicy(calcPolicy());
       inputRef.current?.focus();
 
       // Two frames, not one. The first rAF callback runs *before* the browser
@@ -207,11 +219,18 @@ export function Palette() {
     this reads the state and names the action, it does not decide what the action
     means. Rebinding at v0.6 changes the Rust table and this keeps working.
    */
-  const actionForEvent = (e: React.KeyboardEvent) => {
+  const actionForEvent = (e: React.KeyboardEvent, kind: EntryKind | undefined) => {
+    // Kind-aware since v0.4, matching `actions::for_modifiers`. A calculation has
+    // nothing to open, elevate or reveal, so every chord copies its answer rather
+    // than reaching an action it does not have.
+    if (kind === "calc") return "copy_answer";
     if (e.ctrlKey && e.shiftKey) return "reveal";
     if (e.ctrlKey) return "run_as_admin";
     return "open";
   };
+
+  /** The Kind of the row Enter would act on. */
+  const selectedKind = entries.find((e) => e.id === selected)?.kind;
 
   /*
     The height Rust reserved for the list, chrome included.
@@ -243,12 +262,15 @@ export function Palette() {
           // test asserts the two sides still agree.
           if (e.key.toLowerCase() === "c" && e.ctrlKey && e.shiftKey) {
             e.preventDefault();
-            run(selected, "copy_path");
+            // A calculation has no path, so this chord is not offered on one and
+            // must not be sent: Rust refuses it, which would surface as an error
+            // toast for a keystroke that should have done nothing.
+            if (selectedKind !== "calc") run(selected, "copy_path");
             return;
           }
           if (e.key === "Enter") {
             e.preventDefault();
-            run(selected, actionForEvent(e));
+            run(selected, actionForEvent(e, selectedKind));
           }
         }}
       >

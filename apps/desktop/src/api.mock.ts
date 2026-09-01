@@ -12,7 +12,7 @@
  * the answer to that, and TBC-0007 already names them as the first thing to add.
  */
 
-import type { Action, Entry, HotkeyStatus, QueryResult, ShowPayload } from "@takyon/shared";
+import type { Action, CalcPolicy, Entry, HotkeyStatus, QueryResult, ShowPayload } from "@takyon/shared";
 
 type ShowListener = (payload: ShowPayload) => void;
 
@@ -137,6 +137,7 @@ const ACTION_LABELS: Record<string, Action> = {
   },
   reveal: { id: "reveal", label: "Open file location", accelerator: "Ctrl+Shift+Enter" },
   copy_path: { id: "copy_path", label: "Copy path", accelerator: "Ctrl+Shift+C" },
+  copy_answer: { id: "copy_answer", label: "Copy answer", accelerator: "Enter" },
 };
 
 /**
@@ -194,6 +195,41 @@ export function bannerRequest() {
   return lastBannerHeight;
 }
 
+/** The last mode pushed across the seam, for a test to assert against. */
+let lastCalcPolicy: CalcPolicy = "automatic";
+export function calcPolicyRequest() {
+  return lastCalcPolicy;
+}
+
+/**
+ * Calculator rows for the visual layer, as a lookup table.
+ *
+ * **A fixture, not an implementation.** Reimplementing the real rules here would
+ * give the screenshots something to agree with that is not the product. Answers
+ * are copied from the Rust unit tests, so drift shows as a stale screenshot.
+ */
+const CALC_FIXTURES: Record<string, string> = {
+  "12*1.18": "14.16",
+  "10+30%": "13",
+  "40 kg to lb": "88.1849 lb",
+  "2024": "2,024",
+};
+
+function calcFixture(q: string): Entry[] {
+  const answer = CALC_FIXTURES[q.trim()];
+  if (!answer) return [];
+  return [
+    {
+      id: `calc:${answer}`,
+      title: answer,
+      subtitle: q.trim(),
+      kind: "calc",
+      score: 1000,
+      actions: ["copy_answer"],
+    },
+  ];
+}
+
 export const mock = {
   dismiss: async () => {
     emitHide();
@@ -201,11 +237,15 @@ export const mock = {
   openSettings: async () => {},
   query: async (q: string, seq: number): Promise<QueryResult> => ({
     seq,
-    entries: q.trim() ? FIXTURES.filter((e) => matches(e, q)) : [],
+    entries: q.trim() ? [...calcFixture(q), ...FIXTURES.filter((e) => matches(e, q))] : [],
     indexing: q.trim() ? indexing : false,
   }),
   actionsFor: async (entryId: string): Promise<Action[]> => {
-    const entry = FIXTURES.find((e) => e.id === entryId);
+    // A calc id is not in FIXTURES: it is minted per query, exactly as Rust mints
+    // one per keystroke, so its menu comes from the id rather than a lookup.
+    const entry = entryId.startsWith("calc:")
+      ? { actions: ["copy_answer"] }
+      : FIXTURES.find((e) => e.id === entryId);
     // `flatMap`, not `map().filter(Boolean)`: with `noUncheckedIndexedAccess`
     // the lookup is `Action | undefined` and `filter` does not narrow it.
     // Returning `[]` for an unknown id also mirrors Rust.
@@ -225,6 +265,10 @@ export const mock = {
   /** Also recorded rather than acted on: there is no window here to grow. */
   setBannerHeight: async (height: number) => {
     lastBannerHeight = Math.ceil(height);
+  },
+  /** Recorded, not enforced: the rule this sets lives in Rust (TBC-0007). */
+  setCalcPolicy: async (mode: CalcPolicy) => {
+    lastCalcPolicy = mode;
   },
   activate: async (_entryId: string, _actionId: string) => {
     // Launching is the one thing the browser build genuinely cannot do. Hiding is

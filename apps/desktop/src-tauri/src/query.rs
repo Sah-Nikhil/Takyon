@@ -22,6 +22,7 @@ use crate::frecency::Frecency;
 use crate::icons::IconStore;
 use crate::rank;
 use crate::sources::apps::AppSource;
+use crate::sources::calc::CalcSource;
 use crate::sources::recents::RecentsSource;
 use crate::sources::system::SystemSource;
 
@@ -71,6 +72,9 @@ pub struct Pipeline {
     /// same reason as the others: activation looks the entry up by id, which the
     /// `Source` trait does not expose.
     pub system: Arc<SystemSource>,
+    /// Inline arithmetic. Held concretely so Settings can flip its Policy; it has
+    /// no index, so unlike the others there is nothing to look an id up in.
+    pub calc: Arc<CalcSource>,
     pub icons: Arc<IconStore>,
     /// What the user has actually chosen before. Read once per candidate Entry,
     /// written once per activation.
@@ -91,11 +95,17 @@ impl Pipeline {
         icons: Arc<IconStore>,
         frecency: Arc<Frecency>,
     ) -> Self {
-        let sources: Vec<Arc<dyn Source>> = vec![apps.clone(), recents.clone(), system.clone()];
+        // Built here rather than injected like the others, because there is
+        // nothing to inject: the calculator holds no index, reads no disk and
+        // needs no seeding, so a test has nothing it would want to hand it.
+        let calc = Arc::new(CalcSource::new());
+        let sources: Vec<Arc<dyn Source>> =
+            vec![apps.clone(), recents.clone(), system.clone(), calc.clone()];
         Pipeline {
             apps,
             recents,
             system,
+            calc,
             icons,
             frecency,
             sources,
@@ -250,6 +260,9 @@ impl Pipeline {
 
     /// The actions offered for one Entry, for the `Ctrl+K` menu.
     pub fn actions_for(&self, id: &EntryId) -> Vec<crate::entry::Action> {
+        if CalcSource::answer_of(id).is_some() {
+            return crate::actions::for_calc().iter().filter_map(crate::actions::describe).collect();
+        }
         if let Some(app) = self.apps.find(id) {
             return crate::actions::for_entry(&Entry {
                 id: app.id.clone(),
@@ -298,6 +311,17 @@ impl Pipeline {
     /// activation failure is the Palette, and by now it is hidden — so the frontend
     /// has to be told in order to bring it back.
     pub fn activate(&self, id: &EntryId, action: &str) -> Result<(), String> {
+        // A calculation is answered before anything is looked up, because there
+        // is nothing to look up: the Entry was computed for one keystroke and
+        // belongs to no index. The answer rides in the id (`sources/calc`).
+        if let Some(answer) = CalcSource::answer_of(id) {
+            if action != crate::actions::COPY_ANSWER.as_str() {
+                return Err(format!("A calculation cannot be {action}ed."));
+            }
+            return crate::launch::copy_to_clipboard(answer);
+            // No `record_activation`: see `records_usage`.
+        }
+
         let (target, kind) = self
             .target_for(id)
             .ok_or_else(|| "That Entry is no longer in the index.".to_string())?;
@@ -833,20 +857,89 @@ mod tests {
         assert!(p.actions_for(&EntryId("nothing".into())).is_empty());
     }
 
-    /// ADR-0002, as an assertion that fails loudly when a Source is added
-    /// without thinking about it.
+    /// ADR-0002, as an assertion that fails when a Source is added carelessly.
     ///
-    /// **Fired once already, as designed**: v0.3's Recents reads a local folder,
-    /// no network, so 1 became 2 deliberately.
+    /// **Fired twice.** v0.3's Recents reads a local folder. v0.4's calculator is
+    /// a parse with static tables and no IO — and currency, the one part that
+    /// *would* have reached the network, was left out (`docs/tbd/v0.4.md`).
     #[test]
     fn v0_3_every_bangless_source_is_local() {
         assert!(bangless_sources_are_local());
         let p = pipeline_with(vec![]);
         assert_eq!(
             p.sources.len(),
-            3,
+            4,
             "adding a Source means revisiting ADR-0002 before changing this number"
         );
+    }
+
+    /// v0.4: the calculator answers, and it beats an application outright.
+    ///
+    /// Not a tie broken by score — `EntryKind::Calc` wins the tier, so no amount
+    /// of Frecency on an app can displace an unambiguous expression.
+    #[test]
+    fn v0_4_an_expression_takes_the_top_row_from_every_application() {
+        let p = pipeline_with(vec![app("Code", r"C:\code\Code.exe")]);
+        let entries = p.query("12*1.18", 1).entries;
+        assert_eq!(entries[0].title, "14.16");
+        assert_eq!(entries[0].kind, EntryKind::Calc);
+    }
+
+    /// ADR-0016 amended at v0.4: a calculation keeps its expression.
+    ///
+    /// The subtitle rule strips a second line from any row whose title is unique,
+    /// which silently swallowed the expression on its way out of the pipeline —
+    /// found by the IPC contract test, invisible to the mocked visual layer.
+    #[test]
+    fn v0_4_a_calculation_keeps_its_expression_through_the_whole_pipeline() {
+        let p = pipeline_with(vec![]);
+        let entries = p.query("12*1.18", 1).entries;
+        assert_eq!(entries[0].subtitle.as_deref(), Some("12*1.18"));
+    }
+
+    /// The `1password` trap, through the whole pipeline rather than the parser
+    /// alone: an app whose name starts with a digit keeps its top row.
+    #[test]
+    fn v0_4_an_app_named_like_a_number_is_not_displaced_by_a_calculation() {
+        let p = pipeline_with(vec![app("1Password", r"C:\1p\1Password.exe")]);
+        let entries = p.query("1password", 1).entries;
+        assert_eq!(entries[0].title, "1Password");
+        assert!(entries.iter().all(|e| e.kind != EntryKind::Calc));
+    }
+
+    /// Copying an answer is not choosing an application, so it must never reach
+    /// the usage database. A `calc:` row in `frecency.db` would also be
+    /// permanent junk: the id is the answer, so every distinct sum makes one.
+    #[test]
+    fn v0_4_copying_an_answer_teaches_the_ranker_nothing() {
+        assert!(!records_usage(crate::actions::COPY_ANSWER.as_str()));
+
+        let p = pipeline_with(vec![]);
+        let id = EntryId("calc:14.16".into());
+        p.record_activation(&id, EntryKind::Calc, crate::actions::COPY_ANSWER.as_str());
+        assert_eq!(p.frecency.weight(&id), 0.0);
+    }
+
+    /// The `Ctrl+K` menu for a calculation, which has no index to be found in.
+    /// Before v0.4 an id no Source claimed produced an empty menu, so this is the
+    /// difference between working and silently doing nothing.
+    #[test]
+    fn v0_4_a_calculation_has_an_action_menu() {
+        let p = pipeline_with(vec![]);
+        let menu = p.actions_for(&EntryId("calc:14.16".into()));
+        assert_eq!(menu.len(), 1);
+        assert_eq!(menu[0].id, crate::actions::COPY_ANSWER);
+    }
+
+    /// Activating a calculation with anything but its own action is refused
+    /// rather than reaching a launch arm. `run_as_admin` on a number would
+    /// otherwise raise a UAC prompt for a string.
+    #[test]
+    fn v0_4_a_calculation_refuses_actions_that_are_not_copying() {
+        let p = pipeline_with(vec![]);
+        let id = EntryId("calc:14.16".into());
+        assert!(p.activate(&id, crate::actions::RUN_AS_ADMIN.as_str()).is_err());
+        assert!(p.activate(&id, crate::actions::REVEAL.as_str()).is_err());
     }
 
 }

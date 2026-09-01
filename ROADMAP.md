@@ -129,10 +129,21 @@ Both are in [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §10.
 
 **Goal:** the second reflex after launching.
 
-- [ ] Inline expression evaluation, result as the top Entry, Enter copies it
-- [ ] Unit and currency conversion — currency needs a rate source, so it is **Bang-gated or explicitly opt-in** (ADR-0002)
+- [x] Inline expression evaluation, result as the top Entry, Enter copies it
+- [x] Unit conversion — length, mass, temperature, data, time, all from static tables
+- [ ] Currency conversion — **deferred to v0.8**. It needs a rate source, so ADR-0002 requires it to be Bang-gated or opt-in, and at v0.4 neither gate exists: `bang.rs` is v0.8 and there is no settings store until v0.6. No currency code was written, and a test asserts no currency unit resolves. [`docs/tbd/v0.4.md`](./docs/tbd/v0.4.md) §2
+- [x] **New:** `=` forces a calculation, and a Settings switch chooses whether anything else may
 
-**Exit criteria:** you stop opening a calculator app.
+**Exit criteria:** you stop opening a calculator app. **Met** — `12*1.18` and
+`40 kg to lb` both answer inline and offline.
+
+The parser is hand-rolled rather than a crate; the plan said otherwise and
+[TBC-0011](./docs/tbc/0011-hand-rolled-expression-parser.md) records why it
+changed. Detection follows Raycast's rules, adopted after watching them work and
+fail on this machine — including the one that fails: in the default Policy,
+`2022` takes the top row from **Adobe Photoshop 2022**. That is a known cost with
+a one-switch cure, written up in [`docs/tbd/v0.4.md`](./docs/tbd/v0.4.md) §1.
+ADR-0016 gained a Calc exemption so an answer keeps its expression.
 
 ---
 

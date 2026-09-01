@@ -18,7 +18,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Lockup } from "@/components/Lockup";
 import * as api from "@/api";
-import { reduceMotion, setReduceMotion, systemReducesMotion } from "@/prefs";
+import {
+  calcPolicy,
+  reduceMotion,
+  setCalcPolicy,
+  setReduceMotion,
+  systemReducesMotion,
+} from "@/prefs";
 import type { HotkeyStatus } from "@takyon/shared";
 
 /**
@@ -33,6 +39,7 @@ export function Settings() {
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);
   const [stillMotion, setStillMotion] = useState(reduceMotion);
+  const [calc, setCalc] = useState(calcPolicy);
   // Read once. Windows can change it mid-session, but this line is copy, not
   // behaviour — the media query in styles.css enforces the OS setting either way.
   const [osStill] = useState(systemReducesMotion);
@@ -58,6 +65,12 @@ export function Settings() {
   const toggleMotion = useCallback((on: boolean) => {
     setReduceMotion(on);
     setStillMotion(on);
+  }, []);
+
+  const toggleCalc = useCallback((explicitOnly: boolean) => {
+    const next = explicitOnly ? "explicit" : "automatic";
+    setCalcPolicy(next);
+    setCalc(next);
   }, []);
 
   return (
@@ -98,6 +111,23 @@ export function Settings() {
             type="checkbox"
             checked={stillMotion}
             onChange={(e) => toggleMotion(e.target.checked)}
+            className="mt-1 size-4 shrink-0 accent-accent"
+          />
+        </label>
+
+        <label className="flex items-start justify-between gap-6">
+          <span>
+            <span className="block text-[15px]">Only calculate after an = sign</span>
+            <span className="mt-1 block text-[13px] text-fg/50">
+              {calc === "explicit"
+                ? "Type = first to calculate, as in =12*1.18. Nothing else is ever read as arithmetic, so a search can never lose its top row to a number."
+                : "12*1.18 answers as you type. The cost is that a plain number does too, so 2022 shows a result above Adobe Photoshop 2022 and Enter copies it."}
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={calc === "explicit"}
+            onChange={(e) => toggleCalc(e.target.checked)}
             className="mt-1 size-4 shrink-0 accent-accent"
           />
         </label>

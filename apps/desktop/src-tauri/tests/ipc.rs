@@ -183,6 +183,49 @@ fn v0_3_the_action_menu_response_matches_api_ts() {
 /// The convention, not the production signature — the handler here is a copy, so
 /// a rename in `lib.rs` would not turn this red. What it pins is that the
 /// mapping exists at all, which every camelCase argument in `api.ts` relies on.
+/// v0.4: a Calc Entry reaches the wire in the shape `ipc.ts` declares.
+///
+/// The machine-independent half of the contract test above. A calculation is the
+/// one Entry that does not depend on what is installed, so this asserts values
+/// and not only field names.
+#[test]
+fn v0_4_a_calculation_reaches_the_wire_as_a_calc_entry() {
+    let (_app, webview) = mock_palette();
+    let response = call(&webview, "query", serde_json::json!({ "q": "12*1.18", "seq": 1u64 }));
+
+    let entries = response["entries"].as_array().expect("entries is an array");
+    let calc = &entries[0];
+    assert_eq!(calc["kind"].as_str(), Some("calc"), "{calc}");
+    assert_eq!(calc["title"].as_str(), Some("14.16"));
+    assert_eq!(calc["subtitle"].as_str(), Some("12*1.18"));
+    assert_eq!(calc["id"].as_str(), Some("calc:14.16"));
+    // Ids only, never objects, and the one it carries is what the Palette's Enter
+    // handler sends back.
+    assert_eq!(
+        calc["actions"].as_array().map(Vec::as_slice),
+        Some([Value::from("copy_answer")].as_slice())
+    );
+    // No icon key: an answer has no file to extract one from, and a `null` here
+    // would break the `icon?: string` the row reads with `?.`.
+    assert!(calc.get("icon").is_none(), "a calculation shipped an icon: {calc}");
+}
+
+/// The menu Rust hands back for an id no Source holds an index for.
+///
+/// Every other Kind is found by lookup; a calculation is not. This is the one
+/// menu that would silently come back empty if that branch were dropped.
+#[test]
+fn v0_4_the_action_menu_for_a_calculation_is_not_empty() {
+    let (_app, webview) = mock_palette();
+    let response = call(&webview, "actions_for", serde_json::json!({ "entryId": "calc:14.16" }));
+
+    let actions = response.as_array().expect("actions_for returns an array");
+    assert_eq!(actions.len(), 1, "{response}");
+    assert_eq!(actions[0]["id"].as_str(), Some("copy_answer"));
+    assert_eq!(actions[0]["label"].as_str(), Some("Copy answer"));
+    assert_eq!(actions[0]["accelerator"].as_str(), Some("Enter"));
+}
+
 #[test]
 fn v0_3_camel_case_argument_names_reach_snake_case_parameters() {
     let (_app, webview) = mock_palette();
