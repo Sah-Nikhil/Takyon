@@ -88,9 +88,13 @@ pub enum EntryKind {
     Clip,
     Calc,
     Recent,
-    /// A Windows settings page or control-panel task (v0.3 task 8). Competes with
-    /// apps on merit — same rank tier, not below them.
+    /// A curated Windows settings page (v0.3 task 8) — `ms-settings:bluetooth`.
+    /// A destination you ask for by name, so it shares the App tier.
     System,
+    /// A control-panel task from the All Tasks folder — "Change how your keyboard
+    /// works". 198 of them, all long sentences that only ever match by word
+    /// prefix, so they sit below every app rather than competing with one.
+    SystemTask,
 }
 
 impl EntryKind {
@@ -101,17 +105,31 @@ impl EntryKind {
             // Wins outright: an expression is unambiguous. Nobody typing `17*23`
             // meant an app.
             EntryKind::Calc => 0,
-            // App and System share a tier: both are launch destinations, so they
-            // compete on match quality and Frecency rather than one gating the
-            // other. "Apps above documents" is about incidental files, not a
-            // settings page you deliberately go to. See IMPLEMENTATION_PLAN §3.
+            // App and System share a tier: both are launch destinations, so
+            // neither gates the other. They do not compete evenly — see
+            // `weight`, which handicaps System by 20% after Frecency.
             EntryKind::App | EntryKind::System => 1,
-            EntryKind::Folder => 2,
-            EntryKind::File => 3,
-            EntryKind::Recent => 4,
+            // Below every app, unlike the curated pages above. Nobody types three
+            // letters hoping for "Change the way currency is displayed".
+            EntryKind::SystemTask => 2,
+            EntryKind::Folder => 3,
+            EntryKind::File => 4,
+            EntryKind::Recent => 5,
             // Unreachable from Bangless (ADR-0006). Last anyway, so a future
             // mistake surfaces at the bottom rather than promoting a secret.
-            EntryKind::Clip => 5,
+            EntryKind::Clip => 6,
+        }
+    }
+
+    /// How much this Kind counts once Frecency has had its say.
+    ///
+    /// `dis` matched Discord and the Display page equally, and a 0.3% Frecency
+    /// gap decided the top row — a coin flip. System takes a 20% handicap: an
+    /// app is what a launcher is for. Numbers in `docs/tbd/v0.3.md` §10.
+    pub fn weight(self) -> f32 {
+        match self {
+            EntryKind::System | EntryKind::SystemTask => 0.8,
+            _ => 1.0,
         }
     }
 }
@@ -406,6 +424,25 @@ mod tests {
             GameLauncher::Epic.uri("0a2d9f64"),
             "com.epicgames.launcher://apps/0a2d9f64?action=launch&silent=true"
         );
+    }
+
+    /// The two halves of the System Source rank differently, and the split is the
+    /// whole point: a page you ask for by name, a task you never do.
+    #[test]
+    fn v0_3_a_curated_page_shares_the_app_tier_and_a_control_panel_task_does_not() {
+        assert_eq!(EntryKind::System.tier(), EntryKind::App.tier());
+        assert!(EntryKind::SystemTask.tier() > EntryKind::App.tier());
+        // Still above documents: a task is something you go to, a file is not.
+        assert!(EntryKind::SystemTask.tier() < EntryKind::File.tier());
+    }
+
+    /// The handicap that stopped `dis` being a coin flip between Discord and the
+    /// Display page. Applied after Frecency, so use can still move a page up.
+    #[test]
+    fn v0_3_system_entries_are_handicapped_against_applications() {
+        assert_eq!(EntryKind::App.weight(), 1.0);
+        assert!(EntryKind::System.weight() < EntryKind::App.weight());
+        assert_eq!(EntryKind::System.weight(), EntryKind::SystemTask.weight());
     }
 
     /// Generalising Steam into [`GameLauncher`] must not move a single learned id:

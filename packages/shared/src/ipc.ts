@@ -56,7 +56,15 @@ export interface HotkeyStatus {
  * Only `app` is produced at v0.2. The rest are declared so adding one later is a
  * compile error at every site that has to care.
  */
-export type EntryKind = "app" | "file" | "folder" | "clip" | "calc" | "recent" | "system";
+export type EntryKind =
+  | "app"
+  | "file"
+  | "folder"
+  | "clip"
+  | "calc"
+  | "recent"
+  | "system"
+  | "systemTask";
 
 /** A single actionable row in the Palette (CONTEXT.md: Entry, never "result"). */
 export interface Entry {

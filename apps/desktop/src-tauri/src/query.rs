@@ -141,7 +141,10 @@ impl Pipeline {
         // user has launched. One indexed read per candidate.
         let mut entries = rank::dedupe(entries);
         for entry in &mut entries {
-            entry.score = rank::with_frecency(entry.score, self.frecency.weight(&entry.id));
+            // Kind weight last, so it handicaps the frecency-lifted score rather
+            // than the raw match. See `EntryKind::weight`.
+            entry.score = rank::with_frecency(entry.score, self.frecency.weight(&entry.id))
+                * entry.kind.weight();
         }
 
         let entries = rank::order(entries, MAX_ENTRIES);
@@ -232,7 +235,7 @@ impl Pipeline {
             return Some((app.target, crate::entry::EntryKind::App));
         }
         if let Some(entry) = self.system.find(id) {
-            return Some((entry.target, crate::entry::EntryKind::System));
+            return Some((entry.target, entry.kind));
         }
         let recent = self.recents.find(id)?;
         Some((
@@ -267,7 +270,7 @@ impl Pipeline {
                 id: entry.id,
                 title: entry.title,
                 subtitle: None,
-                kind: crate::entry::EntryKind::System,
+                kind: entry.kind,
                 icon: None,
                 score: 0.0,
                 actions: crate::actions::for_system(),
@@ -389,6 +392,81 @@ mod tests {
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
         )
+    }
+
+    /// The live report: `dis` selected the Display page instead of Discord.
+    ///
+    /// Both are 7 letters matching a 3-letter prefix, so they score identically
+    /// at 796.5 and a 0.3% Frecency gap decided the top row. The kind weight is
+    /// what stops that being a coin flip. Numbers in `docs/tbd/v0.3.md` §10.
+    #[test]
+    fn v0_3_a_settings_page_does_not_take_the_top_row_from_an_app_on_a_hair() {
+        let discord_target = LaunchTarget::Exe {
+            path: PathBuf::from(r"C:\Users\x\AppData\Local\Discord\Update.exe"),
+            args: Some("--processStart discord.exe".into()),
+            working_dir: None,
+        };
+        let discord = App {
+            id: EntryId::for_launch(&discord_target),
+            hay: Haystack::new("Discord", Some("update")),
+            title: "Discord".into(),
+            subtitle: None,
+            target: discord_target,
+            icon_source: None,
+            icon: None,
+            version: None,
+        };
+
+        let apps = AppSource::new();
+        apps.set_for_test(vec![discord]);
+        let system = SystemSource::new();
+        system.set_for_test(crate::sources::system::settings_catalog());
+        let p = Pipeline::new(
+            Arc::new(apps),
+            Arc::new(RecentsSource::new()),
+            Arc::new(system),
+            Arc::new(IconStore::new(None)),
+            Arc::new(Frecency::open(None).unwrap()),
+        );
+
+        let entries = p.query("dis", 1).entries;
+        let seen: Vec<(String, f32)> = entries
+            .iter()
+            .map(|e| (e.title.clone(), e.score))
+            .collect();
+        assert_eq!(entries[0].title, "Discord", "{seen:?}");
+        assert!(
+            entries.iter().any(|e| e.title == "Display"),
+            "the page must still be reachable, just not first: {seen:?}"
+        );
+    }
+
+    /// A control-panel task sits below every app, whatever it scores.
+    ///
+    /// 198 of these walk in, all long sentences that match only by word prefix.
+    /// "Change the way currency is displayed" is not what `dis` is asking for.
+    #[test]
+    fn v0_3_a_control_panel_task_never_outranks_an_application() {
+        let apps = AppSource::new();
+        apps.set_for_test(vec![app("Disk Cleanup", r"C:\Windows\System32\cleanmgr.exe")]);
+        let system = SystemSource::new();
+        system.set_for_test(vec![crate::sources::system::task_from(
+            "Disk Cleanup Options",
+            vec![1, 2, 3, 4],
+        )
+        .expect("a named task with a pidl")]);
+        let p = Pipeline::new(
+            Arc::new(apps),
+            Arc::new(RecentsSource::new()),
+            Arc::new(system),
+            Arc::new(IconStore::new(None)),
+            Arc::new(Frecency::open(None).unwrap()),
+        );
+
+        let entries = p.query("disk", 1).entries;
+        assert_eq!(entries[0].title, "Disk Cleanup");
+        assert_eq!(entries[0].kind, EntryKind::App);
+        assert_eq!(entries[1].kind, EntryKind::SystemTask);
     }
 
     /// A settings page beats a weakly-matching app on merit (task 8 ranking).

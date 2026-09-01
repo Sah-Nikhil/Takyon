@@ -816,3 +816,114 @@ fn v0_3_measure_game_libraries() {
         }
     }
 }
+
+/// Where a settings page and an application land for the same few letters.
+///
+/// Written to chase a live report: typing `dis` for Discord selected the Display
+/// settings page instead. Prints the rung and the pipeline score of every row so
+/// the cause is read off rather than guessed at.
+#[test]
+#[ignore = "measures the host machine; run explicitly with --ignored"]
+fn v0_3_measure_how_apps_and_settings_compete() {
+    let dir = TempDir::new("compete");
+    let (apps, icons) = real_apps();
+    let system = Arc::new(SystemSource::new());
+    system.refresh();
+    let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).expect("frecency.db"));
+    let p = Arc::new(Pipeline::new(
+        apps.clone(),
+        Arc::new(RecentsSource::new()),
+        system.clone(),
+        icons,
+        frecency,
+    ));
+
+    for q in ["dis", "disc", "blu", "bluet", "display"] {
+        eprintln!("\n  {q:?}");
+        for e in p.query(q, 1).entries.iter().take(6) {
+            let hay = apps
+                .find(&e.id)
+                .map(|a| a.hay)
+                .or_else(|| system.find(&e.id).map(|s| s.hay));
+            let base = hay
+                .as_ref()
+                .and_then(|h| takyon_lib::rank::score(&takyon_lib::entry::Query::new(q), h))
+                .unwrap_or(0.0);
+            eprintln!(
+                "    {:<38} {:?}  base {:>6.1}  score {:>7.1}",
+                e.title, e.kind, base, e.score
+            );
+        }
+    }
+}
+
+// -------------------------------------------------------- desktop shortcuts
+
+/// A Desktop shortcut adds a row or it adds nothing — never a second copy.
+///
+/// Task 10's whole rule is that Desktop loses every collision, so the EntryId
+/// stays on the Start Menu copy. Asserted through the Palette rather than the
+/// list, because one row per application is the property the user sees.
+#[test]
+fn v0_3_a_desktop_shortcut_never_puts_a_second_row_in_the_palette() {
+    use takyon_lib::sources::apps::lnk;
+
+    let dir = TempDir::new("desktop");
+    let p = pipeline_in(&dir);
+
+    for sc in lnk::discover_desktop() {
+        let rows = p.query(&sc.name, 1).entries;
+        let same: Vec<&str> = rows
+            .iter()
+            .filter(|e| e.title.eq_ignore_ascii_case(&sc.name))
+            .map(|e| e.id.as_str())
+            .collect();
+        assert!(
+            same.len() <= 1,
+            "{} appears {} times: {:?}",
+            sc.name,
+            same.len(),
+            same
+        );
+    }
+}
+
+/// Which Desktop shortcuts are duplicates and which is the one that is not.
+#[test]
+#[ignore = "measures the host machine"]
+fn v0_3_measure_what_the_desktop_adds() {
+    use takyon_lib::sources::apps::lnk;
+
+    for root in lnk::desktop_roots() {
+        eprintln!("  root {}", root.display());
+    }
+    let (apps, _) = real_apps();
+    let dir = TempDir::new("deskmeasure");
+    let desktop = lnk::discover_desktop();
+    eprintln!("  {} desktop shortcuts", desktop.len());
+
+    for sc in &desktop {
+        let id = EntryId::for_launch(&LaunchTarget::Exe {
+            path: sc.target.clone(),
+            args: sc.args.clone(),
+            working_dir: sc.working_dir.clone(),
+        });
+        // Three outcomes. `NEW` — the Desktop shortcut is the row. `same target`
+        // — an earlier path produced the identical EntryId and `seen` dropped
+        // this one. `same title` — the id is not a row at all, so it lost the
+        // title check to something reached another way.
+        let kept = apps.find(&id);
+        let verdict = match &kept {
+            Some(a) if a.icon_source.as_deref() == Some(sc.link.as_path()) => "NEW",
+            Some(_) => "same target",
+            None => "same title",
+        };
+        eprintln!("    [{verdict:>11}] {:<34} -> {}", sc.name, sc.target.display());
+        if kept.is_none() {
+            let p = pipeline_in(&dir);
+            for e in p.query(&sc.name, 1).entries.iter().take(2) {
+                eprintln!("                  won by: {} ({})", e.title, e.id.as_str());
+            }
+        }
+    }
+}

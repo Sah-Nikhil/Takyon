@@ -150,6 +150,7 @@ fn kind_name(kind: EntryKind) -> &'static str {
         EntryKind::Calc => "calc",
         EntryKind::Recent => "recent",
         EntryKind::System => "system",
+        EntryKind::SystemTask => "system-task",
     }
 }
 

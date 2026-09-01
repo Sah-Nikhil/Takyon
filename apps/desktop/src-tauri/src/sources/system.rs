@@ -78,6 +78,9 @@ pub struct SystemEntry {
     pub title: String,
     pub target: LaunchTarget,
     pub hay: Haystack,
+    /// `System` for a curated page, `SystemTask` for a control-panel task. The
+    /// two rank differently, so the Source has to say which this is.
+    pub kind: EntryKind,
 }
 
 /// Build the settings half from the curated table. Pure — no shell, no COM — so
@@ -95,6 +98,7 @@ pub fn settings_catalog() -> Vec<SystemEntry> {
                 title: title.to_string(),
                 target: LaunchTarget::Uri(format!("ms-settings:{page}")),
                 hay,
+                kind: EntryKind::System,
             }
         })
         .collect()
@@ -112,6 +116,7 @@ pub fn task_from(name: &str, pidl: Vec<u8>) -> Option<SystemEntry> {
         title: name.to_string(),
         target: LaunchTarget::ShellItem(pidl),
         hay: Haystack::new(name, None),
+        kind: EntryKind::SystemTask,
     })
 }
 
@@ -208,7 +213,7 @@ impl Source for SystemSource {
                 id: item.id.clone(),
                 title: item.title.clone(),
                 subtitle: None,
-                kind: EntryKind::System,
+                kind: item.kind,
                 icon: None,
                 score,
                 actions: actions::for_system(),

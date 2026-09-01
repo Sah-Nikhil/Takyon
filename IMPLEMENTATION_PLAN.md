@@ -207,12 +207,23 @@ earns its place on the apps whose binary is named nothing like the product —
 No fuzzy subsequence in V1 — deferred by decision, see `docs/plans/post-v1.md`.
 `EntryKind` ordering is applied after scoring: **Apps always sort above
 documents**, never interleaved by raw score. The tier ladder is
-`App = System < Folder < File < Recent < Clip` (Calc wins outright).
+`App = System < SystemTask < Folder < File < Recent < Clip` (Calc wins outright).
 
-**System entries share the App tier.** Settings pages and control-panel tasks
-(v0.3 task 8) are launch destinations, not documents — you type `bluetooth` to go
-to it — so they compete with apps on match quality and Frecency rather than one
-gating the other. This corrects the task-8 plan's "ranked below applications":
+**A tier is not the only lever.** `EntryKind::weight` multiplies the
+Frecency-lifted score — App 1.0, System and SystemTask 0.8 — so two Kinds can
+share a tier and still not compete evenly. This is PowerToys' plugin-weight model
+rather than a hard gate; §10 of `docs/tbd/v0.3.md` carries the live report that
+produced the number and what each candidate value costs.
+
+**Curated settings pages share the App tier; control-panel tasks do not.** A
+settings page (v0.3 task 8) is a launch destination, not a document — you type
+`bluetooth` to go to it — so it competes with apps on match quality and Frecency
+rather than one gating the other. The 198 control-panel tasks are a different
+animal: long sentences ("Change the way currency is displayed") that can only ever
+match at word-prefix, and having 198 of them in the App tier for every query was
+noise. They are `EntryKind::SystemTask`, below every app and above documents.
+
+The shared tier corrects the task-8 plan's "ranked below applications":
 observed live, that pinned `DisplaySwitch` (a bare `System32` exe matching only by
 its filename stem, 650) above the `Display` settings page (exact-name, 900), and
 no amount of use could move it, because Frecency reorders within a tier and never
@@ -223,6 +234,15 @@ page launches through its `ms-settings:` URI; a control-panel task has no
 reparseable name (it is positional in the shell namespace), so its absolute PIDL
 is captured at enumeration and launched by `SEE_MASK_IDLIST` — `LaunchTarget::Uri`
 and `LaunchTarget::ShellItem` respectively.
+
+**The weight was added on top, from a second live report.** Typing `dis` for
+Discord selected the Display page: both are seven letters matching a three-letter
+prefix, so both scored 796.5, and a 0.3% Frecency gap decided the top row — a coin
+flip, not a ranking. A shared tier says "neither gates the other"; it does not say
+"a hair decides". The 0.8 weight makes a system entry earn the top row decisively
+or not at all. Because the Frecency lift saturates at ×1.6, 0.8 means a settings
+page outranks only an application never launched from Takyon; that is close to the
+tier this phase removed, and was chosen knowing so. It becomes a setting at v0.6.
 
 The App-vs-document ordering itself is a **still-open refinement**: "apps above
 documents" is really a default-view rule, and even there a 1:1 app/document match

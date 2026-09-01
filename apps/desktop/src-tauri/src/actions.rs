@@ -103,7 +103,7 @@ pub fn permitted(kind: EntryKind, id: &ActionId) -> bool {
         // A system entry can only be opened. Elevating or revealing one hits a
         // launch arm that errors, so a Ctrl+Enter accelerator would raise a
         // useless dialog; refuse it here instead.
-        EntryKind::System => id == &OPEN,
+        EntryKind::System | EntryKind::SystemTask => id == &OPEN,
         _ => true,
     }
 }

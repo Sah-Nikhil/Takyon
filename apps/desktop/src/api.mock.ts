@@ -110,8 +110,8 @@ const FIXTURES: Entry[] = [
     score: 700,
     actions: ["open"],
   },
-  // A settings page (task 8). Its own kind, Open only, no icon and no path —
-  // it sorts below applications and never carries a version.
+  // The two system kinds (task 8). Open only, no icon, no path, no version. A
+  // curated page shares the App tier; a control-panel task sits below every app.
   {
     id: "ms-settings:bluetooth",
     title: "Bluetooth",
@@ -122,7 +122,7 @@ const FIXTURES: Entry[] = [
   {
     id: "system:change how your keyboard works",
     title: "Change how your keyboard works",
-    kind: "system",
+    kind: "systemTask",
     score: 700,
     actions: ["open"],
   },

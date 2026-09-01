@@ -1,4 +1,4 @@
-//! The application Source: four discovery paths, one in-memory list, one matcher.
+//! The application Source: five discovery paths, one in-memory list, one matcher.
 //!
 //! **No cache on disk**, deliberately — ADR-0012 has the reasoning, the measured
 //! walk time, and the trigger that would change the decision.
@@ -108,7 +108,7 @@ impl AppSource {
         self.len() == 0
     }
 
-    /// Run all four discovery paths and replace the list.
+    /// Run all five discovery paths and replace the list.
     ///
     /// Swapped in one write, so a keystroke mid-walk sees the previous complete
     /// list or the next one, never a half-built one. Takes the [`IconStore`]
@@ -241,7 +241,7 @@ impl Source for AppSource {
     }
 }
 
-/// Run the four discovery paths and merge them.
+/// Run the five discovery paths and merge them.
 ///
 /// Order matters, because [`rank::dedupe`] keeps the better-scoring Entry and
 /// these paths produce descending quality of metadata: a Start Menu shortcut knows
@@ -375,6 +375,38 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             subtitle: Some(exe.path.to_string_lossy().to_string()),
             target,
             icon_source: Some(exe.path),
+            icon: None,
+            version: None,
+        });
+    }
+
+    // 5. Desktop shortcuts, last and least. Almost every one duplicates something
+    // an earlier path already found under a better title, so Desktop loses every
+    // collision and the EntryId stays on the Start Menu copy. Nine shortcuts on
+    // the dev machine, eight duplicates, one genuinely new.
+    let known_titles: std::collections::HashSet<String> =
+        apps.iter().map(|a| a.title.to_lowercase()).collect();
+    for sc in lnk::discover_desktop() {
+        if known_titles.contains(&sc.name.to_lowercase()) {
+            continue;
+        }
+        let target = LaunchTarget::Exe {
+            path: sc.target.clone(),
+            args: sc.args.clone(),
+            working_dir: sc.working_dir.clone(),
+        };
+        let stem = sc
+            .target
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string());
+        push(&mut apps, &mut seen, icons, App {
+            id: EntryId::for_launch(&target),
+            hay: Haystack::new(&sc.name, stem.as_deref()),
+            title: sc.name,
+            subtitle: Some(sc.target.to_string_lossy().to_string()),
+            target,
+            icon_source: Some(sc.link),
             icon: None,
             version: None,
         });

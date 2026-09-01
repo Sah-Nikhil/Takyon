@@ -32,7 +32,16 @@ const QUERY_RESULT_KEYS: [&str; 3] = ["seq", "entries", "indexing"];
 const ENTRY_REQUIRED: [&str; 5] = ["id", "title", "kind", "score", "actions"];
 const ENTRY_OPTIONAL: [&str; 3] = ["subtitle", "icon", "version"];
 /// `type EntryKind`.
-const ENTRY_KINDS: [&str; 7] = ["app", "file", "folder", "clip", "calc", "recent", "system"];
+const ENTRY_KINDS: [&str; 8] = [
+    "app",
+    "file",
+    "folder",
+    "clip",
+    "calc",
+    "recent",
+    "system",
+    "systemTask",
+];
 /// `interface Action`.
 const ACTION_REQUIRED: [&str; 2] = ["id", "label"];
 const ACTION_OPTIONAL: [&str; 1] = ["accelerator"];

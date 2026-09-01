@@ -52,6 +52,71 @@ pub fn start_menu_roots() -> Vec<PathBuf> {
         .collect()
 }
 
+/// The two Desktop roots, resolved through the shell rather than `%USERPROFILE%`.
+///
+/// OneDrive redirects Desktop on a great many machines. An env-var path would
+/// then point at a real but empty directory and return nothing, with no error and
+/// nothing to notice.
+#[cfg(windows)]
+pub fn desktop_roots() -> Vec<PathBuf> {
+    use windows::Win32::UI::Shell::{
+        FOLDERID_Desktop, FOLDERID_PublicDesktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT,
+    };
+
+    let mut roots = Vec::new();
+    for id in [FOLDERID_Desktop, FOLDERID_PublicDesktop] {
+        // SAFETY: `id` is a static GUID and the returned buffer is freed below.
+        unsafe {
+            let Ok(raw) = SHGetKnownFolderPath(&id, KF_FLAG_DEFAULT, None) else {
+                continue;
+            };
+            if let Ok(path) = raw.to_string() {
+                roots.push(PathBuf::from(path));
+            }
+            windows::Win32::System::Com::CoTaskMemFree(Some(raw.as_ptr().cast()));
+        }
+    }
+    roots
+}
+
+#[cfg(not(windows))]
+pub fn desktop_roots() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// Shortcuts sitting directly on the Desktop, both trees.
+///
+/// Top level only, unlike the Start Menu walk. A folder on the Desktop is the
+/// user's own filing rather than an application menu, and descending into one
+/// costs an unbounded number of files for no application.
+pub fn top_level_links(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("lnk")))
+        .collect()
+}
+
+/// Every Desktop shortcut, read and filtered the way the Start Menu walk is.
+#[cfg(windows)]
+pub fn discover_desktop() -> Vec<Shortcut> {
+    let found: Vec<Shortcut> = desktop_roots()
+        .iter()
+        .flat_map(|root| top_level_links(root))
+        .filter_map(|link| com::read(&link))
+        .filter(|sc| !is_noise(&sc.name))
+        .collect();
+    collapse_by_name(found)
+}
+
+#[cfg(not(windows))]
+pub fn discover_desktop() -> Vec<Shortcut> {
+    Vec::new()
+}
+
 /// Expand `%VAR%` references in a stored shortcut target.
 ///
 /// Hand-rolled, so it is testable without a process environment and so an unset

@@ -64,9 +64,13 @@ _Avoid_: provider, index, backend, plugin
 **System entry**:
 An Entry that opens a Windows settings page or a control-panel task rather than
 launching a program: `bluetooth` reaches the Bluetooth page, "Change how your
-keyboard works" opens its task. Its own Kind, but a launch destination like an
-app: it competes with applications on match quality and Frecency — same rank tier,
-interleaved by score — and ranks above documents.
+keyboard works" opens its task. Two Kinds, because the two halves behave
+differently. A **settings page** is a destination you ask for by name, so it
+shares the App rank tier and competes on match quality and Frecency. A
+**control-panel task** is one of ~198 long sentences that can only ever match by
+word prefix, so it sits below every app. Both carry a weight below 1 so a system
+entry has to be decisively better matched or more used to take the top row from an
+application, not marginally.
 _Avoid_: setting, command, control panel item, shortcut
 
 **Game launcher**:
