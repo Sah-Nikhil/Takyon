@@ -58,7 +58,9 @@ impl EntryId {
                 }
             }
             LaunchTarget::Aumid(aumid) => format!("aumid:{aumid}"),
-            LaunchTarget::SteamGame(app_id) => format!("steam:{app_id}"),
+            LaunchTarget::Game { launcher, id } => {
+                format!("{}:{}", launcher.slug(), id.to_lowercase())
+            }
             // System entries mint their own ids (`system:` / `ms-settings:`) in
             // `sources/system.rs`, like recents — PIDL and URI are launch detail,
             // not identity, and a PIDL is per-session. These arms keep the
@@ -122,6 +124,48 @@ impl EntryKind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct IconRef(pub String);
 
+/// Which game launcher a game belongs to.
+///
+/// The slug is half the EntryId, so it is frozen: changing one resets that
+/// launcher's Frecency. `steam` is byte-identical to the v0.2 id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GameLauncher {
+    Steam,
+    Epic,
+}
+
+impl GameLauncher {
+    /// EntryId namespace. Never change one of these.
+    pub fn slug(self) -> &'static str {
+        match self {
+            GameLauncher::Steam => "steam",
+            GameLauncher::Epic => "epic",
+        }
+    }
+
+    /// Second line on the Entry: which launcher this came from.
+    pub fn label(self) -> &'static str {
+        match self {
+            GameLauncher::Steam => "Steam",
+            GameLauncher::Epic => "Epic",
+        }
+    }
+
+    /// URI that starts the game through its own launcher.
+    ///
+    /// `rungameid`, not `run`: `run` skips the user's launch options, which is
+    /// how mods and controller profiles get applied. Epic's `silent=true`
+    /// suppresses the launcher window.
+    pub fn uri(self, id: &str) -> String {
+        match self {
+            GameLauncher::Steam => format!("steam://rungameid/{id}"),
+            GameLauncher::Epic => {
+                format!("com.epicgames.launcher://apps/{id}?action=launch&silent=true")
+            }
+        }
+    }
+}
+
 /// How to start something. Three shapes because Windows has three.
 ///
 /// A UWP app has no path for `CreateProcess`; a Steam game must go through the
@@ -136,8 +180,10 @@ pub enum LaunchTarget {
     },
     /// An Application User Model ID, launched via `shell:AppsFolder\<aumid>`.
     Aumid(String),
-    /// A Steam app id, launched via `steam://rungameid/<id>`.
-    SteamGame(u32),
+    /// A game, started through its launcher's URI rather than its executable:
+    /// run directly most refuse to start, and none gets cloud saves or playtime.
+    /// The id is the launcher's own — Steam app id, Epic `AppName`.
+    Game { launcher: GameLauncher, id: String },
     /// A shell item as its absolute PIDL in bytes (task 8 control-panel tasks).
     /// No path, no AUMID, no reparseable name — an All Tasks item is positional,
     /// so the PIDL captured at enumeration is the only handle. Per-session, never
@@ -351,6 +397,35 @@ mod tests {
         assert_eq!(mk(None), mk(Some(r"C:\app")));
     }
 
+    /// The two launch URIs, asserted as literals rather than rebuilt the way the
+    /// code builds them. A typo here is a game that does not start.
+    #[test]
+    fn v0_3_each_launcher_starts_a_game_through_its_own_uri() {
+        assert_eq!(GameLauncher::Steam.uri("440"), "steam://rungameid/440");
+        assert_eq!(
+            GameLauncher::Epic.uri("0a2d9f64"),
+            "com.epicgames.launcher://apps/0a2d9f64?action=launch&silent=true"
+        );
+    }
+
+    /// Generalising Steam into [`GameLauncher`] must not move a single learned id:
+    /// `steam:440` is what v0.2 wrote and what Frecency is keyed on.
+    #[test]
+    fn v0_3_a_game_id_is_its_launcher_slug_and_the_launchers_own_id() {
+        let steam = EntryId::for_launch(&LaunchTarget::Game {
+            launcher: GameLauncher::Steam,
+            id: "440".into(),
+        });
+        assert_eq!(steam.as_str(), "steam:440");
+
+        let epic = EntryId::for_launch(&LaunchTarget::Game {
+            launcher: GameLauncher::Epic,
+            id: "0a2d9f6403244d12969e11da6713137b".into(),
+        });
+        assert_eq!(epic.as_str(), "epic:0a2d9f6403244d12969e11da6713137b");
+        assert_ne!(steam, epic);
+    }
+
     /// No path, so the id is the AUMID — stable across updates by design, unlike
     /// the display name beside it.
     #[test]
@@ -358,7 +433,10 @@ mod tests {
         let uwp = EntryId::for_launch(&LaunchTarget::Aumid(
             "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".into(),
         ));
-        let steam = EntryId::for_launch(&LaunchTarget::SteamGame(440));
+        let steam = EntryId::for_launch(&LaunchTarget::Game {
+            launcher: GameLauncher::Steam,
+            id: "440".into(),
+        });
         assert!(uwp.as_str().starts_with("aumid:"));
         assert!(steam.as_str().starts_with("steam:"));
         // A Windows path can never begin with either prefix, so no scheme collides.

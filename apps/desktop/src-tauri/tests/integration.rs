@@ -10,15 +10,17 @@
 
 mod common;
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::{real_apps, TempDir};
 use takyon_lib::aliases::AliasStore;
-use takyon_lib::entry::{EntryId, EntryKind, LaunchTarget, MAX_ENTRIES};
+use takyon_lib::entry::{EntryId, EntryKind, GameLauncher, LaunchTarget, MAX_ENTRIES};
 use takyon_lib::frecency::Frecency;
 use takyon_lib::icons::IconStore;
 use takyon_lib::query::{Pipeline, LOCK_DELAY_MS};
+use takyon_lib::sources::apps::games::{self, epic::EpicLibrary, GameLibrary};
 use takyon_lib::sources::apps::AppSource;
 use takyon_lib::sources::recents::{recent_from, RecentsSource};
 use takyon_lib::sources::system::SystemSource;
@@ -307,7 +309,7 @@ fn v0_3_every_id_the_palette_shows_resolves_to_actions() {
     let p = pipeline_in(&dir);
     for e in p.query(BROAD, 1).entries.iter() {
         let id = e.id.as_str();
-        let namespaced = id.starts_with("aumid:") || id.starts_with("steam:");
+        let namespaced = ["aumid:", "steam:", "epic:"].iter().any(|p| id.starts_with(p));
         if !namespaced {
             assert_eq!(id, id.to_lowercase(), "{id} is not canonicalised");
         }
@@ -670,8 +672,7 @@ fn v0_3_measure_sdk_titles() {
 ///
 /// COM produced something or it did not: an apartment or interface mistake shows
 /// up here as an empty list, not a crash. No count is asserted — the tasks are
-/// whatever this Windows build ships — only that the walk ran and every task has
-/// a name and a launch target.
+/// whatever this Windows build ships.
 #[test]
 fn v0_3_the_control_panel_walk_yields_named_tasks() {
     let tasks = takyon_lib::sources::system::control_panel_tasks();
@@ -693,9 +694,8 @@ fn v0_3_the_control_panel_walk_yields_named_tasks() {
 /// The launch path's first half, proven without opening a window.
 ///
 /// Every captured PIDL must bind back to a live shell item through exactly the
-/// call `launch::shell_execute_idlist` makes — otherwise the row is a dead button.
-/// A sample, because binding all ~200 is slow and one class of failure is enough
-/// to catch.
+/// call `launch::shell_execute_idlist` makes, or the row is a dead button. A
+/// sample: binding all ~200 is slow, and one failure class is enough.
 #[test]
 fn v0_3_control_panel_pidls_bind_for_launch() {
     let tasks = takyon_lib::sources::system::control_panel_tasks();
@@ -743,6 +743,76 @@ fn v0_3_measure_control_panel_tasks() {
                 t.title,
                 pidl.len()
             );
+        }
+    }
+}
+
+// ------------------------------------------------------------------ epic games
+
+/// A stale manifest must not become an Entry.
+///
+/// This is the whole reason task 9 reads the disk rather than trusting the
+/// directory: Epic leaves the `.item` file behind when a game is uninstalled, and
+/// every one of the seven on this machine is stale. Raycast lists all seven.
+#[test]
+fn v0_3_an_epic_game_whose_executable_is_gone_is_dropped() {
+    let dir = TempDir::new("epic");
+    let installed = dir.path().join("FallGuys");
+    std::fs::create_dir_all(&installed).expect("install dir");
+    std::fs::write(installed.join("RunFallGuys.exe"), b"MZ").expect("executable");
+
+    let manifest = |app_name: &str, name: &str, location: &Path, exe: &str| {
+        let json = serde_json::json!({
+            "AppName": app_name,
+            "DisplayName": name,
+            "InstallLocation": location.to_string_lossy(),
+            "LaunchExecutable": exe,
+        });
+        std::fs::write(
+            dir.path().join(format!("{app_name}.item")),
+            serde_json::to_vec(&json).expect("manifest json"),
+        )
+        .expect("write manifest");
+    };
+    manifest("live", "Fall Guys", &installed, "RunFallGuys.exe");
+    manifest("stale", "Dying Light", &dir.path().join("DyingLight"), "DyingLightGame.exe");
+    manifest("dlc", "Dying Light The Following", &installed, "");
+
+    let games = EpicLibrary::at(dir.path()).games();
+    let names: Vec<&str> = games.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, vec!["Fall Guys"], "kept a game that cannot start");
+    assert_eq!(games[0].id, "live");
+    assert_eq!(games[0].launcher, GameLauncher::Epic);
+}
+
+/// The launch contract for a game Entry: launcher id in, no file out.
+///
+/// The absent path is the assertion that matters. It is what stops the action
+/// menu offering reveal, copy path or elevate on something that has no file, and
+/// what keeps the EntryId off a path that changes when the library moves drive.
+#[test]
+fn v0_3_a_game_entry_carries_a_launcher_id_and_no_file() {
+    let target = LaunchTarget::Game {
+        launcher: GameLauncher::Epic,
+        id: "0a2d9f6403244d12969e11da6713137b".into(),
+    };
+    assert_eq!(
+        EntryId::for_launch(&target).as_str(),
+        "epic:0a2d9f6403244d12969e11da6713137b"
+    );
+    assert!(takyon_lib::launch::path_of(&target).is_none());
+    assert!(takyon_lib::launch::run_as_admin(&target).is_err());
+    assert!(takyon_lib::launch::reveal(&target).is_err());
+}
+
+#[test]
+#[ignore = "measures the host machine"]
+fn v0_3_measure_game_libraries() {
+    for library in games::all() {
+        let found = library.games();
+        eprintln!("  {} — {} games", library.launcher().label(), found.len());
+        for g in found.iter().take(8) {
+            eprintln!("    {} ({})", g.name, library.launcher().uri(&g.id));
         }
     }
 }

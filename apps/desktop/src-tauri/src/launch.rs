@@ -33,12 +33,10 @@ pub fn open(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
         LaunchTarget::Aumid(aumid) => {
             shell_execute(None, &format!(r"shell:AppsFolder\{aumid}"), None, None)
         }
-        // `rungameid`, not `run`. `steam://run/<id>` starts the game without going
-        // through the launch options the user configured for it, which for a
-        // surprising number of games is how mods and controller profiles are
-        // applied — so it appears to work and quietly does the wrong thing.
-        LaunchTarget::SteamGame(app_id) => {
-            shell_execute(None, &format!("steam://rungameid/{app_id}"), None, None)
+        // Through the launcher, never the game's own executable. Each URI and why
+        // it is shaped that way lives in `GameLauncher::uri`.
+        LaunchTarget::Game { launcher, id } => {
+            shell_execute(None, &launcher.uri(id), None, None)
         }
         // A URI the shell resolves itself — `ms-settings:bluetooth`. Same call as
         // a `steam://` URL; the shell picks the handler.
@@ -352,6 +350,7 @@ pub fn copy_to_clipboard(_text: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entry::GameLauncher;
     use std::path::PathBuf;
 
     fn exe(path: &str) -> LaunchTarget {
@@ -368,7 +367,10 @@ mod tests {
     #[test]
     fn v0_2_only_an_executable_can_be_elevated_or_revealed() {
         let uwp = LaunchTarget::Aumid("Microsoft.Whatever_abc!App".into());
-        let steam = LaunchTarget::SteamGame(440);
+        let steam = LaunchTarget::Game {
+            launcher: GameLauncher::Steam,
+            id: "440".into(),
+        };
         assert!(run_as_admin(&uwp).is_err());
         assert!(run_as_admin(&steam).is_err());
         assert!(reveal(&uwp).is_err());
@@ -379,7 +381,11 @@ mod tests {
     fn v0_2_copy_path_has_nothing_to_copy_for_a_pathless_app() {
         assert_eq!(path_of(&exe(r"C:\a\b.exe")).as_deref(), Some(r"C:\a\b.exe"));
         assert!(path_of(&LaunchTarget::Aumid("A_b!c".into())).is_none());
-        assert!(path_of(&LaunchTarget::SteamGame(1)).is_none());
+        assert!(path_of(&LaunchTarget::Game {
+            launcher: GameLauncher::Steam,
+            id: "1".into(),
+        })
+        .is_none());
     }
 
     /// A cancelled UAC prompt is the most likely failure of the elevation action,

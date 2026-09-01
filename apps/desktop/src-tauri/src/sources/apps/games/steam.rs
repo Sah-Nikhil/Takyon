@@ -12,6 +12,9 @@
 
 use std::path::{Path, PathBuf};
 
+use super::{Game, GameLibrary};
+use crate::entry::GameLauncher;
+
 /// A parsed VDF document.
 ///
 /// Ordered pairs rather than a map, because VDF permits duplicate keys and
@@ -347,6 +350,35 @@ pub fn discover(steam: &Path) -> Vec<SteamGame> {
         }
     }
     games
+}
+
+/// Steam's installed library.
+pub struct SteamLibrary {
+    path: PathBuf,
+}
+
+impl SteamLibrary {
+    /// Present only if the client wrote its install path to the registry.
+    pub fn detect() -> Option<Self> {
+        steam_path().map(|path| SteamLibrary { path })
+    }
+}
+
+impl GameLibrary for SteamLibrary {
+    fn launcher(&self) -> GameLauncher {
+        GameLauncher::Steam
+    }
+
+    fn games(&self) -> Vec<Game> {
+        discover(&self.path)
+            .into_iter()
+            .map(|game| Game {
+                launcher: GameLauncher::Steam,
+                id: game.app_id.to_string(),
+                name: game.name,
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

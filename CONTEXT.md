@@ -69,6 +69,14 @@ app: it competes with applications on match quality and Frecency — same rank t
 interleaved by score — and ranks above documents.
 _Avoid_: setting, command, control panel item, shortcut
 
+**Game launcher**:
+Steam, Epic, GOG and the like — a third-party program that owns a set of installed
+games and starts them itself. Never bare "launcher": Takyon is a launcher, and the
+two readings collide. A game Entry is an ordinary App Entry whose launch goes
+through its game launcher's URI rather than an executable, because run directly
+most games refuse to start and none gets cloud saves or playtime.
+_Avoid_: launcher (bare), store, platform, client
+
 **Frecency**:
 A per-Entry score combining how often and how recently the user has chosen it,
 decayed over time. Used to rank Entries above raw match quality.

@@ -102,12 +102,28 @@ pub trait SearchProvider: Send + Sync {          // v0.8
     async fn urls(&self, q: &str, n: usize) -> Result<Vec<SearchResult>>;
 }
 
+pub trait GameLibrary {                          // v0.3
+    fn launcher(&self) -> GameLauncher;          // Steam | Epic | …
+    fn games(&self) -> Vec<Game>;                // { launcher, id, name }
+}
+
 pub trait ClipboardStore: Send + Sync {          // v0.5
     fn record(&self, clip: Clip) -> Result<()>;
     fn search(&self, q: &str, limit: usize) -> Result<Vec<Clip>>;
     fn sweep(&self, retention: Retention) -> Result<u64>;
 }
 ```
+
+`GameLibrary` is the one trait here that is not a Source. Game launchers all
+answer the same two questions — which games are installed, what id starts each —
+and each invented its own format to answer them: Steam a VDF tree, Epic a
+directory of JSON manifests, GOG a SQLite database, Battle.net a protobuf. The
+trait is where the sharing stops, deliberately; the bodies share nothing. What it
+buys is that a launcher is a module plus a line in `games::all()`, and that
+`LaunchTarget` carries **one** `Game { launcher, id }` variant rather than one per
+store. The id is the launcher's own, so a game that moves drive keeps its
+Frecency. Xbox and Game Pass need no implementor — those are MSIX packages with
+AUMIDs and `appsfolder.rs` already lists them.
 
 **No Source knows anything about the UI.** Sources return Entries; ranking and
 rendering are separate concerns. This is what keeps TBC-0002's escape hatch — a

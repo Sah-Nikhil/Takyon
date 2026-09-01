@@ -8,10 +8,10 @@
 //! app", which in the first second after login is exactly wrong.
 
 pub mod appsfolder;
+pub mod games;
 pub mod lnk;
 pub mod noise;
 pub mod path;
-pub mod steam;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -321,15 +321,20 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
         });
     }
 
-    // 3. Steam. Also pathless as far as identity goes.
-    if let Some(steam) = steam::steam_path() {
-        for game in steam::discover(&steam) {
-            let target = LaunchTarget::SteamGame(game.app_id);
+    // 3. Games, each through its own launcher. Also pathless as far as identity
+    // goes: the id is the launcher's, so a game that moves drive keeps its
+    // Frecency. Adding GOG or EA touches `games.rs` and nothing here.
+    for library in games::all() {
+        for game in library.games() {
+            let target = LaunchTarget::Game {
+                launcher: game.launcher,
+                id: game.id,
+            };
             push(&mut apps, &mut seen, icons, App {
                 id: EntryId::for_launch(&target),
                 hay: Haystack::new(&game.name, None),
                 title: game.name,
-                subtitle: Some("Steam".to_string()),
+                subtitle: Some(game.launcher.label().to_string()),
                 target,
                 icon_source: None,
                 icon: None,
@@ -435,7 +440,7 @@ pub fn icon_source_for(app: &App) -> Option<IconSource> {
         // A Steam game's icon lives in the client's cache under a name derived
         // from the app id, and reading it is a v0.3 nicety rather than something
         // v0.2 owes. The row renders its placeholder until then.
-        LaunchTarget::SteamGame(_) => None,
+        LaunchTarget::Game { .. } => None,
         // System entries never reach this path — they are their own Source, not
         // Apps. Present for exhaustiveness; they render a placeholder.
         LaunchTarget::ShellItem(_) | LaunchTarget::Uri(_) => None,
@@ -705,8 +710,8 @@ mod tests {
             count(|a| matches!(a.target, LaunchTarget::Aumid(_)))
         );
         println!(
-            "  steam          {:>6}",
-            count(|a| matches!(a.target, LaunchTarget::SteamGame(_)))
+            "  games          {:>6}",
+            count(|a| matches!(a.target, LaunchTarget::Game { .. }))
         );
 
         // v0.3 task 0: applications that exist only because arguments joined the
