@@ -115,3 +115,32 @@ second line is a path, which is a different question.
 every executable found takes **13.3 seconds** against a 450 ms walk. Reading only
 the colliding names takes **3 ms**. The rule is not a style preference; it is
 what makes the feature affordable at all. See `version.rs`.
+
+## Amended, 2026-09-01 — a calculation keeps its second line always
+
+`EntryKind::Calc` is exempt from the rule. A Calc Entry's title is its answer and
+its second line is the expression that produced it, and that line is shown
+whether or not anything else in the list shares the title.
+
+This is not a hole in the rule, it is the rule read carefully. The line is
+suppressed when it is *decoration* — a path under a row whose title already
+identifies it, answering a question nobody asked. The expression under an answer
+answers a question every reader has: **is this the sum I typed?** `14.16` alone
+is a number you either trust or retype to check. `14.16` over `12*1.18` is a
+number you can verify at a glance, which is the entire value of an inline
+calculator over opening one.
+
+The disambiguation reading also cannot apply here even in principle. There is
+never more than one Calc Entry in a list, so a calculation can have no twin to be
+told apart from — the count this rule keys on is always 1, and always will be.
+Raycast draws the expression beside every answer for the same reason, which is
+the closest thing to prior art there is.
+
+Cost is nil: one row, one line, and only on queries that are arithmetic. The
+window is content-sized (TBC-0006) and the Calc row's height is fixed whether or
+not it is selected, so nothing resizes on an arrow key.
+
+Found by the IPC contract test rather than by review — `sources/calc` set the
+subtitle, `rank::disambiguate_subtitles` stripped it on the way out, and the
+mocked visual layer could not see it because the mock does not run the ranker.
+Exactly the drift TBC-0007 predicted.

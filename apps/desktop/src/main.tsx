@@ -12,6 +12,7 @@ import { Settings } from "./settings/Settings";
 import { inTauri } from "./api";
 import {
   bannerRequest,
+  calcPolicyRequest,
   emitHide,
   emitShow,
   menuRequest,
@@ -40,6 +41,7 @@ if (!inTauri) {
     setIndexing,
     menuRequest,
     bannerRequest,
+    calcPolicyRequest,
   };
 }
 

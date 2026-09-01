@@ -17,13 +17,19 @@ import * as api from "@/api";
  * or no protocol handler. §6 requires it never block a row. The initial, not a
  * generic glyph, which at 24px makes every unresolved row identical.
  */
-function Placeholder({ title }: { title: string }) {
+function Placeholder({ entry }: { entry: Entry }) {
+  // A calculation has a glyph rather than an initial. The initial of "14.16" is
+  // "1", which reads as an unresolved app icon — the one thing the placeholder
+  // exists to be distinguishable from.
+  const glyph =
+    entry.kind === "calc" ? "=" : entry.title.trim().charAt(0).toUpperCase() || "?";
+
   return (
     <div
       aria-hidden
       className="grid size-6 shrink-0 place-items-center rounded-[5px] bg-fg/10 text-[11px] font-medium text-fg/50"
     >
-      {title.trim().charAt(0).toUpperCase() || "?"}
+      {glyph}
     </div>
   );
 }
@@ -56,7 +62,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
           decoding="async"
         />
       ) : (
-        <Placeholder title={entry.title} />
+        <Placeholder entry={entry} />
       )}
 
       <div className="min-w-0 flex-1">
@@ -82,7 +88,9 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
             ellipsis lands at the start.
            */
           <div
-            dir="rtl"
+            // Left-truncation is a path affordance. An expression reads from the
+            // left like ordinary text, so a calculation opts out of it.
+            dir={entry.kind === "calc" ? undefined : "rtl"}
             className="truncate text-left text-[11px] leading-tight text-fg/40"
           >
             {entry.subtitle}

@@ -66,6 +66,15 @@ export type EntryKind =
   | "system"
   | "systemTask";
 
+/**
+ * When the calculator is allowed to answer (v0.4).
+ *
+ * `automatic` matches Raycast: any unambiguous expression answers Bangless.
+ * `explicit` answers only input starting with `=`. The spellings are the wire
+ * format `sources/calc` parses, so renaming one breaks a saved setting.
+ */
+export type CalcPolicy = "automatic" | "explicit";
+
 /** A single actionable row in the Palette (CONTEXT.md: Entry, never "result"). */
 export interface Entry {
   /**
