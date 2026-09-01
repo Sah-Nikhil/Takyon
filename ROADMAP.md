@@ -103,6 +103,26 @@ the things v0.2 could not see.
 reachable in one or two keystrokes — and the new Sources have pushed none of them
 down. `bluetooth` reaches the Bluetooth settings page without the Start menu.
 
+**Packaged as 0.3.0 on 2026-09-01** — the first release whose number matches its
+phase. Every task is done: 0 to 10 built and green, 11 measured and declined.
+`bluetooth` reaches its settings page, which is half the criterion. *The other
+half is not claimed*: a week of use is a week, not a test run.
+
+The verification script is closed except for what this machine cannot answer.
+§SY1–SY5, §EP3, §DK1–DK4 and §RK1–RK7 all pass, and the 14 steps that need no
+window are now **driven** by `v0_3_run_the_verify_steps_that_need_no_launch`
+rather than typed. What is left is written down as blocked, with what would
+unblock each: Recents needs `Start_TrackDocs` on, Epic and Steam each need a game
+installed ([`docs/verify/v0.3.md`](./docs/verify/v0.3.md) § Permanently blocked).
+
+Two things the phase learned the hard way, both from live use rather than tests.
+`dis` selected the Display settings page over Discord on a **0.3%** Frecency gap —
+fixed with a per-Kind weight (App 1.0, System 0.8) applied after the lift, not a
+tier. And `disk` reached the Storage page above **Disk Cleanup**, because task 8
+had loaded its curated keywords onto the *user alias* rung: a keyword Takyon ships
+must never outrank a name the user can see. `TIER_KEYWORD` at 850 fixed it.
+Both are in [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §10.
+
 ---
 
 ## v0.4 — Calculator and converter
