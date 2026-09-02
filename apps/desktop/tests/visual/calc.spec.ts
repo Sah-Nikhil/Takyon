@@ -55,9 +55,8 @@ test("a unit conversion draws with its unit on the answer", async ({ page }) => 
 });
 
 /**
- * The row has no icon and never will, so it falls to the placeholder. The initial
- * of "14.16" is "1", which reads as an app icon that failed to load — the one
- * thing the placeholder exists to be distinguishable from.
+ * The labels are the card's legend. Without them it is two numbers and an arrow,
+ * and which one you typed is a guess.
  */
 test("a calculation is drawn as a card, with both halves labelled", async ({ page }) => {
   const input = await open(page);
