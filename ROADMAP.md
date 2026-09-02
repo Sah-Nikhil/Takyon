@@ -147,6 +147,32 @@ ADR-0016 gained a Calc exemption so an answer keeps its expression.
 
 ---
 
+## v0.4.5 — Presentation
+
+**Goal:** the Palette reads like Raycast's, which is cleaner than what v0.4
+shipped.
+
+- [x] Calculator card — expression, arrow, result, a label under each, captioned. Green-lit against the v0.4.5 installer, 2026-09-02
+- [ ] Section headers — **not approved.** Grouping by category puts back the gate v0.3 removed: `dis` returned Display above Discord and `disk` returned Storage above Disk Cleanup until apps and settings were made to compete in one list. See the plan
+- [x] Right-aligned kind labels — "Application", "Settings". ADR-0016 amended with why a Kind column is not the decoration its second-line rule rejects
+- [x] Footer bar showing what Enter does — "Open ↵ | Actions Ctrl K", becoming "Copy answer" on a calculation. Replaces the floating `Ctrl K` hint
+
+**Exit criteria:** a calculation reads as an answer rather than a list row; every
+row says what it is; the footer says what Enter will do; and the window is exactly
+as tall as its content in each combination.
+
+Deliberately gated: task 1 shipped and was judged on screen before 3 and 4 were
+built. Section headers stay unbuilt. Plan in [`docs/plans/v0.4.5-presentation.md`](./docs/plans/v0.4.5-presentation.md),
+verification in [`docs/verify/v0.4.5.md`](./docs/verify/v0.4.5.md).
+
+The card is not `ROW_HEIGHT` tall, so `window::content_height` and
+`paletteHeight` both had to learn about it (TBC-0006). That arithmetic is the one
+part the mocked visual layer cannot check — a card that overflows screenshots
+perfectly and clips against the real window — so it is covered by Rust unit tests
+instead.
+
+---
+
 ## v0.5 — Clipboard history
 
 **Goal:** useful without ever becoming a liability.

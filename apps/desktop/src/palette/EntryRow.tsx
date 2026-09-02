@@ -7,7 +7,7 @@
  * written down, and the two would disagree the first time one of them was tuned.
  */
 
-import { ROW_HEIGHT, type Entry } from "@takyon/shared";
+import { ROW_HEIGHT, type Entry, type EntryKind } from "@takyon/shared";
 import * as api from "@/api";
 
 /**
@@ -17,22 +17,33 @@ import * as api from "@/api";
  * or no protocol handler. §6 requires it never block a row. The initial, not a
  * generic glyph, which at 24px makes every unresolved row identical.
  */
-function Placeholder({ entry }: { entry: Entry }) {
-  // A calculation has a glyph rather than an initial. The initial of "14.16" is
-  // "1", which reads as an unresolved app icon — the one thing the placeholder
-  // exists to be distinguishable from.
-  const glyph =
-    entry.kind === "calc" ? "=" : entry.title.trim().charAt(0).toUpperCase() || "?";
-
+function Placeholder({ title }: { title: string }) {
   return (
     <div
       aria-hidden
       className="grid size-6 shrink-0 place-items-center rounded-[5px] bg-fg/10 text-[11px] font-medium text-fg/50"
     >
-      {glyph}
+      {title.trim().charAt(0).toUpperCase() || "?"}
     </div>
   );
 }
+
+/**
+ * What each Kind is called on the right of its row (v0.4.5 task 3).
+ *
+ * UI copy keyed on the wire enum, so it lives here rather than in Rust. The
+ * words follow CONTEXT.md: a settings page is a destination, not a "result".
+ * `calc` is absent because a calculation is a card and has no row.
+ */
+const KIND_LABEL: Partial<Record<EntryKind, string>> = {
+  app: "Application",
+  file: "File",
+  folder: "Folder",
+  recent: "Recent",
+  system: "Settings",
+  systemTask: "Task",
+  clip: "Clip",
+};
 
 export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean }) {
   const src = api.iconUrl(entry.icon);
@@ -62,7 +73,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
           decoding="async"
         />
       ) : (
-        <Placeholder entry={entry} />
+        <Placeholder title={entry.title} />
       )}
 
       <div className="min-w-0 flex-1">
@@ -88,9 +99,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
             ellipsis lands at the start.
            */
           <div
-            // Left-truncation is a path affordance. An expression reads from the
-            // left like ordinary text, so a calculation opts out of it.
-            dir={entry.kind === "calc" ? undefined : "rtl"}
+            dir="rtl"
             className="truncate text-left text-[11px] leading-tight text-fg/40"
           >
             {entry.subtitle}
@@ -98,10 +107,15 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
         )}
       </div>
 
-      {selected && (
-        <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-fg/40">
-          ↵
-        </kbd>
+      {/*
+        Always drawn, not only on the selected row. Revealing it on selection
+        would reflow every row on every arrow key, and a column that moves is
+        harder to read than one that is simply there.
+       */}
+      {KIND_LABEL[entry.kind] && (
+        <span className="shrink-0 text-[11px] leading-tight text-fg/30">
+          {KIND_LABEL[entry.kind]}
+        </span>
       )}
     </div>
   );

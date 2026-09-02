@@ -26,8 +26,12 @@ async function open(page: Page) {
   return page.getByPlaceholder("Search");
 }
 
-const fitTo = (page: Page, rows: number) =>
-  page.setViewportSize({ width: 640, height: paletteHeight(rows, false, null, 0) });
+/** A calculation is a card, so the viewport has to be told (v0.4.5). */
+const fitTo = (page: Page, rows: number, calcCard = false) =>
+  page.setViewportSize({
+    width: 640,
+    height: paletteHeight(rows, false, null, 0, calcCard),
+  });
 
 test("a calculation draws as the top row, with its expression beneath", async ({ page }) => {
   const input = await open(page);
@@ -40,7 +44,7 @@ test("a calculation draws as the top row, with its expression beneath", async ({
   await expect(rows.first()).toContainText("12*1.18");
   await expect(rows.first()).toHaveAttribute("data-selected", "true");
 
-  await fitTo(page, 1);
+  await fitTo(page, 1, true);
   await expect(page).toHaveScreenshot("palette-calc.png");
 });
 
@@ -51,18 +55,33 @@ test("a unit conversion draws with its unit on the answer", async ({ page }) => 
 });
 
 /**
- * The row has no icon and never will, so it falls to the placeholder. The initial
- * of "14.16" is "1", which reads as an app icon that failed to load — the one
- * thing the placeholder exists to be distinguishable from.
+ * The labels are the card's legend. Without them it is two numbers and an arrow,
+ * and which one you typed is a guess.
  */
-test("a calculation shows a glyph rather than the first character of its answer", async ({
-  page,
-}) => {
+test("a calculation is drawn as a card, with both halves labelled", async ({ page }) => {
   const input = await open(page);
   await input.fill("12*1.18");
 
-  const placeholder = page.getByRole("option").first().locator("[aria-hidden]").first();
-  await expect(placeholder).toHaveText("=");
+  // The labels are what make the card readable without a legend: which number is
+  // the sum you typed and which is the answer.
+  const card = page.getByRole("option").first();
+  await expect(card).toContainText("Calculator");
+  await expect(card).toContainText("Expression");
+  await expect(card).toContainText("Result");
+});
+
+/**
+ * The card is still a `Command.Item`, which is the whole trick — it keeps arrow
+ * keys, Enter and `Ctrl+K` working without a second selection model. If this
+ * fails, the card has become its own surface.
+ */
+test("the card is an ordinary list item and stays selectable", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("12*1.18");
+
+  const rows = page.getByRole("option");
+  await expect(rows.first()).toHaveAttribute("data-selected", "true");
+  await expect(rows.first()).toContainText("14.16");
 });
 
 /**

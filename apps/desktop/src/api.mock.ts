@@ -240,6 +240,8 @@ export const mock = {
     entries: q.trim() ? [...calcFixture(q), ...FIXTURES.filter((e) => matches(e, q))] : [],
     indexing: q.trim() ? indexing : false,
   }),
+  /** The same table Rust ships, so the footer draws in the browser build too. */
+  actionLabels: async (): Promise<Action[]> => Object.values(ACTION_LABELS),
   actionsFor: async (entryId: string): Promise<Action[]> => {
     // A calc id is not in FIXTURES: it is minted per query, exactly as Rust mints
     // one per keystroke, so its menu comes from the id rather than a lookup.

@@ -71,6 +71,15 @@ export const reportFirstEntry = (seq: number) =>
 export const setCalcPolicy = (policy: CalcPolicy) =>
   inTauri ? invoke<void>("set_calc_policy", { policy }) : mock.setCalcPolicy(policy);
 
+/**
+ * Every action id and its label, for the footer (v0.4.5).
+ *
+ * Fetched once on mount. Labels live in Rust (ADR-0009), and the alternative is
+ * an `invoke` on every arrow key.
+ */
+export const actionLabels = () =>
+  inTauri ? invoke<Action[]>("action_labels") : mock.actionLabels();
+
 /** The `Ctrl+K` menu for one Entry. Labels and accelerators live in Rust. */
 export const actionsFor = (entryId: string) =>
   inTauri ? invoke<Action[]>("actions_for", { entryId }) : mock.actionsFor(entryId);

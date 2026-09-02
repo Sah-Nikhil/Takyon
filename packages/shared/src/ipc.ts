@@ -153,6 +153,26 @@ export const EMPTY_HEIGHT = 68;
 export const LIST_CHROME = 9;
 
 /**
+ * The "Calculator" caption above the card, including the gap under it (v0.4.5).
+ */
+export const CALC_CAPTION_HEIGHT = 22;
+/**
+ * The calculator card: expression, arrow, result, and a label under each.
+ *
+ * A calculation is drawn as this instead of a `ROW_HEIGHT` row, so it is the one
+ * Entry whose height is not uniform. `window.rs` mirrors both constants.
+ */
+export const CALC_CARD_HEIGHT = 116;
+
+/**
+ * The footer strip naming what Enter does (v0.4.5 task 4).
+ *
+ * Drawn only when the list is, so it is added in the same branch. Raycast shows
+ * no footer over an empty Palette either — there is no selected row to describe.
+ */
+export const FOOTER_HEIGHT = 34;
+
+/**
  * One row of the `Ctrl+K` menu, and the chrome around its list.
  *
  * **Measured from the rendered menu, not chosen.** A Playwright test measures the
@@ -193,10 +213,19 @@ export function paletteHeight(
   indexing = false,
   menuActions: number | null = null,
   bannerHeight = 0,
+  calcCard = false,
 ): number {
-  const visible = rows === 0 && indexing ? 1 : Math.min(rows, MAX_VISIBLE_ROWS);
+  // The card replaces a row rather than joining it, and the cap applies to what
+  // is left: eight rows *plus* a card is taller than the shape TBC-0006 chose.
+  const card = calcCard ? CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT : 0;
+  const listRows =
+    rows === 0 && indexing
+      ? 1
+      : Math.min(Math.max(rows - (calcCard ? 1 : 0), 0), MAX_VISIBLE_ROWS);
   const content =
-    visible === 0 ? EMPTY_HEIGHT : EMPTY_HEIGHT + visible * ROW_HEIGHT + LIST_CHROME;
+    card === 0 && listRows === 0
+      ? EMPTY_HEIGHT
+      : EMPTY_HEIGHT + card + listRows * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT;
   // `max`, never a sum: the menu sits on top of the list rather than below it, so
   // a tall list already has the room and only a short one has to grow.
   const withMenu =

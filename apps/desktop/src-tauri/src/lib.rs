@@ -64,7 +64,13 @@ fn query(
 ) -> QueryResult {
     bench.mark_query(seq);
     let result = pipeline.query(&q, seq);
-    window::set_rows(&app, result.entries.len(), result.indexing);
+    // Rust already holds the Entries, so the window learns the list's shape
+    // without a second `invoke` — a calculation is drawn as a card, not a row.
+    let calc_card = result
+        .entries
+        .first()
+        .is_some_and(|e| e.kind == entry::EntryKind::Calc);
+    window::set_rows(&app, result.entries.len(), result.indexing, calc_card);
     result
 }
 
@@ -128,6 +134,15 @@ fn activate(
 #[tauri::command]
 fn set_calc_policy(policy: String, pipeline: tauri::State<'_, Arc<Pipeline>>) {
     pipeline.calc.set_policy(CalcPolicy::parse(&policy));
+}
+
+/// Every action id and its label, fetched once on mount (v0.4.5 task 4).
+///
+/// The footer names what Enter will do on the selected row, and labels live in
+/// `actions.rs` (ADR-0009). Sent once rather than per arrow key.
+#[tauri::command]
+fn action_labels() -> Vec<Action> {
+    actions::all()
 }
 
 #[tauri::command]
@@ -230,7 +245,8 @@ pub fn run() {
             activate,
             set_action_menu,
             set_banner_height,
-            set_calc_policy
+            set_calc_policy,
+            action_labels
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

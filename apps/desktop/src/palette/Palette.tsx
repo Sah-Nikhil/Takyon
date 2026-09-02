@@ -11,6 +11,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Command } from "cmdk";
 import {
+  CALC_CAPTION_HEIGHT,
+  CALC_CARD_HEIGHT,
   LIST_CHROME,
   MAX_VISIBLE_ROWS,
   ROW_HEIGHT,
@@ -22,6 +24,8 @@ import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
 import { applyMotionPreference, calcPolicy, watchMotionPreference } from "@/prefs";
 import type { HotkeyStatus } from "@takyon/shared";
+import { CalcCard } from "./CalcCard";
+import { Footer } from "./Footer";
 import { EntryRow } from "./EntryRow";
 import { ActionMenu } from "./ActionMenu";
 
@@ -32,6 +36,8 @@ export function Palette() {
   const [selected, setSelected] = useState("");
   const [menu, setMenu] = useState<Action[] | null>(null);
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);
+  /** Action labels for the footer, by id. Fetched once; Rust owns the words. */
+  const [labels, setLabels] = useState<Record<string, Action>>({});
   /*
     Whether the window is on screen. Created hidden in Tauri and alive between
     summons (docs/tbc/0002), so this starts false and the show event flips it;
@@ -78,6 +84,12 @@ export function Palette() {
 
   useEffect(() => {
     void api.hotkeyStatus().then(setHotkey);
+  }, []);
+
+  useEffect(() => {
+    void api
+      .actionLabels()
+      .then((all) => setLabels(Object.fromEntries(all.map((a) => [a.id, a]))));
   }, []);
 
   // Rust holds the calculator's Mode because the rule is enforced inside the
@@ -229,8 +241,9 @@ export function Palette() {
     return "open";
   };
 
-  /** The Kind of the row Enter would act on. */
-  const selectedKind = entries.find((e) => e.id === selected)?.kind;
+  /** The row Enter would act on, and its Kind. */
+  const selectedEntry = entries.find((e) => e.id === selected);
+  const selectedKind = selectedEntry?.kind;
 
   /*
     The height Rust reserved for the list, chrome included.
@@ -239,8 +252,21 @@ export function Palette() {
     `py-1` padding and the 1px top border *inside* it, so `rows * ROW_HEIGHT`
     alone clips the last row and grows a scrollbar on a list that fits.
    */
+  /*
+    A calculation is drawn as a card, not a row, so it is subtracted before the
+    cap: eight rows *plus* a card is taller than the shape TBC-0006 chose. Rust
+    computes the same number in `window::content_height`, and a test asserts the
+    constants agree — this side only decides how tall the list box is drawn.
+   */
+  const calcCard = entries[0]?.kind === "calc";
+  const listRows = Math.min(
+    Math.max(entries.length - (calcCard ? 1 : 0), 0),
+    MAX_VISIBLE_ROWS,
+  );
   const listHeight =
-    Math.min(entries.length, MAX_VISIBLE_ROWS) * ROW_HEIGHT + LIST_CHROME;
+    (calcCard ? CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT : 0) +
+    listRows * ROW_HEIGHT +
+    LIST_CHROME;
   const showList = entries.length > 0 || (indexing && value.trim().length > 0);
 
   return (
@@ -290,11 +316,7 @@ export function Palette() {
             placeholder="Search"
             className="h-12 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/35"
           />
-          {entries.length > 0 && (
-            <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-fg/35">
-              Ctrl K
-            </kbd>
-          )}
+
         </div>
 
         {/*
@@ -329,14 +351,33 @@ export function Palette() {
               <Command.Item
                 key={entry.id}
                 value={entry.id}
-                onSelect={() => run(entry.id, "open")}
-                className="cursor-default rounded-md data-[selected=true]:bg-white/10"
+                // Not a hardcoded "open": a calculation has nothing to open, and
+                // Rust refuses that action, so a click would silently do nothing.
+                onSelect={() => run(entry.id, entry.kind === "calc" ? "copy_answer" : "open")}
+                // A calculation carries its own selected state, on the card
+                // rather than on this wrapper, which also holds the caption.
+                className={
+                  entry.kind === "calc"
+                    ? "cursor-default"
+                    : "cursor-default rounded-md data-[selected=true]:bg-white/10"
+                }
               >
-                <EntryRow entry={entry} selected={entry.id === selected} />
+                {entry.kind === "calc" ? (
+                  <CalcCard entry={entry} selected={entry.id === selected} />
+                ) : (
+                  <EntryRow entry={entry} selected={entry.id === selected} />
+                )}
               </Command.Item>
             ))}
           </Command.List>
         )}
+
+        {/*
+          Only with the list, matching Raycast: an empty Palette has no selected
+          row to describe. `FOOTER_HEIGHT` is added to the window in the same
+          branch, on both sides of the seam.
+         */}
+        {showList && <Footer entry={selectedEntry} labels={labels} />}
       </Command>
 
       {menu && (

@@ -41,6 +41,23 @@ pub const MAX_VISIBLE_ROWS: u32 = 8;
 /// fits. Seen in the real window on a six-row list.
 const LIST_CHROME: u32 = 9;
 
+/// The "Calculator" caption above the card, gap included (v0.4.5). Must match
+/// `CALC_CAPTION_HEIGHT` in `packages/shared/src/ipc.ts`.
+const CALC_CAPTION_HEIGHT: u32 = 22;
+
+/// The calculator card: expression, arrow, result, a label under each.
+///
+/// The one Entry whose height is not [`ROW_HEIGHT`], so it is the one case this
+/// arithmetic cannot get from a row count alone. Must match `CALC_CARD_HEIGHT`
+/// in `packages/shared/src/ipc.ts`; the test below checks it does.
+const CALC_CARD_HEIGHT: u32 = 116;
+
+/// The footer strip naming what Enter does (v0.4.5 task 4).
+///
+/// Present exactly when the list is, so it is added in the same branch. Must
+/// match `FOOTER_HEIGHT` in `packages/shared/src/ipc.ts`.
+const FOOTER_HEIGHT: u32 = 34;
+
 /// One row of the `Ctrl+K` menu, and the chrome around its list.
 ///
 /// **Measured from the rendered menu, not chosen.** A Playwright test measures the
@@ -67,6 +84,9 @@ const BANNER_MARGIN: u32 = 8;
 pub struct Shape {
     pub rows: usize,
     pub indexing: bool,
+    /// True when the top Entry is a calculation, which is drawn as a card rather
+    /// than a row and is therefore not [`ROW_HEIGHT`] tall.
+    pub calc_card: bool,
     /// `Some(n)` while the action menu is open, holding `n` actions.
     pub menu_actions: Option<usize>,
     /// Measured height of the hotkey-failure banner, 0 when absent.
@@ -79,6 +99,7 @@ pub struct Shape {
 static SHAPE: Mutex<Shape> = Mutex::new(Shape {
     rows: 0,
     indexing: false,
+    calc_card: false,
     menu_actions: None,
     banner_height: 0,
 });
@@ -89,17 +110,26 @@ static SHAPE: Mutex<Shape> = Mutex::new(Shape {
 /// `paletteHeight` in `packages/shared/src/ipc.ts`; a test asserts the constants
 /// agree.
 pub fn content_height(shape: Shape) -> u32 {
+    // The card replaces a row rather than joining it, and the cap applies to what
+    // is left: eight rows *plus* a card is taller than the shape TBC-0006 chose.
+    let card = if shape.calc_card {
+        CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT
+    } else {
+        0
+    };
     // The indexing notice occupies exactly one row, so the window does not jump
     // when the walk finishes and real Entries replace it.
-    let visible = if shape.rows == 0 && shape.indexing {
+    let list_rows = if shape.rows == 0 && shape.indexing {
         1
     } else {
-        (shape.rows as u32).min(MAX_VISIBLE_ROWS)
+        (shape.rows as u32)
+            .saturating_sub(u32::from(shape.calc_card))
+            .min(MAX_VISIBLE_ROWS)
     };
-    let content = if visible == 0 {
+    let content = if card == 0 && list_rows == 0 {
         EMPTY_HEIGHT
     } else {
-        EMPTY_HEIGHT + visible * ROW_HEIGHT + LIST_CHROME
+        EMPTY_HEIGHT + card + list_rows * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
     };
 
     let with_menu = match shape.menu_actions {
@@ -132,11 +162,12 @@ pub fn set_banner(app: &AppHandle, height: u32) {
 }
 
 /// Record a new row count and resize.
-pub fn set_rows(app: &AppHandle, rows: usize, indexing: bool) {
+pub fn set_rows(app: &AppHandle, rows: usize, indexing: bool, calc_card: bool) {
     let shape = {
         let mut guard = SHAPE.lock().unwrap_or_else(|e| e.into_inner());
         guard.rows = rows;
         guard.indexing = indexing;
+        guard.calc_card = calc_card;
         *guard
     };
     apply(app, shape);
@@ -581,9 +612,62 @@ mod tests {
         Shape {
             rows,
             indexing,
+            calc_card: false,
             menu_actions: menu,
             banner_height: 0,
         }
+    }
+
+    /// The same, with the top Entry drawn as a calculator card (v0.4.5).
+    fn calc_shape(rows: usize) -> Shape {
+        Shape {
+            calc_card: true,
+            ..shape(rows, false, None)
+        }
+    }
+
+    /// v0.4.5: a calculation is a card, so it is not [`ROW_HEIGHT`] tall.
+    ///
+    /// The only thing that catches a wrong card height. Playwright renders in a
+    /// browser with no native window, so an overflowing card looks correct there
+    /// and clips against a transparent, undecorated window in the product.
+    #[test]
+    fn v0_4_5_a_calculation_is_sized_as_a_card_rather_than_a_row() {
+        let alone = content_height(calc_shape(1));
+        assert_eq!(
+            alone,
+            EMPTY_HEIGHT + CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
+        );
+        // Taller than the row it replaced, or the card is not a card.
+        assert!(alone > content_height(shape(1, false, None)));
+    }
+
+    /// The card replaces a row rather than joining it. A calculation plus one app
+    /// is one card and one row, never one card and two.
+    #[test]
+    fn v0_4_5_the_card_replaces_a_row_it_does_not_add_one() {
+        assert_eq!(
+            content_height(calc_shape(2)) - content_height(calc_shape(1)),
+            ROW_HEIGHT
+        );
+    }
+
+    /// `MAX_VISIBLE_ROWS` counts rows, and the card is not one. Eight rows *plus*
+    /// a card would be taller than the shape TBC-0006 settled on, so the cap
+    /// applies to what is left after the card.
+    #[test]
+    fn v0_4_5_the_row_cap_applies_to_what_is_left_after_the_card() {
+        let capped = content_height(calc_shape(MAX_VISIBLE_ROWS as usize + 1));
+        assert_eq!(capped, content_height(calc_shape(999)));
+        assert_eq!(
+            capped,
+            EMPTY_HEIGHT
+                + CALC_CAPTION_HEIGHT
+                + CALC_CARD_HEIGHT
+                + MAX_VISIBLE_ROWS * ROW_HEIGHT
+                + LIST_CHROME
+                + FOOTER_HEIGHT
+        );
     }
 
     #[test]
@@ -591,11 +675,11 @@ mod tests {
         assert_eq!(content_height(shape(0, false, None)), EMPTY_HEIGHT);
         assert_eq!(
             content_height(shape(1, false, None)),
-            EMPTY_HEIGHT + ROW_HEIGHT + LIST_CHROME
+            EMPTY_HEIGHT + ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
         );
         assert_eq!(
             content_height(shape(8, false, None)),
-            EMPTY_HEIGHT + 8 * ROW_HEIGHT + LIST_CHROME
+            EMPTY_HEIGHT + 8 * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
         );
         // §3 ranks twelve. The extra four scroll inside the list rather than
         // pushing the window another 176 pixels down the screen.
@@ -698,6 +782,9 @@ mod tests {
             ("MENU_CHROME", MENU_CHROME),
             ("MENU_MARGIN", MENU_MARGIN),
             ("BANNER_MARGIN", BANNER_MARGIN),
+            ("CALC_CAPTION_HEIGHT", CALC_CAPTION_HEIGHT),
+            ("CALC_CARD_HEIGHT", CALC_CARD_HEIGHT),
+            ("FOOTER_HEIGHT", FOOTER_HEIGHT),
         ] {
             assert!(
                 ipc.contains(&format!("{name} = {value}")),
