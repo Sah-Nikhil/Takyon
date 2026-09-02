@@ -16,6 +16,7 @@
 import { expect, test } from "bun:test";
 import {
   BANNER_MARGIN,
+  FOOTER_HEIGHT,
   CALC_CAPTION_HEIGHT,
   CALC_CARD_HEIGHT,
   EMPTY_HEIGHT,
@@ -31,7 +32,7 @@ test("an empty Palette is one input row", () => {
 });
 
 test("the window grows a row at a time", () => {
-  expect(paletteHeight(1)).toBe(EMPTY_HEIGHT + ROW_HEIGHT + LIST_CHROME);
+  expect(paletteHeight(1)).toBe(EMPTY_HEIGHT + ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT);
   expect(paletteHeight(3) - paletteHeight(2)).toBe(ROW_HEIGHT);
 });
 
@@ -90,14 +91,14 @@ test("the list chrome counts the border as well as the padding", () => {
   // the content one pixel taller than its box, and a list that fits exactly grows
   // a scrollbar.
   expect(LIST_CHROME).toBe(9);
-  expect(paletteHeight(1) - EMPTY_HEIGHT - ROW_HEIGHT).toBe(LIST_CHROME);
+  expect(paletteHeight(1) - EMPTY_HEIGHT - ROW_HEIGHT - FOOTER_HEIGHT).toBe(LIST_CHROME);
 });
 
 test("a calculation is sized as a card rather than a row", () => {
   // Mirrored by `window::content_height`; a Rust test asserts the constants
   // agree. This side only has to agree about the arithmetic.
   expect(paletteHeight(1, false, null, 0, true)).toBe(
-    EMPTY_HEIGHT + CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT + LIST_CHROME,
+    EMPTY_HEIGHT + CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT + LIST_CHROME + FOOTER_HEIGHT,
   );
   expect(paletteHeight(1, false, null, 0, true)).toBeGreaterThan(paletteHeight(1));
 });
@@ -117,6 +118,18 @@ test("the row cap applies to what is left after the card", () => {
       CALC_CAPTION_HEIGHT +
       CALC_CARD_HEIGHT +
       MAX_VISIBLE_ROWS * ROW_HEIGHT +
-      LIST_CHROME,
+      LIST_CHROME +
+      FOOTER_HEIGHT,
   );
+});
+
+test("the footer is drawn with the list and only with it", () => {
+  // Raycast shows none over an empty Palette either: there is no selected row to
+  // describe. Mirrored by `window::content_height`, constants asserted in Rust.
+  expect(paletteHeight(0)).toBe(EMPTY_HEIGHT);
+  expect(paletteHeight(1) - paletteHeight(0)).toBe(
+    ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT,
+  );
+  // One strip, however many rows are under it.
+  expect(paletteHeight(2) - paletteHeight(1)).toBe(ROW_HEIGHT);
 });

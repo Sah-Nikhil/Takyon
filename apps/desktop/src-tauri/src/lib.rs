@@ -136,6 +136,15 @@ fn set_calc_policy(policy: String, pipeline: tauri::State<'_, Arc<Pipeline>>) {
     pipeline.calc.set_policy(CalcPolicy::parse(&policy));
 }
 
+/// Every action id and its label, fetched once on mount (v0.4.5 task 4).
+///
+/// The footer names what Enter will do on the selected row, and labels live in
+/// `actions.rs` (ADR-0009). Sent once rather than per arrow key.
+#[tauri::command]
+fn action_labels() -> Vec<Action> {
+    actions::all()
+}
+
 #[tauri::command]
 fn open_settings(app: tauri::AppHandle) {
     settings::open(&app);
@@ -236,7 +245,8 @@ pub fn run() {
             activate,
             set_action_menu,
             set_banner_height,
-            set_calc_policy
+            set_calc_policy,
+            action_labels
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

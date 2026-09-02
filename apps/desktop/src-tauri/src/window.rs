@@ -52,6 +52,12 @@ const CALC_CAPTION_HEIGHT: u32 = 22;
 /// in `packages/shared/src/ipc.ts`; the test below checks it does.
 const CALC_CARD_HEIGHT: u32 = 116;
 
+/// The footer strip naming what Enter does (v0.4.5 task 4).
+///
+/// Present exactly when the list is, so it is added in the same branch. Must
+/// match `FOOTER_HEIGHT` in `packages/shared/src/ipc.ts`.
+const FOOTER_HEIGHT: u32 = 34;
+
 /// One row of the `Ctrl+K` menu, and the chrome around its list.
 ///
 /// **Measured from the rendered menu, not chosen.** A Playwright test measures the
@@ -104,8 +110,6 @@ static SHAPE: Mutex<Shape> = Mutex::new(Shape {
 /// `paletteHeight` in `packages/shared/src/ipc.ts`; a test asserts the constants
 /// agree.
 pub fn content_height(shape: Shape) -> u32 {
-    // The indexing notice occupies exactly one row, so the window does not jump
-    // when the walk finishes and real Entries replace it.
     // The card replaces a row rather than joining it, and the cap applies to what
     // is left: eight rows *plus* a card is taller than the shape TBC-0006 chose.
     let card = if shape.calc_card {
@@ -113,6 +117,8 @@ pub fn content_height(shape: Shape) -> u32 {
     } else {
         0
     };
+    // The indexing notice occupies exactly one row, so the window does not jump
+    // when the walk finishes and real Entries replace it.
     let list_rows = if shape.rows == 0 && shape.indexing {
         1
     } else {
@@ -123,7 +129,7 @@ pub fn content_height(shape: Shape) -> u32 {
     let content = if card == 0 && list_rows == 0 {
         EMPTY_HEIGHT
     } else {
-        EMPTY_HEIGHT + card + list_rows * ROW_HEIGHT + LIST_CHROME
+        EMPTY_HEIGHT + card + list_rows * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
     };
 
     let with_menu = match shape.menu_actions {
@@ -630,7 +636,7 @@ mod tests {
         let alone = content_height(calc_shape(1));
         assert_eq!(
             alone,
-            EMPTY_HEIGHT + CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT + LIST_CHROME
+            EMPTY_HEIGHT + CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
         );
         // Taller than the row it replaced, or the card is not a card.
         assert!(alone > content_height(shape(1, false, None)));
@@ -660,6 +666,7 @@ mod tests {
                 + CALC_CARD_HEIGHT
                 + MAX_VISIBLE_ROWS * ROW_HEIGHT
                 + LIST_CHROME
+                + FOOTER_HEIGHT
         );
     }
 
@@ -668,11 +675,11 @@ mod tests {
         assert_eq!(content_height(shape(0, false, None)), EMPTY_HEIGHT);
         assert_eq!(
             content_height(shape(1, false, None)),
-            EMPTY_HEIGHT + ROW_HEIGHT + LIST_CHROME
+            EMPTY_HEIGHT + ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
         );
         assert_eq!(
             content_height(shape(8, false, None)),
-            EMPTY_HEIGHT + 8 * ROW_HEIGHT + LIST_CHROME
+            EMPTY_HEIGHT + 8 * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
         );
         // §3 ranks twelve. The extra four scroll inside the list rather than
         // pushing the window another 176 pixels down the screen.
@@ -777,6 +784,7 @@ mod tests {
             ("BANNER_MARGIN", BANNER_MARGIN),
             ("CALC_CAPTION_HEIGHT", CALC_CAPTION_HEIGHT),
             ("CALC_CARD_HEIGHT", CALC_CARD_HEIGHT),
+            ("FOOTER_HEIGHT", FOOTER_HEIGHT),
         ] {
             assert!(
                 ipc.contains(&format!("{name} = {value}")),

@@ -165,6 +165,14 @@ export const CALC_CAPTION_HEIGHT = 22;
 export const CALC_CARD_HEIGHT = 116;
 
 /**
+ * The footer strip naming what Enter does (v0.4.5 task 4).
+ *
+ * Drawn only when the list is, so it is added in the same branch. Raycast shows
+ * no footer over an empty Palette either — there is no selected row to describe.
+ */
+export const FOOTER_HEIGHT = 34;
+
+/**
  * One row of the `Ctrl+K` menu, and the chrome around its list.
  *
  * **Measured from the rendered menu, not chosen.** A Playwright test measures the
@@ -217,7 +225,7 @@ export function paletteHeight(
   const content =
     card === 0 && listRows === 0
       ? EMPTY_HEIGHT
-      : EMPTY_HEIGHT + card + listRows * ROW_HEIGHT + LIST_CHROME;
+      : EMPTY_HEIGHT + card + listRows * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT;
   // `max`, never a sum: the menu sits on top of the list rather than below it, so
   // a tall list already has the room and only a short one has to grow.
   const withMenu =

@@ -25,6 +25,7 @@ import * as api from "@/api";
 import { applyMotionPreference, calcPolicy, watchMotionPreference } from "@/prefs";
 import type { HotkeyStatus } from "@takyon/shared";
 import { CalcCard } from "./CalcCard";
+import { Footer } from "./Footer";
 import { EntryRow } from "./EntryRow";
 import { ActionMenu } from "./ActionMenu";
 
@@ -35,6 +36,8 @@ export function Palette() {
   const [selected, setSelected] = useState("");
   const [menu, setMenu] = useState<Action[] | null>(null);
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);
+  /** Action labels for the footer, by id. Fetched once; Rust owns the words. */
+  const [labels, setLabels] = useState<Record<string, Action>>({});
   /*
     Whether the window is on screen. Created hidden in Tauri and alive between
     summons (docs/tbc/0002), so this starts false and the show event flips it;
@@ -81,6 +84,12 @@ export function Palette() {
 
   useEffect(() => {
     void api.hotkeyStatus().then(setHotkey);
+  }, []);
+
+  useEffect(() => {
+    void api
+      .actionLabels()
+      .then((all) => setLabels(Object.fromEntries(all.map((a) => [a.id, a]))));
   }, []);
 
   // Rust holds the calculator's Mode because the rule is enforced inside the
@@ -232,8 +241,9 @@ export function Palette() {
     return "open";
   };
 
-  /** The Kind of the row Enter would act on. */
-  const selectedKind = entries.find((e) => e.id === selected)?.kind;
+  /** The row Enter would act on, and its Kind. */
+  const selectedEntry = entries.find((e) => e.id === selected);
+  const selectedKind = selectedEntry?.kind;
 
   /*
     The height Rust reserved for the list, chrome included.
@@ -306,11 +316,7 @@ export function Palette() {
             placeholder="Search"
             className="h-12 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/35"
           />
-          {entries.length > 0 && (
-            <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-fg/35">
-              Ctrl K
-            </kbd>
-          )}
+
         </div>
 
         {/*
@@ -365,6 +371,13 @@ export function Palette() {
             ))}
           </Command.List>
         )}
+
+        {/*
+          Only with the list, matching Raycast: an empty Palette has no selected
+          row to describe. `FOOTER_HEIGHT` is added to the window in the same
+          branch, on both sides of the seam.
+         */}
+        {showList && <Footer entry={selectedEntry} labels={labels} />}
       </Command>
 
       {menu && (

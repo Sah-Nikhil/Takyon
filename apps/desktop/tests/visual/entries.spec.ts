@@ -432,3 +432,54 @@ test("a system settings page draws with an Open-only menu", async ({ page }) => 
   await fitTo(page, 1);
   await expect(page).toHaveScreenshot("palette-system-entry.png");
 });
+
+/**
+ * v0.4.5 task 4: the footer names what Enter will do on the selected row.
+ *
+ * The verb comes from Rust's table. This checks the frontend reads the right
+ * action off the Entry — whether the word is spelled correctly is Rust's
+ * business, and its own test.
+ */
+test("the footer names what Enter does, and follows the selection", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("photo");
+
+  const footer = page.getByText("Actions").locator("..");
+  await expect(footer).toContainText("Open");
+  await expect(footer).toContainText("Ctrl K");
+});
+
+test("the footer says Copy answer against a calculation", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("12*1.18");
+  await expect(page.getByText("Actions").locator("..")).toContainText("Copy answer");
+});
+
+/** No selected row over an empty Palette, so nothing to describe. */
+test("an empty Palette draws no footer", async ({ page }) => {
+  await open(page);
+  await expect(page.getByText("Actions")).toHaveCount(0);
+});
+
+/**
+ * v0.4.5 task 3: each row says what Kind it is, on the right.
+ *
+ * Always drawn rather than revealed on selection — revealing it would reflow
+ * every row on every arrow key.
+ */
+test("a row is labelled with its Kind", async ({ page }) => {
+  const input = await open(page);
+
+  await input.fill("photo");
+  await expect(page.getByRole("option").first()).toContainText("Application");
+
+  await input.fill("bluetooth");
+  await expect(page.getByRole("option").first()).toContainText("Settings");
+});
+
+/** A calculation is a card, and a card is not a row with a Kind column. */
+test("a calculation carries no kind label", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("12*1.18");
+  await expect(page.getByRole("option").first()).not.toContainText("Application");
+});

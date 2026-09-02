@@ -48,6 +48,15 @@ pub fn describe(id: &ActionId) -> Option<Action> {
     })
 }
 
+/// Every action and its label, for the footer (v0.4.5 task 4).
+///
+/// Fetched once on mount rather than per selection: labels live here (ADR-0009),
+/// and the alternative is an `invoke` on every arrow key or the same strings
+/// re-sent with every keystroke.
+pub fn all() -> Vec<Action> {
+    TABLE.iter().filter_map(|(id, _, _)| describe(id)).collect()
+}
+
 /// Menu contents for one Entry, in draw order.
 ///
 /// Order comes from the Entry, not [`TABLE`]. The Source knows which action is
@@ -219,6 +228,39 @@ mod tests {
             if accel.ends_with("Enter") {
                 assert_eq!(&for_modifiers(EntryKind::App, ctrl, shift), id, "{accel} disagrees");
             }
+        }
+    }
+
+    /// v0.4.5: the footer reads the Entry's **first** action to name what Enter
+    /// will do.
+    ///
+    /// Only honest while the first action *is* the plain-Enter one for every
+    /// Kind. Reorder a Source's actions and the footer lies, silently.
+    #[test]
+    fn v0_4_5_the_first_action_is_always_what_plain_enter_does() {
+        for (kind, actions) in [
+            (EntryKind::App, for_app(true)),
+            (EntryKind::App, for_app(false)),
+            (EntryKind::File, for_file()),
+            (EntryKind::System, for_system()),
+            (EntryKind::Calc, for_calc()),
+        ] {
+            assert_eq!(
+                actions.first(),
+                Some(&for_modifiers(kind, false, false)),
+                "the footer would name the wrong action for {kind:?}"
+            );
+        }
+    }
+
+    /// Every id in the table describes itself, or the footer draws a blank where
+    /// a verb should be.
+    #[test]
+    fn v0_4_5_every_action_ships_a_label_for_the_footer() {
+        let all = all();
+        assert_eq!(all.len(), TABLE.len());
+        for action in &all {
+            assert!(!action.label.is_empty(), "{} has no label", action.id.as_str());
         }
     }
 

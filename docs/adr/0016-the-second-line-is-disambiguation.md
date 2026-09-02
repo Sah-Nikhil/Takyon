@@ -144,3 +144,33 @@ Found by the IPC contract test rather than by review — `sources/calc` set the
 subtitle, `rank::disambiguate_subtitles` stripped it on the way out, and the
 mocked visual layer could not see it because the mock does not run the ranker.
 Exactly the drift TBC-0007 predicted.
+
+## Amended, 2026-09-02 — a Kind label on every row, and why that is not the same
+
+v0.4.5 task 3 puts the Kind on the right of every row: "Application", "Settings",
+"File". That looks like the decoration this ADR rejected, and it was raised as
+exactly that before it was built. The distinction is real but narrow, so it is
+written down rather than assumed.
+
+**The second line answers "which of these two is which".** It is suppressed when
+nothing else shares the title, because then it answers a question nobody asked.
+
+**The Kind column answers "what will Enter do to this".** That is a different
+question, and it has an answer on *every* row, unique title or not. A path under
+"Adobe Photoshop" tells you nothing you did not know; "Application" beside a row
+you were about to press Enter on tells you whether you are about to launch a
+program, open a document or jump to a settings page. Those three do different
+things to your screen.
+
+**The honest caveat**: the footer, built in the same phase, names the action for
+the *selected* row — so for one row out of eight the label is redundant. It earns
+its place on the other seven, while arrowing: you can see what each row is
+without moving the selection onto it to find out.
+
+**It is a column, not a line.** It costs no height, reflows nothing, and is
+drawn for every row rather than appearing and disappearing — which is the
+property that made the "reveal it on the selected row" idea unworkable above.
+
+Reviewed and requested by the user after seeing the trade-off stated. If the
+column turns out to be noise in daily use, deleting it is one map and one span in
+`EntryRow.tsx`, and this section is the record of what it was for.

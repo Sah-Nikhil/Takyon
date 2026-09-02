@@ -7,7 +7,7 @@
  * written down, and the two would disagree the first time one of them was tuned.
  */
 
-import { ROW_HEIGHT, type Entry } from "@takyon/shared";
+import { ROW_HEIGHT, type Entry, type EntryKind } from "@takyon/shared";
 import * as api from "@/api";
 
 /**
@@ -27,6 +27,23 @@ function Placeholder({ title }: { title: string }) {
     </div>
   );
 }
+
+/**
+ * What each Kind is called on the right of its row (v0.4.5 task 3).
+ *
+ * UI copy keyed on the wire enum, so it lives here rather than in Rust. The
+ * words follow CONTEXT.md: a settings page is a destination, not a "result".
+ * `calc` is absent because a calculation is a card and has no row.
+ */
+const KIND_LABEL: Partial<Record<EntryKind, string>> = {
+  app: "Application",
+  file: "File",
+  folder: "Folder",
+  recent: "Recent",
+  system: "Settings",
+  systemTask: "Task",
+  clip: "Clip",
+};
 
 export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean }) {
   const src = api.iconUrl(entry.icon);
@@ -90,10 +107,15 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
         )}
       </div>
 
-      {selected && (
-        <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-fg/40">
-          ↵
-        </kbd>
+      {/*
+        Always drawn, not only on the selected row. Revealing it on selection
+        would reflow every row on every arrow key, and a column that moves is
+        harder to read than one that is simply there.
+       */}
+      {KIND_LABEL[entry.kind] && (
+        <span className="shrink-0 text-[11px] leading-tight text-fg/30">
+          {KIND_LABEL[entry.kind]}
+        </span>
       )}
     </div>
   );
