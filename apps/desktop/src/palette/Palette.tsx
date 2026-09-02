@@ -11,6 +11,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Command } from "cmdk";
 import {
+  CALC_CAPTION_HEIGHT,
+  CALC_CARD_HEIGHT,
   LIST_CHROME,
   MAX_VISIBLE_ROWS,
   ROW_HEIGHT,
@@ -22,6 +24,7 @@ import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
 import { applyMotionPreference, calcPolicy, watchMotionPreference } from "@/prefs";
 import type { HotkeyStatus } from "@takyon/shared";
+import { CalcCard } from "./CalcCard";
 import { EntryRow } from "./EntryRow";
 import { ActionMenu } from "./ActionMenu";
 
@@ -239,8 +242,21 @@ export function Palette() {
     `py-1` padding and the 1px top border *inside* it, so `rows * ROW_HEIGHT`
     alone clips the last row and grows a scrollbar on a list that fits.
    */
+  /*
+    A calculation is drawn as a card, not a row, so it is subtracted before the
+    cap: eight rows *plus* a card is taller than the shape TBC-0006 chose. Rust
+    computes the same number in `window::content_height`, and a test asserts the
+    constants agree — this side only decides how tall the list box is drawn.
+   */
+  const calcCard = entries[0]?.kind === "calc";
+  const listRows = Math.min(
+    Math.max(entries.length - (calcCard ? 1 : 0), 0),
+    MAX_VISIBLE_ROWS,
+  );
   const listHeight =
-    Math.min(entries.length, MAX_VISIBLE_ROWS) * ROW_HEIGHT + LIST_CHROME;
+    (calcCard ? CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT : 0) +
+    listRows * ROW_HEIGHT +
+    LIST_CHROME;
   const showList = entries.length > 0 || (indexing && value.trim().length > 0);
 
   return (
@@ -329,10 +345,22 @@ export function Palette() {
               <Command.Item
                 key={entry.id}
                 value={entry.id}
-                onSelect={() => run(entry.id, "open")}
-                className="cursor-default rounded-md data-[selected=true]:bg-white/10"
+                // Not a hardcoded "open": a calculation has nothing to open, and
+                // Rust refuses that action, so a click would silently do nothing.
+                onSelect={() => run(entry.id, entry.kind === "calc" ? "copy_answer" : "open")}
+                // A calculation carries its own selected state, on the card
+                // rather than on this wrapper, which also holds the caption.
+                className={
+                  entry.kind === "calc"
+                    ? "cursor-default"
+                    : "cursor-default rounded-md data-[selected=true]:bg-white/10"
+                }
               >
-                <EntryRow entry={entry} selected={entry.id === selected} />
+                {entry.kind === "calc" ? (
+                  <CalcCard entry={entry} selected={entry.id === selected} />
+                ) : (
+                  <EntryRow entry={entry} selected={entry.id === selected} />
+                )}
               </Command.Item>
             ))}
           </Command.List>

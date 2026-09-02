@@ -64,7 +64,13 @@ fn query(
 ) -> QueryResult {
     bench.mark_query(seq);
     let result = pipeline.query(&q, seq);
-    window::set_rows(&app, result.entries.len(), result.indexing);
+    // Rust already holds the Entries, so the window learns the list's shape
+    // without a second `invoke` — a calculation is drawn as a card, not a row.
+    let calc_card = result
+        .entries
+        .first()
+        .is_some_and(|e| e.kind == entry::EntryKind::Calc);
+    window::set_rows(&app, result.entries.len(), result.indexing, calc_card);
     result
 }
 

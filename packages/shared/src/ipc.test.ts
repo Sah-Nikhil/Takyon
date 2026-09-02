@@ -16,6 +16,8 @@
 import { expect, test } from "bun:test";
 import {
   BANNER_MARGIN,
+  CALC_CAPTION_HEIGHT,
+  CALC_CARD_HEIGHT,
   EMPTY_HEIGHT,
   LIST_CHROME,
   MAX_VISIBLE_ROWS,
@@ -89,4 +91,32 @@ test("the list chrome counts the border as well as the padding", () => {
   // a scrollbar.
   expect(LIST_CHROME).toBe(9);
   expect(paletteHeight(1) - EMPTY_HEIGHT - ROW_HEIGHT).toBe(LIST_CHROME);
+});
+
+test("a calculation is sized as a card rather than a row", () => {
+  // Mirrored by `window::content_height`; a Rust test asserts the constants
+  // agree. This side only has to agree about the arithmetic.
+  expect(paletteHeight(1, false, null, 0, true)).toBe(
+    EMPTY_HEIGHT + CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT + LIST_CHROME,
+  );
+  expect(paletteHeight(1, false, null, 0, true)).toBeGreaterThan(paletteHeight(1));
+});
+
+test("the card replaces a row rather than adding one", () => {
+  const withOneApp = paletteHeight(2, false, null, 0, true);
+  expect(withOneApp - paletteHeight(1, false, null, 0, true)).toBe(ROW_HEIGHT);
+});
+
+test("the row cap applies to what is left after the card", () => {
+  // MAX_VISIBLE_ROWS counts rows and a card is not one, so eight rows *plus* a
+  // card would exceed the shape TBC-0006 settled on.
+  const capped = paletteHeight(MAX_VISIBLE_ROWS + 1, false, null, 0, true);
+  expect(paletteHeight(999, false, null, 0, true)).toBe(capped);
+  expect(capped).toBe(
+    EMPTY_HEIGHT +
+      CALC_CAPTION_HEIGHT +
+      CALC_CARD_HEIGHT +
+      MAX_VISIBLE_ROWS * ROW_HEIGHT +
+      LIST_CHROME,
+  );
 });
