@@ -43,6 +43,7 @@ const KIND_LABEL: Partial<Record<EntryKind, string>> = {
   system: "Settings",
   systemTask: "Task",
   clip: "Clip",
+  command: "Command",
 };
 
 export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean }) {

@@ -45,3 +45,7 @@ it.
 |---|---|---|
 | [`v0.1.md`](./v0.1.md) | v0.1 warm shell | [`../plans/v0.1-warm-shell.md`](../plans/v0.1-warm-shell.md) |
 | [`v0.2.md`](./v0.2.md) | v0.2 applications | [`../plans/v0.2-applications.md`](../plans/v0.2-applications.md) |
+| [`v0.3.md`](./v0.3.md) | v0.3 ranking and Sources | [`../plans/v0.3-ranking.md`](../plans/v0.3-ranking.md) |
+| [`v0.4.md`](./v0.4.md) | v0.4 calculator | [`../plans/v0.4-calculator.md`](../plans/v0.4-calculator.md) |
+| [`v0.4.5.md`](./v0.4.5.md) | v0.4.5 presentation | [`../plans/v0.4.5-presentation.md`](../plans/v0.4.5-presentation.md) |
+| [`v0.5.md`](./v0.5.md) | v0.5 clipboard history | [`../plans/v0.5-clipboard.md`](../plans/v0.5-clipboard.md) |

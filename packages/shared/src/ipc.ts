@@ -64,7 +64,8 @@ export type EntryKind =
   | "calc"
   | "recent"
   | "system"
-  | "systemTask";
+  | "systemTask"
+  | "command";
 
 /**
  * When the calculator is allowed to answer (v0.4).
@@ -74,6 +75,50 @@ export type EntryKind =
  * format `sources/calc` parses, so renaming one breaks a saved setting.
  */
 export type CalcPolicy = "automatic" | "explicit";
+
+/**
+ * How long clipboard history is kept (v0.5, ADR-0006).
+ *
+ * A fixed list, not a duration: expiry **deletes** rather than hides. The
+ * spellings are the wire format `clips::Retention` parses, so renaming one
+ * resets a saved choice back to the default.
+ */
+export type ClipRetention = "forever" | "6-months" | "1-month" | "1-week" | "1-day";
+
+/**
+ * A full-window surface the Palette navigates into (v0.5).
+ *
+ * Not a second window: a third WebView2 would cost the login budget and a large
+ * share of the 150 MB ceiling. The warm Palette grows, and Escape goes back.
+ */
+export type ViewKind = "clipboard-history";
+
+/**
+ * How tall a full-window View is, logical pixels. Mirrors `VIEW_HEIGHT` in
+ * `window.rs`; a Rust test asserts they agree.
+ */
+export const VIEW_HEIGHT = 560;
+
+/** One clipboard row as the history surface draws it. */
+export interface ClipRow {
+  id: number;
+  /** Unix seconds. The surface groups by day from this. */
+  createdAt: number;
+  kind: "text";
+  /**
+   * The executable that owned the clipboard, or the foreground window when
+   * Windows reports no owner. Plaintext, and a known metadata leak (ADR-0008).
+   */
+  sourceExe?: string;
+  /** Characters of the full content, not of the preview. */
+  len: number;
+  /**
+   * One line, capped at 160 characters. **The full content never travels with a
+   * list** — a search response would otherwise ship every matching secret into
+   * the webview.
+   */
+  preview: string;
+}
 
 /** A single actionable row in the Palette (CONTEXT.md: Entry, never "result"). */
 export interface Entry {

@@ -75,6 +75,22 @@ const MENU_MARGIN: u32 = 16;
 /// 150% and the flex column clipped the list's last row.
 const BANNER_MARGIN: u32 = 8;
 
+/// A full-window surface the Palette navigates *into*, replacing the list.
+///
+/// Not a second window: another WebView2 costs the login budget and a large
+/// share of the 150 MB ceiling. The warm Palette grows, and `Escape` goes back.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum View {
+    ClipboardHistory,
+}
+
+/// How tall a full-window View is, logical pixels.
+///
+/// Fixed rather than content-sized: the surface is two panes with their own
+/// scrolling, so its height is a layout choice rather than a row count. Must
+/// match `VIEW_HEIGHT` in `packages/shared/src/ipc.ts`.
+pub const VIEW_HEIGHT: u32 = 560;
+
 /// What the Palette has to accommodate.
 ///
 /// Held here because its parts arrive separately: rows with each query, the menu
@@ -94,6 +110,9 @@ pub struct Shape {
     /// Rust owns `HotkeyState` so it knows *whether* there is a banner, but only
     /// the renderer knows how the sentence wrapped — and height is what clips.
     pub banner_height: u32,
+    /// `Some` while a full-window View is open, which overrides every row-based
+    /// measurement below it.
+    pub view: Option<View>,
 }
 
 static SHAPE: Mutex<Shape> = Mutex::new(Shape {
@@ -102,6 +121,7 @@ static SHAPE: Mutex<Shape> = Mutex::new(Shape {
     calc_card: false,
     menu_actions: None,
     banner_height: 0,
+    view: None,
 });
 
 /// How tall the Palette should be for a given shape.
@@ -110,6 +130,12 @@ static SHAPE: Mutex<Shape> = Mutex::new(Shape {
 /// `paletteHeight` in `packages/shared/src/ipc.ts`; a test asserts the constants
 /// agree.
 pub fn content_height(shape: Shape) -> u32 {
+    // A View owns the whole window, so nothing below applies: no rows, no card,
+    // no footer arithmetic. The banner is the one exception, as everywhere else
+    // — it sits *below* the content rather than over it, so it always adds.
+    if shape.view.is_some() {
+        return VIEW_HEIGHT + banner(shape);
+    }
     // The card replaces a row rather than joining it, and the cap applies to what
     // is left: eight rows *plus* a card is taller than the shape TBC-0006 chose.
     let card = if shape.calc_card {
@@ -141,10 +167,15 @@ pub fn content_height(shape: Shape) -> u32 {
 
     // The banner, by contrast, *is* a sum: it sits below everything else rather
     // than over it, so it always needs its own space.
+    with_menu + banner(shape)
+}
+
+/// Extra height the hotkey-failure banner needs, or 0 when there is none.
+fn banner(shape: Shape) -> u32 {
     if shape.banner_height > 0 {
-        with_menu + shape.banner_height + BANNER_MARGIN
+        shape.banner_height + BANNER_MARGIN
     } else {
-        with_menu
+        0
     }
 }
 
@@ -186,6 +217,32 @@ pub fn set_menu(app: &AppHandle, actions: Option<usize>) {
     apply(app, shape);
 }
 
+/// Open or close a full-window View, and resize.
+pub fn set_view(app: &AppHandle, view: Option<View>) {
+    let shape = {
+        let mut guard = SHAPE.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.view == view {
+            return;
+        }
+        guard.view = view;
+        // Leaving a View returns to an empty Palette rather than to the query
+        // that opened it: the row count behind it is stale by now, and a window
+        // sized for eight rows that has none is a shadowed empty box.
+        if view.is_none() {
+            guard.rows = 0;
+            guard.calc_card = false;
+            guard.menu_actions = None;
+        }
+        *guard
+    };
+    apply(app, shape);
+}
+
+/// Whether a full-window View is open.
+pub fn current_view() -> Option<View> {
+    SHAPE.lock().unwrap_or_else(|e| e.into_inner()).view
+}
+
 /// Forget the last query's shape, on hide.
 ///
 /// ADR-0001: the Palette opens empty. A shape still describing eight rows would
@@ -195,6 +252,8 @@ pub fn reset_shape(app: &AppHandle) {
         let mut guard = SHAPE.lock().unwrap_or_else(|e| e.into_inner());
         // The banner survives: hiding does not un-take the hotkey, so it is drawn
         // again on the next show and clearing its height would clip it.
+        // The View closes with the window too: reopening the Palette lands on the
+        // root search, which is where ADR-0001 says every summon starts.
         *guard = Shape {
             banner_height: guard.banner_height,
             ..Shape::default()
@@ -615,6 +674,7 @@ mod tests {
             calc_card: false,
             menu_actions: menu,
             banner_height: 0,
+            view: None,
         }
     }
 
@@ -765,6 +825,31 @@ mod tests {
 
     /// Rust sizes the window from these; the CSS draws rows with them. A
     /// disagreement clips the last row, and nothing on either side would say so.
+    /// A View owns the window: no rows, no card, no footer arithmetic reaches it.
+    #[test]
+    fn v0_5_a_view_overrides_every_row_based_measurement() {
+        let mut shape = shape(8, false, Some(4));
+        shape.calc_card = true;
+        let as_rows = content_height(shape);
+
+        shape.view = Some(View::ClipboardHistory);
+        assert_eq!(content_height(shape), VIEW_HEIGHT);
+        assert_ne!(as_rows, VIEW_HEIGHT, "the test would prove nothing");
+    }
+
+    /// The banner is the exception it always was: it sits *below* everything
+    /// rather than over it, so even a View has to make room.
+    #[test]
+    fn v0_5_a_view_still_leaves_room_for_the_hotkey_banner() {
+        let mut shape = Shape {
+            view: Some(View::ClipboardHistory),
+            ..Shape::default()
+        };
+        assert_eq!(content_height(shape), VIEW_HEIGHT);
+        shape.banner_height = 40;
+        assert!(content_height(shape) > VIEW_HEIGHT);
+    }
+
     #[test]
     fn v0_2_row_geometry_agrees_with_the_typescript_contract() {
         let ipc = std::fs::read_to_string(

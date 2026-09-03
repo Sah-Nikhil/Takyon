@@ -23,11 +23,24 @@ import {
 import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
 import { applyMotionPreference, calcPolicy, watchMotionPreference } from "@/prefs";
-import type { HotkeyStatus } from "@takyon/shared";
+import type { HotkeyStatus, ViewKind } from "@takyon/shared";
 import { CalcCard } from "./CalcCard";
+import { ClipboardHistory } from "./ClipboardHistory";
 import { Footer } from "./Footer";
 import { EntryRow } from "./EntryRow";
 import { ActionMenu } from "./ActionMenu";
+
+/**
+ * What a click does, per Kind. Mirrors `actions::for_modifiers` with no modifier.
+ *
+ * Not a hardcoded "open": a calculation has nothing to open and a Clip has no
+ * file, and Rust refuses both, so a click would silently do nothing.
+ */
+const PRIMARY_ACTION: Partial<Record<EntryKind, string>> = {
+  calc: "copy_answer",
+  clip: "paste",
+  command: "open_command",
+};
 
 export function Palette() {
   const [value, setValue] = useState("");
@@ -36,6 +49,12 @@ export function Palette() {
   const [selected, setSelected] = useState("");
   const [menu, setMenu] = useState<Action[] | null>(null);
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);
+  /*
+    The full-window surface, when one is open (v0.5). Null is the root search.
+    Rust holds the same answer because the *native window* has to resize, which
+    nothing in here can do.
+   */
+  const [view, setView] = useState<ViewKind | null>(null);
   /** Action labels for the footer, by id. Fetched once; Rust owns the words. */
   const [labels, setLabels] = useState<Record<string, Action>>({});
   /*
@@ -110,6 +129,7 @@ export function Palette() {
       setValue("");
       setEntries([]);
       setMenu(null);
+      setView(null);
       setShown(true);
       // The Settings window may have flipped the motion switch while the Palette
       // was hidden. Re-reading here is what makes the two windows agree without
@@ -141,6 +161,9 @@ export function Palette() {
     return api.onHide(() => {
       setShown(false);
       setMenu(null);
+      // `window::reset_shape` already cleared the View on the Rust side, so this
+      // only catches the React half up.
+      setView(null);
       // Cleared on hide, not just on the next show. `window::hide` resets the
       // shape and shrinks the window to one row, so eight rows left mounted
       // behind it disagree with the window for as long as it stays hidden.
@@ -174,6 +197,23 @@ export function Palette() {
     return () => observer.disconnect();
   }, [hotkey]);
 
+  /*
+    Rust is told too, and is not optional: the native window has to grow to the
+    surface's height, which nothing in the webview can do (TBC-0006).
+   */
+  const openView = useCallback((next: ViewKind) => {
+    setView(next);
+    void api.setView(next);
+  }, []);
+
+  const closeView = useCallback(() => {
+    setView(null);
+    void api.setView(null);
+    // Back to an empty root, which is where every summon starts (ADR-0001).
+    setValue("");
+    setEntries([]);
+  }, []);
+
   const closeMenu = useCallback(() => {
     setMenu(null);
     void api.setActionMenu(null);
@@ -183,12 +223,22 @@ export function Palette() {
     (entryId: string, actionId: string) => {
       if (!entryId) return;
       closeMenu();
-      // No hide here. Rust hides the Palette inside `activate`, before it asks the
-      // shell for anything, so the window is gone before the application starts
-      // painting (v0.2 task 7).
-      void api.activate(entryId, actionId);
+      // A command navigates into a surface instead of launching, so it never
+      // reaches the shell and the window stays up.
+      if (actionId === "open_command") {
+        void api.activate(entryId, actionId);
+        openView("clipboard-history");
+        return;
+      }
+      // No hide here either: Rust hides inside `activate`, before it asks the
+      // shell for anything, so the window is gone before the app paints.
+      const done = api.activate(entryId, actionId);
+      // Deleting a clip is the one action Rust leaves the Palette open for, so
+      // the list has to be asked again or the deleted row stays on screen.
+      if (actionId === "delete_clip") void done.then(() => runQuery(value));
+      else void done;
     },
-    [closeMenu],
+    [closeMenu, openView, runQuery, value],
   );
 
   const openMenu = useCallback(() => {
@@ -216,13 +266,16 @@ export function Palette() {
         // The menu closes first. Escape means "back one step", and dismissing the
         // whole Palette from an open menu loses the query as well as the menu.
         if (menu) return; // ActionMenu stops propagation and handles its own.
+        // Same rule one level up: a surface goes back to the search that opened
+        // it rather than dismissing the window.
+        if (view) return; // ClipboardHistory stops propagation and handles its own.
         e.preventDefault();
         void api.dismiss();
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [menu]);
+  }, [menu, view]);
 
   /*
     Modifier accelerators, matching Rust's `actions::for_modifiers`.
@@ -236,6 +289,13 @@ export function Palette() {
     // nothing to open, elevate or reveal, so every chord copies its answer rather
     // than reaching an action it does not have.
     if (kind === "calc") return "copy_answer";
+    // A Clip has nothing to launch either. Enter pastes it back where you were;
+    // Ctrl+Enter only loads the clipboard, for pasting somewhere Takyon's
+    // synthesised keystroke cannot reach.
+    if (kind === "clip") return e.ctrlKey ? "copy_clip" : "paste";
+    // A command opens its surface whatever the modifiers, for the same reason a
+    // calculation copies: the other chords reach actions it does not have.
+    if (kind === "command") return "open_command";
     if (e.ctrlKey && e.shiftKey) return "reveal";
     if (e.ctrlKey) return "run_as_admin";
     return "open";
@@ -269,6 +329,19 @@ export function Palette() {
     LIST_CHROME;
   const showList = entries.length > 0 || (indexing && value.trim().length > 0);
 
+  /*
+    Replaces the root rather than overlaying it: Rust has already resized to
+    `VIEW_HEIGHT`, so a list left mounted under it would be a second scrollable
+    thing in a window sized for one.
+   */
+  if (view === "clipboard-history") {
+    return (
+      <div className="relative flex h-full w-full flex-col p-2">
+        <ClipboardHistory onClose={closeView} />
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex h-full w-full flex-col p-2">
       <Command
@@ -292,6 +365,16 @@ export function Palette() {
             // must not be sent: Rust refuses it, which would surface as an error
             // toast for a keystroke that should have done nothing.
             if (selectedKind !== "calc") run(selected, "copy_path");
+            return;
+          }
+          // Destroys the clip, and only a clip: the chord is not offered on any
+          // other Kind, and sending it would surface an error toast for a
+          // keystroke that should have done nothing.
+          if (e.key === "Backspace" && e.ctrlKey) {
+            if (selectedKind === "clip") {
+              e.preventDefault();
+              run(selected, "delete_clip");
+            }
             return;
           }
           if (e.key === "Enter") {
@@ -353,7 +436,9 @@ export function Palette() {
                 value={entry.id}
                 // Not a hardcoded "open": a calculation has nothing to open, and
                 // Rust refuses that action, so a click would silently do nothing.
-                onSelect={() => run(entry.id, entry.kind === "calc" ? "copy_answer" : "open")}
+                onSelect={() =>
+                  run(entry.id, PRIMARY_ACTION[entry.kind] ?? "open")
+                }
                 // A calculation carries its own selected state, on the card
                 // rather than on this wrapper, which also holds the caption.
                 className={

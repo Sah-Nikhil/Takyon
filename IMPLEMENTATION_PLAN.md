@@ -316,6 +316,7 @@ CREATE TABLE aliases    (alias TEXT PRIMARY KEY, target TEXT NOT NULL);
 CREATE TABLE roots      (path TEXT PRIMARY KEY, enabled INTEGER NOT NULL);
 CREATE TABLE exclusions (pattern TEXT PRIMARY KEY);
 CREATE TABLE blocklist  (exe TEXT PRIMARY KEY);   -- clipboard capture exclusions
+-- settings keys in use at v0.5: clips.retention (see Retention), clips.bang ("1"/"0")
 
 -- frecency.db
 CREATE TABLE usage (
@@ -342,6 +343,13 @@ CREATE TABLE clips (
 **Clipboard encryption** (ADR-0006, ADR-0008): AES-256-GCM per row with a
 per-row nonce. The 32-byte key lives in `creds\clip.key.dpapi`, wrapped with
 Windows DPAPI and bound to the user account. Field-level, not SQLCipher.
+
+**`settings` and `blocklist` opened at v0.5, not v0.6.** The retention sweep runs
+at startup, before any window exists to push a preference in, so the chosen
+window has to live somewhere Rust reads first. A default held only in the
+frontend would sweep over a chosen `forever` on every launch. `prefs.rs` owns the
+`settings` table and holds one key, `clips.retention`; v0.6 extends it rather
+than creating it.
 
 **Retention sweeps must actually destroy data.** `DELETE` alone leaves
 recoverable ciphertext in free pages and live content in the WAL. Every sweep
@@ -545,6 +553,19 @@ checkable). No chaining in V1.
 the line literally and showing a hint row — provisional, and one of the open
 questions in `docs/plans/bang-registry.md`, which is where the Bang design
 resumes before v0.8.
+
+**A Bang is never the only door** (v0.5). Clipboard history is reachable by
+typing its name, through a `Command` Entry, and `!v` is a toggleable shortcut
+over the same surface. A feature whose only entry point is a Bang is a feature
+nobody finds: `docs/plans/bang-registry.md` already says the `!` picker is the
+only discovery mechanism, and it is not built. New Modes should assume the same
+shape — a Command that opens them, and a Bang for people who know it.
+
+**Built at v0.5, not v0.8** — `!v` needed it. `bang.rs` implements the grammar
+above and registers one Bang; `query.rs` routes on it before anything else,
+which is what keeps ADR-0002 checkable by reading one function. Not built: the
+`!` picker (a bare `!` currently falls through), the hint row, and user-defined
+Bangs. Those stay parked with the registry.
 
 ---
 

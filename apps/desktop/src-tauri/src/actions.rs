@@ -22,6 +22,16 @@ pub const COPY_PATH: ActionId = ActionId("copy_path");
 /// over a location, the other a value. Sharing an id would also mean a Clip could
 /// reach it, which [`permitted`] deliberately allows for paths.
 pub const COPY_ANSWER: ActionId = ActionId("copy_answer");
+/// Put a Clip back on the clipboard and press `Ctrl+V` in whatever had focus.
+pub const PASTE: ActionId = ActionId("paste");
+/// Put a Clip on the clipboard and stop there, for pasting somewhere else later.
+pub const COPY_CLIP: ActionId = ActionId("copy_clip");
+/// Remove one Clip from the history. Destroys it — `ClipStore::delete`.
+pub const DELETE_CLIP: ActionId = ActionId("delete_clip");
+/// Open a built-in command's surface — "Clipboard History". Not [`OPEN`]: there
+/// is no process to start, and the footer has to say "Open Command" rather than
+/// "Open" so the row reads as a destination inside Takyon.
+pub const OPEN_COMMAND: ActionId = ActionId("open_command");
 
 /// Every action, with label and default accelerator.
 ///
@@ -34,7 +44,18 @@ const TABLE: &[(ActionId, &str, Option<&str>)] = &[
     (REVEAL, "Open file location", Some("Ctrl+Shift+Enter")),
     (COPY_PATH, "Copy path", Some("Ctrl+Shift+C")),
     (COPY_ANSWER, "Copy answer", Some("Enter")),
+    (PASTE, "Paste", Some("Enter")),
+    (COPY_CLIP, "Copy to clipboard", Some("Ctrl+Enter")),
+    (DELETE_CLIP, "Delete from history", Some("Ctrl+Backspace")),
+    (OPEN_COMMAND, "Open Command", Some("Enter")),
 ];
+
+/// Actions only a Clip has, skipped where the App menu's chords are checked.
+const CLIP_ONLY: &[ActionId] = &[PASTE, COPY_CLIP, DELETE_CLIP];
+
+/// Actions no application has, skipped where the App menu's chords are checked.
+#[cfg(test)]
+const NON_APP: &[ActionId] = &[PASTE, COPY_CLIP, DELETE_CLIP, OPEN_COMMAND];
 
 /// Resolve an id into a menu row.
 ///
@@ -105,6 +126,23 @@ pub fn for_calc() -> Vec<ActionId> {
     vec![COPY_ANSWER]
 }
 
+/// Default actions for a Clip (v0.5).
+///
+/// Nothing that touches the filesystem: a Clip has no path, and offering one
+/// would put clipboard content into Explorer as a path (ADR-0006). Paste first,
+/// because Enter names the first action in the footer.
+pub fn for_clip() -> Vec<ActionId> {
+    vec![PASTE, COPY_CLIP, DELETE_CLIP]
+}
+
+/// Default actions for a built-in command (v0.5).
+///
+/// One, and it is not [`OPEN`]: a command has no file, nothing to elevate and
+/// nothing to reveal. Same "no action that can only fail" rule as a packaged app.
+pub fn for_command() -> Vec<ActionId> {
+    vec![OPEN_COMMAND]
+}
+
 /// Which action a modifier combination triggers on Enter, for one Kind.
 ///
 /// The only definition of what `Enter` and `Ctrl+Enter` mean. Kind-aware since
@@ -113,6 +151,17 @@ pub fn for_calc() -> Vec<ActionId> {
 pub fn for_modifiers(kind: EntryKind, ctrl: bool, shift: bool) -> ActionId {
     if kind == EntryKind::Calc {
         return COPY_ANSWER;
+    }
+    // A Clip has nothing to launch either. Enter pastes it where you were;
+    // Ctrl+Enter only loads the clipboard, for pasting somewhere Takyon's
+    // synthesised keystroke cannot reach.
+    if kind == EntryKind::Clip {
+        return if ctrl { COPY_CLIP } else { PASTE };
+    }
+    // A command opens its own surface whatever the modifiers, for the same
+    // reason a calculation copies: the other chords reach actions it lacks.
+    if kind == EntryKind::Command {
+        return OPEN_COMMAND;
     }
     match (ctrl, shift) {
         (true, true) => REVEAL,
@@ -128,7 +177,10 @@ pub fn for_modifiers(kind: EntryKind, ctrl: bool, shift: bool) -> ActionId {
 /// would leak clipboard content into Explorer as a path.
 pub fn permitted(kind: EntryKind, id: &ActionId) -> bool {
     match kind {
-        EntryKind::Clip => id == &COPY_PATH || id == &OPEN,
+        // A Clip is content, not a location. Nothing that reveals, elevates or
+        // copies a path may reach one.
+        EntryKind::Clip => CLIP_ONLY.contains(id),
+        EntryKind::Command => id == &OPEN_COMMAND,
         // A calculation has no file and no target. Everything but copying its
         // answer would hit a launch arm that can only fail.
         EntryKind::Calc => id == &COPY_ANSWER,
@@ -195,7 +247,15 @@ mod tests {
     /// one action becomes unreachable, and which one depends on match order.
     #[test]
     fn v0_2_no_two_actions_in_one_menu_share_an_accelerator() {
-        for menu in [for_app(true), for_app(false), for_file(), for_system(), for_calc()] {
+        for menu in [
+            for_app(true),
+            for_app(false),
+            for_file(),
+            for_system(),
+            for_calc(),
+            for_clip(),
+            for_command(),
+        ] {
             let mut seen = std::collections::HashSet::new();
             for action in menu.iter().filter_map(describe) {
                 let Some(accel) = action.accelerator else { continue };
@@ -218,9 +278,10 @@ mod tests {
 
         for (id, _, accel) in TABLE {
             let Some(accel) = accel else { continue };
-            // `Enter` on a calculation is the kind-aware branch, asserted on its
-            // own below rather than against the launchable mapping.
-            if id == &COPY_ANSWER {
+            // `Enter` on a calculation or a Clip is the kind-aware branch,
+            // asserted on its own below rather than against the launchable
+            // mapping.
+            if id == &COPY_ANSWER || NON_APP.contains(id) {
                 continue;
             }
             let ctrl = accel.contains("Ctrl");
@@ -244,6 +305,8 @@ mod tests {
             (EntryKind::File, for_file()),
             (EntryKind::System, for_system()),
             (EntryKind::Calc, for_calc()),
+            (EntryKind::Clip, for_clip()),
+            (EntryKind::Command, for_command()),
         ] {
             assert_eq!(
                 actions.first(),
@@ -336,6 +399,49 @@ mod tests {
     fn v0_2_a_clip_may_not_offer_filesystem_actions() {
         assert!(!permitted(EntryKind::Clip, &REVEAL));
         assert!(!permitted(EntryKind::Clip, &RUN_AS_ADMIN));
+        assert!(!permitted(EntryKind::Clip, &COPY_PATH));
+        assert!(!permitted(EntryKind::Clip, &OPEN));
         assert!(permitted(EntryKind::App, &REVEAL));
+    }
+
+    /// v0.5: a command opens its surface, and nothing else is reachable on it.
+    #[test]
+    fn v0_5_a_command_only_ever_opens() {
+        for (ctrl, shift) in [(false, false), (true, false), (true, true)] {
+            assert_eq!(for_modifiers(EntryKind::Command, ctrl, shift), OPEN_COMMAND);
+        }
+        assert!(permitted(EntryKind::Command, &OPEN_COMMAND));
+        assert!(!permitted(EntryKind::Command, &OPEN));
+        assert!(!permitted(EntryKind::Command, &REVEAL));
+        assert_eq!(describe(&OPEN_COMMAND).unwrap().label, "Open Command");
+    }
+
+    /// v0.5: Enter pastes a Clip, Ctrl+Enter only loads the clipboard, and no
+    /// modifier reaches an action a Clip does not have.
+    #[test]
+    fn v0_5_enter_on_a_clip_pastes_and_ctrl_enter_only_copies() {
+        assert_eq!(for_modifiers(EntryKind::Clip, false, false), PASTE);
+        assert_eq!(for_modifiers(EntryKind::Clip, true, false), COPY_CLIP);
+        assert_eq!(for_modifiers(EntryKind::Clip, true, true), COPY_CLIP);
+        for id in CLIP_ONLY {
+            assert!(permitted(EntryKind::Clip, id));
+        }
+    }
+
+    /// The Clip menu, spelled out. Three rows, none of them touching a file.
+    #[test]
+    fn v0_5_a_clip_offers_paste_copy_and_delete() {
+        let menu = for_entry(&Entry {
+            id: EntryId("clip:7".into()),
+            title: "sk-live-…".into(),
+            subtitle: Some("Notepad".into()),
+            kind: EntryKind::Clip,
+            icon: None,
+            score: 0.0,
+            actions: for_clip(),
+            version: None,
+        });
+        let labels: Vec<&str> = menu.iter().map(|a| a.label.as_str()).collect();
+        assert_eq!(labels, ["Paste", "Copy to clipboard", "Delete from history"]);
     }
 }

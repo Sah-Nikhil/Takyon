@@ -88,6 +88,10 @@ pub enum EntryKind {
     Clip,
     Calc,
     Recent,
+    /// A built-in Takyon command, opened rather than launched — "Clipboard
+    /// History". Its own Kind because it competes with applications by name and
+    /// opens a surface inside the Palette instead of starting a process.
+    Command,
     /// A curated Windows settings page (v0.3 task 8) — `ms-settings:bluetooth`.
     /// A destination you ask for by name, so it shares the App tier.
     System,
@@ -105,10 +109,10 @@ impl EntryKind {
             // Wins outright: an expression is unambiguous. Nobody typing `17*23`
             // meant an app.
             EntryKind::Calc => 0,
-            // App and System share a tier: both are launch destinations, so
-            // neither gates the other. They do not compete evenly — see
-            // `weight`, which handicaps System by 20% after Frecency.
-            EntryKind::App | EntryKind::System => 1,
+            // App, System and Command share a tier: all three are destinations you
+            // ask for by name, so none gates the others. They do not compete
+            // evenly — see `weight`, which handicaps System by 20% after Frecency.
+            EntryKind::App | EntryKind::System | EntryKind::Command => 1,
             // Below every app, unlike the curated pages above. Nobody types three
             // letters hoping for "Change the way currency is displayed".
             EntryKind::SystemTask => 2,

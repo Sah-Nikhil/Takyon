@@ -177,14 +177,54 @@ instead.
 
 **Goal:** useful without ever becoming a liability.
 
-- [ ] Clipboard watcher; `clipboard.db` (SQLite, WAL), key wrapped with DPAPI in `creds\`
-- [ ] Retention chosen from a fixed list: forever / 6 months / 1 month / 1 week / 1 day; expiry deletes rather than hides
-- [ ] Honour `ExcludeClipboardContentFromMonitorProcessing`; user-editable foreground-app blocklist
-- [ ] Clipboard Entries **never appear in Bangless results** (ADR-0006) — own view only
-- [ ] Paste-back preserving format where sensible
+- [x] Clipboard watcher — `AddClipboardFormatListener` on a **message-only window** on its own thread, because the Palette's window belongs to Tauri's message loop. Polling `GetClipboardSequenceNumber` was the alternative and is worse twice over: it misses a copy-then-copy inside the interval, and it wakes a process whose premise is being idle (ADR-0003). `clips.db` (SQLite, WAL, `PRAGMA secure_delete = ON` at every open), AES-256-GCM per row with a fresh nonce, key wrapped with DPAPI in `creds\clip.key.dpapi` and bound to the user account
+- [x] Retention chosen from a fixed list: forever / 6 months / 1 month / 1 week / 1 day; expiry deletes rather than hides. Swept at startup and hourly. **The default is one month**, and it lives in `settings.db`'s `settings` table rather than in the frontend — the sweep runs before any window exists, so a default held in `localStorage` would sweep over a chosen `forever` on every launch. That table was v0.6's and had to open early; [`docs/tbd/v0.5.md`](./docs/tbd/v0.5.md) §1 owns the UI that edits it
+- [x] Honour `ExcludeClipboardContentFromMonitorProcessing`, **and `CanIncludeInClipboardHistory`** — an application that told Windows not to keep a copy meant it for us too. Plus the user-editable blocklist, matched on the **clipboard owner's** executable rather than the foreground window's: a copy from a context menu leaves the owner right and the foreground wrong
+- [x] Clipboard Entries **never appear in Bangless results** (ADR-0006) — own view only. Structural rather than filtered: `ClipStore` does not implement `Source`, so it is not in `query.rs`'s registry and there is no rule for a later phase to forget
+- [x] **A "Clipboard History" Command, found by typing** — Raycast's shape, and the correction that made this phase usable. A Bang is a shortcut for people who already know it exists; a launcher's answer to "where is my clipboard history" has to be typing `clipboard`. New `EntryKind::Command` and `sources/commands.rs`, sharing the App rank tier because a command is a destination you ask for by name. **This does not weaken ADR-0006**: what is excluded Bangless is clipboard *content*, and the command row carries none — the shoulder-surfing guarantee is untouched, which is why the Source could be added at all
+- [x] **The history surface** — a full-window View the Palette navigates *into*: back arrow, filter input, type control, day-grouped list, detail pane with Information (source, type, characters, copied), and a "Paste ↵ | Actions Ctrl K" footer. **Not a second window**: another WebView2 would cost the login budget and a large share of the 150 MB ceiling, so the warm Palette resizes to `VIEW_HEIGHT` and `Escape` navigates back rather than dismissing
+- [x] **`!v` becomes a toggle** (`clips.bang` in `settings.db`, default on). Turned off, `!v` is ordinary text that falls through to Bangless and matches nothing — the command is still there, so the feature never disappears with the accelerator
+- [x] Paste-back — clipboard first, then a synthesised `Ctrl+V` after an 80 ms settle. Ordered that way deliberately: a failed keystroke leaves the user one manual paste away, a failed copy leaves them with nothing. Format preservation is a seam (`ClipKind`) rather than code, because only text is captured at v0.5
+- [x] **New:** `bang.rs`, brought forward from v0.8 because `!v` needs it. Position 0, ident to whitespace, unknown Bang falls through to Bangless (IMPLEMENTATION_PLAN §9). The registry and the `!` picker stay parked in [`docs/plans/bang-registry.md`](./docs/plans/bang-registry.md)
 
 **Exit criteria:** copying a password out of a password manager leaves no trace in
-the history, verified by inspecting the database.
+the history, verified by inspecting the database. *Not yet claimed* — the storage
+half is proven twice over, by `tests/clips_disk.rs` against a real file (a swept
+clip's ciphertext is absent from `clips.db`, its WAL and its shm) and by a driven
+pass against the release build on 2026-09-02, which copied a string, found it
+through `!v`, got the exact original bytes back from `Ctrl+Enter`, and got
+**nothing** for the same string typed Bangless. What is missing is the password
+manager itself, and a second Windows account for the DPAPI claim. **25 of the 35
+steps** in [`docs/verify/v0.5.md`](./docs/verify/v0.5.md) are confirmed, driven by
+[`scripts/verify-drive-v0.5.ps1`](./scripts/verify-drive-v0.5.ps1) against an
+isolated `LOCALAPPDATA`; [`docs/tbd/v0.5.md`](./docs/tbd/v0.5.md) §2 lists what
+each of the nine remaining ones needs, and none of them is a code change.
+
+**Two bugs survived every automated layer and died on the first driven run**, both
+in the watcher — the one file whose Win32 half no test can reach. A copy past the
+4 MB cap was **stored truncated** rather than skipped: the scan stopped *at*
+`MAX_CHARS`, so an oversized clip arrived exactly at the limit and looked
+acceptable. A 5 MB copy became a row of exactly 4,194,304 characters, which is
+half a document filed silently. And **`source_exe` was NULL on every row**:
+attribution used `GetClipboardOwner` alone, and Windows reports no owner at all
+for a .NET or WinRT copier, which is most of them. With no source recorded the
+blocklist could never match — half of ADR-0006's exclusion story, dead, with a
+green test suite above it. Owner now falls back to the foreground window, which
+is what the plan asked for by name. Both are covered by unit tests on extracted
+pure functions (`text_within_cap`, `attribution`) so they cannot come back.
+
+**Packaged as 0.5.0 on 2026-09-03**, the second release whose number matches its
+phase. The clipboard is reachable three ways — the **Clipboard History** command
+in ordinary results, the surface it opens, and `!v` for anyone who wants the
+shortcut — and the exit criterion is still the one thing not claimed, because it
+needs a password manager this pass could not drive.
+
+Two things the phase decided rather than inherited. **Retention defaults to one
+month** — history stays useful, and a password copied once does not sit in the file
+for years; either extreme is one setting away. And **a repeat of the newest clip
+moves that row rather than adding one**, because copying the same thing twice is
+routine and two identical rows are never what anyone wanted — but only the *newest*
+collapses, so A, B, A is genuinely three events.
 
 ---
 
