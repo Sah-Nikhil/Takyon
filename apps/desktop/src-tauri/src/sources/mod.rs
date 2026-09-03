@@ -7,5 +7,6 @@
 
 pub mod apps;
 pub mod calc;
+pub mod commands;
 pub mod recents;
 pub mod system;

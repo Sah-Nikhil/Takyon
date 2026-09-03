@@ -12,7 +12,9 @@
 
 pub mod actions;
 pub mod aliases;
+pub mod bang;
 pub mod bench;
+pub mod clips;
 pub mod com;
 pub mod entry;
 pub mod firstrun;
@@ -21,6 +23,7 @@ pub mod hotkey;
 pub mod icons;
 pub mod identity;
 pub mod launch;
+pub mod prefs;
 pub mod query;
 pub mod rank;
 pub mod settings;
@@ -35,12 +38,56 @@ use std::time::Instant;
 use tauri::{Manager, WindowEvent};
 
 use bench::Bench;
+use clips::{Blocklist, Clip, ClipStore, Retention};
 use entry::{Action, EntryId};
 use hotkey::{HotkeyState, HotkeyStatus};
 use icons::IconStore;
 use query::{Pipeline, QueryResult};
 use sources::apps::AppSource;
 use sources::calc::Policy as CalcPolicy;
+
+/// One clipboard row as the history surface draws it.
+///
+/// Declared here rather than in `clips/store.rs` because it is wire shape, not
+/// storage: `Clip` is what the database holds, this is what crosses IPC.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipRow {
+    id: i64,
+    created_at: i64,
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_exe: Option<String>,
+    len: usize,
+    preview: String,
+}
+
+impl From<Clip> for ClipRow {
+    fn from(clip: Clip) -> Self {
+        ClipRow {
+            id: clip.id,
+            created_at: clip.created_at,
+            kind: clip.kind.as_str(),
+            source_exe: clip.source_exe,
+            len: clip.len,
+            preview: clip.preview,
+        }
+    }
+}
+
+/// How often the retention sweep runs after the one at startup.
+///
+/// An hour, because the shortest window is a day: a clip lives at most an hour
+/// past its window, and a timer that fires more often only wakes a process whose
+/// premise is being idle (ADR-0003).
+const SWEEP_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Retention as stored, or the default where nothing has been chosen.
+fn stored_retention(prefs: &prefs::Prefs) -> Retention {
+    prefs
+        .get(prefs::CLIPS_RETENTION)
+        .map_or_else(Retention::default, |v| Retention::parse(&v))
+}
 
 /// Hide the Palette. Called by Escape, which is handled in the frontend because
 /// that is where the keystroke lands.
@@ -111,7 +158,12 @@ fn activate(
     action_id: String,
     pipeline: tauri::State<'_, Arc<Pipeline>>,
 ) -> Result<(), String> {
-    window::hide(&app, "activation");
+    // Deleting a clip is the exception: it is a change to the list you are
+    // looking at, so hiding the window would end the session you are in the
+    // middle of (v0.5).
+    if query::hides_palette(&action_id) {
+        window::hide(&app, "activation");
+    }
 
     let pipeline = pipeline.inner().clone();
     let id = EntryId(entry_id);
@@ -143,6 +195,108 @@ fn set_calc_policy(policy: String, pipeline: tauri::State<'_, Arc<Pipeline>>) {
 #[tauri::command]
 fn action_labels() -> Vec<Action> {
     actions::all()
+}
+
+/// How long clipboard history is kept, as its stored spelling.
+#[tauri::command]
+fn clip_retention(prefs: tauri::State<'_, Arc<prefs::Prefs>>) -> String {
+    stored_retention(&prefs).as_str().to_string()
+}
+
+/// How many clips a retention change would destroy.
+///
+/// Read *before* the change, so the confirmation can name the real number rather
+/// than "some items" (v0.5 traps). Zero for a window that removes nothing.
+#[tauri::command]
+fn clip_retention_impact(
+    value: String,
+    clips: tauri::State<'_, Option<Arc<ClipStore>>>,
+) -> usize {
+    let Some(store) = clips.inner() else {
+        return 0;
+    };
+    match Retention::parse(&value).seconds() {
+        Some(seconds) => store.count_older_than(clips::store::unix_now() - seconds),
+        None => 0,
+    }
+}
+
+/// Set retention and sweep immediately. Returns how many clips were destroyed.
+///
+/// Destructive by design: ADR-0006 says expiry deletes rather than hides. The
+/// caller is expected to have confirmed with [`clip_retention_impact`] first.
+#[tauri::command]
+fn set_clip_retention(
+    value: String,
+    prefs: tauri::State<'_, Arc<prefs::Prefs>>,
+    clips: tauri::State<'_, Option<Arc<ClipStore>>>,
+) -> usize {
+    let retention = Retention::parse(&value);
+    if let Err(e) = prefs.set(prefs::CLIPS_RETENTION, retention.as_str()) {
+        eprintln!("[takyon] retention could not be saved: {e}");
+    }
+    clips.inner().as_ref().map_or(0, |s| s.sweep(retention))
+}
+
+/// Destroy the whole history. Returns how many clips went.
+#[tauri::command]
+fn clip_clear(clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> usize {
+    clips.inner().as_ref().map_or(0, |s| s.clear())
+}
+
+/// Open or close a full-window View (v0.5).
+///
+/// The Palette grows into the surface rather than opening a window: a third
+/// WebView2 would cost the login budget and a large share of the 150 MB ceiling,
+/// for something opened many times a day.
+#[tauri::command]
+fn set_view(app: tauri::AppHandle, view: Option<String>) {
+    let view = match view.as_deref() {
+        Some("clipboard-history") => Some(window::View::ClipboardHistory),
+        _ => None,
+    };
+    window::set_view(&app, view);
+}
+
+/// The clipboard history page for the surface: newest first, filtered.
+///
+/// Previews only — full content never travels with a list, or a search response
+/// ships every matching secret into the webview (`clips/store.rs`).
+#[tauri::command]
+fn clip_page(
+    query: String,
+    limit: Option<usize>,
+    clips: tauri::State<'_, Option<Arc<ClipStore>>>,
+) -> Vec<ClipRow> {
+    let Some(store) = clips.inner() else {
+        return Vec::new();
+    };
+    store
+        .search(&query, limit.unwrap_or(clips::store::PAGE))
+        .into_iter()
+        .map(ClipRow::from)
+        .collect()
+}
+
+/// Whether `!v` reaches clipboard history.
+#[tauri::command]
+fn clip_bang(prefs: tauri::State<'_, Arc<prefs::Prefs>>) -> bool {
+    prefs::flag(&prefs, prefs::CLIPS_BANG, true)
+}
+
+/// Turn the `!v` Bang on or off. The command stays either way.
+#[tauri::command]
+fn set_clip_bang(
+    on: bool,
+    prefs: tauri::State<'_, Arc<prefs::Prefs>>,
+    pipeline: tauri::State<'_, Arc<Pipeline>>,
+) {
+    if let Err(e) = prefs.set(prefs::CLIPS_BANG, if on { "1" } else { "0" }) {
+        eprintln!("[takyon] the clipboard Bang setting could not be saved: {e}");
+    }
+    // Pushed as well as stored: the pipeline reads this on the keystroke path and
+    // must not go to SQLite for it.
+    pipeline.set_bang_enabled(on);
 }
 
 #[tauri::command]
@@ -246,7 +400,15 @@ pub fn run() {
             set_action_menu,
             set_banner_height,
             set_calc_policy,
-            action_labels
+            action_labels,
+            clip_retention,
+            clip_retention_impact,
+            set_clip_retention,
+            clip_clear,
+            clip_page,
+            clip_bang,
+            set_clip_bang,
+            set_view
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -287,13 +449,44 @@ pub fn run() {
             app.manage(aliases.clone());
             let recents = Arc::new(sources::recents::RecentsSource::new());
             let system = Arc::new(sources::system::SystemSource::new());
-            app.manage(Arc::new(Pipeline::new(
+
+            // Clipboard history (v0.5). Unlike the databases above there is **no
+            // in-memory fallback**: an unwritable `clips.db` or an unreadable key
+            // must stop capture, not quietly record secrets somewhere that looks
+            // like history and is not (ADR-0006).
+            let clip_store = match ClipStore::open(identity::data_dir()) {
+                Ok(store) => Some(Arc::new(store)),
+                Err(e) => {
+                    eprintln!("[takyon] clipboard history is off: {e}");
+                    None
+                }
+            };
+            let prefs = Arc::new(
+                prefs::Prefs::open(identity::data_dir())
+                    .or_else(|e| {
+                        eprintln!("[takyon] settings.db could not be opened: {e}");
+                        prefs::Prefs::open(None)
+                    })
+                    .expect("an in-memory database always opens"),
+            );
+            app.manage(prefs.clone());
+            app.manage(clip_store.clone());
+
+            let mut pipeline = Pipeline::new(
                 apps.clone(),
                 recents.clone(),
                 system.clone(),
                 icons.clone(),
                 frecency.clone(),
-            )));
+            );
+            if let Some(store) = clip_store.clone() {
+                pipeline = pipeline.with_clips(store);
+            }
+            // Read once at startup rather than waiting for the frontend to push:
+            // a keystroke can arrive before the Palette has mounted, and `!v`
+            // silently falling through would look like a broken Bang.
+            pipeline.set_bang_enabled(prefs::flag(&prefs, prefs::CLIPS_BANG, true));
+            app.manage(Arc::new(pipeline));
 
             // Everything above this line is plugin registration that Tauri has
             // already done. This is the first thing that makes the app useful, and
@@ -325,6 +518,29 @@ pub fn run() {
                 uiaccess::start(&deferred);
                 firstrun::maybe_prompt(&deferred);
             });
+
+            // Clipboard capture and the retention sweep, off the startup path.
+            // A blocklist that will not open is fatal to capture for the same
+            // reason `clips.db` is: without it there is no second exclusion
+            // mechanism (ADR-0006).
+            if let Some(store) = clip_store {
+                match Blocklist::open(identity::data_dir()) {
+                    Ok(blocklist) => {
+                        let sweeper = store.clone();
+                        let prefs = prefs.clone();
+                        std::thread::spawn(move || loop {
+                            let retention = stored_retention(&prefs);
+                            let gone = sweeper.sweep(retention);
+                            if gone > 0 {
+                                eprintln!("[takyon] retention swept {gone} clips");
+                            }
+                            std::thread::sleep(SWEEP_EVERY);
+                        });
+                        clips::watch::spawn(store, Arc::new(blocklist));
+                    }
+                    Err(e) => eprintln!("[takyon] clipboard capture is off: {e}"),
+                }
+            }
 
             // The application walk, on its own thread: `firstrun::maybe_prompt` can sit
             // on a modal dialog indefinitely, and queueing discovery behind it would mean

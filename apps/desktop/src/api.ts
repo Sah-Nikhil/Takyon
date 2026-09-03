@@ -20,6 +20,9 @@ import {
   EVENT_SHOW,
   type Action,
   type CalcPolicy,
+  type ClipRetention,
+  type ClipRow,
+  type ViewKind,
   type HotkeyStatus,
   type QueryResult,
   type ShowPayload,
@@ -70,6 +73,64 @@ export const reportFirstEntry = (seq: number) =>
  */
 export const setCalcPolicy = (policy: CalcPolicy) =>
   inTauri ? invoke<void>("set_calc_policy", { policy }) : mock.setCalcPolicy(policy);
+
+/**
+ * How long clipboard history is kept, as stored (v0.5).
+ *
+ * Read from Rust rather than from `prefs.ts`: the retention sweep runs at
+ * startup, before any window exists, so the value has to live somewhere Rust can
+ * read first. `settings.db` is that place.
+ */
+export const clipRetention = () =>
+  inTauri ? invoke<ClipRetention>("clip_retention") : mock.clipRetention();
+
+/**
+ * How many clips this retention would destroy, asked *before* changing it.
+ *
+ * The confirmation has to name the real number — "permanently delete 4,312
+ * clipboard items", not "some items" (ROADMAP v0.6).
+ */
+export const clipRetentionImpact = (value: ClipRetention) =>
+  inTauri
+    ? invoke<number>("clip_retention_impact", { value })
+    : mock.clipRetentionImpact(value);
+
+/** Set retention and sweep now. Returns how many clips were destroyed. */
+export const setClipRetention = (value: ClipRetention) =>
+  inTauri
+    ? invoke<number>("set_clip_retention", { value })
+    : mock.setClipRetention(value);
+
+/** Destroy the whole history. Returns how many clips went. */
+export const clipClear = () =>
+  inTauri ? invoke<number>("clip_clear") : mock.clipClear();
+
+/**
+ * Open or close a full-window View (v0.5).
+ *
+ * Rust owns it because the *native window* has to resize, which nothing inside
+ * the webview can do — the same seam `setActionMenu` uses.
+ */
+export const setView = (view: ViewKind | null) =>
+  inTauri ? invoke<void>("set_view", { view }) : mock.setView(view);
+
+/**
+ * A page of clipboard history for the surface, newest first.
+ *
+ * Previews only. Full content is fetched per clip at paste time, so a search
+ * never ships every matching secret into the webview.
+ */
+export const clipPage = (query: string, limit?: number) =>
+  inTauri
+    ? invoke<ClipRow[]>("clip_page", { query, limit })
+    : mock.clipPage(query, limit);
+
+/** Whether `!v` reaches clipboard history. The command works either way. */
+export const clipBang = () =>
+  inTauri ? invoke<boolean>("clip_bang") : mock.clipBang();
+
+export const setClipBang = (on: boolean) =>
+  inTauri ? invoke<void>("set_clip_bang", { on }) : mock.setClipBang(on);
 
 /**
  * Every action id and its label, for the footer (v0.4.5).

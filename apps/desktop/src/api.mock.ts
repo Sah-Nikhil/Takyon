@@ -12,7 +12,17 @@
  * the answer to that, and TBC-0007 already names them as the first thing to add.
  */
 
-import type { Action, CalcPolicy, Entry, HotkeyStatus, QueryResult, ShowPayload } from "@takyon/shared";
+import type {
+  Action,
+  CalcPolicy,
+  ClipRetention,
+  ClipRow,
+  ViewKind,
+  Entry,
+  HotkeyStatus,
+  QueryResult,
+  ShowPayload,
+} from "@takyon/shared";
 
 type ShowListener = (payload: ShowPayload) => void;
 
@@ -128,6 +138,81 @@ const FIXTURES: Entry[] = [
   },
 ];
 
+/**
+ * Clipboard history for the `!v` view (v0.5).
+ *
+ * Separate from `FIXTURES` because that is the point: a Clip is unreachable from
+ * a Bangless query (ADR-0006), so the two lists must not be one list that a
+ * filter happens to split.
+ */
+const CLIP_FIXTURES: Entry[] = [
+  {
+    id: "clip:31",
+    title: "https://github.com/tauri-apps/tauri/releases",
+    kind: "clip",
+    score: 0,
+    actions: ["paste", "copy_clip", "delete_clip"],
+  },
+  {
+    id: "clip:30",
+    title: "SELECT id, created_at FROM clips ORDER BY created_at DESC",
+    kind: "clip",
+    score: 0,
+    actions: ["paste", "copy_clip", "delete_clip"],
+  },
+  {
+    id: "clip:29",
+    title: "com.v3sper.launcher",
+    kind: "clip",
+    score: 0,
+    actions: ["paste", "copy_clip", "delete_clip"],
+  },
+];
+
+/**
+ * The Clipboard History command, as a Bangless row (v0.5).
+ *
+ * In `FIXTURES` rather than `CLIP_FIXTURES` on purpose: a command is reachable
+ * Bangless and a clip never is (ADR-0006). The row carries no clip content.
+ */
+const COMMAND_FIXTURE: Entry = {
+  id: "command:clipboard-history",
+  title: "Clipboard History",
+  subtitle: "Takyon",
+  kind: "command",
+  score: 700,
+  actions: ["open_command"],
+};
+
+/** Rows for the history surface. Day offsets so grouping has something to do. */
+const now = Math.floor(Date.now() / 1000);
+const CLIP_ROWS: ClipRow[] = [
+  {
+    id: 31,
+    createdAt: now - 600,
+    kind: "text",
+    sourceExe: "C:\\Program Files\\Mozilla Firefox\\firefox.exe",
+    len: 44,
+    preview: "https://github.com/tauri-apps/tauri/releases",
+  },
+  {
+    id: 30,
+    createdAt: now - 90_000,
+    kind: "text",
+    sourceExe: "C:\\Windows\\System32\\notepad.exe",
+    len: 56,
+    preview: "SELECT id, created_at FROM clips ORDER BY created_at DESC",
+  },
+  {
+    id: 29,
+    createdAt: now - 200_000,
+    kind: "text",
+    sourceExe: "C:\\Program Files\\Microsoft VS Code\\Code.exe",
+    len: 19,
+    preview: "com.v3sper.launcher",
+  },
+];
+
 const ACTION_LABELS: Record<string, Action> = {
   open: { id: "open", label: "Open", accelerator: "Enter" },
   run_as_admin: {
@@ -138,7 +223,23 @@ const ACTION_LABELS: Record<string, Action> = {
   reveal: { id: "reveal", label: "Open file location", accelerator: "Ctrl+Shift+Enter" },
   copy_path: { id: "copy_path", label: "Copy path", accelerator: "Ctrl+Shift+C" },
   copy_answer: { id: "copy_answer", label: "Copy answer", accelerator: "Enter" },
+  paste: { id: "paste", label: "Paste", accelerator: "Enter" },
+  copy_clip: { id: "copy_clip", label: "Copy to clipboard", accelerator: "Ctrl+Enter" },
+  delete_clip: {
+    id: "delete_clip",
+    label: "Delete from history",
+    accelerator: "Ctrl+Backspace",
+  },
+  open_command: { id: "open_command", label: "Open Command", accelerator: "Enter" },
 };
+
+/** The `!v` Bang, parsed the way `bang.rs` parses it: position 0, then the rest. */
+function clipQuery(q: string): string | null {
+  if (!q.startsWith("!v")) return null;
+  const rest = q.slice(2);
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  return rest.trim().toLowerCase();
+}
 
 /**
  * A deliberately crude stand-in for `rank.rs`.
@@ -150,6 +251,9 @@ const ACTION_LABELS: Record<string, Action> = {
 function matches(entry: Entry, needle: string): boolean {
   const q = needle.trim().toLowerCase();
   if (!q) return false;
+  // Bangless never sees a clip (ADR-0006). Asserted in the visual layer, so the
+  // mock has to be incapable of it rather than merely not doing it.
+  if (entry.kind === "clip") return false;
   const words = entry.title.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   const acronym = words.map((w) => w[0]).join("");
   return (
@@ -195,6 +299,21 @@ export function bannerRequest() {
   return lastBannerHeight;
 }
 
+/** The last View pushed across the seam, for a test to assert against. */
+let lastView: ViewKind | null = null;
+export function viewRequest() {
+  return lastView;
+}
+
+/** Whether the browser build reports `!v` as enabled. Default matches Rust's. */
+let lastBang = true;
+
+/** The retention the browser build reports. Default matches Rust's. */
+let lastRetention: ClipRetention = "1-month";
+export function retentionRequest() {
+  return lastRetention;
+}
+
 /** The last mode pushed across the seam, for a test to assert against. */
 let lastCalcPolicy: CalcPolicy = "automatic";
 export function calcPolicyRequest() {
@@ -235,11 +354,28 @@ export const mock = {
     emitHide();
   },
   openSettings: async () => {},
-  query: async (q: string, seq: number): Promise<QueryResult> => ({
-    seq,
-    entries: q.trim() ? [...calcFixture(q), ...FIXTURES.filter((e) => matches(e, q))] : [],
-    indexing: q.trim() ? indexing : false,
-  }),
+  query: async (q: string, seq: number): Promise<QueryResult> => {
+    // `!v` is its own view. Unlike a Bangless query, an empty one lists history
+    // rather than nothing — the Mode *is* the list.
+    const clips = clipQuery(q);
+    if (clips !== null) {
+      return {
+        seq,
+        entries: CLIP_FIXTURES.filter((e) => e.title.toLowerCase().includes(clips)),
+        indexing: false,
+      };
+    }
+    return {
+      seq,
+      entries: q.trim()
+        ? [
+            ...calcFixture(q),
+            ...[...FIXTURES, COMMAND_FIXTURE].filter((e) => matches(e, q)),
+          ]
+        : [],
+      indexing: q.trim() ? indexing : false,
+    };
+  },
   /** The same table Rust ships, so the footer draws in the browser build too. */
   actionLabels: async (): Promise<Action[]> => Object.values(ACTION_LABELS),
   actionsFor: async (entryId: string): Promise<Action[]> => {
@@ -247,7 +383,8 @@ export const mock = {
     // one per keystroke, so its menu comes from the id rather than a lookup.
     const entry = entryId.startsWith("calc:")
       ? { actions: ["copy_answer"] }
-      : FIXTURES.find((e) => e.id === entryId);
+      : (CLIP_FIXTURES.find((e) => e.id === entryId) ??
+        [...FIXTURES, COMMAND_FIXTURE].find((e) => e.id === entryId));
     // `flatMap`, not `map().filter(Boolean)`: with `noUncheckedIndexedAccess`
     // the lookup is `Action | undefined` and `filter` does not narrow it.
     // Returning `[]` for an unknown id also mirrors Rust.
@@ -272,10 +409,34 @@ export const mock = {
   setCalcPolicy: async (mode: CalcPolicy) => {
     lastCalcPolicy = mode;
   },
-  activate: async (_entryId: string, _actionId: string) => {
+  activate: async (_entryId: string, actionId: string) => {
     // Launching is the one thing the browser build genuinely cannot do. Hiding is
-    // what the real path does first, so the mock does that much and stops.
-    emitHide();
+    // what the real path does first, so the mock does that much and stops —
+    // except for the one action Rust does not hide for.
+    if (actionId !== "delete_clip") emitHide();
+  },
+  /** Retention, recorded rather than applied: there is no history here to sweep. */
+  clipRetention: async (): Promise<ClipRetention> => lastRetention,
+  clipRetentionImpact: async (_value: ClipRetention) => CLIP_FIXTURES.length,
+  setClipRetention: async (value: ClipRetention) => {
+    lastRetention = value;
+    return 0;
+  },
+  clipClear: async () => 0,
+  /** Recorded, not applied: there is no native window here to resize. */
+  setView: async (view: ViewKind | null) => {
+    lastView = view;
+  },
+  clipPage: async (query: string, limit?: number) => {
+    const q = query.trim().toLowerCase();
+    const hits = q
+      ? CLIP_ROWS.filter((c) => c.preview.toLowerCase().includes(q))
+      : CLIP_ROWS;
+    return hits.slice(0, limit ?? 200);
+  },
+  clipBang: async () => lastBang,
+  setClipBang: async (on: boolean) => {
+    lastBang = on;
   },
   /**
    * No protocol handler outside Tauri, so no icon. The empty string makes the row

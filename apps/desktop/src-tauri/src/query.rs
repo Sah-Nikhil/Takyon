@@ -17,12 +17,15 @@ use std::time::Instant;
 
 use serde::Serialize;
 
+use crate::bang::{self, Route};
+use crate::clips::{Clip, ClipStore};
 use crate::entry::{Entry, EntryId, Query, Source, MAX_ENTRIES, SOURCE_BUDGET};
 use crate::frecency::Frecency;
 use crate::icons::IconStore;
 use crate::rank;
 use crate::sources::apps::AppSource;
 use crate::sources::calc::CalcSource;
+use crate::sources::commands::{CommandId, CommandSource};
 use crate::sources::recents::RecentsSource;
 use crate::sources::system::SystemSource;
 
@@ -76,9 +79,21 @@ pub struct Pipeline {
     /// no index, so unlike the others there is nothing to look an id up in.
     pub calc: Arc<CalcSource>,
     pub icons: Arc<IconStore>,
+    /// Built-in commands: "Clipboard History". Held concretely because
+    /// activation looks one up by id, which the `Source` trait does not expose.
+    pub commands: Arc<CommandSource>,
+    /// Clipboard history, reached through the command above and, when
+    /// `clips.bang` is on, through `!v`.
+    ///
+    /// **Not in `sources`, and never will be** (ADR-0006): a Source feeds
+    /// Bangless by definition, so the guarantee is that the store is not one.
+    pub clips: Option<Arc<ClipStore>>,
     /// What the user has actually chosen before. Read once per candidate Entry,
     /// written once per activation.
     pub frecency: Arc<Frecency>,
+    /// Whether `!v` routes to clipboard history (`clips.bang`). Read every
+    /// keystroke, so atomic rather than behind the Stability mutex.
+    clips_bang: std::sync::atomic::AtomicBool,
     sources: Vec<Arc<dyn Source>>,
     /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
     lock: std::sync::Mutex<Option<StabilityLock>>,
@@ -99,19 +114,55 @@ impl Pipeline {
         // nothing to inject: the calculator holds no index, reads no disk and
         // needs no seeding, so a test has nothing it would want to hand it.
         let calc = Arc::new(CalcSource::new());
-        let sources: Vec<Arc<dyn Source>> =
-            vec![apps.clone(), recents.clone(), system.clone(), calc.clone()];
+        // Commands join the fan-out like any Source. A Command carries no clip
+        // content, so ADR-0006 is untouched: what is excluded from Bangless is
+        // the clipboard's *contents*, not a row that opens the history.
+        let commands = crate::sources::commands::shared();
+        let sources: Vec<Arc<dyn Source>> = vec![
+            apps.clone(),
+            recents.clone(),
+            system.clone(),
+            calc.clone(),
+            commands.clone(),
+        ];
         Pipeline {
             apps,
             recents,
             system,
             calc,
+            commands,
             icons,
+            clips: None,
+            clips_bang: std::sync::atomic::AtomicBool::new(true),
             frecency,
             sources,
             lock: std::sync::Mutex::new(None),
             started: Instant::now(),
         }
+    }
+
+    /// Whether `!v` routes to clipboard history (`clips.bang`).
+    ///
+    /// Atomic rather than behind the Shape mutex: it is read on every keystroke
+    /// and written when Settings changes, so a lock here would put contention on
+    /// the 30 ms path for a boolean.
+    pub fn set_bang_enabled(&self, on: bool) {
+        self.clips_bang
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn bang_enabled(&self) -> bool {
+        self.clips_bang.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Attach the clipboard history, enabling `!v`.
+    ///
+    /// Separate from [`Pipeline::new`] because most of what a Pipeline does has
+    /// nothing to do with clips, and every existing test would otherwise have to
+    /// construct a database to ask about applications.
+    pub fn with_clips(mut self, clips: Arc<ClipStore>) -> Self {
+        self.clips = Some(clips);
+        self
     }
 
     /// Answer one keystroke.
@@ -121,7 +172,21 @@ impl Pipeline {
 
     /// Answer one keystroke at a given millisecond, for the Stability tests.
     pub fn query_at(&self, raw: &str, seq: u64, now_ms: u64) -> QueryResult {
-        let q = Query::new(raw);
+        // Routed before anything else (§9). A Bang consumes the whole line, so a
+        // Mode's query never reaches a Source and a Source's query never reaches
+        // a Mode — which is what makes ADR-0002 checkable by reading this file.
+        let line = match bang::parse(raw) {
+            // Off, and `!v` is text like any other: it falls through to Bangless
+            // and matches nothing, rather than erroring. The command is still
+            // there for anyone who types "clipboard".
+            Route::Clips(needle) if self.bang_enabled() => {
+                return self.clips_result(needle, seq)
+            }
+            Route::Clips(_) => raw,
+            Route::Bangless(line) => line,
+        };
+
+        let q = Query::new(line);
         let indexing = self.apps.is_indexing();
 
         if q.is_empty() {
@@ -167,6 +232,29 @@ impl Pipeline {
             seq,
             entries,
             indexing,
+        }
+    }
+
+    /// The `!v` Mode: clipboard history, its own view (v0.5 task 7).
+    ///
+    /// No Frecency and no Stability lock. Order is recency, which is what anyone
+    /// reaching for clipboard history is actually asking for, and a lift from a
+    /// usage database would only fight it.
+    fn clips_result(&self, needle: &str, seq: u64) -> QueryResult {
+        let entries = match &self.clips {
+            Some(store) => store
+                .search(needle, MAX_ENTRIES)
+                .into_iter()
+                .map(clip_entry)
+                .collect(),
+            None => Vec::new(),
+        };
+        QueryResult {
+            seq,
+            // ADR-0016 applies here too: the source application is shown only
+            // where two clips would otherwise read identically.
+            entries: rank::disambiguate_subtitles(entries),
+            indexing: false,
         }
     }
 
@@ -260,6 +348,20 @@ impl Pipeline {
 
     /// The actions offered for one Entry, for the `Ctrl+K` menu.
     pub fn actions_for(&self, id: &EntryId) -> Vec<crate::entry::Action> {
+        // Before every index lookup: a Clip is in none of them, and its id could
+        // not collide with a path anyway (`clip:` is not a legal drive letter).
+        if CommandId::from_entry(id).is_some() {
+            return crate::actions::for_command()
+                .iter()
+                .filter_map(crate::actions::describe)
+                .collect();
+        }
+        if clip_id(id).is_some() {
+            return crate::actions::for_clip()
+                .iter()
+                .filter_map(crate::actions::describe)
+                .collect();
+        }
         if CalcSource::answer_of(id).is_some() {
             return crate::actions::for_calc().iter().filter_map(crate::actions::describe).collect();
         }
@@ -322,6 +424,21 @@ impl Pipeline {
             // No `record_activation`: see `records_usage`.
         }
 
+        // A command opens a surface inside the Palette, so it never reaches
+        // `launch.rs`. `lib.rs` owns the window half; this only validates.
+        if let Some(command) = CommandId::from_entry(id) {
+            if action != crate::actions::OPEN_COMMAND.as_str() {
+                return Err(format!("A command cannot be {action}ed."));
+            }
+            self.record_activation(id, crate::entry::EntryKind::Command, action);
+            return match command {
+                CommandId::ClipboardHistory => Ok(()),
+            };
+        }
+        if let Some(row) = clip_id(id) {
+            return self.activate_clip(row, action);
+        }
+
         let (target, kind) = self
             .target_for(id)
             .ok_or_else(|| "That Entry is no longer in the index.".to_string())?;
@@ -344,6 +461,39 @@ impl Pipeline {
         Ok(())
     }
 
+    /// Paste, copy or delete one Clip.
+    ///
+    /// Never records usage: Frecency would reorder history away from recency, and
+    /// the Palette has no other way to reach a Clip anyway.
+    fn activate_clip(&self, row: i64, action: &str) -> Result<(), String> {
+        use crate::clips::paste::{self, Paste};
+
+        let store = self
+            .clips
+            .as_ref()
+            .ok_or_else(|| "Clipboard history is not available.".to_string())?;
+
+        if action == crate::actions::DELETE_CLIP.as_str() {
+            return match store.delete(row) {
+                0 => Err("That clip is already gone.".to_string()),
+                _ => Ok(()),
+            };
+        }
+
+        let text = store
+            .content(row)
+            .ok_or_else(|| "That clip is no longer in the history.".to_string())?;
+        let clip = Paste {
+            kind: crate::clips::ClipKind::Text,
+            text: &text,
+        };
+        match action {
+            a if a == crate::actions::PASTE.as_str() => paste::paste_back(&clip),
+            a if a == crate::actions::COPY_CLIP.as_str() => paste::to_clipboard(&clip),
+            other => Err(format!("A clip cannot be {other}ed.")),
+        }
+    }
+
     /// What an activation teaches, after it has succeeded.
     ///
     /// Split out because the launch itself cannot be tested and this can. Both
@@ -362,13 +512,65 @@ impl Pipeline {
     }
 }
 
+/// The `EntryId` namespace clips live in.
+///
+/// A path can never start with it, so a Clip is distinguishable from every other
+/// Entry by its id alone — which is what lets `activate` route one before it
+/// touches an index.
+pub const CLIP_PREFIX: &str = "clip:";
+
+/// The row behind a Clip's `EntryId`, or `None` if this is not one.
+pub fn clip_id(id: &EntryId) -> Option<i64> {
+    id.as_str().strip_prefix(CLIP_PREFIX)?.parse().ok()
+}
+
+/// One stored clip as the Palette draws it.
+///
+/// The preview is the title, and the full content never travels: a search
+/// response would otherwise ship every matching secret into the webview.
+fn clip_entry(clip: Clip) -> Entry {
+    Entry {
+        id: EntryId(format!("{CLIP_PREFIX}{}", clip.id)),
+        title: clip.preview,
+        subtitle: clip.source_exe.as_deref().and_then(source_label),
+        kind: crate::entry::EntryKind::Clip,
+        icon: None,
+        // Order is recency, applied by the store's query. A score here would
+        // invite something to re-sort by it.
+        score: 0.0,
+        actions: crate::actions::for_clip(),
+        version: None,
+    }
+}
+
+/// "Bitwarden" from `C:\Program Files\Bitwarden\Bitwarden.exe`.
+fn source_label(exe: &str) -> Option<String> {
+    let stem = std::path::Path::new(exe).file_stem()?.to_string_lossy();
+    (!stem.is_empty()).then(|| stem.to_string())
+}
+
+/// Does this action dismiss the Palette before it runs?
+///
+/// Everything does except deleting a clip: every other action ends the session,
+/// and that one edits the list you are still reading.
+pub fn hides_palette(action: &str) -> bool {
+    action != crate::actions::DELETE_CLIP.as_str()
+        // Opening a command navigates *into* a surface in the same window. Hiding
+        // would dismiss the thing the user just asked to see.
+        && action != crate::actions::OPEN_COMMAND.as_str()
+}
+
 /// Does this action count as choosing the application?
 ///
 /// Only a launch teaches the ranker. Revealing a file or copying its path is
 /// something people do while looking *for* something, and counting it would
 /// train the Palette on the search rather than on the choice.
 pub fn records_usage(action: &str) -> bool {
-    action == crate::actions::OPEN.as_str() || action == crate::actions::RUN_AS_ADMIN.as_str()
+    action == crate::actions::OPEN.as_str()
+        || action == crate::actions::RUN_AS_ADMIN.as_str()
+        // Opening a command is a choice like launching an app: it is what the
+        // user meant by those keystrokes, so it should rank like one.
+        || action == crate::actions::OPEN_COMMAND.as_str()
 }
 
 /// Present so a future Source cannot quietly become a network client.
@@ -416,6 +618,92 @@ mod tests {
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
         )
+    }
+
+    /// A pipeline that knows one application and holds three clips.
+    fn pipeline_with_clips(clips: &[&str]) -> Pipeline {
+        let store = ClipStore::open(None).expect("in-memory clips");
+        for (i, text) in clips.iter().enumerate() {
+            store
+                .insert_at(
+                    crate::clips::ClipKind::Text,
+                    Some(r"C:\Program Files\Bitwarden\Bitwarden.exe"),
+                    text,
+                    1_000 + i as i64,
+                )
+                .expect("insert");
+        }
+        pipeline_with(vec![app("Notepad", r"C:\Windows
+otepad.exe")])
+            .with_clips(Arc::new(store))
+    }
+
+    /// ADR-0006, as the assertion the whole phase turns on: a Clip is unreachable
+    /// from a Bangless query, whatever it contains and however well it matches.
+    #[test]
+    fn v0_5_a_bangless_query_can_never_return_a_clip() {
+        let p = pipeline_with_clips(&["notepad", "hunter2", "notepad is a clip too"]);
+        for q in ["notepad", "hunter2", "n", "clip"] {
+            let entries = p.query(q, 1).entries;
+            assert!(
+                entries.iter().all(|e| e.kind != EntryKind::Clip),
+                "{q} returned a Clip from a Bangless query"
+            );
+        }
+    }
+
+    /// `!v` is the only way in, and it is a view rather than a search: empty
+    /// lists the history instead of nothing.
+    #[test]
+    fn v0_5_the_clip_bang_lists_history_and_searches_it() {
+        let p = pipeline_with_clips(&["first", "second", "third"]);
+
+        let all = p.query("!v", 1).entries;
+        assert_eq!(all.len(), 3);
+        assert!(all.iter().all(|e| e.kind == EntryKind::Clip));
+        assert_eq!(all[0].title, "third", "history lists newest first");
+
+        let hit = p.query("!v seco", 2).entries;
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].title, "second");
+        assert!(p.query("!v nothing", 3).entries.is_empty());
+    }
+
+    /// A Clip's actions never touch the filesystem, and its id round-trips.
+    #[test]
+    fn v0_5_a_clip_entry_carries_only_clip_actions() {
+        let p = pipeline_with_clips(&["token"]);
+        let entry = p.query("!v", 1).entries.remove(0);
+        assert_eq!(clip_id(&entry.id), Some(1));
+        assert_eq!(
+            p.actions_for(&entry.id)
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>(),
+            ["paste", "copy_clip", "delete_clip"]
+        );
+    }
+
+    /// Deleting is the one action that leaves the Palette up, and it destroys the
+    /// row rather than hiding it.
+    #[test]
+    fn v0_5_deleting_a_clip_removes_it_and_keeps_the_palette_open() {
+        let p = pipeline_with_clips(&["gone soon"]);
+        let entry = p.query("!v", 1).entries.remove(0);
+        assert!(!hides_palette(crate::actions::DELETE_CLIP.as_str()));
+        assert!(hides_palette(crate::actions::PASTE.as_str()));
+        p.activate(&entry.id, crate::actions::DELETE_CLIP.as_str())
+            .expect("delete");
+        assert!(p.query("!v", 2).entries.is_empty());
+    }
+
+    /// A pipeline with no clipboard history answers `!v` with an empty list, not
+    /// with a Bangless search for the letters after the Bang.
+    #[test]
+    fn v0_5_the_clip_bang_without_a_store_returns_nothing() {
+        let p = pipeline_with(vec![app("Notepad", r"C:\Windows
+otepad.exe")]);
+        assert!(p.query("!v notepad", 1).entries.is_empty());
     }
 
     /// The live report: `dis` selected the Display page instead of Discord.
@@ -859,18 +1147,80 @@ mod tests {
 
     /// ADR-0002, as an assertion that fails when a Source is added carelessly.
     ///
-    /// **Fired twice.** v0.3's Recents reads a local folder. v0.4's calculator is
-    /// a parse with static tables and no IO — and currency, the one part that
-    /// *would* have reached the network, was left out (`docs/tbd/v0.4.md`).
+    /// **Fired three times.** v0.3's Recents reads a local folder; v0.4's
+    /// calculator is a parse over static tables (currency, which would have gone
+    /// to the network, was left out); v0.5's commands are a `const` table.
     #[test]
     fn v0_3_every_bangless_source_is_local() {
         assert!(bangless_sources_are_local());
         let p = pipeline_with(vec![]);
         assert_eq!(
             p.sources.len(),
-            4,
+            5,
             "adding a Source means revisiting ADR-0002 before changing this number"
         );
+    }
+
+    /// ADR-0006's line, drawn where v0.5 moved it.
+    ///
+    /// A **command** that opens clipboard history is Bangless-reachable; a
+    /// **clip** never is. The row carries no content, so a list glanced at over
+    /// a shoulder still cannot hold a secret.
+    #[test]
+    fn v0_5_the_command_is_bangless_but_its_clips_are_not() {
+        let p = pipeline_with_clips(&["hunter2 clipboard secret"]);
+
+        let entries = p.query("clipboard", 1).entries;
+        assert!(
+            entries.iter().any(|e| e.kind == EntryKind::Command),
+            "the command must be findable without knowing a Bang exists"
+        );
+        assert!(entries.iter().all(|e| e.kind != EntryKind::Clip));
+
+        // The clip's own words still reach nothing Bangless.
+        assert!(p
+            .query("hunter2", 2)
+            .entries
+            .iter()
+            .all(|e| e.kind != EntryKind::Clip));
+    }
+
+    /// The Bang is a shortcut over the command, and can be turned off.
+    ///
+    /// Off, `!v` is text: it falls through to Bangless and matches nothing,
+    /// rather than erroring. The command is how you get there either way.
+    #[test]
+    fn v0_5_turning_off_the_bang_leaves_the_command_working() {
+        let p = pipeline_with_clips(&["first", "second"]);
+        assert_eq!(p.query("!v", 1).entries.len(), 2);
+
+        p.set_bang_enabled(false);
+        assert!(p.query("!v", 2).entries.is_empty());
+        assert!(p
+            .query("clipboard", 3)
+            .entries
+            .iter()
+            .any(|e| e.kind == EntryKind::Command));
+
+        p.set_bang_enabled(true);
+        assert_eq!(p.query("!v", 4).entries.len(), 2);
+    }
+
+    /// Opening a command navigates rather than launching: the window stays, and
+    /// the choice is learned like any other.
+    #[test]
+    fn v0_5_opening_a_command_keeps_the_palette_and_records_usage() {
+        let p = pipeline_with_clips(&["x"]);
+        let id = crate::sources::commands::CommandId::ClipboardHistory.entry_id();
+
+        assert!(!hides_palette(crate::actions::OPEN_COMMAND.as_str()));
+        assert!(records_usage(crate::actions::OPEN_COMMAND.as_str()));
+        p.activate(&id, crate::actions::OPEN_COMMAND.as_str())
+            .expect("opening a command");
+        assert!(p.frecency.weight(&id) > 0.0);
+
+        // And nothing else is reachable on it.
+        assert!(p.activate(&id, crate::actions::OPEN.as_str()).is_err());
     }
 
     /// v0.4: the calculator answers, and it beats an application outright.

@@ -3,7 +3,7 @@ members = ["uiaccess"]
 
 [package]
 name = "takyon"
-version = "0.4.5"
+version = "0.5.0"
 description = "Takyon - a local-first keyboard launcher for Windows"
 authors = ["Nikhil Sah <sah.nikhil11@gmail.com>"]
 edition = "2021"
@@ -53,6 +53,10 @@ png = "0.17"
 # for settings and clips. `bundled` compiles SQLite in: no DLL to ship, find or
 # version-match. MIT crate over a public-domain engine, so ADR-0005 stays open.
 rusqlite = { version = "0.32", features = ["bundled"] }
+# Clipboard content, encrypted per row (ADR-0008). RustCrypto, MIT/Apache-2, so it
+# stays clear of the licensing question ADR-0005 left open. Pure Rust: no OpenSSL
+# to find, ship or version-match. `std` brings `OsRng` for keys and nonces.
+aes-gcm = { version = "0.10", features = ["std"] }
 
 [dev-dependencies]
 # `mock_builder`/`get_ipc_response`, for the IPC contract test. **Must stay a
@@ -100,6 +104,13 @@ windows = { version = "0.61", features = [
   "Win32_System_DataExchange",
   "Win32_System_Memory",
   "Win32_System_Ole",
+  # v0.5. `Win32_Security_Cryptography` is DPAPI (`CryptProtectData`), which wraps
+  # the clipboard key to the user account. The clipboard watcher needs a
+  # message-only window of its own, which is `Win32_UI_WindowsAndMessaging`
+  # already above, plus `Win32_System_LibraryLoader` for its `HINSTANCE`.
+  "Win32_Security_Cryptography",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_Input_KeyboardAndMouse",
 ] }
 
 [profile.release]
