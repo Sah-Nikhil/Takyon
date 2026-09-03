@@ -14,6 +14,7 @@
 
 import type {
   Action,
+  AliasRow,
   CalcPolicy,
   ClipRetention,
   ClipRow,
@@ -288,6 +289,9 @@ const hotkeyRegistered =
   typeof window === "undefined" ||
   new URLSearchParams(window.location.search).get("hotkey") !== "failed";
 
+/** What the browser build reports as bound. Moved by `setHotkey`. */
+let liveHotkey = "Alt+Space";
+
 /** The last value passed to `setActionMenu`, for the visual layer to assert on. */
 let lastMenuRequest: number | null = null;
 export function menuRequest() {
@@ -322,7 +326,26 @@ export function calcPolicyRequest() {
 }
 
 /** The preferences the browser build reports. Defaults match Rust's. */
-let snapshot: SettingsSnapshot = { reduceMotion: false, calcPolicy: "automatic" };
+let snapshot: SettingsSnapshot = {
+  reduceMotion: false,
+  calcPolicy: "automatic",
+  recents: true,
+  tray: true,
+  placement: "cursor",
+  clipRetention: "1-month",
+  clipBang: true,
+  theme: "system",
+  uiSize: "default",
+};
+
+/** Executables excluded from clipboard capture, as the browser build reports. */
+let blocked: string[] = ["keepass.exe", "1password.exe"];
+
+/** Aliases the browser build reports. One points at nothing, deliberately. */
+let aliasRows: AliasRow[] = [
+  { alias: "ps", target: "app:photoshop", title: "Adobe Photoshop 2022" },
+  { alias: "vpn", target: "app:gone" },
+];
 
 /**
  * Stand in for the other window having written a preference.
@@ -480,7 +503,7 @@ export const mock = {
    */
   iconUrl: (_key: string) => "",
   hotkeyStatus: async (): Promise<HotkeyStatus> => ({
-    accelerator: "Alt+Space",
+    accelerator: liveHotkey,
     registered: hotkeyRegistered,
     ...(hotkeyRegistered
       ? {}
@@ -508,6 +531,68 @@ export const mock = {
     snapshot = { ...legacy, ...snapshot };
     return snapshot;
   },
+  setRecents: async (on: boolean) => {
+    snapshot = { ...snapshot, recents: on };
+  },
+  setTray: async (on: boolean) => {
+    // Mirrors the Rust rule: the tray cannot be hidden while the hotkey is dead.
+    if (!on && !hotkeyRegistered) {
+      throw new Error(
+        "The tray icon is the only way in while the hotkey is unregistered. Rebind the hotkey first.",
+      );
+    }
+    snapshot = { ...snapshot, tray: on };
+  },
+  setPlacement: async (value: SettingsSnapshot["placement"]) => {
+    snapshot = { ...snapshot, placement: value };
+  },
+  hotkeyChoices: async () => [
+    "Alt+Space",
+    "Ctrl+Space",
+    "Alt+Shift+Space",
+    "Ctrl+Shift+Space",
+    "Ctrl+Alt+Space",
+    "Ctrl+Shift+P",
+  ],
+  setHotkey: async (accelerator: string): Promise<HotkeyStatus> => {
+    // One chord stands in for "already held by something else", so the refusal
+    // path has a way to be exercised without a second application.
+    if (accelerator === "Alt+Space") {
+      return {
+        accelerator: liveHotkey,
+        registered: true,
+        error: "Another application is already holding it. Kept " + liveHotkey + ".",
+      };
+    }
+    liveHotkey = accelerator;
+    return { accelerator, registered: true };
+  },
+  clipBlocklist: async () => [...blocked],
+  setClipBlocked: async (exe: string, block: boolean) => {
+    const name = exe.trim().toLowerCase();
+    if (!name) throw new Error("an executable name is required");
+    blocked = block
+      ? [...new Set([...blocked, name])]
+      : blocked.filter((e) => e !== name);
+    return [...blocked];
+  },
+  aliases: async () => [...aliasRows],
+  setAlias: async (alias: string, target: string | null) => {
+    const name = alias.trim();
+    if (!name) throw new Error("an alias needs a name");
+    aliasRows =
+      target === null
+        ? aliasRows.filter((r) => r.alias !== name)
+        : [...aliasRows.filter((r) => r.alias !== name), { alias: name, target }];
+    aliasRows.sort((a, b) => a.alias.localeCompare(b.alias));
+  },
+  setTheme: async (value: SettingsSnapshot["theme"]) => {
+    snapshot = { ...snapshot, theme: value };
+  },
+  setUiSize: async (value: SettingsSnapshot["uiSize"]) => {
+    snapshot = { ...snapshot, uiSize: value };
+  },
+  openCrashLogs: async () => {},
   onShow: (cb: ShowListener) => {
     showListeners.add(cb);
     return () => {

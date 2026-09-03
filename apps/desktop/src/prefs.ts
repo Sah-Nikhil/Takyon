@@ -21,7 +21,17 @@ const LEGACY_MOTION = "com.v3sper.launcher.reduce-motion";
 const LEGACY_CALC = "com.v3sper.launcher.calc-policy";
 
 /** Defaults, matching Rust's. A window that cannot reach Rust still behaves. */
-let current: SettingsSnapshot = { reduceMotion: false, calcPolicy: "automatic" };
+let current: SettingsSnapshot = {
+  reduceMotion: false,
+  calcPolicy: "automatic",
+  recents: true,
+  tray: true,
+  placement: "cursor",
+  clipRetention: "1-month",
+  clipBang: true,
+  theme: "system",
+  uiSize: "default",
+};
 
 /** Whether Windows itself is asking for less motion. Independent of our switch. */
 export function systemReducesMotion(): boolean {
@@ -85,6 +95,7 @@ export async function load(): Promise<SettingsSnapshot> {
       : await api.settingsSnapshot();
   if (Object.keys(stale).length > 0) forgetLegacy();
   applyMotionPreference();
+  applyAppearance();
   return current;
 }
 
@@ -92,6 +103,7 @@ export async function load(): Promise<SettingsSnapshot> {
 export async function refresh(): Promise<SettingsSnapshot> {
   current = await api.settingsSnapshot();
   applyMotionPreference();
+  applyAppearance();
   return current;
 }
 
@@ -112,6 +124,26 @@ export async function setCalcPolicy(mode: CalcPolicy): Promise<void> {
   current = { ...current, calcPolicy: mode };
 }
 
+export async function setRecents(on: boolean): Promise<void> {
+  await api.setRecents(on);
+  current = { ...current, recents: on };
+}
+
+export async function setTray(on: boolean): Promise<void> {
+  await api.setTray(on);
+  current = { ...current, tray: on };
+}
+
+export async function setPlacement(value: SettingsSnapshot["placement"]): Promise<void> {
+  await api.setPlacement(value);
+  current = { ...current, placement: value };
+}
+
+export async function setClipBang(on: boolean): Promise<void> {
+  await api.setClipBang(on);
+  current = { ...current, clipBang: on };
+}
+
 /**
  * Push the preference onto the document. Idempotent, and cheap enough to call on
  * every show — which is what the Palette does, because that is the guaranteed
@@ -119,4 +151,32 @@ export async function setCalcPolicy(mode: CalcPolicy): Promise<void> {
  */
 export function applyMotionPreference(): void {
   document.documentElement.toggleAttribute("data-reduce-motion", current.reduceMotion);
+}
+
+/**
+ * Push appearance and interface size onto `<html>`.
+ *
+ * `system` removes the attribute rather than setting it, so the stylesheet's
+ * `prefers-color-scheme` query is what decides — an override that has been
+ * turned off has to stop overriding, not pick a side.
+ */
+export function applyAppearance(): void {
+  const root = document.documentElement;
+  if (current.theme === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", current.theme);
+
+  if (current.uiSize === "default") root.removeAttribute("data-ui-size");
+  else root.setAttribute("data-ui-size", current.uiSize);
+}
+
+export async function setTheme(value: SettingsSnapshot["theme"]): Promise<void> {
+  await api.setTheme(value);
+  current = { ...current, theme: value };
+  applyAppearance();
+}
+
+export async function setUiSize(value: SettingsSnapshot["uiSize"]): Promise<void> {
+  await api.setUiSize(value);
+  current = { ...current, uiSize: value };
+  applyAppearance();
 }

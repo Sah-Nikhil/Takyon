@@ -31,6 +31,40 @@ pub const LABEL: &str = "settings";
 pub struct Snapshot {
     pub reduce_motion: bool,
     pub calc_policy: String,
+    pub recents: bool,
+    pub tray: bool,
+    pub placement: String,
+    pub clip_retention: String,
+    pub clip_bang: bool,
+    pub theme: String,
+    pub ui_size: String,
+}
+
+/// Appearance, as stored. Anything unrecognised follows the system.
+pub fn theme(prefs: &Prefs) -> String {
+    match prefs.get(prefs::THEME).as_deref() {
+        Some("light") => "light".into(),
+        Some("dark") => "dark".into(),
+        _ => "system".into(),
+    }
+}
+
+/// Interface size, as stored. Anything unrecognised is the default size.
+pub fn ui_size(prefs: &Prefs) -> String {
+    match prefs.get(prefs::UI_SIZE).as_deref() {
+        Some("small") => "small".into(),
+        Some("large") => "large".into(),
+        _ => "default".into(),
+    }
+}
+
+/// Where the Palette opens. Two pinned choices, not a monitor list: a saved
+/// monitor index is wrong the moment a display is unplugged.
+pub fn placement(prefs: &Prefs) -> String {
+    match prefs.get(prefs::PLACEMENT).as_deref() {
+        Some("primary") => "primary".into(),
+        _ => "cursor".into(),
+    }
 }
 
 impl Snapshot {
@@ -43,6 +77,17 @@ impl Snapshot {
             )
             .as_str()
             .to_string(),
+            recents: prefs::flag(prefs, prefs::RECENTS, true),
+            tray: prefs::flag(prefs, prefs::TRAY, true),
+            placement: placement(prefs),
+            clip_retention: prefs
+                .get(prefs::CLIPS_RETENTION)
+                .map_or_else(|| crate::clips::Retention::default().as_str().to_string(), |v| {
+                    crate::clips::Retention::parse(&v).as_str().to_string()
+                }),
+            clip_bang: prefs::flag(prefs, prefs::CLIPS_BANG, true),
+            theme: theme(prefs),
+            ui_size: ui_size(prefs),
         }
     }
 }
@@ -63,6 +108,79 @@ pub fn set_reduce_motion(on: bool, prefs: tauri::State<'_, Arc<Prefs>>) {
     if let Err(e) = prefs.set(prefs::UI_REDUCE_MOTION, if on { "1" } else { "0" }) {
         eprintln!("[takyon] the motion setting could not be saved: {e}");
     }
+}
+
+/// Whether the Recents Source contributes Entries.
+///
+/// Stored **and** pushed: the pipeline reads it on the keystroke path and must
+/// not go to SQLite for it.
+#[tauri::command]
+pub fn set_recents(
+    on: bool,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+    pipeline: tauri::State<'_, Arc<crate::query::Pipeline>>,
+) {
+    if let Err(e) = prefs.set(prefs::RECENTS, if on { "1" } else { "0" }) {
+        eprintln!("[takyon] the recents setting could not be saved: {e}");
+    }
+    pipeline.set_recents_enabled(on);
+}
+
+/// Show or hide the tray icon. Refused while the hotkey is unregistered.
+#[tauri::command]
+pub fn set_tray(
+    app: AppHandle,
+    on: bool,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+) -> Result<(), String> {
+    crate::tray::set_visible(&app, on)?;
+    prefs
+        .set(prefs::TRAY, if on { "1" } else { "0" })
+        .map_err(|e| e.to_string())
+}
+
+/// Which monitor the Palette opens on. Read on every show, never cached.
+#[tauri::command]
+pub fn set_placement(value: String, prefs: tauri::State<'_, Arc<Prefs>>) -> Result<(), String> {
+    let value = match value.as_str() {
+        "primary" => "primary",
+        "cursor" => "cursor",
+        other => return Err(format!("{other} is not a placement")),
+    };
+    prefs
+        .set(prefs::PLACEMENT, value)
+        .map_err(|e| e.to_string())?;
+    crate::window::cache_layout_prefs(&prefs);
+    Ok(())
+}
+
+/// Follow the system, or override it (v0.6 Appearance).
+#[tauri::command]
+pub fn set_theme(value: String, prefs: tauri::State<'_, Arc<Prefs>>) -> Result<(), String> {
+    let value = match value.as_str() {
+        "system" | "light" | "dark" => value,
+        other => return Err(format!("{other} is not an appearance")),
+    };
+    prefs.set(prefs::THEME, &value).map_err(|e| e.to_string())
+}
+
+/// Interface size. Resizes the Palette immediately, not on the next summon.
+#[tauri::command]
+pub fn set_ui_size(
+    app: AppHandle,
+    value: String,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+) -> Result<(), String> {
+    let value = match value.as_str() {
+        "small" | "default" | "large" => value,
+        other => return Err(format!("{other} is not an interface size")),
+    };
+    prefs.set(prefs::UI_SIZE, &value).map_err(|e| e.to_string())?;
+    // The window is sized in Rust and zoomed in CSS. Both have to move together
+    // or the Palette is exactly the zoom too short.
+    crate::window::cache_layout_prefs(&prefs);
+    crate::window::rescale(&app);
+    Ok(())
 }
 
 /// Carry v0.1's `localStorage` preferences into `settings.db` (task 8b).
@@ -136,14 +254,26 @@ mod tests {
     /// reviewed.
     #[test]
     fn v0_6_the_snapshot_serialises_to_the_declared_contract() {
-        let v: serde_json::Value = serde_json::to_value(Snapshot {
-            reduce_motion: true,
-            calc_policy: "explicit".into(),
-        })
-        .unwrap();
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        let v: serde_json::Value = serde_json::to_value(Snapshot::read(&prefs)).unwrap();
 
-        assert_eq!(v["reduceMotion"].as_bool(), Some(true));
-        assert_eq!(v["calcPolicy"].as_str(), Some("explicit"));
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "calcPolicy",
+                "clipBang",
+                "clipRetention",
+                "placement",
+                "recents",
+                "reduceMotion",
+                "theme",
+                "tray",
+                "uiSize"
+            ],
+            "SettingsSnapshot drifted from ipc.ts"
+        );
         assert!(v.get("reduce_motion").is_none(), "camelCase, not snake_case");
     }
 

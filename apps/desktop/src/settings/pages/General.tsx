@@ -7,9 +7,18 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import type { Theme, UiSize } from "@takyon/shared";
 import * as api from "@/api";
-import { reduceMotion, refresh, setReduceMotion, systemReducesMotion } from "@/prefs";
-import { Group, Row, Switch, useApplied } from "../controls";
+import {
+  preferences,
+  reduceMotion,
+  refresh,
+  setReduceMotion,
+  setTheme,
+  setUiSize,
+  systemReducesMotion,
+} from "@/prefs";
+import { Chips, Group, Row, Switch, useApplied } from "../controls";
 
 /**
  * Dev builds must never register autostart: a debug registration writes a `Run`
@@ -20,9 +29,23 @@ import { Group, Row, Switch, useApplied } from "../controls";
  */
 const DEV = import.meta.env.DEV && api.inTauri;
 
+const THEMES: ReadonlyArray<{ value: Theme; label: string }> = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
+const SIZES: ReadonlyArray<{ value: UiSize; label: string }> = [
+  { value: "small", label: "Small" },
+  { value: "default", label: "Default" },
+  { value: "large", label: "Large" },
+];
+
 export function General() {
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [still, setStill] = useState(reduceMotion);
+  const [theme, setThemeState] = useState(() => preferences().theme);
+  const [size, setSizeState] = useState(() => preferences().uiSize);
   // Read once. Windows can change it mid-session, but this line is copy, not
   // behaviour — the media query in styles.css enforces the OS setting either way.
   const [osStill] = useState(systemReducesMotion);
@@ -39,6 +62,8 @@ export function General() {
   // Re-reads Rust rather than the in-process cache, so a refused write settles
   // the switch on what is stored — the same rule autostart follows against the OS.
   const motion = useApplied(setReduceMotion, async () => (await refresh()).reduceMotion);
+  const themeApplied = useApplied(setTheme, async () => (await refresh()).theme);
+  const sizeApplied = useApplied(setUiSize, async () => (await refresh()).uiSize);
 
   const toggleAutostart = useCallback(
     (on: boolean) => {
@@ -72,6 +97,34 @@ export function General() {
       </Group>
 
       <Group title="Appearance">
+        <Row
+          id="theme"
+          label="Appearance"
+          applied={themeApplied.applied}
+          error={themeApplied.error}
+          description="Follows Windows unless you override it, and the override wins in both directions."
+        >
+          <Chips
+            label="Appearance"
+            value={theme}
+            options={THEMES}
+            onChange={(next) => void themeApplied.apply(next, setThemeState)}
+          />
+        </Row>
+        <Row
+          id="ui-size"
+          label="Interface size"
+          applied={sizeApplied.applied}
+          error={sizeApplied.error}
+          description="Scales the whole interface, Palette included. The window resizes with it rather than after it."
+        >
+          <Chips
+            label="Interface size"
+            value={size}
+            options={SIZES}
+            onChange={(next) => void sizeApplied.apply(next, setSizeState)}
+          />
+        </Row>
         <Row
           id="motion"
           label="Turn off animations"

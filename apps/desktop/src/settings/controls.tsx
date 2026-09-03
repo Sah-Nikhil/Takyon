@@ -158,6 +158,56 @@ export function Chips<T extends string>({
 }
 
 /**
+ * A destructive change, held until it is confirmed by name.
+ *
+ * ROADMAP v0.6: the dialog names the consequence with the **real count**, not
+ * "some items". A generic warning teaches people to click through it, which is
+ * exactly the habit you do not want in front of an irreversible delete.
+ */
+export function Confirm({
+  title,
+  consequence,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  consequence: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      role="alertdialog"
+      aria-label={title}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-plate/70 p-6"
+    >
+      <div className="w-full max-w-md rounded-card border border-hairline bg-card p-5">
+        <h3 className="text-[14px] font-medium text-fg">{title}</h3>
+        <p className="mt-2 text-[13px] leading-snug text-fg/60">{consequence}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-control px-3 py-1.5 text-[13px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-control bg-amber-300/90 px-3 py-1.5 text-[13px] font-medium text-plate transition-colors hover:bg-amber-300"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Apply-on-change, with the confirmation and the error handling in one place.
  *
  * The optimistic value is shown immediately and then **replaced by whatever the

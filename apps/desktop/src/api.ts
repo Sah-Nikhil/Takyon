@@ -19,6 +19,10 @@ import {
   EVENT_HIDE,
   EVENT_SHOW,
   type Action,
+  type AliasRow,
+  type Placement,
+  type Theme,
+  type UiSize,
   type CalcPolicy,
   type ClipRetention,
   type ClipRow,
@@ -100,6 +104,68 @@ export const migrateLocalPrefs = (legacy: Partial<SettingsSnapshot>) =>
   inTauri
     ? invoke<SettingsSnapshot>("migrate_local_prefs", legacy)
     : mock.migrateLocalPrefs(legacy);
+
+/** Whether the Recents Source contributes Entries (v0.6). */
+export const setRecents = (on: boolean) =>
+  inTauri ? invoke<void>("set_recents", { on }) : mock.setRecents(on);
+
+/**
+ * Show or hide the tray icon.
+ *
+ * **Rejects while the hotkey is unregistered**: the Palette has no taskbar
+ * button, so the tray would be the only way in and out.
+ */
+export const setTray = (on: boolean) =>
+  inTauri ? invoke<void>("set_tray", { on }) : mock.setTray(on);
+
+/** Which monitor the Palette opens on. */
+export const setPlacement = (value: Placement) =>
+  inTauri ? invoke<void>("set_placement", { value }) : mock.setPlacement(value);
+
+/** The bindings the Keyboard page offers. Rust owns the list (ADR-0009). */
+export const hotkeyChoices = () =>
+  inTauri ? invoke<string[]>("hotkey_choices") : mock.hotkeyChoices();
+
+/**
+ * Rebind the global hotkey. Returns what is live afterwards.
+ *
+ * A refused chord leaves the previous binding registered, so the response is
+ * the truth rather than the request — the control reads it, not what was clicked.
+ */
+export const setHotkey = (accelerator: string) =>
+  inTauri
+    ? invoke<HotkeyStatus>("set_hotkey", { accelerator })
+    : mock.setHotkey(accelerator);
+
+/** Executables whose clipboard is never recorded (ADR-0006). */
+export const clipBlocklist = () =>
+  inTauri ? invoke<string[]>("clip_blocklist") : mock.clipBlocklist();
+
+/** Add or remove one executable. Returns the list as it now stands. */
+export const setClipBlocked = (exe: string, blocked: boolean) =>
+  inTauri
+    ? invoke<string[]>("set_clip_blocked", { exe, blocked })
+    : mock.setClipBlocked(exe, blocked);
+
+/** Every alias, with the title of what it points at. */
+export const aliases = () =>
+  inTauri ? invoke<AliasRow[]>("aliases") : mock.aliases();
+
+/** Create an alias, or delete it by passing `null` as the target. */
+export const setAlias = (alias: string, target: string | null) =>
+  inTauri ? invoke<void>("set_alias", { alias, target }) : mock.setAlias(alias, target);
+
+/** Follow the system appearance, or override it (v0.6). */
+export const setTheme = (value: Theme) =>
+  inTauri ? invoke<void>("set_theme", { value }) : mock.setTheme(value);
+
+/** Interface size. Rust resizes the Palette to match the CSS zoom. */
+export const setUiSize = (value: UiSize) =>
+  inTauri ? invoke<void>("set_ui_size", { value }) : mock.setUiSize(value);
+
+/** Open the crash-log folder. **Opens it — never uploads** (ADR-0010). */
+export const openCrashLogs = () =>
+  inTauri ? invoke<void>("open_crash_logs") : mock.openCrashLogs();
 
 /**
  * How long clipboard history is kept, as stored (v0.5).

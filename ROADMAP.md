@@ -246,15 +246,38 @@ slice 2 the remaining feature pages; slice 3 appearance and the colour question.
 - [x] Apply-on-change with a brief "Applied" confirmation, and **no save button anywhere**. The optimistic value is always replaced by what the refetch returns, never by what was clicked — ADR-0015's rule for autostart, applied to every control because it costs nothing
 - [x] **A bug the phase found rather than fixed:** the calculator Policy was pushed from the frontend only, so every keystroke before the Palette mounted answered under Automatic whatever had been chosen — a restart silently reverting the setting. Rust now reads it at startup, as it already did for `clips.bang`
 - [x] **And the one that mattered more: the Settings window had never rendered.** `settings::open` built the window on the main thread, where `WebviewWindowBuilder::build()` blocks waiting for the event loop it is itself blocking. The frame appeared — right size, right title — and only the webview never loaded, so it was a title bar over a white rectangle, and `build()` never returned so nothing after it logged. It now spawns. The call path is unchanged since v0.1, and nothing caught it because the visual suite reaches that route through Vite rather than through Tauri. See CLAUDE.md gotchas; `scripts/verify-drive-v0.6.ps1` now samples pixels for it
-- [ ] **Slice 2.** Hotkey rebinding, tray visibility, retention, blocklist, aliases, monitor placement, recents toggle — and the destructive-setting confirmation naming the real count ("permanently delete 4,312 clipboard items"). Closes [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §3 and [`docs/tbd/v0.5.md`](./docs/tbd/v0.5.md) §1, §6, §7
-- [ ] **Slice 3.** Appearance: follow system by default, plus a manual light/dark override and pinned interface-size options. **Full light theme**, not just the override plumbing
-- [ ] **Slice 3.** Resolve the colour question in `docs/brand.md` and generate tokens from one source. The surface architecture landed in slice 1 and is derived entirely from `--color-plate` and `--color-fg`, so the swap stays one edit
+- [x] **Slice 2.** Hotkey rebinding from pinned chords with a reset — the old binding is released first, and a refused chord restores the previous one rather than leaving nothing bound. Tray visibility, **refused while the hotkey is unregistered** because the tray would be the only way in and out. Monitor placement (cursor or primary — two choices, not a monitor list, since a saved index is silently wrong once a display is unplugged). Recents toggle, aliases editor, clipboard retention, `!v` toggle and the capture blocklist. Closes [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §3 and [`docs/tbd/v0.5.md`](./docs/tbd/v0.5.md) §1, §6, §7
+- [x] **The destructive confirmation names the real count**, asked from Rust before the change: "will permanently delete 3 clipboard items… overwritten, not moved — there is nothing to restore from"
+- [x] **Slice 3.** Appearance: follows Windows by default, with an override that wins in **both** directions, plus pinned interface sizes. **A full light theme**, not just the plumbing — and only four tokens are restated, because every separation is an alpha of `--color-fg` and follows for free
+- [x] Interface size is a root `zoom` **mirrored by Rust**, which scales the Palette's window by the same integer percentages. A font scale would have left the Palette's fixed pixel heights behind
+- [x] Local crash logs (ADR-0010): a panic hook writing to `logs\panic.log` under the data directory, capped, with an Advanced page button that opens the folder. **Nothing is ever sent, and there is no code path that could**
+- [ ] **Resolve the colour question** in `docs/brand.md`. The light palette slice 3 ships is *derived* — same Cherenkov hue darkened to survive white — and still needs the real decision. Everything is `color-mix` over `--color-plate` and `--color-fg`, so the swap remains one edit
 - [ ] Bangless-file-search toggle, index roots + exclusions with a live entry count — **deferred to v0.7**, which is when an index exists to have roots
-- [ ] Local crash logs written to disk with a settings button to open the folder — **nothing is ever sent** (ADR-0010). Needs an Advanced page and a log file, neither of which exists yet
+- [ ] [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §10's per-Kind ranking weight, which named v0.6 as its owner. **Not built** — it is a ranking constant rather than a setting, and exposing a weight as a control is a worse answer than choosing the number
 
 **Exit criteria:** nothing in the app requires editing a file or a registry key.
-*Not yet met — slice 1 makes two settings reachable, and retention, the
-blocklist and aliases are still hand-edited rows in `settings.db`.*
+*Met for everything that exists: the hotkey, autostart, appearance, interface
+size, placement, tray, recents, aliases, retention, the `!v` Bang and the
+clipboard blocklist are all reachable from the window. Index roots are the one
+listed item still unreachable, and there is no index for them to point at
+until v0.7.*
+
+**Packaged as 0.6.0.** Cut deliberately with two things outstanding, both
+recorded rather than quietly closed:
+
+- **The colour question is still open** (`docs/brand.md`). The plan made it a ship
+  gate; the light palette in this release is *derived* — the same Cherenkov hue
+  darkened to survive white — not decided. Every surface is `color-mix` over
+  `--color-plate` and `--color-fg`, so settling it stays one edit and redraws no
+  asset.
+- **`docs/verify/v0.6.md` has not been run by a person.** S1, S3 and S5 are driven
+  by `scripts/verify-drive-v0.6.ps1`; sections A, M, K, L, C, A2, P2 and D need a
+  real registry, a pre-v0.6 profile and a second monitor. The installer exists
+  partly so that pass has something to run against.
+
+What *is* verified: 407 Rust tests, 21 TypeScript, 66 Playwright, all four
+performance budgets, and the settings window driven against the release binary
+with a pixel check that it actually paints.
 
 **Manual verification:** [`docs/verify/v0.6.md`](./docs/verify/v0.6.md), written
 for slice 1 and grown by each later slice. Almost everything slice 1 claims is

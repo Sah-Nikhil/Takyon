@@ -35,6 +35,43 @@ pub const UI_REDUCE_MOTION: &str = "ui.reduce-motion";
 /// has mounted to push it, and the Bangless path must not go to SQLite.
 pub const CALC_POLICY: &str = "calc.policy";
 
+/// The global hotkey, as accelerator text. `hotkey::CHOICES` spells the values.
+///
+/// Read at startup, before any window exists — the hotkey is registered first and
+/// everything else is deferred behind it.
+pub const HOTKEY: &str = "hotkey.accelerator";
+
+/// Whether the Recents Source contributes Entries. `"1"` or `"0"`, default on.
+pub const RECENTS: &str = "launcher.recents";
+
+/// Whether the tray icon is drawn. `"1"` or `"0"`, default on.
+pub const TRAY: &str = "launcher.tray";
+
+/// Where the Palette opens: `"cursor"` (default) or `"primary"`.
+pub const PLACEMENT: &str = "launcher.placement";
+
+/// Appearance: `"system"` (default), `"light"` or `"dark"`.
+pub const THEME: &str = "ui.theme";
+
+/// Interface size: `"small"`, `"default"` or `"large"`.
+///
+/// Applied as a root `zoom` in CSS, so every fixed pixel scales together — and
+/// Rust scales the Palette's window height by the same factor or the two
+/// disagree by exactly the zoom.
+pub const UI_SIZE: &str = "ui.size";
+
+/// The zoom a stored interface size means, as a percentage.
+///
+/// Integer percent rather than a float: it crosses into window arithmetic, where
+/// a rounding difference between the two sides shows as a clipped last row.
+pub fn ui_scale_percent(value: Option<&str>) -> u32 {
+    match value {
+        Some("small") => 90,
+        Some("large") => 115,
+        _ => 100,
+    }
+}
+
 /// The `settings` table.
 pub struct Prefs {
     conn: Mutex<Connection>,
@@ -156,6 +193,19 @@ mod tests {
         p.set(CALC_POLICY, "explicit").unwrap();
         assert!(!p.set_if_absent(CALC_POLICY, "automatic").unwrap());
         assert_eq!(p.get(CALC_POLICY).as_deref(), Some("explicit"));
+    }
+
+    /// The zoom table, and that anything unrecognised is 100%.
+    ///
+    /// It lands in window arithmetic, so a stray value must mean "no scaling"
+    /// rather than a height nobody can explain.
+    #[test]
+    fn v0_6_interface_size_maps_to_a_whole_percentage() {
+        assert_eq!(ui_scale_percent(None), 100);
+        assert_eq!(ui_scale_percent(Some("default")), 100);
+        assert_eq!(ui_scale_percent(Some("small")), 90);
+        assert_eq!(ui_scale_percent(Some("large")), 115);
+        assert_eq!(ui_scale_percent(Some("enormous")), 100);
     }
 
     #[test]

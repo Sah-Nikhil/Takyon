@@ -25,6 +25,30 @@ const TRAY_ID: &str = "main";
 const TRAY_DARK: &[u8] = include_bytes!("../icons/tray-dark.png");
 const TRAY_LIGHT: &[u8] = include_bytes!("../icons/tray-light.png");
 
+/// May the tray icon be hidden right now?
+///
+/// No, when the hotkey is not registered. The Palette has no taskbar button, so
+/// with a dead hotkey the tray is the only way in and the only way out — hiding
+/// it there strands the user in Task Manager.
+pub fn may_hide(hotkey_registered: bool) -> bool {
+    hotkey_registered
+}
+
+/// Show or hide the tray icon (v0.6's Launcher page).
+pub fn set_visible(app: &AppHandle, visible: bool) -> Result<(), String> {
+    if !visible && !may_hide(app.state::<crate::hotkey::HotkeyState>().get().registered) {
+        return Err(
+            "The tray icon is the only way in while the hotkey is unregistered. \
+             Rebind the hotkey first."
+                .into(),
+        );
+    }
+    let Some(icon) = app.tray_by_id(TRAY_ID) else {
+        return Err("there is no tray icon to change".into());
+    };
+    icon.set_visible(visible).map_err(|e| e.to_string())
+}
+
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "tray_open", format!("Open {DISPLAY_NAME}"), true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "tray_settings", "Settings", true, None::<&str>)?;

@@ -16,6 +16,7 @@ pub mod bang;
 pub mod bench;
 pub mod clips;
 pub mod com;
+pub mod crashlog;
 pub mod entry;
 pub mod firstrun;
 pub mod frecency;
@@ -307,6 +308,107 @@ fn set_clip_bang(
     pipeline.set_bang_enabled(on);
 }
 
+/// Executables whose clipboard is never recorded (ADR-0006).
+#[tauri::command]
+fn clip_blocklist(blocklist: tauri::State<'_, Option<Arc<Blocklist>>>) -> Vec<String> {
+    blocklist.inner().as_ref().map_or_else(Vec::new, |b| b.all())
+}
+
+/// Add or remove one executable. The store reloads its own cache on write, so the
+/// change applies to the next capture rather than the next launch (tbd v0.5 §6).
+#[tauri::command]
+fn set_clip_blocked(
+    exe: String,
+    blocked: bool,
+    blocklist: tauri::State<'_, Option<Arc<Blocklist>>>,
+) -> Result<Vec<String>, String> {
+    let Some(b) = blocklist.inner().as_ref() else {
+        return Err("the blocklist could not be opened".into());
+    };
+    let exe = exe.trim().to_ascii_lowercase();
+    if exe.is_empty() {
+        return Err("an executable name is required".into());
+    }
+    if blocked { b.add(&exe) } else { b.remove(&exe) }.map_err(|e| e.to_string())?;
+    Ok(b.all())
+}
+
+/// One alias and what it points at, for the Applications page.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AliasRow {
+    alias: String,
+    target: String,
+    /// The Entry's title today, or `None` when it no longer resolves.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+}
+
+#[tauri::command]
+fn aliases(
+    store: tauri::State<'_, Arc<aliases::AliasStore>>,
+    apps: tauri::State<'_, Arc<AppSource>>,
+) -> Vec<AliasRow> {
+    let mut rows: Vec<AliasRow> = store
+        .by_target()
+        .into_iter()
+        .flat_map(|(target, names)| {
+            // `None` when the alias outlived its application — an uninstall, or a
+            // rename. The row still lists so it can be deleted.
+            let title = apps.find(&target).map(|a| a.title);
+            names.into_iter().map(move |alias| AliasRow {
+                alias,
+                target: target.0.clone(),
+                title: title.clone(),
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| a.alias.cmp(&b.alias));
+    rows
+}
+
+/// Create or delete an alias, then re-apply the table (v0.3 tbd §3).
+///
+/// `apply_aliases` is in-place and needs no re-walk, which is why the editor can
+/// be apply-on-change rather than restart-to-take-effect.
+#[tauri::command]
+fn set_alias(
+    alias: String,
+    target: Option<String>,
+    store: tauri::State<'_, Arc<aliases::AliasStore>>,
+    apps: tauri::State<'_, Arc<AppSource>>,
+) -> Result<(), String> {
+    let alias = alias.trim().to_string();
+    if alias.is_empty() {
+        return Err("an alias needs a name".into());
+    }
+    match target {
+        Some(id) => store.set(&alias, &EntryId(id)),
+        None => store.remove(&alias),
+    }
+    .map_err(|e| e.to_string())?;
+    apps.apply_aliases(&store);
+    Ok(())
+}
+
+/// Open the crash-log folder in Explorer (ADR-0010).
+///
+/// It opens the folder. **It does not upload anything**, and there is no code
+/// path in Takyon that would.
+#[tauri::command]
+fn open_crash_logs() -> Result<(), String> {
+    let dir = crashlog::dir().ok_or("there is nowhere to write logs")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Through `ShellExecuteW` like every other launch, so Explorer does not
+    // inherit our handles (v0.2 task 7).
+    launch::open(&entry::LaunchTarget::Exe {
+        path: dir,
+        args: None,
+        working_dir: None,
+    })
+    .map(|_| ())
+}
+
 #[tauri::command]
 fn open_settings(app: tauri::AppHandle) {
     settings::open(&app);
@@ -315,6 +417,25 @@ fn open_settings(app: tauri::AppHandle) {
 #[tauri::command]
 fn hotkey_status(state: tauri::State<'_, HotkeyState>) -> HotkeyStatus {
     state.get()
+}
+
+/// The bindings the Keyboard page offers, and which one is the default.
+#[tauri::command]
+fn hotkey_choices() -> Vec<&'static str> {
+    hotkey::CHOICES.to_vec()
+}
+
+/// Rebind the hotkey (v0.6). Returns what is live afterwards, refused or not.
+///
+/// `async` deliberately: registering touches the shortcut manager, and a
+/// synchronous command would run this on the main thread.
+#[tauri::command(async)]
+fn set_hotkey(
+    app: tauri::AppHandle,
+    accelerator: String,
+    prefs: tauri::State<'_, Arc<prefs::Prefs>>,
+) -> HotkeyStatus {
+    hotkey::rebind(&app, &accelerator, &prefs)
 }
 
 /// The frontend reporting that a show's frame has been painted. See `bench.rs` for
@@ -338,6 +459,10 @@ pub fn run() {
     // Taken first, before anything Tauri does, so the login budget measures the
     // whole process and not just the part after the runtime was ready.
     let started = Instant::now();
+
+    // Before anything that could panic. A release build has no console, so
+    // without this a panic is completely silent (ADR-0010 — written, never sent).
+    crashlog::install();
 
     tauri::Builder::default()
         // Must be registered first, per the plugin's own guidance. It is required
@@ -419,7 +544,19 @@ pub fn run() {
             set_view,
             settings::settings_snapshot,
             settings::set_reduce_motion,
-            settings::migrate_local_prefs
+            settings::migrate_local_prefs,
+            settings::set_recents,
+            settings::set_tray,
+            settings::set_placement,
+            settings::set_theme,
+            settings::set_ui_size,
+            hotkey_choices,
+            set_hotkey,
+            clip_blocklist,
+            set_clip_blocked,
+            aliases,
+            set_alias,
+            open_crash_logs
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -435,6 +572,9 @@ pub fn run() {
             let apps = Arc::new(AppSource::new());
             let icons = Arc::new(IconStore::default());
             app.manage(icons.clone());
+            // Managed so the settings window can resolve an alias target back to a
+            // title, and re-apply the table without a re-walk (v0.6).
+            app.manage(apps.clone());
 
             // A usage database that cannot be opened must not stop the launcher.
             // In memory it learns for this session and forgets at exit, which is
@@ -483,6 +623,18 @@ pub fn run() {
             app.manage(prefs.clone());
             app.manage(clip_store.clone());
 
+            // Opened here rather than beside the capture thread so the settings
+            // window can edit it even when capture is off. Its own writes reload
+            // the cache, so an edit takes effect without a restart (tbd v0.5 §6).
+            let blocklist = match Blocklist::open(identity::data_dir()) {
+                Ok(b) => Some(Arc::new(b)),
+                Err(e) => {
+                    eprintln!("[takyon] the clipboard blocklist could not be opened: {e}");
+                    None
+                }
+            };
+            app.manage(blocklist.clone());
+
             let mut pipeline = Pipeline::new(
                 apps.clone(),
                 recents.clone(),
@@ -503,12 +655,16 @@ pub fn run() {
             pipeline.calc.set_policy(CalcPolicy::parse(
                 prefs.get(prefs::CALC_POLICY).as_deref().unwrap_or_default(),
             ));
+            pipeline.set_recents_enabled(prefs::flag(&prefs, prefs::RECENTS, true));
+            // Interface size and placement into atomics, before the first show:
+            // both sit on latency paths and must never reach SQLite there.
+            window::cache_layout_prefs(&prefs);
             app.manage(Arc::new(pipeline));
 
-            // Everything above this line is plugin registration that Tauri has
-            // already done. This is the first thing that makes the app useful, and
-            // it stays first.
-            hotkey::register(&handle);
+            // The first thing that makes the app useful, and it stays first.
+            // Reads `settings.db` so a rebound hotkey survives a restart: one
+            // indexed lookup on an open connection, which is what that costs.
+            hotkey::register(&handle, hotkey::accelerator(&prefs));
             let bench = app.state::<Bench>();
             bench.startup_ready();
             // Every span the harness measures starts at a hotkey press, so a taken
@@ -519,11 +675,18 @@ pub fn run() {
                 bench.hotkey_unavailable();
             }
 
+            // Built either way, then hidden if that is the stored choice: a tray
+            // icon that is never created cannot be brought back by a setting.
+            let tray_wanted = prefs::flag(&prefs, prefs::TRAY, true);
             if let Err(e) = tray::build(&handle) {
                 // Not fatal, but close to it: the Palette has no taskbar button, so
                 // with no tray icon and a dead hotkey there is no way to quit
                 // except Task Manager. Say so loudly.
                 eprintln!("[takyon] the tray icon could not be created: {e}");
+            } else if !tray_wanted {
+                if let Err(e) = tray::set_visible(&handle, false) {
+                    eprintln!("[takyon] the tray icon stays visible: {e}");
+                }
             }
 
             // Deferred init. Nothing below is on any latency budget, and two of the
@@ -540,23 +703,24 @@ pub fn run() {
             // A blocklist that will not open is fatal to capture for the same
             // reason `clips.db` is: without it there is no second exclusion
             // mechanism (ADR-0006).
-            if let Some(store) = clip_store {
-                match Blocklist::open(identity::data_dir()) {
-                    Ok(blocklist) => {
-                        let sweeper = store.clone();
-                        let prefs = prefs.clone();
-                        std::thread::spawn(move || loop {
-                            let retention = stored_retention(&prefs);
-                            let gone = sweeper.sweep(retention);
-                            if gone > 0 {
-                                eprintln!("[takyon] retention swept {gone} clips");
-                            }
-                            std::thread::sleep(SWEEP_EVERY);
-                        });
-                        clips::watch::spawn(store, Arc::new(blocklist));
-                    }
-                    Err(e) => eprintln!("[takyon] clipboard capture is off: {e}"),
+            match (clip_store, blocklist) {
+                (Some(store), Some(blocklist)) => {
+                    let sweeper = store.clone();
+                    let prefs = prefs.clone();
+                    std::thread::spawn(move || loop {
+                        let retention = stored_retention(&prefs);
+                        let gone = sweeper.sweep(retention);
+                        if gone > 0 {
+                            eprintln!("[takyon] retention swept {gone} clips");
+                        }
+                        std::thread::sleep(SWEEP_EVERY);
+                    });
+                    // The same `Arc` the settings window edits, so an added
+                    // executable is excluded from the next capture, not the next
+                    // launch.
+                    clips::watch::spawn(store, blocklist);
                 }
+                _ => eprintln!("[takyon] clipboard capture is off"),
             }
 
             // The application walk, on its own thread: `firstrun::maybe_prompt` can sit

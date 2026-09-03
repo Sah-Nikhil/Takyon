@@ -86,6 +86,47 @@ export type CalcPolicy = "automatic" | "explicit";
 export interface SettingsSnapshot {
   reduceMotion: boolean;
   calcPolicy: CalcPolicy;
+  recents: boolean;
+  tray: boolean;
+  placement: Placement;
+  clipRetention: ClipRetention;
+  clipBang: boolean;
+  theme: Theme;
+  uiSize: UiSize;
+}
+
+/**
+ * Appearance (v0.6). `system` follows Windows; the other two override it in
+ * both directions, which is what makes it an override rather than a hint.
+ */
+export type Theme = "system" | "light" | "dark";
+
+/**
+ * Interface size (v0.6). Applied as a root `zoom`, and **mirrored in Rust**,
+ * which scales the Palette's window height by the same percentages. If the two
+ * disagree the Palette is exactly the difference too short.
+ */
+export type UiSize = "small" | "default" | "large";
+
+/**
+ * Which monitor the Palette opens on (v0.6).
+ *
+ * Two pinned choices rather than a monitor list: a saved monitor index is wrong
+ * the moment a display is unplugged, and it is wrong silently.
+ */
+export type Placement = "cursor" | "primary";
+
+/** One alias and what it points at, for the Applications page (v0.6). */
+export interface AliasRow {
+  alias: string;
+  /** The target Entry's id. Opaque; the UI never parses it. */
+  target: string;
+  /**
+   * The target's title today. **Absent when the alias outlived its
+   * application** — an uninstall, or a rename. The row still lists, so it can
+   * be deleted rather than becoming an invisible rule.
+   */
+  title?: string;
 }
 
 /**

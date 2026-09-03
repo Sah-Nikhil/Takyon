@@ -94,6 +94,7 @@ pub struct Pipeline {
     /// Whether `!v` routes to clipboard history (`clips.bang`). Read every
     /// keystroke, so atomic rather than behind the Stability mutex.
     clips_bang: std::sync::atomic::AtomicBool,
+    recents_on: std::sync::atomic::AtomicBool,
     sources: Vec<Arc<dyn Source>>,
     /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
     lock: std::sync::Mutex<Option<StabilityLock>>,
@@ -134,6 +135,7 @@ impl Pipeline {
             icons,
             clips: None,
             clips_bang: std::sync::atomic::AtomicBool::new(true),
+            recents_on: std::sync::atomic::AtomicBool::new(true),
             frecency,
             sources,
             lock: std::sync::Mutex::new(None),
@@ -153,6 +155,19 @@ impl Pipeline {
 
     pub fn bang_enabled(&self) -> bool {
         self.clips_bang.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether the Recents Source contributes Entries (v0.6's Launcher page).
+    ///
+    /// Filtered after the fan-out, not by dropping the Source: it answers from an
+    /// in-memory snapshot, and rebuilding `sources` would need a lock per keystroke.
+    pub fn set_recents_enabled(&self, on: bool) {
+        self.recents_on
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn recents_enabled(&self) -> bool {
+        self.recents_on.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Attach the clipboard history, enabling `!v`.
@@ -320,6 +335,7 @@ impl Pipeline {
                 }
                 source.query(q, remaining).into_iter()
             })
+            .filter(|e| self.recents_enabled() || e.kind != crate::entry::EntryKind::Recent)
             .collect()
     }
 
@@ -1204,6 +1220,48 @@ otepad.exe")]);
 
         p.set_bang_enabled(true);
         assert_eq!(p.query("!v", 4).entries.len(), 2);
+    }
+
+    /// v0.6's Launcher page can switch Recents off.
+    ///
+    /// A Source the user has turned off must contribute nothing, and everything
+    /// else must be untouched — the switch is about one Source, not about search.
+    #[test]
+    fn v0_6_turning_recents_off_removes_only_recent_entries() {
+        let recents = Arc::new(RecentsSource::new());
+        recents.set_for_test(vec![crate::sources::recents::Recent {
+            id: EntryId("recent:report".into()),
+            title: "report.docx".into(),
+            subtitle: None,
+            target: PathBuf::from(r"C:\Users\t\Documents\report.docx"),
+            kind: EntryKind::Recent,
+            hay: Haystack::new("report.docx", Some("report")),
+        }]);
+        let apps = AppSource::new();
+        apps.set_for_test(vec![app("Reporting Studio", r"C:\Apps\reporting.exe")]);
+        let p = Pipeline::new(
+            Arc::new(apps),
+            recents,
+            Arc::new(SystemSource::new()),
+            Arc::new(IconStore::new(None)),
+            Arc::new(Frecency::open(None).unwrap()),
+        );
+
+        let on = p.query("report", 1).entries;
+        assert!(on.iter().any(|e| e.kind == EntryKind::Recent));
+        let apps_on = on.iter().filter(|e| e.kind == EntryKind::App).count();
+
+        p.set_recents_enabled(false);
+        let off = p.query("report", 2).entries;
+        assert!(!off.iter().any(|e| e.kind == EntryKind::Recent));
+        assert_eq!(
+            off.iter().filter(|e| e.kind == EntryKind::App).count(),
+            apps_on,
+            "turning Recents off changed which applications matched"
+        );
+
+        p.set_recents_enabled(true);
+        assert!(p.query("report", 3).entries.iter().any(|e| e.kind == EntryKind::Recent));
     }
 
     /// Opening a command navigates rather than launching: the window stays, and

@@ -133,6 +133,26 @@ What was *not* borrowed is the palette. t3code's canvas is `neutral-950`, a warm
 neutral black; Takyon's plate is `#0b0e12` and reads cool. Taking their hues
 would have closed this section by accident rather than by decision.
 
+**Slice 3 shipped a light theme, and it is derived rather than decided.** The
+question below is still open. Four values were needed to make light mode real,
+and each is the dark one restated rather than a new choice:
+
+| Token | Dark | Light | Why |
+|---|---|---|---|
+| `--color-plate` | `#0b0e12` | `#f2f5f8` | the same cool cast, inverted |
+| `--color-fg` | `#e6edf3` | `#10151b` | likewise |
+| `--color-accent` | `#3fc8f5` | `#0b7fa8` | Cherenkov cyan is a *light source*; on paper it has to darken to stay readable |
+| `--color-card` | plate + 3% fg | `#ffffff` | the surface order inverts — dark lifts by mixing in, light lifts by being pure white |
+
+Everything else — hairlines, hover, selection, controls — is an alpha of
+`--color-fg` and needed no light variant at all.
+
+**This is the strongest argument for the two-state proposal above**, arrived at
+by having to build the thing: the accent genuinely could not be one value. It ran
+luminous on the instrument and had to go flat and dark on paper, which is exactly
+what Direction IV claimed. That is evidence, not a decision — the hues themselves
+are still placeholders and the question stays open.
+
 ## Directions explored
 
 Four identity boards, all live:

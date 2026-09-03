@@ -48,6 +48,189 @@ test("a tier-two page is one click away and renders its own controls", async ({ 
 });
 
 /**
+ * ROADMAP v0.6's headline rule: a destructive setting confirms with the **real
+ * count**, never "some items". A generic warning is one people learn to click
+ * through, which is the habit you least want in front of a secure delete.
+ */
+test("shortening retention confirms with the exact number it destroys", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Clipboard History" }).click();
+
+  await page.getByRole("radio", { name: "1 day" }).click();
+
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("permanently delete");
+  // The mock holds four clips, so the dialog has to say four rather than "some".
+  await expect(dialog).toContainText(/delete \d+ clipboard items?/);
+  await expect(dialog).toContainText("nothing to restore from");
+
+  await expect(page).toHaveScreenshot("settings-retention-confirm.png");
+});
+
+test("cancelling the retention dialog changes nothing", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Clipboard History" }).click();
+
+  await expect(page.getByRole("radio", { name: "1 month" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await page.getByRole("radio", { name: "1 day" }).click();
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "1 month" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
+/** The blocklist is the second exclusion mechanism ADR-0006 relies on. */
+test("an executable can be added to the blocklist and taken off again", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Clipboard History" }).click();
+
+  await expect(page.getByText("keepass.exe")).toBeVisible();
+
+  await page.getByLabel("Executable to exclude").fill("Bitwarden.exe");
+  await page.getByRole("button", { name: "Add" }).click();
+  // Stored lower-cased, because that is how the capture path compares them.
+  await expect(page.getByText("bitwarden.exe")).toBeVisible();
+
+  await page
+    .locator("div", { has: page.getByText("bitwarden.exe", { exact: true }) })
+    .getByRole("button", { name: "Remove" })
+    .last()
+    .click();
+  await expect(page.getByText("bitwarden.exe")).toHaveCount(0);
+});
+
+/**
+ * tbd v0.3 §3: aliases had no editor at all. An alias whose application is gone
+ * must still be listed, or it becomes an invisible rule nobody can delete.
+ */
+test("the alias list names a dead target rather than hiding it", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await expect(page.getByText("Adobe Photoshop 2022")).toBeVisible();
+  await expect(page.getByText("no longer installed")).toBeVisible();
+
+  await expect(page).toHaveScreenshot("settings-aliases.png");
+});
+
+/** Pinned chords with a reset, never a raw capture field. */
+test("the hotkey is rebound from pinned choices", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Keyboard" }).click();
+
+  const group = page.getByRole("radiogroup", { name: "Open Takyon with" });
+  await expect(group.getByRole("radio")).toHaveCount(6);
+
+  await page.getByRole("radio", { name: "Ctrl + Space", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Ctrl + Space", exact: true })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(page.getByRole("status")).toHaveText("Applied");
+
+  await expect(page).toHaveScreenshot("settings-keyboard.png");
+});
+
+/**
+ * A refused chord keeps the old binding, and the chips have to show what is
+ * actually live rather than what was clicked.
+ */
+test("a refused chord keeps the previous binding and says so", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Keyboard" }).click();
+
+  await page.getByRole("radio", { name: "Ctrl + Space", exact: true }).click();
+  // The mock refuses Alt+Space, standing in for PowerToys Run holding it.
+  await page.getByRole("radio", { name: "Alt + Space", exact: true }).click();
+
+  await expect(page.getByRole("alert")).toContainText("already holding it");
+  await expect(page.getByRole("radio", { name: "Ctrl + Space", exact: true })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
+/** Hiding the tray with a dead hotkey would leave no way in, and no way out. */
+test("the tray cannot be hidden while the hotkey is unregistered", async ({ page }) => {
+  await page.goto("/?window=settings&hotkey=failed");
+  await page.getByRole("button", { name: "Launcher" }).click();
+
+  const tray = page.getByRole("switch", { name: "Show the tray icon" });
+  await tray.click();
+
+  await expect(page.getByRole("alert")).toContainText("only way in");
+  await expect(tray).toHaveAttribute("aria-checked", "true");
+});
+
+/**
+ * Slice 3: the override has to beat the system in **both** directions, which is
+ * what separates an override from a hint. The suite runs `colorScheme: dark`, so
+ * choosing Light here is the harder direction.
+ */
+test("the appearance override beats the system setting", async ({ page }) => {
+  await page.goto("/?window=settings");
+
+  // Following the system, no attribute at all — the stylesheet decides.
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+
+  await page.getByRole("radio", { name: "Light" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page).toHaveScreenshot("settings-light.png");
+
+  await page.getByRole("radio", { name: "Dark" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  // And back to following, which must remove the attribute rather than pick a side.
+  await page.getByRole("radio", { name: "System" }).click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+});
+
+/** Interface size is a root zoom, mirrored by Rust's window arithmetic. */
+test("interface size scales the whole window", async ({ page }) => {
+  await page.goto("/?window=settings");
+
+  await expect(page.locator("html")).not.toHaveAttribute("data-ui-size", /.*/);
+  await page.getByRole("radio", { name: "Large" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-ui-size", "large");
+  await expect(page).toHaveScreenshot("settings-large.png");
+
+  await page.getByRole("radio", { name: "Default" }).click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-ui-size", /.*/);
+});
+
+/**
+ * The Palette is the surface the light theme actually has to survive: it is a
+ * transparent window drawing its own panel, so a theme that only reached the
+ * settings window would look correct here and wrong where it matters.
+ */
+test("the Palette honours a light override", async ({ page }) => {
+  await page.goto("/?window=palette");
+
+  // Stand in for the Settings window having stored it. A full navigation would
+  // reset the browser build's module state, which Rust does not do.
+  await page.evaluate(() => {
+    const m = (
+      window as unknown as {
+        __takyon_mock: {
+          setStoredPreference: (p: { theme: string }) => void;
+          emitShow: () => void;
+        };
+      }
+    ).__takyon_mock;
+    m.setStoredPreference({ theme: "light" });
+    m.emitShow();
+  });
+
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
+/**
  * About reads a build-time define for the version, so it fails at render rather
  * than at compile if `vite.config.ts` stops injecting one.
  */

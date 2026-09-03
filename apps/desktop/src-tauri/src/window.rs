@@ -263,6 +263,40 @@ pub fn reset_shape(app: &AppHandle) {
     apply(app, shape);
 }
 
+/// The interface zoom and where to open, cached out of `settings.db`.
+///
+/// **Atomics, not a lookup.** `apply` runs on every keystroke and `show` on every
+/// summon; a SQLite read there would put disk on the 30 ms budget to answer a
+/// question that changes about once a year. Written at startup and on change.
+static UI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
+static ON_PRIMARY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Load both from storage. Called at startup and whenever either changes.
+pub fn cache_layout_prefs(prefs: &crate::prefs::Prefs) {
+    use std::sync::atomic::Ordering::Relaxed;
+    UI_SCALE.store(
+        crate::prefs::ui_scale_percent(prefs.get(crate::prefs::UI_SIZE).as_deref()),
+        Relaxed,
+    );
+    ON_PRIMARY.store(crate::settings::placement(prefs) == "primary", Relaxed);
+}
+
+/// Apply the stored interface size to a logical height.
+///
+/// The other half lives in `styles.css` as a root `zoom`. They multiply the same
+/// number, so a mismatch shows as the Palette being exactly the zoom too short.
+fn scaled(height: u32) -> u32 {
+    let percent = UI_SCALE.load(std::sync::atomic::Ordering::Relaxed);
+    (height * percent).div_ceil(100)
+}
+
+/// Resize the Palette after the interface size changed, without waiting for a
+/// keystroke to reshape it.
+pub fn rescale(app: &AppHandle) {
+    let shape = *SHAPE.lock().unwrap_or_else(|e| e.into_inner());
+    apply(app, shape);
+}
+
 /// Resize the Palette to fit `shape`.
 ///
 /// **Snap, never tween** (TBC-0006): a tween reads as instability once height
@@ -270,7 +304,7 @@ pub fn reset_shape(app: &AppHandle) {
 /// only — re-centring per keystroke would look like drift.
 fn apply(app: &AppHandle, shape: Shape) {
     let Some(win) = palette(app) else { return };
-    let height = content_height(shape);
+    let height = scaled(content_height(shape));
 
     let Ok(size) = win.inner_size() else { return };
     let Ok(scale) = win.scale_factor() else { return };
@@ -450,12 +484,21 @@ pub fn toggle(app: &AppHandle, bench: &Bench) {
 /// when someone reaches for a launcher, and it leaves room for Entries to grow
 /// downward (TBC-0006) without the window having to move.
 fn place_on_cursor_monitor(app: &AppHandle, win: &WebviewWindow) {
-    let Ok(cursor) = app.cursor_position() else { return };
-    let monitor = match app.monitor_from_point(cursor.x, cursor.y) {
-        Ok(Some(m)) => m,
-        // No monitor for that point is possible mid-hotplug. Leaving the window
-        // where it is beats moving it somewhere arbitrary.
-        _ => return,
+    let primary = ON_PRIMARY.load(std::sync::atomic::Ordering::Relaxed);
+
+    let monitor = if primary {
+        match app.primary_monitor() {
+            Ok(Some(m)) => m,
+            _ => return,
+        }
+    } else {
+        let Ok(cursor) = app.cursor_position() else { return };
+        match app.monitor_from_point(cursor.x, cursor.y) {
+            Ok(Some(m)) => m,
+            // No monitor for that point is possible mid-hotplug. Leaving the
+            // window where it is beats moving it somewhere arbitrary.
+            _ => return,
+        }
     };
 
     let centre = |win: &WebviewWindow| -> Option<tauri::PhysicalPosition<i32>> {
