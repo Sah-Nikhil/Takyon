@@ -180,12 +180,20 @@ fn activate(
 
 /// When the calculator may answer (v0.4).
 ///
-/// Pushed from the frontend, like `prefs.ts`'s motion switch: no `settings.db`
-/// until v0.6. Default is Automatic and an unrecognised value parses back to it,
-/// so a keystroke arriving before the first push still behaves.
+/// Stored **and** pushed, since v0.6 gave it a home: the pipeline reads the
+/// policy on the keystroke path and must not go to SQLite for it, and the stored
+/// copy is what startup reads before any window exists to push one.
 #[tauri::command]
-fn set_calc_policy(policy: String, pipeline: tauri::State<'_, Arc<Pipeline>>) {
-    pipeline.calc.set_policy(CalcPolicy::parse(&policy));
+fn set_calc_policy(
+    policy: String,
+    prefs: tauri::State<'_, Arc<prefs::Prefs>>,
+    pipeline: tauri::State<'_, Arc<Pipeline>>,
+) {
+    let policy = CalcPolicy::parse(&policy);
+    if let Err(e) = prefs.set(prefs::CALC_POLICY, policy.as_str()) {
+        eprintln!("[takyon] the calculator setting could not be saved: {e}");
+    }
+    pipeline.calc.set_policy(policy);
 }
 
 /// Every action id and its label, fetched once on mount (v0.4.5 task 4).
@@ -408,7 +416,10 @@ pub fn run() {
             clip_page,
             clip_bang,
             set_clip_bang,
-            set_view
+            set_view,
+            settings::settings_snapshot,
+            settings::set_reduce_motion,
+            settings::migrate_local_prefs
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -486,6 +497,12 @@ pub fn run() {
             // a keystroke can arrive before the Palette has mounted, and `!v`
             // silently falling through would look like a broken Bang.
             pipeline.set_bang_enabled(prefs::flag(&prefs, prefs::CLIPS_BANG, true));
+            // Same reason, and it was the gap v0.6 closed: the policy was pushed
+            // from the frontend only, so every keystroke before the Palette
+            // mounted answered under Automatic whatever the user had chosen.
+            pipeline.calc.set_policy(CalcPolicy::parse(
+                prefs.get(prefs::CALC_POLICY).as_deref().unwrap_or_default(),
+            ));
             app.manage(Arc::new(pipeline));
 
             // Everything above this line is plugin registration that Tauri has

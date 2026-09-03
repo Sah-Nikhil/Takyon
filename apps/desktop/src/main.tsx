@@ -7,6 +7,7 @@
 
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { Palette } from "./palette/Palette";
 import { Settings } from "./settings/Settings";
 import { inTauri } from "./api";
@@ -15,18 +16,22 @@ import {
   calcPolicyRequest,
   emitHide,
   emitShow,
+  failAutostart,
+  failPreferenceWrite,
   menuRequest,
   setIndexing,
+  setStoredPreference,
 } from "./api.mock";
-import { applyMotionPreference } from "./prefs";
+import { load } from "./prefs";
 import "./styles.css";
 
 const kind = new URLSearchParams(window.location.search).get("window") ?? "palette";
 
-// Before the first render, not in an effect. Applied afterwards, a Palette shown
-// on the very first summon would play one frame of an animation the user has
-// switched off.
-applyMotionPreference();
+// Fired before the first render but not awaited: since v0.6 the value lives in
+// `settings.db`, so reading it is an `invoke` rather than a synchronous
+// `localStorage` hit. The Palette can afford that — it mounts at startup while
+// hidden, so the read lands long before any show could paint a frame.
+void load();
 
 // Outside Tauri there is no hotkey to press, so the show event would never fire
 // and the Palette would sit unfocused forever. Playwright and the browser console
@@ -42,9 +47,18 @@ if (!inTauri) {
     menuRequest,
     bannerRequest,
     calcPolicyRequest,
+    // The only way to make the autostart write refuse on demand. On a real
+    // machine it takes a group policy or a locked hive (tbd v0.1 §3).
+    failAutostart,
+    failPreferenceWrite,
+    // What "Settings wrote a preference while the Palette was hidden" looks like
+    // when there is no settings.db to write to.
+    setStoredPreference,
   };
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>{kind === "settings" ? <Settings /> : <Palette />}</React.StrictMode>,
+  <React.StrictMode>
+    <ErrorBoundary>{kind === "settings" ? <Settings /> : <Palette />}</ErrorBoundary>
+  </React.StrictMode>,
 );

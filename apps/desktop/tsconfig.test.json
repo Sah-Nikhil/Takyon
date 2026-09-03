@@ -1,0 +1,14 @@
+{
+  /*
+    Same split `packages/shared` uses: the app's own tsconfig carries
+    `vite/client` and must not also carry `bun`, or a Bun global would compile
+    into code that ships to WebView2. The unit tests need `bun:test`, so they are
+    excluded there and typechecked here.
+  */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "bun"]
+  },
+  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"],
+  "exclude": []
+}

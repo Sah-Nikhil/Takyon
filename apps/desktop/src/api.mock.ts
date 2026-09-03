@@ -21,6 +21,7 @@ import type {
   Entry,
   HotkeyStatus,
   QueryResult,
+  SettingsSnapshot,
   ShowPayload,
 } from "@takyon/shared";
 
@@ -320,6 +321,40 @@ export function calcPolicyRequest() {
   return lastCalcPolicy;
 }
 
+/** The preferences the browser build reports. Defaults match Rust's. */
+let snapshot: SettingsSnapshot = { reduceMotion: false, calcPolicy: "automatic" };
+
+/**
+ * Stand in for the other window having written a preference.
+ *
+ * The two windows share `settings.db` and nothing else, so this is what "Settings
+ * changed it while the Palette was hidden" looks like from the browser build.
+ */
+export function setStoredPreference(patch: Partial<SettingsSnapshot>) {
+  snapshot = { ...snapshot, ...patch };
+}
+
+/** Whether the browser build reports autostart as registered. */
+let lastAutostart = false;
+
+/**
+ * An error the next autostart write should reject with, or null to succeed.
+ *
+ * The one thing the mock can do that a real machine cannot do on demand: refuse
+ * the registry write. tbd v0.1 §3's fix is a `try`/`catch`/`finally` that no
+ * other test reaches, and forcing the failure by hand means a group policy.
+ */
+let autostartFailure: string | null = null;
+export function failAutostart(message: string | null) {
+  autostartFailure = message;
+}
+
+/** The same, for a `settings.db` write. An unwritable database is the real case. */
+let preferenceFailure: string | null = null;
+export function failPreferenceWrite(message: string | null) {
+  preferenceFailure = message;
+}
+
 /**
  * Calculator rows for the visual layer, as a lookup table.
  *
@@ -453,8 +488,26 @@ export const mock = {
   }),
   reportFirstPixel: async (_showId: number) => {},
   reportFirstEntry: async (_seq: number) => {},
-  autostartIsEnabled: async () => false,
-  autostartSetEnabled: async (_on: boolean) => {},
+  autostartIsEnabled: async () => lastAutostart,
+  autostartSetEnabled: async (on: boolean) => {
+    // Refused first, written second — the order the registry uses. A rejected
+    // write must leave the reported state untouched, or the test would pass on a
+    // mock that lies in the same direction as the bug.
+    if (autostartFailure !== null) throw new Error(autostartFailure);
+    lastAutostart = on;
+  },
+  settingsSnapshot: async (): Promise<SettingsSnapshot> => snapshot,
+  setReduceMotion: async (on: boolean) => {
+    // Same order as autostart: refused first, written second, so a test cannot
+    // pass against a mock that lies in the same direction as the bug.
+    if (preferenceFailure !== null) throw new Error(preferenceFailure);
+    snapshot = { ...snapshot, reduceMotion: on };
+  },
+  migrateLocalPrefs: async (legacy: Partial<SettingsSnapshot>): Promise<SettingsSnapshot> => {
+    // Same rule as Rust's: a value already held wins, so this is idempotent.
+    snapshot = { ...legacy, ...snapshot };
+    return snapshot;
+  },
   onShow: (cb: ShowListener) => {
     showListeners.add(cb);
     return () => {

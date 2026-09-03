@@ -110,6 +110,29 @@ exist at all: a near-white foreground, a near-black plate, and a Cherenkov cyan
 standing in for the accent. They are a stand-in, not a decision. Swapping in the
 real scheme is one edit to that file plus a rebuild — no asset is redrawn.
 
+**v0.6 slice 1 kept it open, deliberately, by making the surfaces derived.** The
+settings window needed a real surface hierarchy before the hue was settled, so it
+borrowed one: [t3code](https://github.com/pingdotgg/t3code)'s construction and
+Raycast's layout, with Takyon's own colours.
+
+Two rules carry it, and both are in `styles.css`:
+
+- **Surfaces are raised, never grey.** A card is the plate with 3% of the
+  foreground mixed into it; the sidebar 2%. t3code states the reason in its own
+  stylesheet — borders and hover states provide the separation, so a near-black
+  window never goes milky.
+- **Every separation is an alpha of the foreground**, not a colour of its own:
+  hairlines at 8%, hover at 5%, selection at 10%.
+
+The consequence is what matters here: `--color-card`, `--color-sidebar`,
+`--color-hairline` and the rest are all `color-mix` over `--color-plate` and
+`--color-fg`. **Nothing in the settings window names a colour.** So resolving the
+question below is still one edit, on a window that already exists.
+
+What was *not* borrowed is the palette. t3code's canvas is `neutral-950`, a warm
+neutral black; Takyon's plate is `#0b0e12` and reads cool. Taking their hues
+would have closed this section by accident rather than by decision.
+
 ## Directions explored
 
 Four identity boards, all live:

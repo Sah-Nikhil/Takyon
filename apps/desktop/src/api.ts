@@ -25,6 +25,7 @@ import {
   type ViewKind,
   type HotkeyStatus,
   type QueryResult,
+  type SettingsSnapshot,
   type ShowPayload,
 } from "@takyon/shared";
 import { mock } from "./api.mock";
@@ -67,12 +68,38 @@ export const reportFirstEntry = (seq: number) =>
 /**
  * Tell Rust when the calculator may answer (v0.4).
  *
- * Pushed rather than read: the rule is enforced inside the Source on the
- * keystroke path, so Rust has to hold it. `prefs.ts` remembers the choice, and
- * both windows push, so they cannot disagree.
+ * Still pushed, because the rule is enforced inside the Source on the keystroke
+ * path. Since v0.6 Rust also stores it, so startup no longer has to wait for a
+ * window to mount before the choice takes effect.
  */
 export const setCalcPolicy = (policy: CalcPolicy) =>
   inTauri ? invoke<void>("set_calc_policy", { policy }) : mock.setCalcPolicy(policy);
+
+/**
+ * Every stored preference, read once on mount (v0.6).
+ *
+ * Replaces the `localStorage` reads `prefs.ts` did through v0.5. Asynchronous,
+ * which the Palette can afford: it mounts at startup while hidden, so the read
+ * lands long before any show.
+ */
+export const settingsSnapshot = () =>
+  inTauri ? invoke<SettingsSnapshot>("settings_snapshot") : mock.settingsSnapshot();
+
+/** Turn our own animations off, or back on. */
+export const setReduceMotion = (on: boolean) =>
+  inTauri ? invoke<void>("set_reduce_motion", { on }) : mock.setReduceMotion(on);
+
+/**
+ * Carry v0.1's `localStorage` preferences into `settings.db` (task 8b).
+ *
+ * Only a window can read `localStorage`, so the values are sent rather than
+ * found. Rust ignores any key it already holds, which is what makes calling this
+ * on every mount safe.
+ */
+export const migrateLocalPrefs = (legacy: Partial<SettingsSnapshot>) =>
+  inTauri
+    ? invoke<SettingsSnapshot>("migrate_local_prefs", legacy)
+    : mock.migrateLocalPrefs(legacy);
 
 /**
  * How long clipboard history is kept, as stored (v0.5).

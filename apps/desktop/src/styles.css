@@ -9,6 +9,25 @@
   --color-plate: #0b0e12;
   --color-fg: #e6edf3;
   --color-accent: #3fc8f5;
+
+  /*
+    Settings surfaces: t3code's construction, Raycast's layout, Takyon's hues.
+    Every one is derived from the two above, so swapping in the real scheme when
+    docs/brand.md closes is still one edit.
+
+    Raised, not grey. A card is the plate with 3% of the foreground mixed in and
+    every separation is an alpha, which is what keeps a near-black window from
+    going milky at the first border.
+  */
+  --color-card: color-mix(in srgb, var(--color-fg) 3%, var(--color-plate));
+  --color-sidebar: color-mix(in srgb, var(--color-fg) 2%, var(--color-plate));
+  --color-control: color-mix(in srgb, var(--color-fg) 8%, transparent);
+  --color-row-hover: color-mix(in srgb, var(--color-fg) 5%, transparent);
+  --color-row-selected: color-mix(in srgb, var(--color-fg) 10%, transparent);
+  --color-hairline: color-mix(in srgb, var(--color-fg) 8%, transparent);
+
+  --radius-control: 0.5rem;
+  --radius-card: 0.625rem;
 }
 
 :root {

@@ -18,6 +18,7 @@ use common::real_apps;
 use serde_json::Value;
 use takyon_lib::entry::{Action, EntryId};
 use takyon_lib::frecency::Frecency;
+use takyon_lib::prefs::Prefs;
 use takyon_lib::query::{Pipeline, QueryResult};
 use takyon_lib::sources::recents::RecentsSource;
 use takyon_lib::sources::system::SystemSource;
@@ -103,6 +104,88 @@ fn call(webview: &tauri::WebviewWindow<MockRuntime>, cmd: &str, body: Value) -> 
     .expect("command was rejected")
     .deserialize()
     .expect("response was not JSON")
+}
+
+/// `interface SettingsSnapshot` in `packages/shared/src/ipc.ts`.
+const SNAPSHOT_KEYS: [&str; 2] = ["reduceMotion", "calcPolicy"];
+
+/// A mock app managing only a `Prefs`, for the settings commands.
+///
+/// These are the **real** commands, not copies: none of them touches a window or
+/// the Wry runtime, so unlike `query` they can be driven directly. A copy here
+/// would test the copy.
+fn mock_settings() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
+    let app = mock_builder()
+        .invoke_handler(tauri::generate_handler![
+            takyon_lib::settings::settings_snapshot,
+            takyon_lib::settings::set_reduce_motion,
+            takyon_lib::settings::migrate_local_prefs
+        ])
+        .build(mock_context(noop_assets()))
+        .expect("mock app");
+
+    app.manage(Arc::new(Prefs::open(None).expect("in-memory settings.db")));
+
+    let webview = tauri::WebviewWindowBuilder::new(&app, "settings", Default::default())
+        .build()
+        .expect("mock window");
+    (app, webview)
+}
+
+#[test]
+fn v0_6_a_settings_snapshot_carries_exactly_the_fields_ipc_ts_declares() {
+    let (_app, webview) = mock_settings();
+    let response = call(&webview, "settings_snapshot", serde_json::json!({}));
+
+    let object = response.as_object().expect("SettingsSnapshot is an object");
+    let mut keys: Vec<_> = object.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    let mut expected = SNAPSHOT_KEYS;
+    expected.sort_unstable();
+    assert_eq!(keys, expected, "SettingsSnapshot drifted from ipc.ts");
+
+    assert!(object["reduceMotion"].is_boolean());
+    assert_eq!(object["calcPolicy"].as_str(), Some("automatic"));
+}
+
+#[test]
+fn v0_6_a_written_preference_reads_back_across_the_seam() {
+    let (_app, webview) = mock_settings();
+
+    call(&webview, "set_reduce_motion", serde_json::json!({ "on": true }));
+    let after = call(&webview, "settings_snapshot", serde_json::json!({}));
+    assert_eq!(after["reduceMotion"].as_bool(), Some(true));
+}
+
+/// Task 8b: read the `localStorage` value across so nobody's setting silently
+/// flips back on. Runs on every mount, so it must be idempotent — the second
+/// call carries the legacy value again and must not undo a later choice.
+#[test]
+fn v0_6_migration_seeds_an_empty_install_then_never_speaks_again() {
+    let (_app, webview) = mock_settings();
+
+    let seeded = call(
+        &webview,
+        "migrate_local_prefs",
+        serde_json::json!({ "reduceMotion": true, "calcPolicy": "explicit" }),
+    );
+    assert_eq!(seeded["reduceMotion"].as_bool(), Some(true));
+    assert_eq!(seeded["calcPolicy"].as_str(), Some("explicit"));
+
+    // The user then turns motion back on in the settings window.
+    call(&webview, "set_reduce_motion", serde_json::json!({ "on": false }));
+
+    // A second window mounts, still holding the stale legacy key.
+    let again = call(
+        &webview,
+        "migrate_local_prefs",
+        serde_json::json!({ "reduceMotion": true, "calcPolicy": "explicit" }),
+    );
+    assert_eq!(
+        again["reduceMotion"].as_bool(),
+        Some(false),
+        "migration overwrote a choice made after it"
+    );
 }
 
 #[test]

@@ -23,6 +23,18 @@ pub const CLIPS_RETENTION: &str = "clips.retention";
 /// than a feature. Default on.
 pub const CLIPS_BANG: &str = "clips.bang";
 
+/// Whether our own animations are off. `"1"` or `"0"`, default off.
+///
+/// Independent of Windows' reduce-motion setting, which `styles.css` obeys
+/// through a media query either way. Migrated out of `localStorage` at v0.6.
+pub const UI_REDUCE_MOTION: &str = "ui.reduce-motion";
+
+/// When the calculator may answer. `sources::calc::Policy` spells the values.
+///
+/// Read at startup as well as stored: a keystroke can arrive before any window
+/// has mounted to push it, and the Bangless path must not go to SQLite.
+pub const CALC_POLICY: &str = "calc.policy";
+
 /// The `settings` table.
 pub struct Prefs {
     conn: Mutex<Connection>,
@@ -60,6 +72,20 @@ impl Prefs {
         .optional()
         .ok()
         .flatten()
+    }
+
+    /// Write `value` only if `key` holds nothing. True when it was written.
+    ///
+    /// One statement rather than a read then a write: two windows migrating at
+    /// once would both see the key absent and the second would clobber the first.
+    pub fn set_if_absent(&self, key: &str, value: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("prefs mutex");
+        let changed = conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO NOTHING",
+            params![key, value],
+        )?;
+        Ok(changed > 0)
     }
 
     pub fn set(&self, key: &str, value: &str) -> Result<()> {
@@ -105,6 +131,31 @@ mod tests {
     fn v0_5_an_unset_key_is_none_rather_than_empty() {
         let p = Prefs::open(None).unwrap();
         assert_eq!(p.get("nothing.here"), None);
+    }
+
+    /// v0.6 migrates the two `localStorage` preferences in. A migration that
+    /// overwrote would undo a settings-window choice every time a window holding
+    /// a stale key mounted, so a value already stored always wins.
+    #[test]
+    fn v0_6_a_migration_never_overwrites_a_stored_value() {
+        let p = Prefs::open(None).unwrap();
+
+        assert!(p.set_if_absent(UI_REDUCE_MOTION, "1").unwrap());
+        assert_eq!(p.get(UI_REDUCE_MOTION).as_deref(), Some("1"));
+
+        // A second migration carrying the other legacy value. Ignored.
+        assert!(!p.set_if_absent(UI_REDUCE_MOTION, "0").unwrap());
+        assert_eq!(p.get(UI_REDUCE_MOTION).as_deref(), Some("1"));
+    }
+
+    /// A value the settings window wrote must survive migration too, which is the
+    /// same rule reached from the other direction: `set` then migrate.
+    #[test]
+    fn v0_6_a_written_value_survives_a_later_migration() {
+        let p = Prefs::open(None).unwrap();
+        p.set(CALC_POLICY, "explicit").unwrap();
+        assert!(!p.set_if_absent(CALC_POLICY, "automatic").unwrap());
+        assert_eq!(p.get(CALC_POLICY).as_deref(), Some("explicit"));
     }
 
     #[test]

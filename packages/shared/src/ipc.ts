@@ -77,6 +77,18 @@ export type EntryKind =
 export type CalcPolicy = "automatic" | "explicit";
 
 /**
+ * Every stored preference a window reads on mount (v0.6).
+ *
+ * One response rather than one `invoke` per control, because the Palette reads
+ * it too and reads it on the startup path. **Autostart is deliberately absent**:
+ * the OS owns that answer and it is re-read every mount (ADR-0015).
+ */
+export interface SettingsSnapshot {
+  reduceMotion: boolean;
+  calcPolicy: CalcPolicy;
+}
+
+/**
  * How long clipboard history is kept (v0.5, ADR-0006).
  *
  * A fixed list, not a duration: expiry **deletes** rather than hides. The
