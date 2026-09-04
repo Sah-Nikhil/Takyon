@@ -363,17 +363,23 @@ let aliasRows: AliasRow[] = [
  * Applications for the alias editor, title-sorted as Rust sorts them.
  *
  * Deliberately mixed: two with an alias, one with two, and several with none,
- * because the empty state is the row the editor exists to fill.
+ * because the empty state is the row the editor exists to fill. Four carry an
+ * icon key and four do not, so the initial-placeholder path is drawn too.
  */
 let appRows: AppAliasRow[] = [
-  { id: "app:photoshop", title: "Adobe Photoshop 2022", subtitle: "C:\\Program Files\\Adobe\\Photoshop.exe", aliases: ["ps"] },
-  { id: "app:premiere", title: "Adobe Premiere Pro", subtitle: "C:\\Program Files\\Adobe\\Premiere.exe", aliases: ["prem", "pr"] },
-  { id: "app:calculator", title: "Calculator", subtitle: "Store app", aliases: [] },
-  { id: "app:explorer", title: "File Explorer", subtitle: "C:\\Windows\\explorer.exe", aliases: ["explorer"] },
-  { id: "app:firefox", title: "Firefox", subtitle: "C:\\Program Files\\Mozilla Firefox\\firefox.exe", aliases: [] },
-  { id: "app:chrome", title: "Google Chrome", subtitle: "C:\\Program Files\\Google\\Chrome\\chrome.exe", aliases: ["chrome"] },
-  { id: "app:notepad", title: "Notepad", subtitle: "C:\\Windows\\System32\\notepad.exe", aliases: [] },
-  { id: "app:code", title: "Visual Studio Code", subtitle: "C:\\Program Files\\Microsoft VS Code\\Code.exe", aliases: [] },
+  { id: "app:photoshop", title: "Adobe Photoshop 2022", subtitle: "C:\\Program Files\\Adobe\\Photoshop.exe", icon: "0000000000000001", origin: "installed", aliases: ["ps"] },
+  { id: "app:premiere", title: "Adobe Premiere Pro", subtitle: "C:\\Program Files\\Adobe\\Premiere.exe", icon: "0000000000000002", origin: "installed", aliases: ["prem", "pr"] },
+  { id: "app:explorer", title: "File Explorer", subtitle: "C:\\Windows\\explorer.exe", icon: "0000000000000003", origin: "installed", aliases: ["explorer"] },
+  { id: "app:firefox", title: "Firefox", subtitle: "C:\\Program Files\\Mozilla Firefox\\firefox.exe", origin: "installed", aliases: [] },
+  { id: "app:chrome", title: "Google Chrome", subtitle: "C:\\Program Files\\Google\\Chrome\\chrome.exe", origin: "installed", aliases: ["chrome"] },
+  { id: "app:notepad", title: "Notepad", subtitle: "C:\\Windows\\System32\\notepad.exe", origin: "installed", aliases: [] },
+  { id: "app:code", title: "Visual Studio Code", subtitle: "C:\\Program Files\\Microsoft VS Code\\Code.exe", origin: "installed", aliases: [] },
+  { id: "app:calculator", title: "Calculator", subtitle: "Store app", icon: "0000000000000004", origin: "store", aliases: [] },
+  { id: "app:tf2", title: "Team Fortress 2", subtitle: "Steam", origin: "game", aliases: [] },
+  // The long tail, and the reason the group is collapsed by default.
+  { id: "app:a2ping", title: "a2ping", subtitle: "C:\\TeX\\miktex\\bin\\x64\\a2ping.exe", origin: "commandLine", aliases: [] },
+  { id: "app:addr2line", title: "addr2line", subtitle: "C:\\MinGW\\bin\\addr2line.exe", origin: "commandLine", aliases: [] },
+  { id: "app:adb", title: "adb", subtitle: "C:\\Users\\you\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe", origin: "commandLine", aliases: [] },
 ];
 
 /**

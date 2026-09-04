@@ -715,6 +715,7 @@ mod tests {
         };
         App {
             id: EntryId::for_launch(&target),
+            origin: crate::sources::apps::AppOrigin::Installed,
             hay: Haystack::new(title, PathBuf::from(path).file_stem().and_then(|s| s.to_str())),
             title: title.into(),
             subtitle: Some(path.into()),
@@ -910,6 +911,7 @@ otepad.exe")]);
             id: EntryId::for_launch(&discord_target),
             hay: Haystack::new("Discord", Some("update")),
             title: "Discord".into(),
+            origin: crate::sources::apps::AppOrigin::Installed,
             subtitle: None,
             target: discord_target,
             icon_source: None,
@@ -1014,6 +1016,7 @@ otepad.exe")]);
             // exactly the DisplaySwitch case. `app()` would give it a real name.
             hay: Haystack::for_executable("displayswitch"),
             title: "DisplaySwitch".into(),
+            origin: crate::sources::apps::AppOrigin::CommandLine,
             subtitle: None,
             target: ds_target,
             icon_source: None,

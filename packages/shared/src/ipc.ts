@@ -160,6 +160,15 @@ export type UiSize = "small" | "default" | "large";
 export type Placement = "cursor" | "primary";
 
 /**
+ * Where an application was discovered (v0.7).
+ *
+ * The list groups on it. `commandLine` is the long tail — `a2ping`, `addr2line`,
+ * `agentactivationruntimestarter` — real and launchable and never what anyone is
+ * scrolling for, which is why it is collapsed by default.
+ */
+export type AppOrigin = "installed" | "store" | "game" | "commandLine";
+
+/**
  * One application as the Applications page lists it (v0.7).
  *
  * Keyed by application rather than by alias, unlike `AliasRow`: an alias is
@@ -171,6 +180,13 @@ export interface AppAliasRow {
   title: string;
   /** Path or store, shown to tell two same-named applications apart. */
   subtitle?: string;
+  /**
+   * Icon key for `takyon-icon://`, absent where the shell had none. The row
+   * draws an initial instead and never waits for one (§6).
+   */
+  icon?: string;
+  /** Which discovery path found it, so the list can group rather than sprawl. */
+  origin: AppOrigin;
   /** Every alias pointing here. Usually zero or one; the store allows more. */
   aliases: string[];
 }

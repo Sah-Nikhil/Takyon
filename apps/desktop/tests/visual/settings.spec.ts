@@ -102,6 +102,45 @@ test("escape leaves an alias as it was", async ({ page }) => {
   );
 });
 
+/**
+ * The clutter fix: 1,891 applications sprawling in one list, most of them `PATH`
+ * executables nobody recognises. Four groups, and the long tail starts shut.
+ */
+test("applications are grouped, and the command-line tail starts collapsed", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await expect(page.getByText("Installed (7)")).toBeVisible();
+  await expect(page.getByText("Store apps (1)")).toBeVisible();
+  await expect(page.getByText("Games (1)")).toBeVisible();
+  await expect(page.getByText("Command line (3)")).toBeVisible();
+
+  // Installed is open; the tail is not, and says how much it is hiding.
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alias for a2ping" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Command line applications" })).toHaveText(
+    "Show 3",
+  );
+
+  await page.getByRole("button", { name: "Command line applications" }).click();
+  await expect(page.getByRole("button", { name: "Alias for a2ping" })).toBeVisible();
+
+  await expect(page).toHaveScreenshot("settings-applications-groups.png");
+});
+
+/** Searching says which group you meant, so a hit is never hidden by a header. */
+test("a filter reveals matches inside a collapsed group", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+  await expect(page.getByRole("button", { name: "Alias for adb" })).toHaveCount(0);
+
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("adb");
+  await expect(page.getByRole("button", { name: "Alias for adb" })).toBeVisible();
+  // And only the group that matched is drawn at all.
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toHaveCount(0);
+  await expect(page.getByText("Command line (1)")).toBeVisible();
+});
+
 /** ~1900 applications is more list than anyone scrolls. The filter is the way in. */
 test("the application list filters by name and by alias", async ({ page }) => {
   await page.goto("/?window=settings");

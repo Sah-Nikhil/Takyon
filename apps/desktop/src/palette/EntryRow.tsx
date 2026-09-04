@@ -8,25 +8,7 @@
  */
 
 import { ROW_HEIGHT, type Entry, type EntryKind } from "@takyon/shared";
-import * as api from "@/api";
-
-/**
- * What is drawn while an icon is missing.
- *
- * Three cases the row cannot tell apart: not extracted yet, the shell had none,
- * or no protocol handler. §6 requires it never block a row. The initial, not a
- * generic glyph, which at 24px makes every unresolved row identical.
- */
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div
-      aria-hidden
-      className="grid size-6 shrink-0 place-items-center rounded-[5px] bg-fg/10 text-[11px] font-medium text-fg/50"
-    >
-      {title.trim().charAt(0).toUpperCase() || "?"}
-    </div>
-  );
-}
+import { AppIcon } from "@/components/AppIcon";
 
 /**
  * What each Kind is called on the right of its row (v0.4.5 task 3).
@@ -47,8 +29,6 @@ const KIND_LABEL: Partial<Record<EntryKind, string>> = {
 };
 
 export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean }) {
-  const src = api.iconUrl(entry.icon);
-
   return (
     <div
       // `px-2`, not `px-3`: the list adds 8px of its own, and 8 + 8 matches the
@@ -57,25 +37,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
       style={{ height: ROW_HEIGHT }}
       data-selected={selected || undefined}
     >
-      {src ? (
-        <img
-          src={src}
-          alt=""
-          width={24}
-          height={24}
-          className="size-6 shrink-0"
-          /*
-            Fixed width and height, because the fetch resolves after this row has
-            painted. Without them the text shifts sideways when an icon arrives
-            late — for a list being arrowed through, the difference between
-            "loading" and "flickering".
-           */
-          loading="eager"
-          decoding="async"
-        />
-      ) : (
-        <Placeholder title={entry.title} />
-      )}
+      <AppIcon icon={entry.icon} title={entry.title} />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">

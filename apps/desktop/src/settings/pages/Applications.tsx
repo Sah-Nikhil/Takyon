@@ -11,12 +11,31 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AliasRow, AppAliasRow } from "@takyon/shared";
+import type { AliasRow, AppAliasRow, AppOrigin } from "@takyon/shared";
 import * as api from "@/api";
+import { AppIcon } from "@/components/AppIcon";
 import { Group, Row } from "../controls";
 
-/** Rows drawn at once. ~1900 applications is more DOM than a settings page needs. */
-const PAGE = 60;
+/** Rows drawn at once per group. ~1900 applications is more DOM than a page needs. */
+const PAGE = 40;
+
+/**
+ * The groups, in the order they are drawn, and what each is called.
+ *
+ * `commandLine` is last and starts collapsed. It is the long tail — `a2ping`,
+ * `addr2line`, `agentactivationruntimestarter` — every one of them real and
+ * launchable and none of them what anyone opened this page to find.
+ */
+const GROUPS: ReadonlyArray<{ origin: AppOrigin; title: string; hint: string }> = [
+  { origin: "installed", title: "Installed", hint: "Start Menu and Desktop shortcuts" },
+  { origin: "store", title: "Store apps", hint: "Packaged apps, from the Microsoft Store or an installer" },
+  { origin: "game", title: "Games", hint: "Through Steam, Epic and the rest" },
+  {
+    origin: "commandLine",
+    title: "Command line",
+    hint: "Executables on your PATH. Searchable and launchable, rarely by name.",
+  },
+];
 
 export function Applications() {
   const [rows, setRows] = useState<AppAliasRow[]>([]);
@@ -28,7 +47,13 @@ export function Applications() {
    */
   const [orphans, setOrphans] = useState<AliasRow[]>([]);
   const [filter, setFilter] = useState("");
-  const [shown, setShown] = useState(PAGE);
+  /** How many rows each group is drawing, and which groups are open. */
+  const [shown, setShown] = useState<Record<string, number>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
+    // The only group that starts shut. Everything in it is a real executable and
+    // none of it is what anyone came here for.
+    commandLine: true,
+  });
   /** Which row is being edited, and the text in its field. */
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +75,20 @@ export function Applications() {
         row.aliases.some((a) => a.includes(needle)),
     );
   }, [rows, filter]);
+
+  /** The matches, split by where they came from, in the order groups are drawn. */
+  const grouped = useMemo(
+    () =>
+      GROUPS.map((group) => ({
+        ...group,
+        rows: matches.filter((row) => row.origin === group.origin),
+      })).filter((group) => group.rows.length > 0),
+    [matches],
+  );
+
+  // A filter with few hits should show them, not hide them behind a collapsed
+  // header. Searching is already the act of saying which group you meant.
+  const searching = filter.trim().length > 0;
 
   const commit = useCallback(async () => {
     if (!editing) return;
@@ -81,6 +120,55 @@ export function Applications() {
     [load],
   );
 
+  /** One application row: icon, title, path, and the alias field. */
+  const drawRow = (row: AppAliasRow) => (
+    <div
+      key={row.id}
+      className="flex items-center justify-between gap-4 px-3.5 py-2.5"
+    >
+      <div className="flex min-w-0 items-center gap-2.5">
+        <AppIcon icon={row.icon} title={row.title} />
+        <div className="min-w-0">
+          <div className="truncate text-[13px] text-fg">{row.title}</div>
+          {row.subtitle && (
+            <div className="truncate text-[11.5px] text-fg/35">{row.subtitle}</div>
+          )}
+        </div>
+      </div>
+
+      {editing?.id === row.id ? (
+        <input
+          autoFocus
+          value={editing.text}
+          onChange={(e) => setEditing({ id: row.id, text: e.target.value })}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void commit();
+            // Escape abandons the edit rather than saving it, which is what
+            // Escape means everywhere else in this app.
+            if (e.key === "Escape") setEditing(null);
+          }}
+          aria-label={`Alias for ${row.title}`}
+          placeholder="ps, photo"
+          className="w-36 shrink-0 rounded-control bg-control px-2.5 py-1 text-right font-mono text-[12.5px] text-fg outline-none placeholder:text-fg/30"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing({ id: row.id, text: row.aliases.join(", ") })}
+          aria-label={`Alias for ${row.title}`}
+          className={`w-36 shrink-0 rounded-control px-2.5 py-1 text-right transition-colors hover:bg-row-hover ${
+            row.aliases.length > 0
+              ? "font-mono text-[12.5px] text-fg/80"
+              : "text-[12.5px] text-fg/35"
+          }`}
+        >
+          {row.aliases.length > 0 ? row.aliases.join(", ") : "Add alias"}
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <>
     <Group title="Aliases">
@@ -94,7 +182,7 @@ export function Applications() {
           value={filter}
           onChange={(e) => {
             setFilter(e.target.value);
-            setShown(PAGE);
+            setShown({});
           }}
           placeholder="Filter applications"
           aria-label="Filter applications"
@@ -108,67 +196,53 @@ export function Applications() {
         </div>
       )}
 
-      {matches.slice(0, shown).map((row) => (
-        <div
-          key={row.id}
-          className="flex items-center justify-between gap-4 px-3.5 py-2.5"
-        >
-          <div className="min-w-0">
-            <div className="truncate text-[13px] text-fg">{row.title}</div>
-            {row.subtitle && (
-              <div className="truncate text-[11.5px] text-fg/35">{row.subtitle}</div>
-            )}
-          </div>
-
-          {editing?.id === row.id ? (
-            <input
-              autoFocus
-              value={editing.text}
-              onChange={(e) => setEditing({ id: row.id, text: e.target.value })}
-              onBlur={() => void commit()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void commit();
-                // Escape abandons the edit rather than saving it, which is what
-                // Escape means everywhere else in this app.
-                if (e.key === "Escape") setEditing(null);
-              }}
-              aria-label={`Alias for ${row.title}`}
-              placeholder="ps, photo"
-              className="w-36 shrink-0 rounded-control bg-control px-2.5 py-1 text-right font-mono text-[12.5px] text-fg outline-none placeholder:text-fg/30"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing({ id: row.id, text: row.aliases.join(", ") })}
-              aria-label={`Alias for ${row.title}`}
-              className={`w-36 shrink-0 rounded-control px-2.5 py-1 text-right transition-colors hover:bg-row-hover ${
-                row.aliases.length > 0
-                  ? "font-mono text-[12.5px] text-fg/80"
-                  : "text-[12.5px] text-fg/35"
-              }`}
-            >
-              {row.aliases.length > 0 ? row.aliases.join(", ") : "Add alias"}
-            </button>
-          )}
-        </div>
-      ))}
-
-      {matches.length > shown && (
-        <button
-          type="button"
-          onClick={() => setShown((n) => n + PAGE)}
-          className="w-full px-3.5 py-2.5 text-left text-[12.5px] text-fg/50 transition-colors hover:bg-row-hover hover:text-fg"
-        >
-          Show more ({matches.length - shown} left)
-        </button>
-      )}
-
       {rows.length > 0 && matches.length === 0 && (
         <div className="px-3.5 py-2.5 text-[12.5px] text-fg/40">
           No application matches “{filter}”.
         </div>
       )}
     </Group>
+
+    {grouped.map((group) => {
+      const open = searching || !collapsed[group.origin];
+      const limit = shown[group.origin] ?? PAGE;
+      return (
+        <Group key={group.origin} title={`${group.title} (${group.rows.length})`}>
+          {/*
+            The hint carries the label slot rather than repeating the group name,
+            which the header above already says. Two lines saying "Games" is one
+            more than the page needs.
+           */}
+          <Row id={`group-${group.origin}`} label={group.hint}>
+            <button
+              type="button"
+              onClick={() =>
+                setCollapsed((c) => ({ ...c, [group.origin]: !c[group.origin] }))
+              }
+              aria-expanded={open}
+              aria-label={`${group.title} applications`}
+              className="rounded-control px-2 py-1 text-[12.5px] text-fg/50 transition-colors hover:bg-row-hover hover:text-fg"
+            >
+              {open ? "Hide" : `Show ${group.rows.length}`}
+            </button>
+          </Row>
+
+          {open && group.rows.slice(0, limit).map(drawRow)}
+
+          {open && group.rows.length > limit && (
+            <button
+              type="button"
+              onClick={() =>
+                setShown((n) => ({ ...n, [group.origin]: limit + PAGE }))
+              }
+              className="w-full px-3.5 py-2.5 text-left text-[12.5px] text-fg/50 transition-colors hover:bg-row-hover hover:text-fg"
+            >
+              Show more ({group.rows.length - limit} left)
+            </button>
+          )}
+        </Group>
+      );
+    })}
 
     {orphans.length > 0 && (
       <Group title="Aliases with no application">

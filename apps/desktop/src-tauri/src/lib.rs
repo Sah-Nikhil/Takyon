@@ -381,6 +381,12 @@ struct AppAliasRow {
     title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     subtitle: Option<String>,
+    /// Icon key, resolved at discovery like the Palette's (§6). Absent where the
+    /// shell had none — the row draws an initial instead and never waits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
+    /// Which discovery path found it, so the list can group rather than sprawl.
+    origin: sources::apps::AppOrigin,
     aliases: Vec<String>,
 }
 
@@ -401,6 +407,8 @@ fn application_rows(
             id: app.id.0,
             title: app.title,
             subtitle: app.subtitle,
+            icon: app.icon.map(|i| i.0),
+            origin: app.origin,
         })
         .collect()
 }
