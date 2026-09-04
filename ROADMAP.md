@@ -373,6 +373,27 @@ rather than by a test:
 **Exit criteria:** `!e` returns in under 20 ms at p95, the initial walk completes
 in under 60 s in the background without competing with login, the index survives a
 reboot without re-walking, and a file created one second ago is findable.
+*All four met.* Measured on this machine at whole-drive scope: p95 well under
+20 ms with a 2.6 ms worst case, a 2.3 s warm walk (7.8 s cold), the index mapped
+at boot with no re-walk, and a created file findable through the real
+`ReadDirectoryChangesW` path within a second.
+
+**Packaged as 0.7.0.** Cut with three things outstanding, recorded rather than
+quietly closed:
+
+- **`docs/verify/v0.7.md` has not been run by a person.** W4 (watcher overflow
+  under a real `git checkout`) and S3 (the Windows Search fallback) cannot be
+  reached any other way. `scripts/verify-drive-v0.7.ps1` drives the two steps a
+  mocked webview structurally cannot — real icons in the Settings list, and `!e`
+  against real drives — and has been run once, partially.
+- **The bench predates the last two fixes.** The four budgets were green on the
+  build before the clipboard retry and the short-query ranking fix; neither
+  touches a measured span, but the number on record is from the earlier binary.
+- **The UIAccess helper is still unsigned**, so the Palette will not appear over
+  an elevated window. A v1.0 blocker carried since v0.1.
+
+What *is* verified: 454 Rust unit tests, 44 integration across five binaries, 75
+Playwright, typecheck, lint, and the comment ceiling.
 
 ---
 
