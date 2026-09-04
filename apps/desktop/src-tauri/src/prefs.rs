@@ -44,6 +44,24 @@ pub const HOTKEY: &str = "hotkey.accelerator";
 /// Whether the Recents Source contributes Entries. `"1"` or `"0"`, default on.
 pub const RECENTS: &str = "launcher.recents";
 
+/// Whether file Entries join Bangless results. `"1"` or `"0"`, **default off**.
+///
+/// `!e` is unaffected: the Bang is the door, this is the setting (v0.7 task 11).
+pub const FILES_BANGLESS: &str = "files.bangless";
+
+/// Whether Windows Search answers for locations outside the roots. `"1"` or
+/// `"0"`, **default off**.
+///
+/// Off because its coverage cannot be relied on and its queries cost 10–72 ms
+/// against a 20 ms budget — TBC-0005's amendment carries the measurement.
+pub const FILES_FALLBACK: &str = "files.fallback";
+
+/// Index roots, as a JSON array of paths. Absent means the probed defaults.
+pub const FILES_ROOTS: &str = "files.roots";
+
+/// Index exclusions, as a JSON array of names. Absent means the defaults.
+pub const FILES_EXCLUDES: &str = "files.excludes";
+
 /// Whether the tray icon is drawn. `"1"` or `"0"`, default on.
 pub const TRAY: &str = "launcher.tray";
 

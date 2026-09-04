@@ -18,6 +18,8 @@ use std::path::{Path, PathBuf};
 /// Skipped **during** the walk. Walking 400,000 `node_modules` entries and then
 /// discarding them spends the whole 60 s budget on files nobody searches for.
 pub const DEFAULT_EXCLUDES: &[&str] = &[
+    // Build output and dependency trees. Volume without value: nobody searches
+    // for a file by name inside one.
     "node_modules",
     ".git",
     "target",
@@ -27,9 +29,32 @@ pub const DEFAULT_EXCLUDES: &[&str] = &[
     "venv",
     ".venv",
     "__pycache__",
+    ".cxx",
+    "CMakeFiles",
+    ".gradle",
+    "Pods",
+    "DerivedData",
+    // Caches, ours and other people's. Steam's `librarycache` alone answers a
+    // two-letter query with a page of texture hashes.
+    ".cache",
+    ".nuget",
+    ".rustup",
+    ".cargo",
+    "appcache",
+    "librarycache",
+    "depotcache",
+    "shadercache",
+    "htmlcache",
+    // Windows itself, and application internals below it.
+    "Windows",
+    "ProgramData",
+    "Program Files",
+    "Program Files (x86)",
     "AppData",
     "$Recycle.Bin",
-    "Program Files",
+    "System Volume Information",
+    "Recovery",
+    "PerfLogs",
 ];
 
 /// Where people keep code, in probe order.
@@ -94,14 +119,54 @@ pub fn shell_folders() -> Vec<PathBuf> {
     Vec::new()
 }
 
-/// The roots and exclusions a machine gets before anyone edits them (TBC-0005).
-pub fn defaults() -> Roots {
-    let home = std::env::var_os("USERPROFILE")
-        .map(PathBuf::from)
-        .unwrap_or_default();
+/// Every fixed drive, as roots.
+///
+/// Fixed only: a USB stick or a network share would be walked once and then
+/// found missing, and a mapped drive puts the walk on the network.
+#[cfg(windows)]
+pub fn fixed_drives() -> Vec<PathBuf> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
 
-    let mut include = shell_folders();
-    include.extend(probe(&code_candidates(&home), |p| p.is_dir()));
+    // `DRIVE_FIXED` from winbase.h. Spelled here rather than pulled in, because
+    // `Win32_System_WindowsProgramming` is a whole feature for one integer.
+    const DRIVE_FIXED: u32 = 3;
+
+    // SAFETY: no arguments, no output buffer — a bitmask of present drives.
+    let mask = unsafe { GetLogicalDrives() };
+    (0..26u32)
+        .filter(|bit| mask & (1 << bit) != 0)
+        .filter_map(|bit| {
+            let letter = char::from(b'A' + bit as u8);
+            let root: Vec<u16> = format!("{letter}:\\").encode_utf16().chain([0]).collect();
+            // SAFETY: `root` is NUL-terminated and outlives the call.
+            (unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) } == DRIVE_FIXED)
+                .then(|| PathBuf::from(format!("{letter}:\\")))
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+pub fn fixed_drives() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// The roots and exclusions a machine gets before anyone edits them (TBC-0005).
+///
+/// **Whole fixed drives**, amended at v0.7 after measurement: 309,802 entries,
+/// 2.3 s, 24.6 MB against budgets of 60 s and ~150 MB. Curated roots were costing
+/// whole top-level folders, which is TBC-0005's own trigger.
+pub fn defaults() -> Roots {
+    let mut include = fixed_drives();
+    if include.is_empty() {
+        // No drive enumerated is not a reason to index nothing. Shell folders
+        // and a probed code directory still make a usable index.
+        let home = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        include = shell_folders();
+        include.extend(probe(&code_candidates(&home), |p| p.is_dir()));
+    }
 
     Roots {
         include: subsume(include),
@@ -271,6 +336,54 @@ mod tests {
             subsume(roots),
             vec![PathBuf::from(r"C:\code"), PathBuf::from(r"C:\code-old")]
         );
+    }
+
+    /// Amended at v0.7: whole fixed drives, not curated folders. A file search
+    /// that misses a top-level folder you can see in Explorer reads as broken.
+    #[test]
+    fn v0_7_the_defaults_are_whole_fixed_drives() {
+        let roots = defaults();
+        assert!(!roots.include.is_empty());
+        // Every root is a drive root, so nothing below one is listed separately —
+        // `subsume` would have folded it in anyway.
+        for root in &roots.include {
+            let text = root.to_string_lossy();
+            assert_eq!(text.len(), 3, "{text} is not a drive root");
+            assert!(text.ends_with(":\\"));
+        }
+    }
+
+    /// The list has to carry the volume that whole-drive scope adds. These are
+    /// the ones measured as the difference between 26,844 and 307,161 entries.
+    #[test]
+    fn v0_7_the_exclusions_cover_what_a_whole_drive_adds() {
+        let exclude: Vec<String> = DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
+        for name in [
+            "Windows",
+            "Program Files",
+            "Program Files (x86)",
+            "ProgramData",
+            "$Recycle.Bin",
+            "AppData",
+            "librarycache",
+            "appcache",
+            ".gradle",
+            "CMakeFiles",
+        ] {
+            assert!(is_excluded(name, &exclude), "{name} is not excluded");
+        }
+    }
+
+    /// A removable or network drive must not become a root: it would be walked
+    /// once, then found missing, and a mapped drive puts the walk on the network.
+    #[test]
+    fn v0_7_only_fixed_drives_become_roots() {
+        for drive in fixed_drives() {
+            let text = drive.to_string_lossy().to_uppercase();
+            assert!(text.ends_with(":\\"));
+            // A: and B: are floppy letters and never report as fixed.
+            assert!(!text.starts_with('A') && !text.starts_with('B'));
+        }
     }
 
     /// Windows paths are case-insensitive, so exclusions have to be too — the

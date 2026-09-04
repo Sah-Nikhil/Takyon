@@ -17,6 +17,7 @@ pub mod roots;
 pub mod store;
 pub mod walker;
 pub mod watcher;
+pub mod wsearch;
 
 use std::path::PathBuf;
 

@@ -390,6 +390,32 @@ misses files is worse than no index, because the user learns not to trust it.
 Default roots and exclusions are a *product* decision with a settings UI, not a
 constant — see TBC-0005, which is the least-evidenced call in the whole design.
 
+**Built at v0.7.** Three amendments, all measured rather than argued:
+
+**Short queries take a linear prefix scan, not the recent set.** This section
+sent queries under three characters to "the (small) recent set", assuming a full
+scan was too slow. It is 646 µs over 26,846 names — 3% of the budget — and it
+finds a two-letter folder the recent set has never seen. Prefix, never substring:
+two letters matched anywhere would return most of the index.
+
+**Watcher deltas land in an overlay, not in the mapped file.** Rewriting 2.5 MB
+per event would put a disk write on the path a `git checkout` fires thousands of
+times. `index/overlay.rs` holds additions and deletions in memory; a query reads
+mapped hits minus deletions plus additions, and a rebuild folds it back in and
+empties it. A deletion hides everything beneath it, because Windows sends one
+event for a directory and none for its contents.
+
+**`Stale` is set before the rescan, never after.** A rescan that cannot run must
+leave the index saying so rather than reporting Ready — which is the difference
+between this section's rule and a version of it that only holds when nothing goes
+wrong.
+
+The `FileIndex` trait has two implementors: the walk, and Windows Search behind a
+settings toggle that is **off by default**. Its coverage cannot be relied on even
+where the drive is nominally indexed — TBC-0005's amendment carries the
+measurement — so it is asked after the local index has answered, only when that
+answer came up short, and never on the Bangless path.
+
 ---
 
 ## 6. Icons
@@ -531,6 +557,25 @@ reports it.**
 Autostart is not a command here at all: it goes straight to the plugin, because
 the OS owns that state and mirroring it would guarantee drift.
 
+v0.7 adds the file surface. `file_index_status` is spelled `index_status` in the
+sketch above; the longer name won because there is more than one index in this
+process and "status" alone stopped being unambiguous once applications had one:
+
+```ts
+export const fileIndexStatus  = () => invoke<FileIndexReport>("file_index_status");
+export const setFilesBangless = (on: boolean) => invoke<void>("set_files_bangless", { on });
+export const setFilesFallback = (on: boolean) => invoke<void>("set_files_fallback", { on });
+export const setFilesRoots    = (roots: string[], excludes: string[]) => invoke<void>("set_files_roots", { roots, excludes });
+export const openedCount      = () => invoke<number>("opened_count");
+export const clearOpened      = () => invoke<number>("clear_opened");
+```
+
+**`file_index_status` is not a field on `QueryResult`.** The state changes on the
+walk's schedule rather than the user's, so riding the keystroke path would ship
+the same three words on every keypress. It is asked when `!e` is typed and
+re-asked while the index is not Ready — which is the only time it has anything to
+say.
+
 Types live in `packages/shared` and mirror the Rust structs. **Contract tests
 assert that Rust's serialised output matches these types** — that is the one
 test that catches fixture drift, which is the silent failure mode of the mocked
@@ -566,6 +611,15 @@ above and registers one Bang; `query.rs` routes on it before anything else,
 which is what keeps ADR-0002 checkable by reading one function. Not built: the
 `!` picker (a bare `!` currently falls through), the hint row, and user-defined
 Bangs. Those stay parked with the registry.
+
+**`!e` joined at v0.7**, and it is the second Bang rather than the first Mode with
+a toggle: `clips.bang` can turn `!v` off because the Clipboard History command is
+another door, and file search has no such command, so turning `!e` off would
+remove the feature rather than an accelerator. `files.bangless` governs whether
+file Entries appear in *Bangless* results — the reverse question — and is off by
+default. A Bang with no query is its own state here for the first time: `!e`
+alone lists what Takyon has opened rather than showing nothing, which answers one
+of the registry's parked questions for one Bang without settling it for all.
 
 ---
 

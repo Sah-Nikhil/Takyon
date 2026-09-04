@@ -122,6 +122,20 @@ export interface SettingsSnapshot {
   clipBang: boolean;
   theme: Theme;
   uiSize: UiSize;
+  /**
+   * Whether file Entries join Bangless results (v0.7 task 11). Default off —
+   * `!e` is the door, this is the setting, and when on they sort below apps.
+   */
+  filesBangless: boolean;
+  /**
+   * Whether Windows Search answers for locations outside the indexed roots.
+   * Default off: its coverage cannot be relied on and its queries cost 10-72 ms
+   * against a 20 ms budget (TBC-0005).
+   */
+  filesFallback: boolean;
+  /** Indexed roots, and the names skipped inside them (TBC-0005). */
+  filesRoots: string[];
+  filesExcludes: string[];
 }
 
 /**

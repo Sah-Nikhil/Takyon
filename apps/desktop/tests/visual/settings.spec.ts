@@ -48,6 +48,40 @@ test("a tier-two page is one click away and renders its own controls", async ({ 
 });
 
 /**
+ * v0.7's page. The entry count is a control here, not decoration: TBC-0005's
+ * triggers are both stated in it, and neither is visible without the number.
+ */
+test("the file search page names its roots and the live entry count", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "File Search" }).click();
+
+  await expect(page.getByText("26,844 files and folders indexed")).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Show files without typing !e" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await expect(page.getByRole("switch", { name: "Also ask Windows Search" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+
+  await expect(page).toHaveScreenshot("settings-file-search.png");
+});
+
+/**
+ * TBC-0010 makes a visible off switch a condition of shipping the list at all,
+ * and v0.6's rule applies: the confirmation names the real count.
+ */
+test("clearing the opened history confirms with the number it deletes", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "File Search" }).click();
+  await page.getByRole("button", { name: "Clear history" }).click();
+
+  await expect(page.getByText("permanently deletes 12 entries")).toBeVisible();
+  await expect(page.getByText("Your files are not touched")).toBeVisible();
+});
+
+/**
  * ROADMAP v0.6's headline rule: a destructive setting confirms with the **real
  * count**, never "some items". A generic warning is one people learn to click
  * through, which is the habit you least want in front of a secure delete.

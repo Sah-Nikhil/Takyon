@@ -136,7 +136,7 @@ pub fn score_name(name: &str, needle: &str, query: &Query) -> Option<f32> {
             rank::TIER_NAME_PREFIX
         });
     }
-    rank::score(query, &Haystack::new(name, None))
+    rank::score_path(query, &Haystack::new(name, None))
 }
 
 fn key(path: &Path) -> String {

@@ -18,6 +18,23 @@ use crate::entry::{EntryId, EntryKind};
 /// Days for a weight to halve. A guess, per the plan — tune from real use.
 pub const HALF_LIFE_DAYS: f64 = 30.0;
 
+/// How many rows the Takyon-owned recents list keeps (TBC-0010).
+///
+/// A guess, in TBC-0009's company. Too small and yesterday's work is gone; too
+/// large and it stops being "recent" and becomes a second, worse index.
+pub const OPENED_CAP: i64 = 100;
+
+/// One thing Takyon opened, for the Recents list it owns (TBC-0010).
+#[derive(Clone, Debug)]
+pub struct Opened {
+    pub id: EntryId,
+    pub path: PathBuf,
+    /// As stored — `kind_name`'s spelling, not `EntryKind`. The table outlives
+    /// any one build's enum.
+    pub kind: String,
+    pub opened_at: i64,
+}
+
 /// Carry a stored weight forward to now.
 ///
 /// Negative elapsed time is clamped to zero. A clock that jumps backwards would
@@ -60,6 +77,17 @@ impl Frecency {
                  last_used  INTEGER NOT NULL,
                  score      REAL    NOT NULL,
                  decayed_at INTEGER NOT NULL
+             )",
+            [],
+        )?;
+        // TBC-0010's table, beside the other learned usage data. Separate from
+        // `usage` because they answer different questions and share only a file.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS opened (
+                 entry_id  TEXT PRIMARY KEY,
+                 path      TEXT    NOT NULL,
+                 kind      TEXT    NOT NULL,
+                 opened_at INTEGER NOT NULL
              )",
             [],
         )?;
@@ -121,6 +149,92 @@ impl Frecency {
         self.record_at(id, kind, unix_now())
     }
 
+    /// Remember that Takyon opened this, for the Recents list it owns (TBC-0010).
+    ///
+    /// **Not Frecency.** That answers "how often and how recently" and decays;
+    /// this answers "what did I touch last", chronological and shallow. One
+    /// database, two questions, nothing shared.
+    pub fn record_opened_at(
+        &self,
+        id: &EntryId,
+        path: &str,
+        kind: EntryKind,
+        now: i64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("frecency mutex");
+        conn.execute(
+            "INSERT INTO opened (entry_id, path, kind, opened_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(entry_id) DO UPDATE SET path = ?2, kind = ?3, opened_at = ?4",
+            params![id.as_str(), path, kind_name(kind), now],
+        )?;
+        // Capped by deleting the oldest beyond the cap, so the list stays
+        // "recent" rather than becoming a second, worse index.
+        conn.execute(
+            "DELETE FROM opened WHERE entry_id NOT IN
+                 (SELECT entry_id FROM opened ORDER BY opened_at DESC LIMIT ?1)",
+            params![OPENED_CAP],
+        )?;
+        Ok(())
+    }
+
+    pub fn record_opened(&self, id: &EntryId, path: &str, kind: EntryKind) -> Result<()> {
+        self.record_opened_at(id, path, kind, unix_now())
+    }
+
+    /// What Takyon opened, newest first, **existence-checked** (ADR-0013).
+    ///
+    /// People delete things, and a recents list of dead rows is the classic way
+    /// this feature rots. Checked on read rather than swept: a path can vanish
+    /// between two openings of the Palette.
+    pub fn opened(&self, kinds: &[EntryKind], limit: usize) -> Vec<Opened> {
+        let Ok(conn) = self.conn.lock() else {
+            return Vec::new();
+        };
+        let wanted: Vec<&str> = kinds.iter().map(|k| kind_name(*k)).collect();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT entry_id, path, kind, opened_at FROM opened ORDER BY opened_at DESC")
+        else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map([], |row| {
+            Ok(Opened {
+                id: EntryId(row.get(0)?),
+                path: PathBuf::from(row.get::<_, String>(1)?),
+                kind: row.get::<_, String>(2)?,
+                opened_at: row.get(3)?,
+            })
+        });
+        let Ok(rows) = rows else {
+            return Vec::new();
+        };
+        rows.flatten()
+            .filter(|row| wanted.is_empty() || wanted.contains(&row.kind.as_str()))
+            .filter(|row| row.path.exists())
+            .take(limit)
+            .collect()
+    }
+
+    /// Forget everything Takyon opened. The Settings control behind TBC-0010's
+    /// condition that a local history must be deletable in one action.
+    pub fn clear_opened(&self) -> Result<usize> {
+        let conn = self.conn.lock().expect("frecency mutex");
+        conn.execute("DELETE FROM opened", [])
+    }
+
+    /// How many rows the list holds, dead ones included. What the Settings
+    /// confirmation counts.
+    pub fn opened_count(&self) -> usize {
+        let Ok(conn) = self.conn.lock() else {
+            return 0;
+        };
+        conn.query_row("SELECT COUNT(*) FROM opened", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map(|n| n as usize)
+        .unwrap_or(0)
+    }
+
     /// Weight now. What the ranker calls, once per candidate Entry.
     pub fn weight(&self, id: &EntryId) -> f64 {
         self.weight_at(id, unix_now())
@@ -172,6 +286,131 @@ mod tests {
     #[test]
     fn v0_3_a_backwards_clock_does_not_grow_a_weight() {
         assert!((decay(1.0, -90.0) - 1.0).abs() < 1e-9);
+    }
+
+    /// A temp file that exists, so the existence check has something to pass.
+    fn a_real_file(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join("takyon-opened");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{label}-{}.txt", std::process::id()));
+        std::fs::write(&path, "x").unwrap();
+        path
+    }
+
+    /// TBC-0010's shape: chronological, newest first, and nothing to do with
+    /// Frecency's ordering.
+    #[test]
+    fn v0_7_the_opened_list_is_chronological_newest_first() {
+        let f = Frecency::open(None).unwrap();
+        let (a, b) = (a_real_file("first"), a_real_file("second"));
+        f.record_opened_at(&EntryId("a".into()), &a.to_string_lossy(), EntryKind::File, 100)
+            .unwrap();
+        f.record_opened_at(&EntryId("b".into()), &b.to_string_lossy(), EntryKind::File, 200)
+            .unwrap();
+
+        let rows = f.opened(&[], 10);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, EntryId("b".into()));
+        assert_eq!(rows[1].id, EntryId("a".into()));
+    }
+
+    /// Re-opening moves a row to the top rather than adding a second one.
+    #[test]
+    fn v0_7_reopening_something_updates_its_row() {
+        let f = Frecency::open(None).unwrap();
+        let a = a_real_file("again");
+        let id = EntryId("a".into());
+        f.record_opened_at(&id, &a.to_string_lossy(), EntryKind::File, 100).unwrap();
+        f.record_opened_at(&id, &a.to_string_lossy(), EntryKind::File, 300).unwrap();
+
+        let rows = f.opened(&[], 10);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].opened_at, 300);
+    }
+
+    /// ADR-0013: a deleted file must not survive as a row. Checked on read,
+    /// because a path can vanish between two openings of the Palette.
+    #[test]
+    fn v0_7_a_deleted_path_drops_out_of_the_opened_list() {
+        let f = Frecency::open(None).unwrap();
+        let gone = a_real_file("gone");
+        f.record_opened_at(
+            &EntryId("gone".into()),
+            &gone.to_string_lossy(),
+            EntryKind::File,
+            100,
+        )
+        .unwrap();
+        assert_eq!(f.opened(&[], 10).len(), 1);
+
+        std::fs::remove_file(&gone).unwrap();
+        assert!(f.opened(&[], 10).is_empty());
+        // Still counted: the row is there, and the Settings confirmation names
+        // what it will actually delete.
+        assert_eq!(f.opened_count(), 1);
+    }
+
+    /// `!e` with no query shows files and folders, not the applications that
+    /// share the table (task 10).
+    #[test]
+    fn v0_7_the_opened_list_filters_by_kind() {
+        let f = Frecency::open(None).unwrap();
+        let (file, app) = (a_real_file("doc"), a_real_file("app"));
+        f.record_opened_at(&EntryId("f".into()), &file.to_string_lossy(), EntryKind::File, 100)
+            .unwrap();
+        f.record_opened_at(&EntryId("a".into()), &app.to_string_lossy(), EntryKind::App, 200)
+            .unwrap();
+
+        let files = f.opened(&[EntryKind::File, EntryKind::Folder], 10);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, EntryId("f".into()));
+    }
+
+    /// Capped, oldest evicted. Without it the list stops being recent and
+    /// becomes a second, worse index.
+    #[test]
+    fn v0_7_the_opened_list_is_capped() {
+        let f = Frecency::open(None).unwrap();
+        let path = a_real_file("capped");
+        for n in 0..(OPENED_CAP + 20) {
+            f.record_opened_at(
+                &EntryId(format!("id-{n}")),
+                &path.to_string_lossy(),
+                EntryKind::File,
+                n,
+            )
+            .unwrap();
+        }
+        assert_eq!(f.opened_count(), OPENED_CAP as usize);
+        // The survivors are the newest, not an arbitrary hundred.
+        let rows = f.opened(&[], OPENED_CAP as usize);
+        assert_eq!(rows[0].id, EntryId(format!("id-{}", OPENED_CAP + 19)));
+    }
+
+    /// A local history with no visible off switch is fine until somebody asks
+    /// about it (TBC-0010). One call empties it.
+    #[test]
+    fn v0_7_the_opened_list_can_be_cleared_in_one_call() {
+        let f = Frecency::open(None).unwrap();
+        let path = a_real_file("clearable");
+        f.record_opened_at(&EntryId("x".into()), &path.to_string_lossy(), EntryKind::File, 1)
+            .unwrap();
+        assert_eq!(f.clear_opened().unwrap(), 1);
+        assert_eq!(f.opened_count(), 0);
+    }
+
+    /// The two tables answer different questions and must not disturb each
+    /// other: clearing history is not forgetting what is used.
+    #[test]
+    fn v0_7_clearing_recents_leaves_frecency_alone() {
+        let f = Frecency::open(None).unwrap();
+        let path = a_real_file("both");
+        let id = EntryId("shared".into());
+        f.record_at(&id, EntryKind::File, 100).unwrap();
+        f.record_opened_at(&id, &path.to_string_lossy(), EntryKind::File, 100).unwrap();
+
+        f.clear_opened().unwrap();
+        assert!(f.weight_at(&id, 100) > 0.0, "Frecency lost its row");
     }
 
     const DAY: i64 = 86_400;

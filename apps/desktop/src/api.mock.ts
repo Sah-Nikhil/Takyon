@@ -340,7 +340,14 @@ let snapshot: SettingsSnapshot = {
   clipBang: true,
   theme: "system",
   uiSize: "default",
+  filesBangless: false,
+  filesFallback: false,
+  filesRoots: ["C:\\Users\\you\\Documents", "C:\\Programming"],
+  filesExcludes: ["node_modules", ".git", "target"],
 };
+
+/** Rows in the owned recents list, for the clear-history confirmation. */
+let openedRows = 12;
 
 /** Executables excluded from clipboard capture, as the browser build reports. */
 let blocked: string[] = ["keepass.exe", "1password.exe"];
@@ -510,6 +517,21 @@ export const mock = {
    * Ready with a plausible count. The visual suite never walks a disk, so a
    * Building state here would be permanent rather than transient.
    */
+  setFilesBangless: async (on: boolean) => {
+    snapshot = { ...snapshot, filesBangless: on };
+  },
+  setFilesFallback: async (on: boolean) => {
+    snapshot = { ...snapshot, filesFallback: on };
+  },
+  setFilesRoots: async (roots: string[], excludes: string[]) => {
+    snapshot = { ...snapshot, filesRoots: roots, filesExcludes: excludes };
+  },
+  openedCount: async () => openedRows,
+  clearOpened: async () => {
+    const gone = openedRows;
+    openedRows = 0;
+    return gone;
+  },
   fileIndexStatus: async (): Promise<FileIndexReport> => ({
     state: "ready",
     entries: 26844,

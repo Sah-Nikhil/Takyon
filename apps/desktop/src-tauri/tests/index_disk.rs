@@ -159,6 +159,51 @@ fn v0_7_a_file_created_now_is_findable_through_the_watcher() {
     assert!(hits[0].path.ends_with("justmade.rs"));
 }
 
+/// A root added after the first watch is watched too.
+///
+/// Watchers are bound to the paths they started on, so adding a root in Settings
+/// must restart them. Without it the new root is walked once and then silently
+/// stops updating, which looks like the index working until it doesn't.
+#[test]
+fn v0_7_a_root_added_later_is_watched_as_well() {
+    let temp = TempDir::new("index-rewatch");
+    let first = temp.path().join("first");
+    let second = temp.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    seed(&first);
+
+    let index = std::sync::Arc::new(WalkIndex::load(
+        temp.path().join("index"),
+        Roots {
+            include: vec![first.clone()],
+            exclude: Vec::new(),
+        },
+    ));
+    index.rebuild().expect("the index writes");
+    index.watch();
+
+    index.set_roots(Roots {
+        include: vec![first, second.clone()],
+        exclude: Vec::new(),
+    });
+    index.rebuild().expect("the index rewrites");
+    index.watch();
+
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::fs::write(second.join("laterroot.rs"), "x").unwrap();
+
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    while index.search("laterroot", 10).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert_eq!(
+        index.search("laterroot", 10).len(),
+        1,
+        "the added root was never watched"
+    );
+}
+
 /// A deletion reaches the index the same way, and the entry stops answering.
 #[test]
 fn v0_7_a_deletion_reaches_the_index_through_the_watcher() {
@@ -232,17 +277,36 @@ fn v0_7_probe_a_path() {
     };
     let root = std::path::PathBuf::from(root);
     let needles = std::env::var("TAKYON_PROBE_NEEDLES").unwrap_or_else(|_| "readme".into());
+    // Extra exclusions, comma-separated, on top of the defaults. What a
+    // whole-drive scope has to be tested with before it can be proposed.
+    let mut exclude: Vec<String> = roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
+    if let Ok(extra) = std::env::var("TAKYON_PROBE_EXCLUDES") {
+        exclude.extend(extra.split(',').map(|s| s.trim().to_string()));
+    }
 
     let temp = TempDir::new("index-probe");
     let index = WalkIndex::load(
         temp.path().join("index"),
         Roots {
             include: vec![root.clone()],
-            exclude: roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
+            exclude,
         },
     );
+    let at = Instant::now();
     index.rebuild().expect("the index writes");
-    println!("root {} -> {} entries", root.display(), index.entry_count());
+    let walk_ms = at.elapsed().as_millis();
+    let bytes = std::fs::read_dir(temp.path().join("index"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.metadata().ok().map(|m| m.len()))
+        .sum::<u64>();
+    println!(
+        "root {} -> {} entries, {walk_ms} ms, {:.1} MB",
+        root.display(),
+        index.entry_count(),
+        bytes as f64 / 1_048_576.0
+    );
 
     for needle in needles.split(',') {
         let at = Instant::now();

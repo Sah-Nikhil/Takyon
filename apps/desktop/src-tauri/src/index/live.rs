@@ -146,10 +146,11 @@ impl WalkIndex {
             .is_ok_and(|o| o.additions() >= REBUILD_THRESHOLD)
     }
 
-    /// Start watching the roots. Events are applied to `self` until it is dropped.
+    /// Watch the roots. Events apply to `self` until it is dropped.
     ///
-    /// Takes an `Arc` because the consumer thread outlives the call and the
-    /// watcher threads outlive the consumer.
+    /// **Callable again after the roots change**, and must be: watchers bind to
+    /// the paths they started on, so a root added in Settings would be walked
+    /// once and never updated. Replacing the [`Watcher`] stops the old threads.
     pub fn watch(self: &Arc<Self>) {
         let roots = self.current_roots();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -304,10 +305,38 @@ impl FileIndex for WalkIndex {
             return hits;
         };
 
+        // Scored as ids, not as Entries. Reconstructing a path walks the parent
+        // chain and allocates, and a common needle matches tens of thousands of
+        // candidates against twelve visible rows — so paths are built only for
+        // the rows that survive the cut.
         let query = Query::new(&needle);
-        hits.extend(index.candidates(&needle).into_iter().filter_map(|id| {
-            let hay = Haystack::new(index.name(id), None);
-            let score = rank::score(&query, &hay)?;
+        let mut scored: Vec<(u32, f32)> = index
+            .candidates(&needle)
+            .into_iter()
+            .filter_map(|id| {
+                let name = index.name(id);
+                // Cheap prefilter first: every rung a file can clear implies the
+                // name contains the needle, and building a Haystack for a
+                // candidate that cannot match is the whole cost of the query.
+                if !rank::contains_fold(name, &needle) {
+                    return None;
+                }
+                let score = rank::score_path(&query, &Haystack::new(name, None))?;
+                Some((id, score))
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                // Ties broken by id, which is walk order and therefore stable
+                // between runs — the Stability rule would see anything else move.
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        // Wider than `limit`: a deleted entry drops out below and the overlay may
+        // supply some of the visible rows.
+        scored.truncate(limit * 4);
+
+        hits.extend(scored.into_iter().filter_map(|(id, score)| {
             let path = index.path(id);
             // A hit the watcher has seen deleted is not a hit. Serving it is how
             // a recents list rots, and an index rots the same way.

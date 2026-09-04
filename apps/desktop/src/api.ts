@@ -58,6 +58,25 @@ export const hotkeyStatus = () =>
  * walk's schedule, not the user's, so riding the keystroke path would ship the
  * same three words on every keypress.
  */
+export const setFilesBangless = (on: boolean) =>
+  inTauri ? invoke<void>("set_files_bangless", { on }) : mock.setFilesBangless(on);
+
+export const setFilesFallback = (on: boolean) =>
+  inTauri ? invoke<void>("set_files_fallback", { on }) : mock.setFilesFallback(on);
+
+/** Replace the indexed roots and exclusions, then rebuild in the background. */
+export const setFilesRoots = (roots: string[], excludes: string[]) =>
+  inTauri
+    ? invoke<void>("set_files_roots", { roots, excludes })
+    : mock.setFilesRoots(roots, excludes);
+
+/** How many rows the owned recents list holds, for the confirmation. */
+export const openedCount = () =>
+  inTauri ? invoke<number>("opened_count") : mock.openedCount();
+
+export const clearOpened = () =>
+  inTauri ? invoke<number>("clear_opened") : mock.clearOpened();
+
 export const fileIndexStatus = () =>
   inTauri
     ? invoke<FileIndexReport>("file_index_status")

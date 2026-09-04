@@ -324,14 +324,36 @@ findable through the real `ReadDirectoryChangesW` path, asserted end to end rath
 than by calling the apply function directly. The index is wired into boot: mapped
 if it exists, walked in the background only if it does not, watched either way.
 
+**Slice 3 landed.** `!e`, the two toggles, the roots editor and the owned recents
+list. The Windows Search fallback is built and shipped **off**: it is asked only
+after the local index has answered and only when that answer came up short, and
+never on the Bangless path at all.
+
+**Then the scope changed, on evidence.** Curated roots missed `C:\GG`, `C:\Data`
+and `C:\FC 26 Live Editor` — three top-level folders visible in Explorer and
+invisible to `!e`, which is exactly the trigger TBC-0005 wrote for itself.
+Whole-drive scope measured at 13% of the walk budget and 16% of the size budget,
+so the default is now every fixed drive with a 33-name exclusion list.
+
+That change exposed a regression curation had been hiding: worst-case query went
+to **20.8 ms** against a 20 ms budget, because the query built a `Haystack` per
+candidate and a full path per scoring candidate. A byte-level prefilter and
+deferring path reconstruction until after the cut brought it to **2.6 ms**.
+
+Files also gained a substring rung the application ladder does not have. `!e FC 26`
+returned nothing for `EA SPORTS FC 26`: name-prefix wants the start of the name,
+word-prefix compares whole words, and a phrase in the middle clears neither.
+
 - [x] `FileIndex` trait; unelevated parallel directory walk over curated roots. Reparse points are indexed but never descended, or an unbounded-depth walk cycles through the first junction it meets
 - [x] Memory-mapped inverted index on disk; mmap at boot, never re-walk at startup. Generation-named files, because Windows will not replace a file that is still mapped
 - [x] `ReadDirectoryChangesW` watchers per root for live updates. Deltas land in an in-memory overlay rather than rewriting a 2.5 MB file per event; a query reads mapped hits minus deletions plus additions, and a rebuild folds the overlay back in
 - [x] **Watcher-overflow detection** triggering a scoped rescan of the affected subtree, with an index generation counter so a stale index is never silently served. `Stale` is set **before** the rescan, so a rescan that cannot run leaves the index saying so rather than reporting Ready — there is a test for exactly that ordering
-- [ ] Default roots (Desktop, Documents, Downloads, code dirs) + user-editable roots and exclusions in settings; skip `node_modules`, `.git`, `AppData` by default. **Defaults done, settings UI is slice 3.** The code root is probed rather than hardcoded, and overlapping roots are folded together — OneDrive redirection makes Documents a child of OneDrive on most machines, and both walked is every file indexed twice
+- [x] Default roots + user-editable roots and exclusions in settings; skip `node_modules`, `.git`, `AppData` by default. **Scope changed after the phase's own trigger fired**: the default is now every fixed drive, not curated folders, because three separate top-level folders a user could see in Explorer were unfindable. 309,802 entries, 2.3 s, 24.6 MB against budgets of 60 s and ~150 MB. See TBC-0005's second amendment
 - [ ] Windows Search fallback for locations outside the walked roots — **built in this phase, behind a settings toggle, default off.** Measured: it returns zero rows for `C:\Programming\SELF` on a machine whose whole C: drive is in crawl scope, and its queries run 10–72 ms against a 20 ms budget. On by default it would read as working and hide the gap
-- [ ] `!e` Mode: filenames and folder names, actions for open / reveal in Explorer / copy path
-- [ ] Optional setting: surface file Entries Bangless too (default off, always below apps)
+- [x] `!e` Mode: filenames and folder names, actions for open / reveal in Explorer / copy path. An empty `!e` is its own state, not nothing — it lists what Takyon has opened ([TBC-0010](./docs/tbc/0010-takyon-owned-recents.md)), which is the first thing that table can answer
+- [x] Optional setting: surface file Entries Bangless too (default off, always below apps). The Bang is unaffected by it: `!e` is the door, this is the setting
+- [x] **A recents list Takyon owns** — one `opened` table in `frecency.db`, written from `record_activation`, existence-checked on read (ADR-0013) and capped at 100. The Settings control that clears it ships in the same phase, which TBC-0010 makes a condition of shipping the list at all
+- [x] **A File Search settings page**, with the live entry count beside the roots. TBC-0005's two triggers are both stated in that number and neither is visible without it
 
 **Exit criteria:** `!e` returns in under 20 ms at p95, the initial walk completes
 in under 60 s in the background without competing with login, the index survives a

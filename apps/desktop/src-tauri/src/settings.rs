@@ -38,6 +38,14 @@ pub struct Snapshot {
     pub clip_bang: bool,
     pub theme: String,
     pub ui_size: String,
+    /// Whether file Entries join Bangless results. Default off (v0.7 task 11).
+    pub files_bangless: bool,
+    /// Whether Windows Search answers outside the roots. Default off (task 9).
+    pub files_fallback: bool,
+    /// Indexed roots, and the names skipped inside them (TBC-0005). Both
+    /// user-editable, and both shown with the live entry count beside them.
+    pub files_roots: Vec<String>,
+    pub files_excludes: Vec<String>,
 }
 
 /// Appearance, as stored. Anything unrecognised follows the system.
@@ -88,8 +96,37 @@ impl Snapshot {
             clip_bang: prefs::flag(prefs, prefs::CLIPS_BANG, true),
             theme: theme(prefs),
             ui_size: ui_size(prefs),
+            files_bangless: prefs::flag(prefs, prefs::FILES_BANGLESS, false),
+            files_fallback: prefs::flag(prefs, prefs::FILES_FALLBACK, false),
+            files_roots: stored_roots(prefs)
+                .include
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+            files_excludes: stored_roots(prefs).exclude,
         }
     }
+}
+
+/// The roots as configured, or the probed defaults where nothing is stored.
+///
+/// The defaults are computed rather than written on first run, so a machine that
+/// gains a code directory later picks it up (TBC-0005's amendment).
+pub fn stored_roots(prefs: &Prefs) -> crate::index::roots::Roots {
+    let mut roots = crate::index::roots::defaults();
+    if let Some(stored) = prefs
+        .get(prefs::FILES_ROOTS)
+        .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+    {
+        roots.include = stored.iter().map(std::path::PathBuf::from).collect();
+    }
+    if let Some(stored) = prefs
+        .get(prefs::FILES_EXCLUDES)
+        .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+    {
+        roots.exclude = stored;
+    }
+    roots
 }
 
 /// Every stored preference, read once on mount.
@@ -124,6 +161,101 @@ pub fn set_recents(
         eprintln!("[takyon] the recents setting could not be saved: {e}");
     }
     pipeline.set_recents_enabled(on);
+}
+
+/// Whether file Entries join Bangless results (task 11).
+///
+/// Stored and pushed, like the others: the Source reads it on the keystroke path
+/// and must not go to SQLite for a boolean.
+#[tauri::command]
+pub fn set_files_bangless(
+    on: bool,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+    pipeline: tauri::State<'_, Arc<crate::query::Pipeline>>,
+) {
+    if let Err(e) = prefs.set(prefs::FILES_BANGLESS, if on { "1" } else { "0" }) {
+        eprintln!("[takyon] the file setting could not be saved: {e}");
+    }
+    if let Some(files) = &pipeline.files {
+        files.set_bangless(on);
+    }
+}
+
+/// Whether Windows Search answers for locations outside the roots (task 9).
+#[tauri::command]
+pub fn set_files_fallback(
+    on: bool,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+    pipeline: tauri::State<'_, Arc<crate::query::Pipeline>>,
+) {
+    if let Err(e) = prefs.set(prefs::FILES_FALLBACK, if on { "1" } else { "0" }) {
+        eprintln!("[takyon] the fallback setting could not be saved: {e}");
+    }
+    if let Some(files) = &pipeline.files {
+        files.set_fallback(on);
+    }
+}
+
+/// Replace the indexed roots and exclusions, then rebuild (TBC-0005).
+///
+/// Rebuilt on a thread: a walk is seconds and this is a settings click, so
+/// blocking the reply would freeze the window it was clicked in. The entry count
+/// the UI shows moves when the walk lands, which is the honest moment.
+#[tauri::command]
+pub fn set_files_roots(
+    roots: Vec<String>,
+    excludes: Vec<String>,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+    index: tauri::State<'_, Arc<crate::index::live::WalkIndex>>,
+) -> Result<(), String> {
+    let include: Vec<std::path::PathBuf> = roots.iter().map(std::path::PathBuf::from).collect();
+    for (key, value) in [
+        (prefs::FILES_ROOTS, serde_json::to_string(&roots)),
+        (prefs::FILES_EXCLUDES, serde_json::to_string(&excludes)),
+    ] {
+        prefs
+            .set(key, &value.map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    }
+
+    index.set_roots(crate::index::roots::Roots {
+        // Overlapping roots would index every file beneath both twice, and a
+        // hand-edited list is exactly where that happens.
+        include: crate::index::roots::subsume(include),
+        exclude: excludes,
+    });
+    let rebuilding = index.inner().clone();
+    std::thread::spawn(move || {
+        rebuilding.set_status(crate::index::IndexStatus::Building { pct: 0 });
+        if let Err(e) = rebuilding.rebuild() {
+            eprintln!("[takyon] the index could not be rebuilt: {e}");
+        }
+        // Watchers are bound to the paths they started on, so a new root would be
+        // walked once and then never updated again.
+        rebuilding.watch();
+    });
+    Ok(())
+}
+
+/// How many rows the Takyon-owned recents list holds (TBC-0010).
+///
+/// Asked before the confirmation so it names a real number, exactly as the
+/// clipboard retention dialog does.
+#[tauri::command]
+pub fn opened_count(frecency: tauri::State<'_, Arc<crate::frecency::Frecency>>) -> usize {
+    frecency.opened_count()
+}
+
+/// Forget everything Takyon has opened.
+///
+/// TBC-0010 makes this a condition of shipping the list at all: a local history
+/// with no visible off switch is fine until the first time somebody asks about
+/// it, and then it is not.
+#[tauri::command]
+pub fn clear_opened(
+    frecency: tauri::State<'_, Arc<crate::frecency::Frecency>>,
+) -> Result<usize, String> {
+    frecency.clear_opened().map_err(|e| e.to_string())
 }
 
 /// Show or hide the tray icon. Refused while the hotkey is unregistered.
@@ -270,6 +402,10 @@ mod tests {
                 "calcPolicy",
                 "clipBang",
                 "clipRetention",
+                "filesBangless",
+                "filesExcludes",
+                "filesFallback",
+                "filesRoots",
                 "placement",
                 "recents",
                 "reduceMotion",

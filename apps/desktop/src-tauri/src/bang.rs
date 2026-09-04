@@ -9,8 +9,8 @@
 //! raw query, never a ranked search. That is what makes ADR-0002 checkable by
 //! reading — a line with no Bang cannot reach the network.
 //!
-//! One Bang at v0.5. Registry, `!` picker and user-defined Bangs are
-//! `docs/plans/bang-registry.md`, which resumes at v0.8.
+//! Two Bangs: `!v` at v0.5, `!e` at v0.7. Registry, `!` picker and user-defined
+//! Bangs are `docs/plans/bang-registry.md`, which resumes at v0.8.
 
 /// Where a line of input goes, and what that Mode sees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,10 +20,16 @@ pub enum Route<'a> {
     /// `!v` — clipboard history. The rest is a substring search, or empty for the
     /// full list.
     Clips(&'a str),
+    /// `!e` — file search. The rest is a name query, or empty for the recents
+    /// list Takyon owns (TBC-0010).
+    Files(&'a str),
 }
 
 /// The clipboard Bang. One letter, and `v` because `Ctrl+V` is what it replaces.
 pub const CLIPS: &str = "v";
+
+/// The file Bang. `e` for Everything, whose users already have the muscle memory.
+pub const FILES: &str = "e";
 
 /// Route one line of input.
 pub fn parse(line: &str) -> Route<'_> {
@@ -40,6 +46,7 @@ pub fn parse(line: &str) -> Route<'_> {
 
     match ident.to_lowercase().as_str() {
         CLIPS => Route::Clips(rest.trim()),
+        FILES => Route::Files(rest.trim()),
         // Unknown Bang is treated literally rather than rejected (§9). A hint row
         // saying so is part of the registry work, not of this parser.
         _ => Route::Bangless(line),
@@ -74,6 +81,19 @@ mod tests {
     #[test]
     fn v0_5_the_ident_ends_at_whitespace_not_at_a_known_prefix() {
         assert_eq!(parse("!video"), Route::Bangless("!video"));
+    }
+
+    /// `!e` selects file search, and an empty query is its own state rather than
+    /// nothing — it shows the recents list Takyon owns (task 10).
+    #[test]
+    fn v0_7_the_file_bang_routes_to_file_search() {
+        assert_eq!(parse("!e"), Route::Files(""));
+        assert_eq!(parse("!e main.rs"), Route::Files("main.rs"));
+        assert_eq!(parse("!E  Cargo  "), Route::Files("Cargo"));
+        // Position 0 only, exactly as `!v`.
+        assert_eq!(parse("note !e thing"), Route::Bangless("note !e thing"));
+        // The ident ends at whitespace, so this is an unknown Bang, not `!e`.
+        assert_eq!(parse("!everything"), Route::Bangless("!everything"));
     }
 
     /// Unknown Bangs fall through with the line intact (§9), so nothing is lost

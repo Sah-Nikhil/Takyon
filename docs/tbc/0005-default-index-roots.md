@@ -103,3 +103,80 @@ Two conclusions, both load-bearing for v0.7:
 
 A default-on fallback would also have been *worse* than none here: it returns some
 results, so it reads as working, and the gap is never noticed.
+
+---
+
+## Amended again at v0.7 — whole fixed drives, not curated folders
+
+The curated bet above is retired. **Every fixed drive is a root**, with a widened
+exclusion list. The trigger this note wrote for itself fired within a day of the
+feature existing: three separate folders a user could see in Explorer and `!e`
+could not find — `C:\Data\0Projects\Create\HH`, `C:\GG\FitGirl\EA SPORTS FC 26`,
+and `C:\FC 26 Live Editor`. All were top-level folders outside every curated root.
+
+The measurement that settled it, on the development machine:
+
+| Scope | Entries | Walk | Index |
+|---|---|---|---|
+| Curated roots | 26,844 | 0.9 s | 2.5 MB |
+| Whole `C:\` + `D:\` | **309,802** | **2.3 s** warm, 7.8 s cold | **24.6 MB** |
+
+Against budgets of 60 s and ~150 MB, that is 13% of the time and 16% of the size.
+The assumption underneath the original bet — that total coverage was unaffordable
+— was simply wrong, and it was wrong because the exclusion list does the work.
+The excluded set is where the volume lives, not the included set.
+
+Note also how close 309,802 sits to Raycast's 288,592, the reference point
+ADR-0007 used to argue for curation. The competitor was not indexing a curated
+subset of a large machine; it was indexing most of one, minus its junk.
+
+### What changed
+
+- `roots::fixed_drives()` enumerates drives through `GetLogicalDrives` and keeps
+  those reporting `DRIVE_FIXED`. Removable and network drives are excluded: a USB
+  stick would be walked once and then found missing, and a mapped drive puts the
+  walk on the network.
+- The exclusion list grew from 12 names to 33 — `Windows`, `ProgramData`, both
+  `Program Files`, `System Volume Information`, `Recovery`, `PerfLogs`, plus
+  build output (`.cxx`, `CMakeFiles`, `.gradle`, `Pods`, `DerivedData`) and
+  caches (`appcache`, `librarycache`, `depotcache`, `shadercache`, `htmlcache`,
+  `.cache`, `.nuget`, `.rustup`, `.cargo`). Steam's `librarycache` alone was
+  answering two-letter queries with a page of texture hashes.
+- Both remain user-editable, and the entry count in Settings is still the
+  instrument for the triggers below.
+
+### What this cost, and what it bought
+
+The scope change exposed a latency regression that curation had been hiding:
+worst-case query went from 568 µs to **20.8 ms**, against a 20 ms budget. Eleven
+times the candidates meant eleven times the per-candidate work, and the query was
+building a `Haystack` — a lowercased `String` and a `Vec<String>` of tokens — for
+every candidate the trigram index returned, then reconstructing a full path for
+every one that scored.
+
+Two fixes, both in `live.rs`:
+
+- **A prefilter before the `Haystack`.** Every rung a file can clear implies the
+  name contains the needle, so `rank::contains_fold` rejects on raw bytes with no
+  allocation. The acronym rung is the one casualty and it was never worth much on
+  a filename.
+- **Score ids, materialise paths last.** A common needle matches tens of thousands
+  of candidates against twelve visible rows. Paths are now built only for the rows
+  that survive the cut.
+
+Result: **2.6 ms** worst case, 961 µs mean. 13% of the budget.
+
+### The triggers, restated for this scope
+
+The old lower bound is gone — 309k is not a narrow index. What remains worth
+watching:
+
+- **Entry count over ~1.5M**, where the index approaches the 150 MB ceiling at
+  the measured ~83 bytes/entry.
+- **A cold first walk over 60 s**, which the 7.8 s cold figure leaves room for but
+  a mechanical disk or a much fuller drive would not.
+- **A query worst case back over 20 ms.** The prefilter is what holds this, and
+  it holds it by a factor of eight rather than a margin.
+- **Results that feel noisy rather than absent.** The failure mode has inverted:
+  the old risk was missing files, the new one is a top row that is technically a
+  match and obviously not what was wanted.

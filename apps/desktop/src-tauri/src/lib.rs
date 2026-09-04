@@ -548,6 +548,11 @@ pub fn run() {
             settings::settings_snapshot,
             settings::set_reduce_motion,
             settings::migrate_local_prefs,
+            settings::set_files_bangless,
+            settings::set_files_fallback,
+            settings::set_files_roots,
+            settings::opened_count,
+            settings::clear_opened,
             settings::set_recents,
             settings::set_tray,
             settings::set_placement,
@@ -638,6 +643,26 @@ pub fn run() {
             };
             app.manage(blocklist.clone());
 
+            // The file index, mapped from disk if it exists. **Roots are left
+            // empty here**: resolving them costs 3.5 ms of shell calls, and the
+            // walk thread below sets them before it needs them. Mapping is 87 us.
+            let file_index = Arc::new(WalkIndex::load(
+                identity::data_dir()
+                    .map(|d| d.join("index"))
+                    .unwrap_or_default(),
+                index::roots::Roots {
+                    include: Vec::new(),
+                    exclude: Vec::new(),
+                },
+            ));
+            app.manage(file_index.clone());
+            let files = Arc::new(sources::files::FileSource::new(file_index.clone()));
+            // Read at startup rather than pushed: a keystroke can arrive before
+            // any window has mounted, and both would answer wrongly until one
+            // did. The same gap v0.6 closed for the calculator policy.
+            files.set_bangless(prefs::flag(&prefs, prefs::FILES_BANGLESS, false));
+            files.set_fallback(prefs::flag(&prefs, prefs::FILES_FALLBACK, false));
+
             let mut pipeline = Pipeline::new(
                 apps.clone(),
                 recents.clone(),
@@ -648,6 +673,7 @@ pub fn run() {
             if let Some(store) = clip_store.clone() {
                 pipeline = pipeline.with_clips(store);
             }
+            pipeline = pipeline.with_files(files);
             // Read once at startup rather than waiting for the frontend to push:
             // a keystroke can arrive before the Palette has mounted, and `!v`
             // silently falling through would look like a broken Bang.
@@ -669,17 +695,6 @@ pub fn run() {
             // indexed lookup on an open connection, which is what that costs.
             hotkey::register(&handle, hotkey::accelerator(&prefs));
 
-            // The file index, mapped from disk if it exists. **Below the hotkey
-            // deliberately**: resolving the roots costs 3.5 ms of shell calls, and
-            // nothing joins the queue above registration. Managed here, not on the
-            // walk thread, so `file_index_status` cannot outrun the state.
-            let file_index = Arc::new(WalkIndex::load(
-                identity::data_dir()
-                    .map(|d| d.join("index"))
-                    .unwrap_or_default(),
-                index::roots::defaults(),
-            ));
-            app.manage(file_index.clone());
             let bench = app.state::<Bench>();
             bench.startup_ready();
             // Every span the harness measures starts at a hotkey press, so a taken
@@ -744,7 +759,10 @@ pub fn run() {
             // only a missing one costs a walk. Watching starts either way, so a
             // mapped index is current from the first second.
             let file_walk = file_index.clone();
+            let index_prefs = prefs.clone();
             std::thread::spawn(move || {
+                // Off the startup path, where the shell calls cost nothing.
+                file_walk.set_roots(settings::stored_roots(&index_prefs));
                 if !file_walk.is_loaded() {
                     if let Err(e) = file_walk.rebuild() {
                         eprintln!("[takyon] the file index could not be written: {e}");
