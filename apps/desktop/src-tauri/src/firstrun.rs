@@ -1,32 +1,34 @@
-//! The first-run autostart prompt.
+//! First-run autostart.
 //!
-//! ROADMAP v0.1 says autostart is "on by default via first-run prompt", and the
-//! two halves of that phrase are in tension on purpose. A launcher that is not
-//! running cannot answer its hotkey, so the useful default is on. But silently
-//! registering something at login on someone's behalf is exactly the behaviour
-//! that makes people distrust a tool. So: asked once, with on as the pre-selected
-//! answer, and never asked again.
+//! **On by default since v0.6, and no longer a question.** A launcher that is not
+//! running cannot answer its hotkey, so the useful default is on. Through v0.5
+//! that was asked once in a modal, because declining had to be possible and there
+//! was nowhere else to do it — the Settings window existed but, as v0.6 found,
+//! had never actually rendered.
 //!
-//! The "asked" flag is a marker file rather than a row in `settings.db`, because
-//! `settings.db` is v0.6 work and inventing a schema here would mean writing a
-//! migration for it later. The **answer** is never stored at all — it lives in the
-//! registry, where the OS owns it.
+//! There is somewhere else now. General → "Start Takyon when I log in" reads the
+//! registry on every mount and turns it off in one click, so the modal was asking
+//! for a decision the window already offers, before the user had seen the app.
+//!
+//! Every guard below is unchanged: never from a debug build, never while
+//! benchmarking, never from a `target\` directory. The marker file still records
+//! that first run happened, so a later "off" is never undone on the next launch.
 
 use std::path::PathBuf;
 use tauri::AppHandle;
 
-/// Presence means the question has been asked. Contents are irrelevant.
+/// Presence means first run already happened. Contents are irrelevant.
 const MARKER: &str = "first-run-complete";
 
 pub fn marker_path() -> Option<PathBuf> {
     crate::identity::data_dir().map(|d| d.join(MARKER))
 }
 
-pub fn already_asked() -> bool {
+pub fn already_ran() -> bool {
     marker_path().map(|p| p.exists()).unwrap_or(false)
 }
 
-// Only `maybe_prompt` calls this, and that is compiled out of debug builds — so in
+// Only `maybe_enable` calls this, and that is compiled out of debug builds — so in
 // a dev build it is genuinely dead, on purpose.
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn mark_asked() {
@@ -41,46 +43,31 @@ fn mark_asked() {
     }
 }
 
-/// Ask once, then act on the answer.
+/// Register autostart on first run, once.
 ///
-/// Runs well after the hotkey is live — a modal dialog during startup would sit
-/// inside the login-to-responsive budget, and the first thing a new user would
-/// meet is a launcher that cannot yet launch anything.
+/// Runs well after the hotkey is live: it is a registry write, and nothing about
+/// it belongs inside the login-to-responsive budget.
+///
 #[cfg(not(debug_assertions))]
-pub fn maybe_prompt(app: &AppHandle) {
+pub fn maybe_enable(app: &AppHandle) {
     use tauri_plugin_autostart::ManagerExt;
-    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
-    if already_asked() || !should_ask() {
+    // Once only. The marker is what stops a later "off" in Settings being undone
+    // on the next launch — "first run happened" and "autostart is on" are
+    // different facts, and the registry owns the second one (ADR-0015).
+    if already_ran() || !may_register() {
         return;
     }
 
-    let wants = app
-        .dialog()
-        .message(format!(
-            "{} answers its hotkey only while it is running.\n\nStart it automatically when you log in?",
-            crate::identity::DISPLAY_NAME
-        ))
-        .title(crate::identity::DISPLAY_NAME)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Start at login".into(),
-            "Not now".into(),
-        ))
-        .blocking_show();
-
-    // The marker is written whatever the answer is. "Asked" and "said yes" are
-    // different facts, and conflating them would re-ask everyone who declined.
     mark_asked();
 
-    if wants {
-        if let Err(e) = app.autolaunch().enable() {
-            eprintln!("[takyon] could not enable autostart: {e}");
-        }
+    if let Err(e) = app.autolaunch().enable() {
+        eprintln!("[takyon] could not enable autostart on first run: {e}");
     }
 }
 
 
-/// Is this a launch that should be allowed to ask about autostart at all?
+/// Is this a launch that may claim a startup slot at all?
 ///
 /// `#[cfg(not(debug_assertions))]` is not sufficient, and this was learned the
 /// expensive way: a **release** build run straight out of `target\release\` passes
@@ -93,14 +80,14 @@ pub fn maybe_prompt(app: &AppHandle) {
 /// So two further conditions:
 ///
 /// 1. **Not while benchmarking.** `TAKYON_BENCH_LOG` being set means synthetic
-///    input is about to arrive, and a modal dialog in front of synthetic input is
-///    a machine answering a question on the user's behalf.
+///    input is about to arrive, and a benchmark must never register anything on
+///    the user's behalf.
 /// 2. **Not from a build output directory.** A binary in `target\debug\` or
 ///    `target\release\` is never an installed application, whatever profile it was
 ///    compiled with, and it has no business claiming a startup slot.
-// Reached only from `maybe_prompt`, which is compiled out of debug builds.
+// Reached only from `maybe_enable`, which is compiled out of debug builds.
 #[cfg_attr(debug_assertions, allow(dead_code))]
-fn should_ask() -> bool {
+fn may_register() -> bool {
     if std::env::var_os(crate::bench::LOG_ENV).is_some() {
         return false;
     }
@@ -117,7 +104,7 @@ fn should_ask() -> bool {
 /// Compares path *components* rather than substrings: someone whose folder is
 /// named `targeted` is not running a build output, and a substring match would
 /// decide that they were.
-// Reached only from `maybe_prompt`, which is compiled out of debug builds.
+// Reached only from `maybe_enable`, which is compiled out of debug builds.
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn is_build_output(exe: &std::path::Path) -> bool {
     let parts: Vec<String> = exe
@@ -136,7 +123,7 @@ fn is_build_output(exe: &std::path::Path) -> bool {
 /// and survives uninstalling the real app. Gating the prompt rather than only the
 /// write also means `bun run dev` does not consume the one-time question.
 #[cfg(debug_assertions)]
-pub fn maybe_prompt(_app: &AppHandle) {}
+pub fn maybe_enable(_app: &AppHandle) {}
 
 #[cfg(test)]
 mod tests {

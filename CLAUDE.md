@@ -252,6 +252,18 @@ the next.
   in the one way that looks like a Rust bug. `tauri build` runs
   `beforeBuildCommand` and sets the `TAURI_ENV_*` the asset embedding depends on;
   cargo alone does neither. Cost an hour of chasing a phantom regression once.
+- **Never create a window from the main thread.** A synchronous `#[tauri::command]`
+  and a tray menu handler both run on the main thread, and
+  `WebviewWindowBuilder::build()` dispatches creation to the event loop and blocks
+  until it is serviced — on the main thread that is a deadlock. It does not look
+  like one: the window *frame* appears, correctly sized and titled, and only its
+  webview never loads, so you get a title bar over an opaque white rectangle.
+  `build()` never returns, so nothing after it logs either. `settings::open`
+  therefore spawns a thread and every future window must do the same. Confirmed by
+  driving a v0.6 build; the call path is unchanged since v0.1, so the Settings
+  window had probably never rendered in a real build. Nothing caught it because the
+  visual suite reaches that route through Vite, never through Tauri —
+  `scripts/verify-drive-v0.6.ps1` now samples pixels for exactly this.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding

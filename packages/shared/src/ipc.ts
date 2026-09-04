@@ -13,6 +13,15 @@
  * this file or that attribute is wrong.
  */
 
+/**
+ * The product name, for UI copy only (ADR-0011).
+ *
+ * **Never key anything off this.** Windows keys off the fixed slug
+ * `com.v3sper.launcher`; renaming the product must stay a copy change. A Rust
+ * test asserts this string matches `identity::DISPLAY_NAME`.
+ */
+export const DISPLAY_NAME = "Takyon";
+
 /** Which window a React root is being mounted into. Chosen by `?window=` on the URL. */
 export type WindowKind = "palette" | "settings";
 
@@ -75,6 +84,59 @@ export type EntryKind =
  * format `sources/calc` parses, so renaming one breaks a saved setting.
  */
 export type CalcPolicy = "automatic" | "explicit";
+
+/**
+ * Every stored preference a window reads on mount (v0.6).
+ *
+ * One response rather than one `invoke` per control, because the Palette reads
+ * it too and reads it on the startup path. **Autostart is deliberately absent**:
+ * the OS owns that answer and it is re-read every mount (ADR-0015).
+ */
+export interface SettingsSnapshot {
+  reduceMotion: boolean;
+  calcPolicy: CalcPolicy;
+  recents: boolean;
+  tray: boolean;
+  placement: Placement;
+  clipRetention: ClipRetention;
+  clipBang: boolean;
+  theme: Theme;
+  uiSize: UiSize;
+}
+
+/**
+ * Appearance (v0.6). `system` follows Windows; the other two override it in
+ * both directions, which is what makes it an override rather than a hint.
+ */
+export type Theme = "system" | "light" | "dark";
+
+/**
+ * Interface size (v0.6). Applied as a root `zoom`, and **mirrored in Rust**,
+ * which scales the Palette's window height by the same percentages. If the two
+ * disagree the Palette is exactly the difference too short.
+ */
+export type UiSize = "small" | "default" | "large";
+
+/**
+ * Which monitor the Palette opens on (v0.6).
+ *
+ * Two pinned choices rather than a monitor list: a saved monitor index is wrong
+ * the moment a display is unplugged, and it is wrong silently.
+ */
+export type Placement = "cursor" | "primary";
+
+/** One alias and what it points at, for the Applications page (v0.6). */
+export interface AliasRow {
+  alias: string;
+  /** The target Entry's id. Opaque; the UI never parses it. */
+  target: string;
+  /**
+   * The target's title today. **Absent when the alias outlived its
+   * application** — an uninstall, or a rename. The row still lists, so it can
+   * be deleted rather than becoming an invisible rule.
+   */
+  title?: string;
+}
 
 /**
  * How long clipboard history is kept (v0.5, ADR-0006).

@@ -9,6 +9,25 @@
   --color-plate: #0b0e12;
   --color-fg: #e6edf3;
   --color-accent: #3fc8f5;
+
+  /*
+    Settings surfaces: t3code's construction, Raycast's layout, Takyon's hues.
+    Every one is derived from the two above, so swapping in the real scheme when
+    docs/brand.md closes is still one edit.
+
+    Raised, not grey. A card is the plate with 3% of the foreground mixed in and
+    every separation is an alpha, which is what keeps a near-black window from
+    going milky at the first border.
+  */
+  --color-card: color-mix(in srgb, var(--color-fg) 3%, var(--color-plate));
+  --color-sidebar: color-mix(in srgb, var(--color-fg) 2%, var(--color-plate));
+  --color-control: color-mix(in srgb, var(--color-fg) 8%, transparent);
+  --color-row-hover: color-mix(in srgb, var(--color-fg) 5%, transparent);
+  --color-row-selected: color-mix(in srgb, var(--color-fg) 10%, transparent);
+  --color-hairline: color-mix(in srgb, var(--color-fg) 8%, transparent);
+
+  --radius-control: 0.5rem;
+  --radius-card: 0.625rem;
 }
 
 :root {
@@ -18,6 +37,62 @@
     background, so a particle painted with it would vanish.
   */
   --mark-particle: var(--color-accent);
+}
+
+/*
+  The light theme (v0.6 slice 3).
+
+  Only four tokens are redefined. Every separation — hairlines, hover, selection,
+  controls — is an alpha of `--color-fg`, so dark ink at 8% on white does the same
+  job white ink at 8% did on near-black, and follows for free.
+
+  What does *not* follow is the surface order: on a dark canvas a card is lifted
+  by mixing the foreground in, on a light one it is lifted by being pure white
+  against a slightly grey ground. So those two are stated rather than derived.
+*/
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-plate: #f2f5f8;
+    --color-fg: #10151b;
+    /* Cherenkov cyan is a light source; on paper it has to darken to stay
+       readable. Same hue, enough contrast to sit on white. */
+    --color-accent: #0b7fa8;
+    --color-card: #ffffff;
+    --color-sidebar: #eaeef3;
+  }
+}
+
+/* After the media query, so an explicit choice beats the system either way. */
+:root[data-theme="light"] {
+  --color-plate: #f2f5f8;
+  --color-fg: #10151b;
+  --color-accent: #0b7fa8;
+  --color-card: #ffffff;
+  --color-sidebar: #eaeef3;
+}
+
+:root[data-theme="dark"] {
+  --color-plate: #0b0e12;
+  --color-fg: #e6edf3;
+  --color-accent: #3fc8f5;
+  --color-card: color-mix(in srgb, var(--color-fg) 3%, var(--color-plate));
+  --color-sidebar: color-mix(in srgb, var(--color-fg) 2%, var(--color-plate));
+}
+
+/*
+  Interface size (v0.6). `zoom` rather than a font scale, because the Palette is
+  built from fixed pixel heights that a font scale would leave behind.
+
+  **Rust multiplies the window height by the same percentages**
+  (`prefs::ui_scale_percent`). If these two ever disagree the Palette is exactly
+  the difference too short, and only at one setting.
+*/
+:root[data-ui-size="small"] {
+  zoom: 0.9;
+}
+
+:root[data-ui-size="large"] {
+  zoom: 1.15;
 }
 
 html,

@@ -232,19 +232,73 @@ collapses, so A, B, A is genuinely three events.
 
 **Goal:** every decision so far becomes the user's.
 
-- [ ] Separate settings window, `Ctrl+,` from the Palette and from the tray
-- [ ] `settings.db`; UI is the only editor (no hand-edited config file)
-- [ ] **Two-tier navigation, Raycast-style**: a short fixed set of app-level pages (General, Launcher, Keyboard, Advanced, About) above a divider, then one alphabetical page per feature (Applications, Calculator, Clipboard History, File Search, AI…). Every future Source or Mode adds a tier-two page without touching the navigation
-- [ ] Settings search box — tier two becomes unbrowsable once it passes ~15 entries
-- [ ] Migrate the v0.1 "Turn off animations" switch from `localStorage` into `settings.db` — `src/prefs.ts` is the only reader, and it belongs on the Appearance page
-- [ ] Hotkey rebinding, autostart, tray visibility, retention, blocklist, aliases, monitor placement, recents toggle, Bangless-file-search toggle (default off), index roots + exclusions with a live entry count
-- [ ] **Autostart moves to General and gains nothing else.** The registration shipped in v0.1; v0.6 owes it a home, a reported error when the registry write is refused, and the discipline not to mirror it into `settings.db` (ADR-0015). No "close to tray" and no "start hidden" — tesseract has both, the Palette has no ✕ and always starts hidden
-- [ ] Appearance: follow system by default, plus a manual light/dark override and pinned interface-size options (full theming is post-V1)
-- [ ] Local crash logs written to disk with a settings button to open the folder — **nothing is ever sent** (ADR-0010)
-- [ ] Every control offers **pinned, explicit options** — chips rather than free-text or sliders where the option set is small (Raycast's hotkey and interface-size controls are the reference)
-- [ ] Apply-on-change with a ~1 s debounce and a brief "Applied" confirmation; **destructive settings get a confirmation dialog naming the consequence** ("Setting retention to 1 day will permanently delete 4,312 clipboard items")
+**Built in three slices**, because the phase is the largest in V1 and one
+unreviewable diff was the alternative. Slice 1 is the shell and the plumbing;
+slice 2 the remaining feature pages; slice 3 appearance and the colour question.
+
+- [x] **Slice 1.** Separate settings window, `Ctrl+,` from the Palette and from the tray
+- [x] `settings.db`; UI is the only editor (no hand-edited config file). Extended rather than created — `prefs.rs` and the `settings` table opened at v0.5 for `clips.retention`
+- [x] **Two-tier navigation, Raycast-style**: a short fixed set of app-level pages above a divider, then one alphabetical page per feature. Every future Source or Mode adds a tier-two page without touching the navigation — `navSections` is pure and `nav.test.ts` holds the promise by appending a page and asserting where it lands. **Pages for features that do not exist yet are deliberately absent**: File Search arrives with v0.7 and AI with v0.9, and shipping them now as disabled rows would put dead controls in a window whose whole point is that every control does something
+- [x] Settings search box — and it returns **individual settings, not page names**, because past ~15 pages "Clipboard History" is not what someone is hunting for, "retention" is. t3code's `searchSettings` is the reference
+- [x] Migrate the v0.1 "Turn off animations" switch from `localStorage` into `settings.db`. **The calculator Policy went with it**, since `prefs.ts` held both and migrating one is half a job. Migration is idempotent — a key already stored wins, so a stale legacy value cannot undo a later choice
+- [x] **Autostart moves to General and gains nothing else.** The one behavioural fix landed: a refused registry write now shows its error beside the control and refetches in a `finally`, closing [`docs/tbd/v0.1.md`](./docs/tbd/v0.1.md) §3. Still read from the OS on every mount, never mirrored (ADR-0015). No "close to tray" and no "start hidden"
+- [x] Every control offers **pinned, explicit options** — chips rather than free-text or sliders. `controls.tsx` is the whole vocabulary: `Group`, `Row`, `Switch`, `Chips`, `useApplied`
+- [x] Apply-on-change with a brief "Applied" confirmation, and **no save button anywhere**. The optimistic value is always replaced by what the refetch returns, never by what was clicked — ADR-0015's rule for autostart, applied to every control because it costs nothing
+- [x] **A bug the phase found rather than fixed:** the calculator Policy was pushed from the frontend only, so every keystroke before the Palette mounted answered under Automatic whatever had been chosen — a restart silently reverting the setting. Rust now reads it at startup, as it already did for `clips.bang`
+- [x] **And the one that mattered more: the Settings window had never rendered.** `settings::open` built the window on the main thread, where `WebviewWindowBuilder::build()` blocks waiting for the event loop it is itself blocking. The frame appeared — right size, right title — and only the webview never loaded, so it was a title bar over a white rectangle, and `build()` never returned so nothing after it logged. It now spawns. The call path is unchanged since v0.1, and nothing caught it because the visual suite reaches that route through Vite rather than through Tauri. See CLAUDE.md gotchas; `scripts/verify-drive-v0.6.ps1` now samples pixels for it
+- [x] **Slice 2.** Hotkey rebinding from pinned chords with a reset — the old binding is released first, and a refused chord restores the previous one rather than leaving nothing bound. Tray visibility, **refused while the hotkey is unregistered** because the tray would be the only way in and out. Monitor placement (cursor or primary — two choices, not a monitor list, since a saved index is silently wrong once a display is unplugged). Recents toggle, aliases editor, clipboard retention, `!v` toggle and the capture blocklist. Closes [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §3 and [`docs/tbd/v0.5.md`](./docs/tbd/v0.5.md) §1, §6, §7
+- [x] **The destructive confirmation names the real count**, asked from Rust before the change: "will permanently delete 3 clipboard items… overwritten, not moved — there is nothing to restore from"
+- [x] **Slice 3.** Appearance: follows Windows by default, with an override that wins in **both** directions, plus pinned interface sizes. **A full light theme**, not just the plumbing — and only four tokens are restated, because every separation is an alpha of `--color-fg` and follows for free
+- [x] Interface size is a root `zoom` **mirrored by Rust**, which scales the Palette's window by the same integer percentages. A font scale would have left the Palette's fixed pixel heights behind
+- [x] Local crash logs (ADR-0010): a panic hook writing to `logs\panic.log` under the data directory, capped, with an Advanced page button that opens the folder. **Nothing is ever sent, and there is no code path that could**
+- [ ] **Resolve the colour question** in `docs/brand.md`. The light palette slice 3 ships is *derived* — same Cherenkov hue darkened to survive white — and still needs the real decision. Everything is `color-mix` over `--color-plate` and `--color-fg`, so the swap remains one edit
+- [ ] Bangless-file-search toggle, index roots + exclusions with a live entry count — **deferred to v0.7**, which is when an index exists to have roots
+- [ ] [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §10's per-Kind ranking weight, which named v0.6 as its owner. **Not built** — it is a ranking constant rather than a setting, and exposing a weight as a control is a worse answer than choosing the number
 
 **Exit criteria:** nothing in the app requires editing a file or a registry key.
+*Met for everything that exists: the hotkey, autostart, appearance, interface
+size, placement, tray, recents, aliases, retention, the `!v` Bang and the
+clipboard blocklist are all reachable from the window. Index roots are the one
+listed item still unreachable, and there is no index for them to point at
+until v0.7.*
+
+**Packaged as 0.6.0.** Cut deliberately with two things outstanding, both
+recorded rather than quietly closed:
+
+- **The colour question is still open** (`docs/brand.md`). The plan made it a ship
+  gate; the light palette in this release is *derived* — the same Cherenkov hue
+  darkened to survive white — not decided. Every surface is `color-mix` over
+  `--color-plate` and `--color-fg`, so settling it stays one edit and redraws no
+  asset.
+- **`docs/verify/v0.6.md` has not been run by a person.** S1, S3 and S5 are driven
+  by `scripts/verify-drive-v0.6.ps1`; sections A, M, K, L, C, A2, P2 and D need a
+  real registry, a pre-v0.6 profile and a second monitor. The installer exists
+  partly so that pass has something to run against.
+
+What *is* verified: 408 Rust tests, 21 TypeScript, 67 Playwright, all four
+performance budgets, and the settings window driven against the release binary
+with a pixel check that it actually paints.
+
+**Three changes landed after 0.6.0 was cut**, so they are not in that installer:
+
+- **The Keyboard row was unusable below ~900px.** Six chips are wider than the
+  content pane at every window size, and the control refused to shrink — it
+  squeezed the label to one word per line and drew the first chip over it. Rows
+  wrap now, and a Playwright test runs at the 680×480 minimum.
+- **Autostart is on by default rather than asked.** The first-run modal existed
+  because declining had to be possible and there was nowhere else to do it — and
+  the Settings window that was supposed to be that place had never rendered.
+  Every guard is unchanged: never from a debug build, a `target\` directory, or
+  under the bench harness.
+- **The Settings window draws its own title bar.** Windows' native bar is a light
+  strip with square buttons on a window built from near-black surfaces, and it
+  cannot be themed. Undecorated plus `settings/TitleBar.tsx`, which also means it
+  follows the light theme.
+
+**Manual verification:** [`docs/verify/v0.6.md`](./docs/verify/v0.6.md), written
+for slice 1 and grown by each later slice. Almost everything slice 1 claims is
+covered automatically; what is left is the real Tauri window, the real registry
+and the process lifetime.
 
 ---
 

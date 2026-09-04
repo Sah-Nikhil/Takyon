@@ -71,10 +71,22 @@ function Show-Palette {
 }
 
 # The guard. Nothing is ever typed into a window that is not the Palette.
+#
+# It re-summons rather than giving up on the first miss. The Palette hides on
+# focus loss by design, so any window that steals foreground mid-run - Explorer
+# finishing a launch, a heavy app painting its splash - takes it away and every
+# later step then refuses. That is the guard working, but it made the script
+# unrunnable on a busy desktop rather than merely careful.
 function Send-Text([string]$Text) {
+    for ($try = 1; (Get-Front).Name -ne "takyon" -and $try -le 3; $try++) {
+        Write-Output "  (re-summoning; foreground was '$((Get-Front).Name)')"
+        # The hotkey toggles, and a Palette that lost focus is already hidden, so
+        # this shows it rather than hiding it.
+        Show-Palette
+    }
     $f = Get-Front
     if ($f.Name -ne "takyon") {
-        Write-Warning "refused to type '$Text': foreground is '$($f.Name)'"
+        Write-Warning "refused to type '$Text': foreground is '$($f.Name)' after 3 attempts"
         return $false
     }
     foreach ($c in $Text.ToCharArray()) {

@@ -116,43 +116,29 @@ test("Ctrl+K on a calculation offers copying the answer, on Enter", async ({ pag
   await expect(menu.getByRole("option")).toHaveCount(1);
 });
 
+/*
+  "the Palette tells Rust which calculator Policy is remembered" was here through
+  v0.5. The behaviour is gone deliberately: v0.6 stores the Policy and Rust reads
+  it at startup, so pushing it on every show was a SQLite write per summon. Its
+  guarantee moved to `v0_6_a_stored_calculator_policy_is_what_startup_reads`.
+*/
+
 /**
- * The Policy is enforced in Rust, so the browser build cannot test the rule, only
- * that the Palette pushes the remembered choice across the seam. Without this
- * push a restart silently reverts to Automatic.
+ * The Settings control and the Palette are two windows sharing `settings.db` and
+ * nothing else. This asserts the half the browser build can see: choosing a Mode
+ * pushes it across the seam, which is what makes it take effect without waiting
+ * for a restart.
  */
-test("the Palette tells Rust which calculator Policy is remembered", async ({ page }) => {
-  await page.goto("/?window=palette");
-  await page.evaluate(() => {
-    window.localStorage.setItem("com.v3sper.launcher.calc-policy", "explicit");
-  });
-  await page.reload();
-  await page.evaluate(() => {
-    (window as unknown as { __takyon_mock: Mock }).__takyon_mock.emitShow();
-  });
+test("the Calculator page drives the Policy", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Calculator" }).click();
+  await page.getByRole("radio", { name: "After =" }).click();
 
   await expect
     .poll(() =>
       page.evaluate(() =>
         (window as unknown as { __takyon_mock: Mock }).__takyon_mock.calcPolicyRequest(),
       ),
-    )
-    .toBe("explicit");
-});
-
-/**
- * The Settings switch and the Palette are two windows sharing one origin, so the
- * only thing joining them is the stored key. This is the same shape as the motion
- * switch's test, for the same reason: no cross-window plumbing exists.
- */
-test("the Settings switch drives the calculator Policy", async ({ page }) => {
-  await page.goto("/?window=settings");
-  const toggle = page.getByRole("checkbox").nth(2);
-  await toggle.check();
-
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.localStorage.getItem("com.v3sper.launcher.calc-policy")),
     )
     .toBe("explicit");
 });

@@ -127,8 +127,9 @@ test("the mark rests in its locked geometry", async ({ page }) => {
 
 /**
  * The switch in Settings. Without it the animation is not a setting, it is a
- * decision made for the user — and the two windows have no live channel between
- * them in v0.1, so the Palette re-reads the preference on every show.
+ * decision made for the user — and the two windows still have no live channel
+ * between them, so the Palette re-reads the preference on every show. v0.6 moved
+ * the storage from `localStorage` into `settings.db`; the sync point is unchanged.
  */
 test("the Settings switch stops the mark", async ({ page }) => {
   await page.goto("/?window=palette");
@@ -146,40 +147,43 @@ test("the Settings switch stops the mark", async ({ page }) => {
   await show();
   expect(await running()).toBe(2);
 
-  // Stand in for the other window writing the key, then summon again.
-  await page.evaluate(() => {
-    window.localStorage.setItem("com.v3sper.launcher.reduce-motion", "true");
-  });
+  // Stand in for the other window writing the preference, then summon again.
+  await storePreference(page, true);
   await show();
-  expect(await running()).toBe(0);
   await expect(page.locator("html")).toHaveAttribute("data-reduce-motion", "");
+  expect(await running()).toBe(0);
 
   // And back. A preference that cannot be undone is a bug, not a preference.
-  await page.evaluate(() => {
-    window.localStorage.setItem("com.v3sper.launcher.reduce-motion", "false");
-  });
+  await storePreference(page, false);
   await show();
+  await expect(page.locator("html")).not.toHaveAttribute("data-reduce-motion", "");
   expect(await running()).toBe(2);
 });
 
+/** Write the stored motion preference, as the Settings window would. */
+const storePreference = (page: import("@playwright/test").Page, reduceMotion: boolean) =>
+  page.evaluate((on) => {
+    (
+      window as unknown as {
+        __takyon_mock: { setStoredPreference: (p: { reduceMotion: boolean }) => void };
+      }
+    ).__takyon_mock.setStoredPreference({ reduceMotion: on });
+  }, reduceMotion);
+
 /**
  * The control itself, in the window that owns it.
+ *
+ * Only that the write reaches the seam and the document. **Not that it survives a
+ * restart** — since v0.6 that is `settings.db`'s job, and the browser build has
+ * no database to outlive a reload. Rust's `ipc.rs` asserts the round trip.
  */
 test("the Settings window drives the motion preference", async ({ page }) => {
   await page.goto("/?window=settings");
-  const box = page.getByRole("checkbox", { name: "Turn off animations" });
+  const motion = page.getByRole("switch", { name: "Turn off animations" });
 
-  await expect(box).not.toBeChecked();
-  await box.check();
+  await expect(motion).toHaveAttribute("aria-checked", "false");
+  await motion.click();
+
+  await expect(motion).toHaveAttribute("aria-checked", "true");
   await expect(page.locator("html")).toHaveAttribute("data-reduce-motion", "");
-  expect(
-    await page.evaluate(() =>
-      window.localStorage.getItem("com.v3sper.launcher.reduce-motion"),
-    ),
-  ).toBe("true");
-
-  // It survives the window being closed and reopened, which is the only thing a
-  // stored preference is for.
-  await page.reload();
-  await expect(page.getByRole("checkbox", { name: "Turn off animations" })).toBeChecked();
 });

@@ -22,7 +22,7 @@ import {
 } from "@takyon/shared";
 import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
-import { applyMotionPreference, calcPolicy, watchMotionPreference } from "@/prefs";
+import { refresh } from "@/prefs";
 import type { HotkeyStatus, ViewKind } from "@takyon/shared";
 import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
@@ -111,13 +111,6 @@ export function Palette() {
       .then((all) => setLabels(Object.fromEntries(all.map((a) => [a.id, a]))));
   }, []);
 
-  // Rust holds the calculator's Mode because the rule is enforced inside the
-  // Source, on the keystroke path. Pushing it once on mount is what restores the
-  // remembered choice after a restart; Settings pushes again when it changes.
-  useEffect(() => {
-    void api.setCalcPolicy(calcPolicy());
-  }, []);
-
   useEffect(() => {
     runQuery(value);
   }, [value, runQuery]);
@@ -131,14 +124,11 @@ export function Palette() {
       setMenu(null);
       setView(null);
       setShown(true);
-      // The Settings window may have flipped the motion switch while the Palette
-      // was hidden. Re-reading here is what makes the two windows agree without
-      // any cross-window plumbing (see prefs.ts).
-      applyMotionPreference();
-      // Same sync point, same reason: Settings may have changed the calculator's
-      // Mode while the Palette was hidden, and the next keystroke is about to ask
-      // Rust a question that depends on it.
-      void api.setCalcPolicy(calcPolicy());
+      // The Settings window may have written a preference while the Palette was
+      // hidden. Re-reading here is what makes the two windows agree without any
+      // cross-window plumbing (see prefs.ts). The calculator's Mode is no longer
+      // pushed back: since v0.6 Rust stores it and read it at startup.
+      void refresh();
       inputRef.current?.focus();
 
       // Two frames, not one. The first rAF callback runs *before* the browser
@@ -173,7 +163,6 @@ export function Palette() {
     });
   }, []);
 
-  useEffect(watchMotionPreference, []);
 
   /*
     Measure the hotkey-failure banner and tell the window how tall it is.
@@ -271,6 +260,14 @@ export function Palette() {
         if (view) return; // ClipboardHistory stops propagation and handles its own.
         e.preventDefault();
         void api.dismiss();
+      }
+      // Ctrl+, opens Settings (v0.6 task 1), the same window the tray item opens.
+      // Bound here rather than as a global shortcut: it is only meaningful while
+      // the Palette has focus, and a second system-wide chord is a second thing
+      // to collide with.
+      if (e.key === "," && e.ctrlKey) {
+        e.preventDefault();
+        void api.openSettings();
       }
     };
     document.addEventListener("keydown", onKeyDown);

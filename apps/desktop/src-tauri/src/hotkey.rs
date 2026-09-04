@@ -32,25 +32,43 @@ pub const DEFAULT_ACCELERATOR: &str = "Alt+Space";
 /// nobody runs.
 pub const ACCELERATOR_ENV: &str = "TAKYON_HOTKEY";
 
-/// The accelerator this process will try to register.
+/// What the Keyboard page offers, in the order it draws them.
 ///
-/// An override that does not parse is ignored with a warning rather than being
-/// fatal: a typo in an environment variable should not stop the launcher starting.
-pub fn accelerator() -> String {
-    match std::env::var(ACCELERATOR_ENV) {
-        Ok(value) if !value.trim().is_empty() => {
-            let value = value.trim().to_string();
-            if value.parse::<Shortcut>().is_ok() {
-                value
-            } else {
-                eprintln!(
-                    "[takyon] {ACCELERATOR_ENV}={value:?} is not a valid accelerator;                      using {DEFAULT_ACCELERATOR}"
-                );
-                DEFAULT_ACCELERATOR.to_string()
-            }
+/// Pinned rather than a raw capture field (ROADMAP v0.6): a capture field invites
+/// chords Windows reserves and reports the failure only afterwards.
+pub const CHOICES: [&str; 6] = [
+    "Alt+Space",
+    "Ctrl+Space",
+    "Alt+Shift+Space",
+    "Ctrl+Shift+Space",
+    "Ctrl+Alt+Space",
+    "Ctrl+Shift+P",
+];
+
+/// Pick the accelerator to register: env override, then stored, then default.
+///
+/// Pure so the precedence is testable without registering anything. Anything that
+/// does not parse falls through to the next source rather than disabling the
+/// hotkey, because a launcher whose hotkey is dead looks like one that crashed.
+pub fn resolve(stored: Option<&str>, env: Option<&str>) -> String {
+    for (label, candidate) in [("override", env), ("stored", stored)] {
+        let Some(value) = candidate.map(str::trim).filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        if value.parse::<Shortcut>().is_ok() {
+            return value.to_string();
         }
-        _ => DEFAULT_ACCELERATOR.to_string(),
+        eprintln!("[takyon] {label} hotkey {value:?} is not a valid accelerator; ignoring it");
     }
+    DEFAULT_ACCELERATOR.to_string()
+}
+
+/// The accelerator this process will try to register, from storage and the env.
+pub fn accelerator(prefs: &crate::prefs::Prefs) -> String {
+    resolve(
+        prefs.get(crate::prefs::HOTKEY).as_deref(),
+        std::env::var(ACCELERATOR_ENV).ok().as_deref(),
+    )
 }
 
 #[derive(Clone, Serialize)]
@@ -76,10 +94,17 @@ impl HotkeyState {
 /// self-heal, before anything touching disk. The "login -> hotkey responsive
 /// < 500 ms" budget is met by ordering, not by speed: everything that is not this
 /// is deferred behind it.
-pub fn register(app: &AppHandle) {
-    let accelerator = accelerator();
+pub fn register(app: &AppHandle, accelerator: String) {
+    let status = attempt(app, accelerator);
+    if !status.registered {
+        report(app, &status);
+    }
+    app.manage(HotkeyState(Mutex::new(status)));
+}
 
-    let status = match accelerator.parse::<Shortcut>() {
+/// Try one accelerator, reporting what happened. Registers nothing on failure.
+fn attempt(app: &AppHandle, accelerator: String) -> HotkeyStatus {
+    match accelerator.parse::<Shortcut>() {
         Ok(shortcut) => {
             let handler = |app: &AppHandle, _shortcut: &Shortcut, event: tauri_plugin_global_shortcut::ShortcutEvent| {
                 // The handler fires for press *and* release. Without this filter
@@ -108,15 +133,48 @@ pub fn register(app: &AppHandle) {
         Err(e) => HotkeyStatus {
             accelerator,
             registered: false,
-            error: Some(format!("{DEFAULT_ACCELERATOR} is not a valid shortcut: {e}")),
+            error: Some(format!("not a valid shortcut: {e}")),
         },
-    };
+    }
+}
 
-    if !status.registered {
-        report(app, &status);
+/// Rebind the hotkey and remember the choice (v0.6).
+///
+/// Releases the old binding first, or two chords open the Palette. Restores it on
+/// failure, so a refused chord cannot leave the app with nothing bound.
+pub fn rebind(app: &AppHandle, accelerator: &str, prefs: &crate::prefs::Prefs) -> HotkeyStatus {
+    let previous = app.state::<HotkeyState>().get();
+    if let Ok(old) = previous.accelerator.parse::<Shortcut>() {
+        let _ = app.global_shortcut().unregister(old);
     }
 
-    app.manage(HotkeyState(Mutex::new(status)));
+    let mut status = attempt(app, accelerator.to_string());
+    if !status.registered {
+        // Put the old one back rather than leaving nothing bound.
+        let restored = attempt(app, previous.accelerator.clone());
+        if restored.registered {
+            status.error = Some(format!(
+                "{}. Kept {}.",
+                status.error.as_deref().unwrap_or("could not be registered"),
+                previous.accelerator
+            ));
+        }
+    }
+
+    if status.registered {
+        if let Err(e) = prefs.set(crate::prefs::HOTKEY, &status.accelerator) {
+            eprintln!("[takyon] the hotkey could not be saved: {e}");
+        }
+    }
+
+    let held = app.state::<HotkeyState>();
+    let live = if status.registered {
+        status.clone()
+    } else {
+        previous
+    };
+    *held.0.lock().unwrap_or_else(|e| e.into_inner()) = live;
+    status
 }
 
 /// Turn the plugin's error into something worth reading.
@@ -176,6 +234,39 @@ mod tests {
     #[test]
     fn v0_1_the_default_accelerator_parses() {
         assert!(DEFAULT_ACCELERATOR.parse::<Shortcut>().is_ok());
+    }
+
+    /// Every chip the Keyboard page offers has to be registrable, or the control
+    /// offers a choice that cannot be taken.
+    #[test]
+    fn v0_6_every_offered_binding_parses() {
+        assert!(CHOICES.contains(&DEFAULT_ACCELERATOR));
+        for choice in CHOICES {
+            assert!(choice.parse::<Shortcut>().is_ok(), "{choice} does not parse");
+        }
+    }
+
+    /// Precedence, and the order matters in both directions.
+    ///
+    /// The env override has to beat a stored binding or `bun run bench` cannot
+    /// measure a machine whose user has rebound the hotkey. A stored binding has
+    /// to beat the default or rebinding does not survive a restart.
+    #[test]
+    fn v0_6_the_override_beats_storage_which_beats_the_default() {
+        assert_eq!(resolve(None, None), DEFAULT_ACCELERATOR);
+        assert_eq!(resolve(Some("Ctrl+Space"), None), "Ctrl+Space");
+        assert_eq!(resolve(None, Some("Ctrl+Alt+F9")), "Ctrl+Alt+F9");
+        assert_eq!(resolve(Some("Ctrl+Space"), Some("Ctrl+Alt+F9")), "Ctrl+Alt+F9");
+    }
+
+    /// A binding that no longer parses must not leave the launcher with no hotkey
+    /// at all. It falls through to the next source rather than failing.
+    #[test]
+    fn v0_6_an_unparseable_binding_falls_through_rather_than_disabling_the_hotkey() {
+        assert_eq!(resolve(Some("Ctrl+Nonsense"), None), DEFAULT_ACCELERATOR);
+        // A typo in the environment variable must not override a good stored one.
+        assert_eq!(resolve(Some("Ctrl+Space"), Some("!!!")), "Ctrl+Space");
+        assert_eq!(resolve(Some("  "), None), DEFAULT_ACCELERATOR);
     }
 
     /// The chord `bun run bench` uses when Alt+Space is taken. If this ever stops

@@ -10,6 +10,7 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   isEnabled as autostartIsEnabledPlugin,
   enable as autostartEnablePlugin,
@@ -19,12 +20,17 @@ import {
   EVENT_HIDE,
   EVENT_SHOW,
   type Action,
+  type AliasRow,
+  type Placement,
+  type Theme,
+  type UiSize,
   type CalcPolicy,
   type ClipRetention,
   type ClipRow,
   type ViewKind,
   type HotkeyStatus,
   type QueryResult,
+  type SettingsSnapshot,
   type ShowPayload,
 } from "@takyon/shared";
 import { mock } from "./api.mock";
@@ -67,12 +73,136 @@ export const reportFirstEntry = (seq: number) =>
 /**
  * Tell Rust when the calculator may answer (v0.4).
  *
- * Pushed rather than read: the rule is enforced inside the Source on the
- * keystroke path, so Rust has to hold it. `prefs.ts` remembers the choice, and
- * both windows push, so they cannot disagree.
+ * Still pushed, because the rule is enforced inside the Source on the keystroke
+ * path. Since v0.6 Rust also stores it, so startup no longer has to wait for a
+ * window to mount before the choice takes effect.
  */
 export const setCalcPolicy = (policy: CalcPolicy) =>
   inTauri ? invoke<void>("set_calc_policy", { policy }) : mock.setCalcPolicy(policy);
+
+/**
+ * Every stored preference, read once on mount (v0.6).
+ *
+ * Replaces the `localStorage` reads `prefs.ts` did through v0.5. Asynchronous,
+ * which the Palette can afford: it mounts at startup while hidden, so the read
+ * lands long before any show.
+ */
+export const settingsSnapshot = () =>
+  inTauri ? invoke<SettingsSnapshot>("settings_snapshot") : mock.settingsSnapshot();
+
+/** Turn our own animations off, or back on. */
+export const setReduceMotion = (on: boolean) =>
+  inTauri ? invoke<void>("set_reduce_motion", { on }) : mock.setReduceMotion(on);
+
+/**
+ * Carry v0.1's `localStorage` preferences into `settings.db` (task 8b).
+ *
+ * Only a window can read `localStorage`, so the values are sent rather than
+ * found. Rust ignores any key it already holds, which is what makes calling this
+ * on every mount safe.
+ */
+export const migrateLocalPrefs = (legacy: Partial<SettingsSnapshot>) =>
+  inTauri
+    ? invoke<SettingsSnapshot>("migrate_local_prefs", legacy)
+    : mock.migrateLocalPrefs(legacy);
+
+/** Whether the Recents Source contributes Entries (v0.6). */
+export const setRecents = (on: boolean) =>
+  inTauri ? invoke<void>("set_recents", { on }) : mock.setRecents(on);
+
+/**
+ * Show or hide the tray icon.
+ *
+ * **Rejects while the hotkey is unregistered**: the Palette has no taskbar
+ * button, so the tray would be the only way in and out.
+ */
+export const setTray = (on: boolean) =>
+  inTauri ? invoke<void>("set_tray", { on }) : mock.setTray(on);
+
+/** Which monitor the Palette opens on. */
+export const setPlacement = (value: Placement) =>
+  inTauri ? invoke<void>("set_placement", { value }) : mock.setPlacement(value);
+
+/** The bindings the Keyboard page offers. Rust owns the list (ADR-0009). */
+export const hotkeyChoices = () =>
+  inTauri ? invoke<string[]>("hotkey_choices") : mock.hotkeyChoices();
+
+/**
+ * Rebind the global hotkey. Returns what is live afterwards.
+ *
+ * A refused chord leaves the previous binding registered, so the response is
+ * the truth rather than the request — the control reads it, not what was clicked.
+ */
+export const setHotkey = (accelerator: string) =>
+  inTauri
+    ? invoke<HotkeyStatus>("set_hotkey", { accelerator })
+    : mock.setHotkey(accelerator);
+
+/** Executables whose clipboard is never recorded (ADR-0006). */
+export const clipBlocklist = () =>
+  inTauri ? invoke<string[]>("clip_blocklist") : mock.clipBlocklist();
+
+/** Add or remove one executable. Returns the list as it now stands. */
+export const setClipBlocked = (exe: string, blocked: boolean) =>
+  inTauri
+    ? invoke<string[]>("set_clip_blocked", { exe, blocked })
+    : mock.setClipBlocked(exe, blocked);
+
+/** Every alias, with the title of what it points at. */
+export const aliases = () =>
+  inTauri ? invoke<AliasRow[]>("aliases") : mock.aliases();
+
+/** Create an alias, or delete it by passing `null` as the target. */
+export const setAlias = (alias: string, target: string | null) =>
+  inTauri ? invoke<void>("set_alias", { alias, target }) : mock.setAlias(alias, target);
+
+/** Follow the system appearance, or override it (v0.6). */
+export const setTheme = (value: Theme) =>
+  inTauri ? invoke<void>("set_theme", { value }) : mock.setTheme(value);
+
+/** Interface size. Rust resizes the Palette to match the CSS zoom. */
+export const setUiSize = (value: UiSize) =>
+  inTauri ? invoke<void>("set_ui_size", { value }) : mock.setUiSize(value);
+
+/*
+  The Settings window's own title bar (v0.6).
+
+  Windows' native bar could not be themed, so the window is undecorated and the
+  bar is drawn in React. These four go through the seam like everything else
+  (ADR-0009), which is also what lets the browser build render it at all.
+*/
+export const windowMinimize = () =>
+  inTauri ? getCurrentWindow().minimize() : mock.windowMinimize();
+
+export const windowToggleMaximize = () =>
+  inTauri ? getCurrentWindow().toggleMaximize() : mock.windowToggleMaximize();
+
+export const windowIsMaximized = () =>
+  inTauri ? getCurrentWindow().isMaximized() : mock.windowIsMaximized();
+
+/**
+ * Close the Settings window only.
+ *
+ * The Palette is hidden rather than destroyed (ADR-0003), so the process stays
+ * alive with no visible window — which is the whole point of the warm model.
+ */
+export const windowClose = () =>
+  inTauri ? getCurrentWindow().close() : mock.windowClose();
+
+/** Notify on resize, so the maximize glyph can follow a drag to the top edge. */
+export const onWindowResized = (cb: () => void): (() => void) => {
+  if (!inTauri) return mock.onWindowResized(cb);
+  const pending = getCurrentWindow().onResized(() => cb());
+  let stop: (() => void) | undefined;
+  void pending.then((un) => {
+    stop = un;
+  });
+  return () => stop?.();
+};
+
+/** Open the crash-log folder. **Opens it — never uploads** (ADR-0010). */
+export const openCrashLogs = () =>
+  inTauri ? invoke<void>("open_crash_logs") : mock.openCrashLogs();
 
 /**
  * How long clipboard history is kept, as stored (v0.5).

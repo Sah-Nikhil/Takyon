@@ -14,6 +14,7 @@
 
 import type {
   Action,
+  AliasRow,
   CalcPolicy,
   ClipRetention,
   ClipRow,
@@ -21,6 +22,7 @@ import type {
   Entry,
   HotkeyStatus,
   QueryResult,
+  SettingsSnapshot,
   ShowPayload,
 } from "@takyon/shared";
 
@@ -287,6 +289,12 @@ const hotkeyRegistered =
   typeof window === "undefined" ||
   new URLSearchParams(window.location.search).get("hotkey") !== "failed";
 
+/** What the browser build reports as bound. Moved by `setHotkey`. */
+let liveHotkey = "Alt+Space";
+
+/** Whether the browser build's title bar shows the restore glyph. */
+let maximized = false;
+
 /** The last value passed to `setActionMenu`, for the visual layer to assert on. */
 let lastMenuRequest: number | null = null;
 export function menuRequest() {
@@ -318,6 +326,59 @@ export function retentionRequest() {
 let lastCalcPolicy: CalcPolicy = "automatic";
 export function calcPolicyRequest() {
   return lastCalcPolicy;
+}
+
+/** The preferences the browser build reports. Defaults match Rust's. */
+let snapshot: SettingsSnapshot = {
+  reduceMotion: false,
+  calcPolicy: "automatic",
+  recents: true,
+  tray: true,
+  placement: "cursor",
+  clipRetention: "1-month",
+  clipBang: true,
+  theme: "system",
+  uiSize: "default",
+};
+
+/** Executables excluded from clipboard capture, as the browser build reports. */
+let blocked: string[] = ["keepass.exe", "1password.exe"];
+
+/** Aliases the browser build reports. One points at nothing, deliberately. */
+let aliasRows: AliasRow[] = [
+  { alias: "ps", target: "app:photoshop", title: "Adobe Photoshop 2022" },
+  { alias: "vpn", target: "app:gone" },
+];
+
+/**
+ * Stand in for the other window having written a preference.
+ *
+ * The two windows share `settings.db` and nothing else, so this is what "Settings
+ * changed it while the Palette was hidden" looks like from the browser build.
+ */
+export function setStoredPreference(patch: Partial<SettingsSnapshot>) {
+  snapshot = { ...snapshot, ...patch };
+}
+
+/** Whether the browser build reports autostart as registered. */
+let lastAutostart = false;
+
+/**
+ * An error the next autostart write should reject with, or null to succeed.
+ *
+ * The one thing the mock can do that a real machine cannot do on demand: refuse
+ * the registry write. tbd v0.1 §3's fix is a `try`/`catch`/`finally` that no
+ * other test reaches, and forcing the failure by hand means a group policy.
+ */
+let autostartFailure: string | null = null;
+export function failAutostart(message: string | null) {
+  autostartFailure = message;
+}
+
+/** The same, for a `settings.db` write. An unwritable database is the real case. */
+let preferenceFailure: string | null = null;
+export function failPreferenceWrite(message: string | null) {
+  preferenceFailure = message;
 }
 
 /**
@@ -445,7 +506,7 @@ export const mock = {
    */
   iconUrl: (_key: string) => "",
   hotkeyStatus: async (): Promise<HotkeyStatus> => ({
-    accelerator: "Alt+Space",
+    accelerator: liveHotkey,
     registered: hotkeyRegistered,
     ...(hotkeyRegistered
       ? {}
@@ -453,8 +514,97 @@ export const mock = {
   }),
   reportFirstPixel: async (_showId: number) => {},
   reportFirstEntry: async (_seq: number) => {},
-  autostartIsEnabled: async () => false,
-  autostartSetEnabled: async (_on: boolean) => {},
+  autostartIsEnabled: async () => lastAutostart,
+  autostartSetEnabled: async (on: boolean) => {
+    // Refused first, written second — the order the registry uses. A rejected
+    // write must leave the reported state untouched, or the test would pass on a
+    // mock that lies in the same direction as the bug.
+    if (autostartFailure !== null) throw new Error(autostartFailure);
+    lastAutostart = on;
+  },
+  settingsSnapshot: async (): Promise<SettingsSnapshot> => snapshot,
+  setReduceMotion: async (on: boolean) => {
+    // Same order as autostart: refused first, written second, so a test cannot
+    // pass against a mock that lies in the same direction as the bug.
+    if (preferenceFailure !== null) throw new Error(preferenceFailure);
+    snapshot = { ...snapshot, reduceMotion: on };
+  },
+  migrateLocalPrefs: async (legacy: Partial<SettingsSnapshot>): Promise<SettingsSnapshot> => {
+    // Same rule as Rust's: a value already held wins, so this is idempotent.
+    snapshot = { ...legacy, ...snapshot };
+    return snapshot;
+  },
+  setRecents: async (on: boolean) => {
+    snapshot = { ...snapshot, recents: on };
+  },
+  setTray: async (on: boolean) => {
+    // Mirrors the Rust rule: the tray cannot be hidden while the hotkey is dead.
+    if (!on && !hotkeyRegistered) {
+      throw new Error(
+        "The tray icon is the only way in while the hotkey is unregistered. Rebind the hotkey first.",
+      );
+    }
+    snapshot = { ...snapshot, tray: on };
+  },
+  setPlacement: async (value: SettingsSnapshot["placement"]) => {
+    snapshot = { ...snapshot, placement: value };
+  },
+  hotkeyChoices: async () => [
+    "Alt+Space",
+    "Ctrl+Space",
+    "Alt+Shift+Space",
+    "Ctrl+Shift+Space",
+    "Ctrl+Alt+Space",
+    "Ctrl+Shift+P",
+  ],
+  setHotkey: async (accelerator: string): Promise<HotkeyStatus> => {
+    // One chord stands in for "already held by something else", so the refusal
+    // path has a way to be exercised without a second application.
+    if (accelerator === "Alt+Space") {
+      return {
+        accelerator: liveHotkey,
+        registered: true,
+        error: "Another application is already holding it. Kept " + liveHotkey + ".",
+      };
+    }
+    liveHotkey = accelerator;
+    return { accelerator, registered: true };
+  },
+  clipBlocklist: async () => [...blocked],
+  setClipBlocked: async (exe: string, block: boolean) => {
+    const name = exe.trim().toLowerCase();
+    if (!name) throw new Error("an executable name is required");
+    blocked = block
+      ? [...new Set([...blocked, name])]
+      : blocked.filter((e) => e !== name);
+    return [...blocked];
+  },
+  aliases: async () => [...aliasRows],
+  setAlias: async (alias: string, target: string | null) => {
+    const name = alias.trim();
+    if (!name) throw new Error("an alias needs a name");
+    aliasRows =
+      target === null
+        ? aliasRows.filter((r) => r.alias !== name)
+        : [...aliasRows.filter((r) => r.alias !== name), { alias: name, target }];
+    aliasRows.sort((a, b) => a.alias.localeCompare(b.alias));
+  },
+  setTheme: async (value: SettingsSnapshot["theme"]) => {
+    snapshot = { ...snapshot, theme: value };
+  },
+  setUiSize: async (value: SettingsSnapshot["uiSize"]) => {
+    snapshot = { ...snapshot, uiSize: value };
+  },
+  // The browser build has no window to drive, so these record intent and let the
+  // title bar render and be asserted on like any other control.
+  windowMinimize: async () => {},
+  windowToggleMaximize: async () => {
+    maximized = !maximized;
+  },
+  windowIsMaximized: async () => maximized,
+  windowClose: async () => {},
+  onWindowResized: (_cb: () => void) => () => {},
+  openCrashLogs: async () => {},
   onShow: (cb: ShowListener) => {
     showListeners.add(cb);
     return () => {

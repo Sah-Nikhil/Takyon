@@ -3641,7 +3641,7 @@ dependencies = [
 
 [[package]]
 name = "takyon"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "aes-gcm",
  "memmap2",
@@ -3661,7 +3661,7 @@ dependencies = [
 
 [[package]]
 name = "takyon-uiaccess-helper"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "windows",
 ]
