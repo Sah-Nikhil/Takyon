@@ -3,7 +3,7 @@ members = ["uiaccess"]
 
 [package]
 name = "takyon"
-version = "0.6.1"
+version = "0.7.0"
 description = "Takyon - a local-first keyboard launcher for Windows"
 authors = ["Nikhil Sah <sah.nikhil11@gmail.com>"]
 edition = "2021"
