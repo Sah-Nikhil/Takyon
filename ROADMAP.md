@@ -275,9 +275,25 @@ recorded rather than quietly closed:
   real registry, a pre-v0.6 profile and a second monitor. The installer exists
   partly so that pass has something to run against.
 
-What *is* verified: 407 Rust tests, 21 TypeScript, 66 Playwright, all four
+What *is* verified: 408 Rust tests, 21 TypeScript, 67 Playwright, all four
 performance budgets, and the settings window driven against the release binary
 with a pixel check that it actually paints.
+
+**Three changes landed after 0.6.0 was cut**, so they are not in that installer:
+
+- **The Keyboard row was unusable below ~900px.** Six chips are wider than the
+  content pane at every window size, and the control refused to shrink — it
+  squeezed the label to one word per line and drew the first chip over it. Rows
+  wrap now, and a Playwright test runs at the 680×480 minimum.
+- **Autostart is on by default rather than asked.** The first-run modal existed
+  because declining had to be possible and there was nowhere else to do it — and
+  the Settings window that was supposed to be that place had never rendered.
+  Every guard is unchanged: never from a debug build, a `target\` directory, or
+  under the bench harness.
+- **The Settings window draws its own title bar.** Windows' native bar is a light
+  strip with square buttons on a window built from near-black surfaces, and it
+  cannot be themed. Undecorated plus `settings/TitleBar.tsx`, which also means it
+  follows the light theme.
 
 **Manual verification:** [`docs/verify/v0.6.md`](./docs/verify/v0.6.md), written
 for slice 1 and grown by each later slice. Almost everything slice 1 claims is

@@ -12,8 +12,10 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { DISPLAY_NAME } from "@takyon/shared";
 import { navSections, searchSettings } from "./nav";
 import { PAGES } from "./pages";
+import { TitleBar } from "./TitleBar";
 
 export function Settings() {
   const [active, setActive] = useState(PAGES[0]!.id);
@@ -40,7 +42,9 @@ export function Settings() {
   }, [target]);
 
   return (
-    <div className="flex h-full w-full bg-plate text-fg">
+    <div className="flex h-full w-full flex-col bg-plate text-fg">
+      <TitleBar title={`${DISPLAY_NAME} Settings`} />
+      <div className="flex min-h-0 flex-1">
       <nav className="flex w-54 shrink-0 flex-col gap-1 overflow-y-auto border-r border-hairline bg-sidebar p-2">
         <input
           value={query}
@@ -90,6 +94,7 @@ export function Settings() {
         <h1 className="mb-4 text-[15px] font-medium">{page.title}</h1>
         {Body && <Body />}
       </main>
+      </div>
     </div>
   );
 }

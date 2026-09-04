@@ -235,6 +235,11 @@ fn build(app: &AppHandle) {
     .inner_size(880.0, 620.0)
     .min_inner_size(680.0, 480.0)
     .resizable(true)
+    // Windows' own bar is a light strip with square buttons on a window built
+    // from near-black surfaces and hairlines — the one part that never matched.
+    // `settings/TitleBar.tsx` draws it instead; the frame stays resizable.
+    .decorations(false)
+    .shadow(true)
     .build();
 
     if let Err(e) = built {

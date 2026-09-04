@@ -292,6 +292,9 @@ const hotkeyRegistered =
 /** What the browser build reports as bound. Moved by `setHotkey`. */
 let liveHotkey = "Alt+Space";
 
+/** Whether the browser build's title bar shows the restore glyph. */
+let maximized = false;
+
 /** The last value passed to `setActionMenu`, for the visual layer to assert on. */
 let lastMenuRequest: number | null = null;
 export function menuRequest() {
@@ -592,6 +595,15 @@ export const mock = {
   setUiSize: async (value: SettingsSnapshot["uiSize"]) => {
     snapshot = { ...snapshot, uiSize: value };
   },
+  // The browser build has no window to drive, so these record intent and let the
+  // title bar render and be asserted on like any other control.
+  windowMinimize: async () => {},
+  windowToggleMaximize: async () => {
+    maximized = !maximized;
+  },
+  windowIsMaximized: async () => maximized,
+  windowClose: async () => {},
+  onWindowResized: (_cb: () => void) => () => {},
   openCrashLogs: async () => {},
   onShow: (cb: ShowListener) => {
     showListeners.add(cb);

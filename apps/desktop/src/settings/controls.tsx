@@ -49,12 +49,15 @@ export function Row({
   applied?: boolean;
   children: ReactNode;
 }) {
+  // Wrapping, not a breakpoint. The widest control — six hotkey chips — is wider
+  // than the content pane at *every* window size, so it has to be able to drop
+  // onto its own line rather than squeeze the label to one word per line.
   return (
     <div
       id={`setting-${id}`}
-      className="flex items-start justify-between gap-6 px-3.5 py-3"
+      className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-3.5 py-3"
     >
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1 basis-64">
         <div className="flex items-center gap-2">
           <span className="text-[14px] text-fg">{label}</span>
           {applied && (
@@ -77,7 +80,12 @@ export function Row({
           </p>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      {/*
+        Not `shrink-0`: once this wraps onto its own line it has to be able to use
+        the width it just gained, or the chips run off the card instead of
+        wrapping within it. Fixed-size controls carry their own `shrink-0`.
+      */}
+      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -102,7 +110,7 @@ export function Switch({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-[22px] w-[38px] rounded-full transition-colors disabled:opacity-40 ${
+      className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors disabled:opacity-40 ${
         checked ? "bg-accent" : "bg-control"
       }`}
     >
@@ -136,7 +144,11 @@ export function Chips<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex items-center gap-1">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex flex-wrap items-center gap-1"
+    >
       {options.map((option) => (
         <button
           key={option.value}

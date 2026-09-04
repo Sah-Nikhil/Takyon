@@ -101,6 +101,22 @@ mod tests {
         );
     }
 
+    /// The display name is written down on the TypeScript side too, for the title
+    /// bar v0.6 draws itself. Two copies of a name that is *allowed* to change is
+    /// exactly the drift ADR-0011 exists to catch.
+    #[test]
+    fn v0_6_the_frontend_display_name_agrees() {
+        let ipc = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../packages/shared/src/ipc.ts"),
+        )
+        .expect("packages/shared/src/ipc.ts");
+        assert!(
+            ipc.contains(&format!(r#"DISPLAY_NAME = "{DISPLAY_NAME}""#)),
+            "ipc.ts does not declare DISPLAY_NAME as {DISPLAY_NAME}"
+        );
+    }
+
     /// The capability file has to grant `autostart:default`, and the failure mode
     /// if it does not is invisible at build time: `isEnabled()` fails at *runtime*,
     /// in a window nobody opens twice.

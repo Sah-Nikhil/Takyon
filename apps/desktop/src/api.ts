@@ -10,6 +10,7 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   isEnabled as autostartIsEnabledPlugin,
   enable as autostartEnablePlugin,
@@ -162,6 +163,42 @@ export const setTheme = (value: Theme) =>
 /** Interface size. Rust resizes the Palette to match the CSS zoom. */
 export const setUiSize = (value: UiSize) =>
   inTauri ? invoke<void>("set_ui_size", { value }) : mock.setUiSize(value);
+
+/*
+  The Settings window's own title bar (v0.6).
+
+  Windows' native bar could not be themed, so the window is undecorated and the
+  bar is drawn in React. These four go through the seam like everything else
+  (ADR-0009), which is also what lets the browser build render it at all.
+*/
+export const windowMinimize = () =>
+  inTauri ? getCurrentWindow().minimize() : mock.windowMinimize();
+
+export const windowToggleMaximize = () =>
+  inTauri ? getCurrentWindow().toggleMaximize() : mock.windowToggleMaximize();
+
+export const windowIsMaximized = () =>
+  inTauri ? getCurrentWindow().isMaximized() : mock.windowIsMaximized();
+
+/**
+ * Close the Settings window only.
+ *
+ * The Palette is hidden rather than destroyed (ADR-0003), so the process stays
+ * alive with no visible window — which is the whole point of the warm model.
+ */
+export const windowClose = () =>
+  inTauri ? getCurrentWindow().close() : mock.windowClose();
+
+/** Notify on resize, so the maximize glyph can follow a drag to the top edge. */
+export const onWindowResized = (cb: () => void): (() => void) => {
+  if (!inTauri) return mock.onWindowResized(cb);
+  const pending = getCurrentWindow().onResized(() => cb());
+  let stop: (() => void) | undefined;
+  void pending.then((un) => {
+    stop = un;
+  });
+  return () => stop?.();
+};
 
 /** Open the crash-log folder. **Opens it — never uploads** (ADR-0010). */
 export const openCrashLogs = () =>

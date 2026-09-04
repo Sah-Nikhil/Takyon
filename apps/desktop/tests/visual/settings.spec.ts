@@ -119,6 +119,35 @@ test("the alias list names a dead target rather than hiding it", async ({ page }
   await expect(page).toHaveScreenshot("settings-aliases.png");
 });
 
+/**
+ * The Keyboard row at the window's minimum width.
+ *
+ * Six chips are wider than the content pane at *every* size, so the control has
+ * to drop onto its own line. Before v0.6 it refused to shrink instead, squeezing
+ * the label to one word per line and drawing the first chip over it.
+ */
+test.describe("at the minimum window width", () => {
+  test.use({ viewport: { width: 680, height: 480 } });
+
+  test("the hotkey chips wrap instead of crushing the label", async ({ page }) => {
+    await page.goto("/?window=settings");
+    await page.getByRole("button", { name: "Keyboard" }).click();
+
+    const label = page.getByText("Open Takyon with");
+    const chip = page.getByRole("radio", { name: "Alt + Space", exact: true });
+    const labelBox = await label.boundingBox();
+    const chipBox = await chip.boundingBox();
+    if (!labelBox || !chipBox) throw new Error("the row did not render");
+
+    // The label keeps a readable column rather than collapsing to one word.
+    expect(labelBox.width).toBeGreaterThan(100);
+    // And the chips sit below it, not on top of it.
+    expect(chipBox.y).toBeGreaterThanOrEqual(labelBox.y + labelBox.height);
+
+    await expect(page).toHaveScreenshot("settings-keyboard-narrow.png");
+  });
+});
+
 /** Pinned chords with a reset, never a raw capture field. */
 test("the hotkey is rebound from pinned choices", async ({ page }) => {
   await page.goto("/?window=settings");

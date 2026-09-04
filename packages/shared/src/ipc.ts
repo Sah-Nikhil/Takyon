@@ -13,6 +13,15 @@
  * this file or that attribute is wrong.
  */
 
+/**
+ * The product name, for UI copy only (ADR-0011).
+ *
+ * **Never key anything off this.** Windows keys off the fixed slug
+ * `com.v3sper.launcher`; renaming the product must stay a copy change. A Rust
+ * test asserts this string matches `identity::DISPLAY_NAME`.
+ */
+export const DISPLAY_NAME = "Takyon";
+
 /** Which window a React root is being mounted into. Chosen by `?window=` on the URL. */
 export type WindowKind = "palette" | "settings";
 

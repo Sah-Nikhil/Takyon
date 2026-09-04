@@ -696,7 +696,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 tray::self_heal_autostart(&deferred);
                 uiaccess::start(&deferred);
-                firstrun::maybe_prompt(&deferred);
+                firstrun::maybe_enable(&deferred);
             });
 
             // Clipboard capture and the retention sweep, off the startup path.
@@ -723,7 +723,7 @@ pub fn run() {
                 _ => eprintln!("[takyon] clipboard capture is off"),
             }
 
-            // The application walk, on its own thread: `firstrun::maybe_prompt` can sit
+            // The application walk, on its own thread: `firstrun::maybe_enable` can sit
             // on a modal dialog indefinitely, and queueing discovery behind it would mean
             // the launcher knows no applications until the prompt is answered. Nothing to
             // serve in the meantime, deliberately — ADR-0012.
