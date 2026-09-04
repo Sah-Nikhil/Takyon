@@ -312,13 +312,22 @@ surface. See the plan for what each covers and why.
 **Slice 1 landed.** Measured on a release build against this machine's real roots:
 26,844 entries, a **916 ms** walk against a 60 s budget, a **2.5 MB** index against
 the ~150 MB TBC-0005 watches for, and a query worst case of **568 µs** against the
-20 ms p95 target. Three of the four exit criteria are met; the fourth — a file
-created one second ago is findable — needs the watchers in slice 2.
+20 ms p95 target.
+
+Queries under three characters take a **linear prefix scan**, not the recent set
+this plan first specified: 646 µs over 26,846 names is 3% of the budget, and it
+finds a two-letter folder the recent set has never seen. `C:\Data\0Projects\Create\HH`
+is the case that raised it.
+
+**Slice 2 landed.** All four exit criteria now met — a file created a second ago is
+findable through the real `ReadDirectoryChangesW` path, asserted end to end rather
+than by calling the apply function directly. The index is wired into boot: mapped
+if it exists, walked in the background only if it does not, watched either way.
 
 - [x] `FileIndex` trait; unelevated parallel directory walk over curated roots. Reparse points are indexed but never descended, or an unbounded-depth walk cycles through the first junction it meets
 - [x] Memory-mapped inverted index on disk; mmap at boot, never re-walk at startup. Generation-named files, because Windows will not replace a file that is still mapped
-- [ ] `ReadDirectoryChangesW` watchers per root for live updates
-- [ ] **Watcher-overflow detection** (`ERROR_NOTIFY_ENUM_DIR`) triggering a scoped rescan of the affected subtree, with an index generation counter so a stale index is never silently served
+- [x] `ReadDirectoryChangesW` watchers per root for live updates. Deltas land in an in-memory overlay rather than rewriting a 2.5 MB file per event; a query reads mapped hits minus deletions plus additions, and a rebuild folds the overlay back in
+- [x] **Watcher-overflow detection** triggering a scoped rescan of the affected subtree, with an index generation counter so a stale index is never silently served. `Stale` is set **before** the rescan, so a rescan that cannot run leaves the index saying so rather than reporting Ready — there is a test for exactly that ordering
 - [ ] Default roots (Desktop, Documents, Downloads, code dirs) + user-editable roots and exclusions in settings; skip `node_modules`, `.git`, `AppData` by default. **Defaults done, settings UI is slice 3.** The code root is probed rather than hardcoded, and overlapping roots are folded together — OneDrive redirection makes Documents a child of OneDrive on most machines, and both walked is every file indexed twice
 - [ ] Windows Search fallback for locations outside the walked roots — **built in this phase, behind a settings toggle, default off.** Measured: it returns zero rows for `C:\Programming\SELF` on a machine whose whole C: drive is in crawl scope, and its queries run 10–72 ms against a 20 ms budget. On by default it would read as working and hide the gap
 - [ ] `!e` Mode: filenames and folder names, actions for open / reveal in Explorer / copy path

@@ -28,6 +28,7 @@ import {
   type ClipRetention,
   type ClipRow,
   type ViewKind,
+  type FileIndexReport,
   type HotkeyStatus,
   type QueryResult,
   type SettingsSnapshot,
@@ -49,6 +50,18 @@ export const openSettings = () =>
 
 export const hotkeyStatus = () =>
   inTauri ? invoke<HotkeyStatus>("hotkey_status") : mock.hotkeyStatus();
+
+/**
+ * What the file index can promise right now (§5 task 7).
+ *
+ * Its own call rather than a field on `QueryResult`: the state changes on the
+ * walk's schedule, not the user's, so riding the keystroke path would ship the
+ * same three words on every keypress.
+ */
+export const fileIndexStatus = () =>
+  inTauri
+    ? invoke<FileIndexReport>("file_index_status")
+    : mock.fileIndexStatus();
 
 /**
  * One keystroke, one `invoke` — never one per Source (ADR-0009).

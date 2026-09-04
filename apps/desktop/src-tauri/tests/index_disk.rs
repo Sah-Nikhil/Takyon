@@ -122,6 +122,165 @@ fn v0_7_a_second_load_maps_the_existing_index() {
     assert!(!reopened.search("palette", 10).is_empty());
 }
 
+/// The exit criterion, driven through the real watcher: create a file, find it.
+///
+/// Not a unit test of `apply` — this goes through `ReadDirectoryChangesW`, its
+/// thread and the channel, which is where the ordering mistakes live.
+#[test]
+fn v0_7_a_file_created_now_is_findable_through_the_watcher() {
+    let temp = TempDir::new("index-watch");
+    let tree = temp.path().join("watched");
+    std::fs::create_dir_all(&tree).unwrap();
+    seed(&tree);
+
+    let index = std::sync::Arc::new(WalkIndex::load(
+        temp.path().join("watch-index"),
+        Roots {
+            include: vec![tree.clone()],
+            exclude: roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
+        },
+    ));
+    index.rebuild().expect("the index writes");
+    index.watch();
+    assert!(index.search("justmade", 10).is_empty());
+
+    // The watch thread has to reach its first read before the change happens, or
+    // the event predates the subscription and is legitimately never delivered.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::fs::write(tree.join("justmade.rs"), "x").unwrap();
+
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    while index.search("justmade", 10).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+
+    let hits = index.search("justmade", 10);
+    assert_eq!(hits.len(), 1, "the watcher never delivered the creation");
+    assert!(hits[0].path.ends_with("justmade.rs"));
+}
+
+/// A deletion reaches the index the same way, and the entry stops answering.
+#[test]
+fn v0_7_a_deletion_reaches_the_index_through_the_watcher() {
+    let temp = TempDir::new("index-watch-delete");
+    let tree = temp.path().join("watched");
+    std::fs::create_dir_all(&tree).unwrap();
+    seed(&tree);
+
+    let index = std::sync::Arc::new(WalkIndex::load(
+        temp.path().join("watch-index"),
+        Roots {
+            include: vec![tree.clone()],
+            exclude: roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
+        },
+    ));
+    index.rebuild().expect("the index writes");
+    index.watch();
+    assert_eq!(index.search("cargo", 10).len(), 1);
+
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::fs::remove_file(tree.join("alpha").join("Cargo.toml")).unwrap();
+
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    while !index.search("cargo", 10).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert!(index.search("cargo", 10).is_empty(), "deletion never arrived");
+}
+
+/// What the index adds to startup **above** `hotkey::register`.
+///
+/// CLAUDE.md calls startup order load-bearing: the 500 ms login budget is met by
+/// ordering, and work added above the hotkey is how it quietly breaks. Resolving
+/// roots and mapping the file are the only two things that run there.
+#[test]
+#[ignore]
+fn v0_7_measure_what_boot_costs_before_the_hotkey() {
+    let temp = TempDir::new("index-boot-cost");
+    let store = temp.path().join("index");
+
+    let at = Instant::now();
+    let defaults = roots::defaults();
+    let roots_us = at.elapsed().as_micros();
+
+    // Written first, so the mapping measured below is of a real index rather
+    // than of an empty directory.
+    WalkIndex::load(store.clone(), defaults.clone())
+        .rebuild()
+        .expect("the index writes");
+
+    let at = Instant::now();
+    let index = WalkIndex::load(store, defaults);
+    let load_us = at.elapsed().as_micros();
+
+    println!("roots::defaults  {roots_us} us");
+    println!("WalkIndex::load  {load_us} us  ({} entries)", index.entry_count());
+    println!("total on the startup path: {} us", roots_us + load_us);
+}
+
+/// Why is a given path not findable? Walk one root and query it.
+///
+/// `TAKYON_PROBE_ROOT` and `TAKYON_PROBE_NEEDLES` (comma-separated) drive it.
+/// Answers TBC-0005's stated trigger — "users search for files that exist but
+/// aren't indexed" — with a measurement rather than an argument.
+#[test]
+#[ignore]
+fn v0_7_probe_a_path() {
+    let Some(root) = std::env::var_os("TAKYON_PROBE_ROOT") else {
+        println!("set TAKYON_PROBE_ROOT to use this");
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let needles = std::env::var("TAKYON_PROBE_NEEDLES").unwrap_or_else(|_| "readme".into());
+
+    let temp = TempDir::new("index-probe");
+    let index = WalkIndex::load(
+        temp.path().join("index"),
+        Roots {
+            include: vec![root.clone()],
+            exclude: roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
+        },
+    );
+    index.rebuild().expect("the index writes");
+    println!("root {} -> {} entries", root.display(), index.entry_count());
+
+    for needle in needles.split(',') {
+        let at = Instant::now();
+        let hits = index.search(needle, 5);
+        println!(
+            "  {needle:<12} {} hits in {} us",
+            hits.len(),
+            at.elapsed().as_micros()
+        );
+        for hit in &hits {
+            println!("      {}", hit.path.display());
+        }
+    }
+}
+
+/// What the short-query scan costs over every name in the real index.
+///
+/// The number §5's short-query route was chosen on: a full scan is inside the
+/// budget, so the recent set is an optimisation rather than a requirement.
+#[test]
+#[ignore]
+fn v0_7_measure_a_short_query_scan() {
+    let temp = TempDir::new("index-short");
+    let index = WalkIndex::load(temp.path().join("index"), roots::defaults());
+    index.rebuild().expect("the index writes");
+    println!("entries: {}", index.entry_count());
+
+    for needle in ["hh", "rs", "a", "md"] {
+        let at = Instant::now();
+        let matched = index.scan_prefixes(needle, 12);
+        println!(
+            "  {needle:<4} {:>3} prefix hits  {:>6} us",
+            matched.len(),
+            at.elapsed().as_micros()
+        );
+    }
+}
+
 /// This machine's real roots, measured rather than asserted.
 ///
 /// `cargo test --test index_disk -- --ignored --nocapture` prints walk time,

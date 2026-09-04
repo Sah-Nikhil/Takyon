@@ -59,6 +59,26 @@ export interface HotkeyStatus {
 }
 
 /**
+ * What the file index can currently promise (§5 task 7).
+ *
+ * `stale` means events were dropped and a rescan is running, so results may be
+ * missing. It must reach the user: an index that quietly misses files teaches
+ * them not to trust the feature, which is worse than not having it (ADR-0007).
+ */
+export type FileIndexState = "ready" | "building" | "stale";
+
+/** The file index's state, plus the numbers TBC-0005's triggers are stated in. */
+export interface FileIndexReport {
+  state: FileIndexState;
+  /** Present only while `state` is `building`. A progress row, not a promise. */
+  pct?: number;
+  /** Entries in the mapped file. Settings shows this live. */
+  entries: number;
+  /** Bumped by every rescan, so two results can be told apart. */
+  generation: number;
+}
+
+/**
  * What an Entry is. Decides its icon fallback and, in Rust, where it sorts: apps
  * always rank above documents (§3).
  *

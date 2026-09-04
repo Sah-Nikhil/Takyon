@@ -40,15 +40,29 @@ pub fn walk(roots: &Roots) -> Builder {
 
     let mut builder = Builder::new();
     for tree in walked {
-        // Local index to global id. The root is pushed first, so a node's parent
-        // is always already mapped by the time the node is reached.
-        let mut ids: Vec<u32> = Vec::with_capacity(tree.nodes.len());
-        for (name, parent, is_dir) in &tree.nodes {
-            let parent = parent.map(|p| ids[p]);
-            ids.push(builder.push(name, parent, *is_dir));
-        }
+        fold(&tree, &mut builder);
     }
     builder
+}
+
+/// Walk one root straight into an existing Builder.
+///
+/// What a scoped rescan uses: the other roots are copied from the mapped index,
+/// and only the affected one is walked again.
+pub fn walk_into(root: &Path, exclude: &[String], builder: &mut Builder) {
+    fold(&walk_root(root, exclude), builder);
+}
+
+/// Copy one walked tree into a Builder, remapping local indices to ids.
+///
+/// The root is pushed first and a child always follows its parent, so a node's
+/// parent is already mapped by the time the node is reached.
+fn fold(tree: &Walked, builder: &mut Builder) {
+    let mut ids: Vec<u32> = Vec::with_capacity(tree.nodes.len());
+    for (name, parent, is_dir) in &tree.nodes {
+        let parent = parent.map(|p| ids[p]);
+        ids.push(builder.push(name, parent, *is_dir));
+    }
 }
 
 /// Walk one root breadth-first. Never recurses: a deep tree is a queue, not a

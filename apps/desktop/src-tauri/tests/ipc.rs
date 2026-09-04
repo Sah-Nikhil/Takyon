@@ -18,6 +18,9 @@ use common::real_apps;
 use serde_json::Value;
 use takyon_lib::entry::{Action, EntryId};
 use takyon_lib::frecency::Frecency;
+use takyon_lib::index::live::WalkIndex;
+use takyon_lib::index::roots::Roots;
+use takyon_lib::index::IndexStatus;
 use takyon_lib::prefs::Prefs;
 use takyon_lib::query::{Pipeline, QueryResult};
 use takyon_lib::sources::recents::RecentsSource;
@@ -196,6 +199,79 @@ fn v0_6_migration_seeds_an_empty_install_then_never_speaks_again() {
         Some(false),
         "migration overwrote a choice made after it"
     );
+}
+
+/// `interface FileIndexReport` in `packages/shared/src/ipc.ts`.
+const FILE_INDEX_REQUIRED: [&str; 3] = ["state", "entries", "generation"];
+/// `pct?: number` — present only while building, absent otherwise.
+const FILE_INDEX_OPTIONAL: [&str; 1] = ["pct"];
+
+/// A mock app managing only the file index, for `file_index_status`.
+///
+/// The real command, not a copy: it touches no window, so unlike `query` it can
+/// be driven directly. Roots are empty — this asserts wire shape, not a walk.
+fn mock_file_index() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
+    let app = mock_builder()
+        .invoke_handler(tauri::generate_handler![takyon_lib::index::file_index_status])
+        .build(mock_context(noop_assets()))
+        .expect("mock app");
+
+    app.manage(Arc::new(WalkIndex::load(
+        std::env::temp_dir().join(format!("takyon-ipc-index-{}", std::process::id())),
+        Roots {
+            include: Vec::new(),
+            exclude: Vec::new(),
+        },
+    )));
+
+    let webview = tauri::WebviewWindowBuilder::new(&app, "palette", Default::default())
+        .build()
+        .expect("mock window");
+    (app, webview)
+}
+
+#[test]
+fn v0_7_the_file_index_report_matches_ipc_ts() {
+    let (_app, webview) = mock_file_index();
+    let response = call(&webview, "file_index_status", serde_json::json!({}));
+
+    let object = response.as_object().expect("FileIndexReport is an object");
+    for key in FILE_INDEX_REQUIRED {
+        assert!(object.contains_key(key), "FileIndexReport is missing {key}");
+    }
+    for (key, value) in object {
+        assert!(
+            FILE_INDEX_REQUIRED.contains(&key.as_str())
+                || FILE_INDEX_OPTIONAL.contains(&key.as_str()),
+            "FileIndexReport carries {key}, which ipc.ts does not declare"
+        );
+        assert!(!value.is_null(), "{key} serialised as null rather than absent");
+    }
+
+    // Nothing walked, so this is the Building shape — and `pct` rides with it
+    // rather than being a field that is always present and usually meaningless.
+    assert_eq!(object["state"].as_str(), Some("building"));
+    assert!(object["entries"].is_u64());
+    assert!(object["generation"].is_u64());
+}
+
+/// `state` is what the UI switches on, so its three spellings are the contract.
+#[test]
+fn v0_7_every_index_state_serialises_as_ipc_ts_spells_it() {
+    let cases = [
+        (IndexStatus::Ready, "ready", false),
+        (IndexStatus::Building { pct: 42 }, "building", true),
+        (IndexStatus::Stale, "stale", false),
+    ];
+    for (status, expected, carries_pct) in cases {
+        let value = serde_json::to_value(status).expect("IndexStatus serialises");
+        assert_eq!(value["state"].as_str(), Some(expected));
+        assert_eq!(
+            value.get("pct").is_some(),
+            carries_pct,
+            "{expected} disagreed with ipc.ts about pct"
+        );
+    }
 }
 
 #[test]

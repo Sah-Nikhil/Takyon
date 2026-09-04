@@ -12,11 +12,15 @@
 //! the UI: an index that quietly misses files teaches the user not to trust it.
 
 pub mod live;
+pub mod overlay;
 pub mod roots;
 pub mod store;
 pub mod walker;
+pub mod watcher;
 
 use std::path::PathBuf;
+
+use serde::Serialize;
 
 /// One file or folder the index matched.
 ///
@@ -31,7 +35,11 @@ pub struct FileHit {
 }
 
 /// What the index can currently promise, surfaced in the UI (§5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Internally tagged, so the wire shape is `{ state: "building", pct: 40 }` and a
+/// new state cannot silently become the old one's payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "camelCase")]
 pub enum IndexStatus {
     Ready,
     /// First walk in progress. `pct` is for a progress row, not a guarantee.
@@ -39,6 +47,34 @@ pub enum IndexStatus {
     /// Events were dropped and a rescan is pending. Results may be missing, and
     /// the user is told so rather than left to discover it.
     Stale,
+}
+
+/// What the UI is told about the file index, in one shape.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexReport {
+    #[serde(flatten)]
+    pub status: IndexStatus,
+    /// Entries in the mapped file. Settings shows it live, and TBC-0005's
+    /// triggers are stated in it.
+    pub entries: u32,
+    pub generation: u64,
+}
+
+/// What the file index can currently promise (§5 task 7).
+///
+/// Its own command rather than a field on `QueryResult`: the state changes on the
+/// walk's schedule, not the user's, so riding the keystroke path would ship the
+/// same three words on every keypress.
+#[tauri::command]
+pub fn file_index_status(
+    index: tauri::State<'_, std::sync::Arc<live::WalkIndex>>,
+) -> IndexReport {
+    IndexReport {
+        status: index.status(),
+        entries: index.entry_count(),
+        generation: index.generation(),
+    }
 }
 
 /// The seam every acquisition strategy sits behind (§2).

@@ -44,6 +44,7 @@ use clips::{Blocklist, Clip, ClipStore, Retention};
 use entry::{Action, EntryId};
 use hotkey::{HotkeyState, HotkeyStatus};
 use icons::IconStore;
+use index::live::WalkIndex;
 use query::{Pipeline, QueryResult};
 use sources::apps::AppSource;
 use sources::calc::Policy as CalcPolicy;
@@ -529,6 +530,7 @@ pub fn run() {
             report_first_pixel,
             report_first_entry,
             query,
+            index::file_index_status,
             actions_for,
             activate,
             set_action_menu,
@@ -666,6 +668,18 @@ pub fn run() {
             // Reads `settings.db` so a rebound hotkey survives a restart: one
             // indexed lookup on an open connection, which is what that costs.
             hotkey::register(&handle, hotkey::accelerator(&prefs));
+
+            // The file index, mapped from disk if it exists. **Below the hotkey
+            // deliberately**: resolving the roots costs 3.5 ms of shell calls, and
+            // nothing joins the queue above registration. Managed here, not on the
+            // walk thread, so `file_index_status` cannot outrun the state.
+            let file_index = Arc::new(WalkIndex::load(
+                identity::data_dir()
+                    .map(|d| d.join("index"))
+                    .unwrap_or_default(),
+                index::roots::defaults(),
+            ));
+            app.manage(file_index.clone());
             let bench = app.state::<Bench>();
             bench.startup_ready();
             // Every span the harness measures starts at a hotkey press, so a taken
@@ -723,6 +737,32 @@ pub fn run() {
                 }
                 _ => eprintln!("[takyon] clipboard capture is off"),
             }
+
+            // The file index, on its own thread and after everything above.
+            //
+            // **Never re-walk at startup** (§5): a mapped index serves at once and
+            // only a missing one costs a walk. Watching starts either way, so a
+            // mapped index is current from the first second.
+            let file_walk = file_index.clone();
+            std::thread::spawn(move || {
+                if !file_walk.is_loaded() {
+                    if let Err(e) = file_walk.rebuild() {
+                        eprintln!("[takyon] the file index could not be written: {e}");
+                    }
+                }
+                file_walk.watch();
+                // A rebuild folds the overlay into the file. Checked on a timer
+                // rather than per event: the threshold is about how big the delta
+                // has grown, which one more event never decides.
+                loop {
+                    std::thread::sleep(index::live::REBUILD_CHECK_EVERY);
+                    if file_walk.wants_rebuild() {
+                        if let Err(e) = file_walk.rebuild() {
+                            eprintln!("[takyon] the file index could not be rebuilt: {e}");
+                        }
+                    }
+                }
+            });
 
             // The application walk, on its own thread: `firstrun::maybe_enable` can sit
             // on a modal dialog indefinitely, and queueing discovery behind it would mean

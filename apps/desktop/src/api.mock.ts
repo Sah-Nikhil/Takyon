@@ -20,6 +20,7 @@ import type {
   ClipRow,
   ViewKind,
   Entry,
+  FileIndexReport,
   HotkeyStatus,
   QueryResult,
   SettingsSnapshot,
@@ -505,6 +506,15 @@ export const mock = {
    * machine regardless of what is installed on it.
    */
   iconUrl: (_key: string) => "",
+  /**
+   * Ready with a plausible count. The visual suite never walks a disk, so a
+   * Building state here would be permanent rather than transient.
+   */
+  fileIndexStatus: async (): Promise<FileIndexReport> => ({
+    state: "ready",
+    entries: 26844,
+    generation: 1,
+  }),
   hotkeyStatus: async (): Promise<HotkeyStatus> => ({
     accelerator: liveHotkey,
     registered: hotkeyRegistered,
