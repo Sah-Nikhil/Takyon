@@ -23,7 +23,7 @@ import {
 import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
 import { refresh } from "@/prefs";
-import type { HotkeyStatus, ViewKind } from "@takyon/shared";
+import type { FileIndexReport, HotkeyStatus, ViewKind } from "@takyon/shared";
 import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
 import { Footer } from "./Footer";
@@ -46,6 +46,12 @@ export function Palette() {
   const [value, setValue] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [indexing, setIndexing] = useState(false);
+  /*
+    The file index's state, read only while `!e` is being typed (v0.7 task 7).
+    Off the keystroke path deliberately: it changes on the walk's schedule, not
+    the user's, so riding `query` would ship the same three words per keypress.
+   */
+  const [fileIndex, setFileIndex] = useState<FileIndexReport | null>(null);
   const [selected, setSelected] = useState("");
   const [menu, setMenu] = useState<Action[] | null>(null);
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);
@@ -64,6 +70,7 @@ export function Palette() {
     It exists to stop the idle pulse animating against a hidden window.
    */
   const [shown, setShown] = useState(!api.inTauri);
+  const filesBang = value.trimStart().toLowerCase().startsWith("!e");
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +83,30 @@ export function Palette() {
    */
   const nextSeq = useRef(1);
   const newestSeen = useRef(0);
+
+  /*
+    Asked when `!e` is typed, and re-asked while it is not Ready. A Stale index
+    must say so rather than serve what it happens to remember (ADR-0007), and
+    Building must not read as "no such file".
+   */
+  useEffect(() => {
+    // Left as it was when `!e` was last typed rather than cleared here: the note
+    // below is gated on `filesBang` anyway, and clearing synchronously in an
+    // effect is a render-phase write.
+    if (!filesBang) return;
+    let live = true;
+    const read = () => {
+      void api.fileIndexStatus().then((r) => {
+        if (live) setFileIndex(r);
+      });
+    };
+    read();
+    const timer = setInterval(read, 1500);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [filesBang]);
 
   const runQuery = useCallback((q: string) => {
     const seq = nextSeq.current++;
@@ -324,7 +355,24 @@ export function Palette() {
     (calcCard ? CALC_CAPTION_HEIGHT + CALC_CARD_HEIGHT : 0) +
     listRows * ROW_HEIGHT +
     LIST_CHROME;
-  const showList = entries.length > 0 || (indexing && value.trim().length > 0);
+  /*
+    What `!e` says about the index, or null when there is nothing to say. Ready
+    is silent: a working index needs no announcement, and a row that is always
+    there is one nobody reads when it finally matters.
+   */
+  const fileIndexNote = !filesBang
+    ? null
+    : fileIndex?.state === "stale"
+      ? "Some changes were missed — rescanning, results may be incomplete"
+      : // Rust reserved the row via `indexing`, so falling back to the general
+        // wording keeps a reserved row from rendering empty while the first
+        // status read is still in flight.
+        fileIndex?.state === "building" || indexing
+        ? "Building the file index…"
+        : null;
+
+  const showList =
+    entries.length > 0 || fileIndexNote !== null || (indexing && value.trim().length > 0);
 
   /*
     Replaces the root rather than overlaying it: Rust has already resized to
@@ -419,12 +467,24 @@ export function Palette() {
              */
             className="overflow-y-auto border-t border-white/5 px-2 py-1"
           >
-            {indexing && entries.length === 0 && (
+            {indexing && entries.length === 0 && !filesBang && (
               <div
                 className="flex items-center px-2 text-[13px] text-fg/40"
                 style={{ height: ROW_HEIGHT }}
               >
                 Indexing applications…
+              </div>
+            )}
+            {/*
+              Above the results, not below: Stale means the list may be missing
+              rows, and a caveat under the answer is one nobody reads (ADR-0007).
+             */}
+            {fileIndexNote && (
+              <div
+                className="flex items-center px-2 text-[13px] text-fg/40"
+                style={{ height: ROW_HEIGHT }}
+              >
+                {fileIndexNote}
               </div>
             )}
             {entries.map((entry) => (

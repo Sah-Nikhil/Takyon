@@ -48,6 +48,151 @@ test("a tier-two page is one click away and renders its own controls", async ({ 
 });
 
 /**
+ * The half v0.6 described as done and did not build: **creating** an alias.
+ * `docs/tbd/v0.3.md` §3 was marked closed with only the review-and-delete side
+ * shipped, so the only way to make one was an `INSERT` by hand.
+ */
+test("an alias can be created on an application that has none", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  const field = page.getByRole("button", { name: "Alias for Notepad" });
+  await expect(field).toHaveText("Add alias");
+  await field.click();
+
+  await page.getByRole("textbox", { name: "Alias for Notepad" }).fill("np");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("button", { name: "Alias for Notepad" })).toHaveText("np");
+  await expect(page).toHaveScreenshot("settings-applications-alias.png");
+});
+
+/** Editing is the same field, and the old name must not survive the rename. */
+test("an existing alias can be renamed and cleared", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await page.getByRole("button", { name: "Alias for Google Chrome" }).click();
+  await page.getByRole("textbox", { name: "Alias for Google Chrome" }).fill("gc");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toHaveText(
+    "gc",
+  );
+
+  // Emptying the field removes it rather than leaving an unnamed rule behind.
+  await page.getByRole("button", { name: "Alias for Google Chrome" }).click();
+  await page.getByRole("textbox", { name: "Alias for Google Chrome" }).fill("");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toHaveText(
+    "Add alias",
+  );
+});
+
+/** Escape abandons the edit, which is what Escape means everywhere else here. */
+test("escape leaves an alias as it was", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await page.getByRole("button", { name: "Alias for File Explorer" }).click();
+  await page.getByRole("textbox", { name: "Alias for File Explorer" }).fill("zzz");
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByRole("button", { name: "Alias for File Explorer" })).toHaveText(
+    "explorer",
+  );
+});
+
+/**
+ * The clutter fix: 1,891 applications sprawling in one list, most of them `PATH`
+ * executables nobody recognises. Four groups, and the long tail starts shut.
+ */
+test("applications are grouped, and the command-line tail starts collapsed", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await expect(page.getByText("Installed (7)")).toBeVisible();
+  await expect(page.getByText("Store apps (1)")).toBeVisible();
+  await expect(page.getByText("Games (1)")).toBeVisible();
+  await expect(page.getByText("Command line (3)")).toBeVisible();
+
+  // Installed is open; the tail is not, and says how much it is hiding.
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alias for a2ping" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Command line applications" })).toHaveText(
+    "Show 3",
+  );
+
+  await page.getByRole("button", { name: "Command line applications" }).click();
+  await expect(page.getByRole("button", { name: "Alias for a2ping" })).toBeVisible();
+
+  await expect(page).toHaveScreenshot("settings-applications-groups.png");
+});
+
+/** Searching says which group you meant, so a hit is never hidden by a header. */
+test("a filter reveals matches inside a collapsed group", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+  await expect(page.getByRole("button", { name: "Alias for adb" })).toHaveCount(0);
+
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("adb");
+  await expect(page.getByRole("button", { name: "Alias for adb" })).toBeVisible();
+  // And only the group that matched is drawn at all.
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toHaveCount(0);
+  await expect(page.getByText("Command line (1)")).toBeVisible();
+});
+
+/** ~1900 applications is more list than anyone scrolls. The filter is the way in. */
+test("the application list filters by name and by alias", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("adobe");
+  await expect(page.getByRole("button", { name: "Alias for Adobe Premiere Pro" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alias for Notepad" })).toHaveCount(0);
+
+  // An alias is searchable too: you remember the shorthand, not the product name.
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("prem");
+  await expect(page.getByRole("button", { name: "Alias for Adobe Premiere Pro" })).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("qqqq");
+  await expect(page.getByText("No application matches")).toBeVisible();
+});
+
+/**
+ * v0.7's page. The entry count is a control here, not decoration: TBC-0005's
+ * triggers are both stated in it, and neither is visible without the number.
+ */
+test("the file search page names its roots and the live entry count", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "File Search" }).click();
+
+  await expect(page.getByText("26,844 files and folders indexed")).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Show files without typing !e" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await expect(page.getByRole("switch", { name: "Also ask Windows Search" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+
+  await expect(page).toHaveScreenshot("settings-file-search.png");
+});
+
+/**
+ * TBC-0010 makes a visible off switch a condition of shipping the list at all,
+ * and v0.6's rule applies: the confirmation names the real count.
+ */
+test("clearing the opened history confirms with the number it deletes", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "File Search" }).click();
+  await page.getByRole("button", { name: "Clear history" }).click();
+
+  await expect(page.getByText("permanently deletes 12 entries")).toBeVisible();
+  await expect(page.getByText("Your files are not touched")).toBeVisible();
+});
+
+/**
  * ROADMAP v0.6's headline rule: a destructive setting confirms with the **real
  * count**, never "some items". A generic warning is one people learn to click
  * through, which is the habit you least want in front of a secure delete.

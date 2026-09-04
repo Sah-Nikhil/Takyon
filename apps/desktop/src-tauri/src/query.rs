@@ -20,12 +20,14 @@ use serde::Serialize;
 use crate::bang::{self, Route};
 use crate::clips::{Clip, ClipStore};
 use crate::entry::{Entry, EntryId, Query, Source, MAX_ENTRIES, SOURCE_BUDGET};
+use crate::index::FileIndex;
 use crate::frecency::Frecency;
 use crate::icons::IconStore;
 use crate::rank;
 use crate::sources::apps::AppSource;
 use crate::sources::calc::CalcSource;
 use crate::sources::commands::{CommandId, CommandSource};
+use crate::sources::files::{self, FileSource};
 use crate::sources::recents::RecentsSource;
 use crate::sources::system::SystemSource;
 
@@ -82,6 +84,9 @@ pub struct Pipeline {
     /// Built-in commands: "Clipboard History". Held concretely because
     /// activation looks one up by id, which the `Source` trait does not expose.
     pub commands: Arc<CommandSource>,
+    /// Files and folders: behind `!e` always, and Bangless when the setting is
+    /// on (task 11). `None` only where no index could be built at all.
+    pub files: Option<Arc<FileSource>>,
     /// Clipboard history, reached through the command above and, when
     /// `clips.bang` is on, through `!v`.
     ///
@@ -133,6 +138,7 @@ impl Pipeline {
             calc,
             commands,
             icons,
+            files: None,
             clips: None,
             clips_bang: std::sync::atomic::AtomicBool::new(true),
             recents_on: std::sync::atomic::AtomicBool::new(true),
@@ -180,6 +186,17 @@ impl Pipeline {
         self
     }
 
+    /// Attach the file index, enabling `!e`.
+    ///
+    /// Separate from [`Pipeline::new`] for the same reason as the clips: a test
+    /// asking about applications should not have to walk a disk first. It joins
+    /// `sources` too, where its own Bangless toggle decides whether it answers.
+    pub fn with_files(mut self, files: Arc<FileSource>) -> Self {
+        self.sources.push(files.clone());
+        self.files = Some(files);
+        self
+    }
+
     /// Answer one keystroke.
     pub fn query(&self, raw: &str, seq: u64) -> QueryResult {
         self.query_at(raw, seq, self.started.elapsed().as_millis() as u64)
@@ -198,6 +215,9 @@ impl Pipeline {
                 return self.clips_result(needle, seq)
             }
             Route::Clips(_) => raw,
+            // No toggle: `!e` is the door to file search, and task 11's setting
+            // governs Bangless Entries rather than the Bang.
+            Route::Files(needle) => return self.files_result(needle, seq),
             Route::Bangless(line) => line,
         };
 
@@ -270,6 +290,42 @@ impl Pipeline {
             // where two clips would otherwise read identically.
             entries: rank::disambiguate_subtitles(entries),
             indexing: false,
+        }
+    }
+
+    /// The `!e` Mode (§5 task 10).
+    ///
+    /// No Frecency and no Stability lock, exactly as `!v`: the index answers in
+    /// microseconds, so there is no late arrival for the lock to protect against,
+    /// and a usage lift would fight a name the user typed in full.
+    fn files_result(&self, needle: &str, seq: u64) -> QueryResult {
+        let Some(files) = &self.files else {
+            return QueryResult {
+                seq,
+                entries: Vec::new(),
+                indexing: false,
+            };
+        };
+        let entries = if needle.is_empty() {
+            // An empty Bang is its own state, not nothing: it shows what Takyon
+            // has opened (TBC-0010). Our table, never the shell's.
+            FileSource::recent_entries(&self.frecency, files::MODE_LIMIT)
+        } else {
+            files.mode_entries(needle, files::MODE_LIMIT)
+        };
+        QueryResult {
+            seq,
+            // ADR-0016: two files with the same name are what the second line is
+            // for, and under `!e` that is common rather than rare.
+            entries: rank::disambiguate_subtitles(entries),
+            // Reuses the flag that reserves a status row in the *native* window
+            // (TBC-0006 sizes it from the row count, which the webview cannot
+            // change). Which words go in that row is the frontend's business —
+            // `file_index_status` tells it Building from Stale.
+            indexing: !matches!(
+                files.index().status(),
+                crate::index::IndexStatus::Ready
+            ),
         }
     }
 
@@ -351,14 +407,37 @@ impl Pipeline {
         if let Some(entry) = self.system.find(id) {
             return Some((entry.target, entry.kind));
         }
-        let recent = self.recents.find(id)?;
+        if let Some(recent) = self.recents.find(id) {
+            return Some((
+                crate::entry::LaunchTarget::Exe {
+                    path: recent.target,
+                    args: None,
+                    working_dir: None,
+                },
+                recent.kind,
+            ));
+        }
+
+        // A file Entry's id **is** its path, lowercased (§2), and Windows paths
+        // are case-insensitive — so the id opens the file without a second index
+        // to look it up in. Checked for existence rather than trusted: an id can
+        // outlive the file when the Palette is left open.
+        let path = std::path::PathBuf::from(id.as_str());
+        if !path.exists() {
+            return None;
+        }
+        let kind = if path.is_dir() {
+            crate::entry::EntryKind::Folder
+        } else {
+            crate::entry::EntryKind::File
+        };
         Some((
             crate::entry::LaunchTarget::Exe {
-                path: recent.target,
+                path,
                 args: None,
                 working_dir: None,
             },
-            recent.kind,
+            kind,
         ))
     }
 
@@ -525,6 +604,28 @@ impl Pipeline {
         if let Err(e) = self.frecency.record(id, kind) {
             eprintln!("[takyon] could not record usage: {e}");
         }
+        self.record_opened(id, kind);
+    }
+
+    /// Also remember it in the Recents list Takyon owns (TBC-0010).
+    ///
+    /// Only what has a path to reopen: a Calc has none and a Clip is excluded by
+    /// ADR-0006. The id is the path for a file and the target for an app, which
+    /// is what makes one statement enough here.
+    fn record_opened(&self, id: &EntryId, kind: crate::entry::EntryKind) {
+        use crate::entry::EntryKind;
+        if !matches!(kind, EntryKind::App | EntryKind::File | EntryKind::Folder) {
+            return;
+        }
+        let Some((target, _)) = self.target_for(id) else {
+            return;
+        };
+        let Some(path) = crate::launch::path_of(&target) else {
+            return;
+        };
+        if let Err(e) = self.frecency.record_opened(id, &path, kind) {
+            eprintln!("[takyon] could not record what was opened: {e}");
+        }
     }
 }
 
@@ -614,6 +715,7 @@ mod tests {
         };
         App {
             id: EntryId::for_launch(&target),
+            origin: crate::sources::apps::AppOrigin::Installed,
             hay: Haystack::new(title, PathBuf::from(path).file_stem().and_then(|s| s.to_str())),
             title: title.into(),
             subtitle: Some(path.into()),
@@ -666,6 +768,77 @@ otepad.exe")])
                 "{q} returned a Clip from a Bangless query"
             );
         }
+    }
+
+    /// A pipeline over a small real tree, for the `!e` route.
+    fn pipeline_with_files(label: &str) -> (std::path::PathBuf, Pipeline) {
+        use crate::index::live::WalkIndex;
+        use crate::index::roots::Roots;
+
+        let base = std::env::temp_dir()
+            .join("takyon-pipeline-files")
+            .join(format!("{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let tree = base.join("tree");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(tree.join("ledger.md"), "x").unwrap();
+
+        let index = Arc::new(WalkIndex::load(
+            base.join("index"),
+            Roots {
+                include: vec![tree.clone()],
+                exclude: Vec::new(),
+            },
+        ));
+        index.rebuild().unwrap();
+        let files = Arc::new(FileSource::new(index));
+        (base, pipeline_with(Vec::new()).with_files(files))
+    }
+
+    /// `!e` searches files and nothing else — a Bang consumes the whole line, so
+    /// no Source sees it (paragraph 9, ADR-0002).
+    #[test]
+    fn v0_7_the_file_bang_searches_files_only() {
+        let (base, p) = pipeline_with_files("search");
+
+        let hits = p.query("!e ledger", 1).entries;
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "ledger.md");
+        assert_eq!(hits[0].kind, EntryKind::File);
+        assert!(p.query("!e nothingatall", 2).entries.is_empty());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The Bang works whatever the Bangless setting says: task 11 governs
+    /// ordinary results, never the Bang itself.
+    #[test]
+    fn v0_7_the_file_bang_ignores_the_bangless_setting() {
+        let (base, p) = pipeline_with_files("toggle");
+        let files = p.files.clone().expect("files attached");
+
+        files.set_bangless(false);
+        assert_eq!(p.query("!e ledger", 1).entries.len(), 1);
+        assert!(p.query("ledger", 2).entries.is_empty());
+
+        files.set_bangless(true);
+        assert_eq!(p.query("ledger", 3).entries.len(), 1);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// An activated file is remembered in the list Takyon owns, and `!e` with no
+    /// query shows it back (TBC-0010).
+    #[test]
+    fn v0_7_an_empty_file_bang_shows_what_takyon_opened() {
+        let (base, p) = pipeline_with_files("recents");
+        assert!(p.query("!e", 1).entries.is_empty(), "nothing opened yet");
+
+        let entry = p.query("!e ledger", 2).entries.remove(0);
+        p.record_activation(&entry.id, EntryKind::File, crate::actions::OPEN.as_str());
+
+        let recents = p.query("!e", 3).entries;
+        assert_eq!(recents.len(), 1);
+        assert_eq!(recents[0].title, "ledger.md");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// `!v` is the only way in, and it is a view rather than a search: empty
@@ -738,6 +911,7 @@ otepad.exe")]);
             id: EntryId::for_launch(&discord_target),
             hay: Haystack::new("Discord", Some("update")),
             title: "Discord".into(),
+            origin: crate::sources::apps::AppOrigin::Installed,
             subtitle: None,
             target: discord_target,
             icon_source: None,
@@ -842,6 +1016,7 @@ otepad.exe")]);
             // exactly the DisplaySwitch case. `app()` would give it a real name.
             hay: Haystack::for_executable("displayswitch"),
             title: "DisplaySwitch".into(),
+            origin: crate::sources::apps::AppOrigin::CommandLine,
             subtitle: None,
             target: ds_target,
             icon_source: None,

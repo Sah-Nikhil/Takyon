@@ -31,6 +31,10 @@ let current: SettingsSnapshot = {
   clipBang: true,
   theme: "system",
   uiSize: "default",
+  filesBangless: false,
+  filesFallback: false,
+  filesRoots: [],
+  filesExcludes: [],
 };
 
 /** Whether Windows itself is asking for less motion. Independent of our switch. */
@@ -142,6 +146,21 @@ export async function setPlacement(value: SettingsSnapshot["placement"]): Promis
 export async function setClipBang(on: boolean): Promise<void> {
   await api.setClipBang(on);
   current = { ...current, clipBang: on };
+}
+
+export async function setFilesBangless(on: boolean): Promise<void> {
+  await api.setFilesBangless(on);
+  current = { ...current, filesBangless: on };
+}
+
+export async function setFilesFallback(on: boolean): Promise<void> {
+  await api.setFilesFallback(on);
+  current = { ...current, filesFallback: on };
+}
+
+export async function setFilesRoots(roots: string[], excludes: string[]): Promise<void> {
+  await api.setFilesRoots(roots, excludes);
+  current = { ...current, filesRoots: roots, filesExcludes: excludes };
 }
 
 /**

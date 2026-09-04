@@ -59,6 +59,26 @@ export interface HotkeyStatus {
 }
 
 /**
+ * What the file index can currently promise (§5 task 7).
+ *
+ * `stale` means events were dropped and a rescan is running, so results may be
+ * missing. It must reach the user: an index that quietly misses files teaches
+ * them not to trust the feature, which is worse than not having it (ADR-0007).
+ */
+export type FileIndexState = "ready" | "building" | "stale";
+
+/** The file index's state, plus the numbers TBC-0005's triggers are stated in. */
+export interface FileIndexReport {
+  state: FileIndexState;
+  /** Present only while `state` is `building`. A progress row, not a promise. */
+  pct?: number;
+  /** Entries in the mapped file. Settings shows this live. */
+  entries: number;
+  /** Bumped by every rescan, so two results can be told apart. */
+  generation: number;
+}
+
+/**
  * What an Entry is. Decides its icon fallback and, in Rust, where it sorts: apps
  * always rank above documents (§3).
  *
@@ -102,6 +122,20 @@ export interface SettingsSnapshot {
   clipBang: boolean;
   theme: Theme;
   uiSize: UiSize;
+  /**
+   * Whether file Entries join Bangless results (v0.7 task 11). Default off —
+   * `!e` is the door, this is the setting, and when on they sort below apps.
+   */
+  filesBangless: boolean;
+  /**
+   * Whether Windows Search answers for locations outside the indexed roots.
+   * Default off: its coverage cannot be relied on and its queries cost 10-72 ms
+   * against a 20 ms budget (TBC-0005).
+   */
+  filesFallback: boolean;
+  /** Indexed roots, and the names skipped inside them (TBC-0005). */
+  filesRoots: string[];
+  filesExcludes: string[];
 }
 
 /**
@@ -124,6 +158,38 @@ export type UiSize = "small" | "default" | "large";
  * the moment a display is unplugged, and it is wrong silently.
  */
 export type Placement = "cursor" | "primary";
+
+/**
+ * Where an application was discovered (v0.7).
+ *
+ * The list groups on it. `commandLine` is the long tail — `a2ping`, `addr2line`,
+ * `agentactivationruntimestarter` — real and launchable and never what anyone is
+ * scrolling for, which is why it is collapsed by default.
+ */
+export type AppOrigin = "installed" | "store" | "game" | "commandLine";
+
+/**
+ * One application as the Applications page lists it (v0.7).
+ *
+ * Keyed by application rather than by alias, unlike `AliasRow`: an alias is
+ * created *on* an application, so the list has to show the ones without any.
+ */
+export interface AppAliasRow {
+  /** The Entry id. Opaque; the UI passes it back and never parses it. */
+  id: string;
+  title: string;
+  /** Path or store, shown to tell two same-named applications apart. */
+  subtitle?: string;
+  /**
+   * Icon key for `takyon-icon://`, absent where the shell had none. The row
+   * draws an initial instead and never waits for one (§6).
+   */
+  icon?: string;
+  /** Which discovery path found it, so the list can group rather than sprawl. */
+  origin: AppOrigin;
+  /** Every alias pointing here. Usually zero or one; the store allows more. */
+  aliases: string[];
+}
 
 /** One alias and what it points at, for the Applications page (v0.6). */
 export interface AliasRow {

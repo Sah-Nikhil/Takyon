@@ -29,6 +29,24 @@ use crate::rank::{self, Haystack};
 
 pub const SOURCE_ID: SourceId = SourceId("apps");
 
+/// Where an application was discovered, which decides how it is grouped.
+///
+/// Four paths, four groups. This machine has 1,891 applications and most are
+/// `PATH` executables like `a2ping` — real, launchable, and never what someone
+/// is scrolling the Settings list for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AppOrigin {
+    /// A Start Menu or Desktop shortcut. What "installed" means to a person.
+    Installed,
+    /// `shell:AppsFolder` — a packaged app, Store or otherwise.
+    Store,
+    /// A game, through its launcher.
+    Game,
+    /// A bare executable on `PATH`. The long tail.
+    CommandLine,
+}
+
 /// One discovered application, with its matching form precomputed.
 ///
 /// The [`Haystack`] is built once at discovery rather than once per keystroke.
@@ -38,6 +56,9 @@ pub const SOURCE_ID: SourceId = SourceId("apps");
 pub struct App {
     pub id: EntryId,
     pub title: String,
+    /// Which discovery path found it (v0.7). Grouping only — it has never
+    /// affected ranking and must not start.
+    pub origin: AppOrigin,
     /// Where it came from, shown under the title — a path for a Win32 app, the
     /// store or Steam for the others. This is what disambiguates two apps with the
     /// same name, which is common enough (`Code` and `Code - Insiders`) to matter.
@@ -64,7 +85,6 @@ impl App {
     fn has_path(&self) -> bool {
         matches!(self.target, LaunchTarget::Exe { .. })
     }
-
 }
 
 /// The application Source.
@@ -157,6 +177,19 @@ impl AppSource {
         apps.iter()
             .filter_map(|a| a.icon.as_ref().map(|i| (a.id.clone(), i.0.clone())))
             .collect()
+    }
+
+    /// Every application, title-sorted, for the Settings list.
+    ///
+    /// The whole list, not a page: read once on mount, off every latency budget,
+    /// and paging an in-memory `Vec` is machinery for a scroll position.
+    pub fn all(&self) -> Vec<App> {
+        let Ok(apps) = self.apps.read() else {
+            return Vec::new();
+        };
+        let mut all = apps.clone();
+        all.sort_by_key(|a| a.title.to_lowercase());
+        all
     }
 
     /// Look up one App by its id, for launching and for the action menu.
@@ -281,6 +314,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             .map(|s| s.to_string());
         push(&mut apps, &mut seen, icons, App {
             id: EntryId::for_launch(&target),
+            origin: AppOrigin::Installed,
             hay: Haystack::new(&sc.name, stem.as_deref()),
             title: sc.name,
             subtitle: Some(sc.target.to_string_lossy().to_string()),
@@ -311,6 +345,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             id: EntryId::for_launch(&target),
             hay: Haystack::new(&app.name, None),
             title: app.name,
+            origin: AppOrigin::Store,
             // Detected, not assumed: 74 of 112 AUMIDs here are Win32, and calling
             // File Explorer a Store app is the v0.2 defect this closes.
             subtitle: appsfolder::subtitle(&app.aumid),
@@ -334,6 +369,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
                 id: EntryId::for_launch(&target),
                 hay: Haystack::new(&game.name, None),
                 title: game.name,
+                origin: AppOrigin::Game,
                 subtitle: Some(game.launcher.label().to_string()),
                 target,
                 icon_source: None,
@@ -372,6 +408,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             // Code. See the constructor for the whole story.
             hay: Haystack::for_executable(&exe.stem),
             title: exe.stem,
+            origin: AppOrigin::CommandLine,
             subtitle: Some(exe.path.to_string_lossy().to_string()),
             target,
             icon_source: Some(exe.path),
@@ -402,6 +439,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             .map(|s| s.to_string());
         push(&mut apps, &mut seen, icons, App {
             id: EntryId::for_launch(&target),
+            origin: AppOrigin::Installed,
             hay: Haystack::new(&sc.name, stem.as_deref()),
             title: sc.name,
             subtitle: Some(sc.target.to_string_lossy().to_string()),
@@ -493,6 +531,7 @@ mod tests {
         };
         App {
             id: EntryId::for_launch(&target),
+            origin: crate::sources::apps::AppOrigin::Installed,
             hay: Haystack::new(title, exe_stem),
             title: title.to_string(),
             subtitle: Some(path.to_string()),
@@ -664,6 +703,7 @@ mod tests {
         let target = LaunchTarget::Aumid("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".into());
         let source = source_with(vec![App {
             id: EntryId::for_launch(&target),
+            origin: crate::sources::apps::AppOrigin::Installed,
             hay: Haystack::new("Calculator", None),
             title: "Calculator".into(),
             subtitle: Some("Store app".into()),

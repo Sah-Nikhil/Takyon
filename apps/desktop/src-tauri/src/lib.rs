@@ -23,6 +23,7 @@ pub mod frecency;
 pub mod hotkey;
 pub mod icons;
 pub mod identity;
+pub mod index;
 pub mod launch;
 pub mod prefs;
 pub mod query;
@@ -43,6 +44,7 @@ use clips::{Blocklist, Clip, ClipStore, Retention};
 use entry::{Action, EntryId};
 use hotkey::{HotkeyState, HotkeyStatus};
 use icons::IconStore;
+use index::live::WalkIndex;
 use query::{Pipeline, QueryResult};
 use sources::apps::AppSource;
 use sources::calc::Policy as CalcPolicy;
@@ -367,6 +369,83 @@ fn aliases(
     rows
 }
 
+/// One application as the Settings list draws it, with the aliases it has.
+///
+/// Not `AliasRow` inverted: that one is keyed by alias and lists only what has
+/// one. This is keyed by application and lists everything, because an alias is
+/// created *on* an application and you have to see the ones without.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppAliasRow {
+    id: String,
+    title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subtitle: Option<String>,
+    /// Icon key, resolved at discovery like the Palette's (§6). Absent where the
+    /// shell had none — the row draws an initial instead and never waits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
+    /// Which discovery path found it, so the list can group rather than sprawl.
+    origin: sources::apps::AppOrigin,
+    aliases: Vec<String>,
+}
+
+/// Every application and its aliases, for the Applications page.
+///
+/// The whole list in one response — 1891 rows here. Read once on mount, off
+/// every latency budget, and a page cursor would be machinery for a scrollbar.
+#[tauri::command]
+fn application_rows(
+    store: tauri::State<'_, Arc<aliases::AliasStore>>,
+    apps: tauri::State<'_, Arc<AppSource>>,
+) -> Vec<AppAliasRow> {
+    let by_target = store.by_target();
+    apps.all()
+        .into_iter()
+        .map(|app| AppAliasRow {
+            aliases: by_target.get(&app.id).cloned().unwrap_or_default(),
+            id: app.id.0,
+            title: app.title,
+            subtitle: app.subtitle,
+            icon: app.icon.map(|i| i.0),
+            origin: app.origin,
+        })
+        .collect()
+}
+
+/// Replace every alias pointing at one application, in one call.
+///
+/// Set-shaped rather than one-at-a-time: the editor is a text field holding the
+/// whole list, so a rename is a removal and an addition that must not be able to
+/// half-apply and leave the old name behind.
+#[tauri::command]
+fn set_aliases_for(
+    target: String,
+    aliases: Vec<String>,
+    store: tauri::State<'_, Arc<aliases::AliasStore>>,
+    apps: tauri::State<'_, Arc<AppSource>>,
+) -> Result<(), String> {
+    let target = EntryId(target);
+    let wanted: Vec<String> = aliases
+        .iter()
+        .map(|a| a.trim().to_lowercase())
+        .filter(|a| !a.is_empty())
+        .collect();
+
+    let by_target = store.by_target();
+    let existing = by_target.get(&target).cloned().unwrap_or_default();
+    for gone in existing.iter().filter(|a| !wanted.contains(a)) {
+        store.remove(gone).map_err(|e| e.to_string())?;
+    }
+    for added in wanted.iter().filter(|a| !existing.contains(a)) {
+        store.set(added, &target).map_err(|e| e.to_string())?;
+    }
+    // In place, so the alias works on the next keystroke rather than the next
+    // launch — which is what `apply_aliases` was built for (v0.3 tbd §3).
+    apps.apply_aliases(&store);
+    Ok(())
+}
+
 /// Create or delete an alias, then re-apply the table (v0.3 tbd §3).
 ///
 /// `apply_aliases` is in-place and needs no re-walk, which is why the editor can
@@ -528,6 +607,7 @@ pub fn run() {
             report_first_pixel,
             report_first_entry,
             query,
+            index::file_index_status,
             actions_for,
             activate,
             set_action_menu,
@@ -545,6 +625,11 @@ pub fn run() {
             settings::settings_snapshot,
             settings::set_reduce_motion,
             settings::migrate_local_prefs,
+            settings::set_files_bangless,
+            settings::set_files_fallback,
+            settings::set_files_roots,
+            settings::opened_count,
+            settings::clear_opened,
             settings::set_recents,
             settings::set_tray,
             settings::set_placement,
@@ -555,6 +640,8 @@ pub fn run() {
             clip_blocklist,
             set_clip_blocked,
             aliases,
+            application_rows,
+            set_aliases_for,
             set_alias,
             open_crash_logs
         ])
@@ -635,6 +722,26 @@ pub fn run() {
             };
             app.manage(blocklist.clone());
 
+            // The file index, mapped from disk if it exists. **Roots are left
+            // empty here**: resolving them costs 3.5 ms of shell calls, and the
+            // walk thread below sets them before it needs them. Mapping is 87 us.
+            let file_index = Arc::new(WalkIndex::load(
+                identity::data_dir()
+                    .map(|d| d.join("index"))
+                    .unwrap_or_default(),
+                index::roots::Roots {
+                    include: Vec::new(),
+                    exclude: Vec::new(),
+                },
+            ));
+            app.manage(file_index.clone());
+            let files = Arc::new(sources::files::FileSource::new(file_index.clone()));
+            // Read at startup rather than pushed: a keystroke can arrive before
+            // any window has mounted, and both would answer wrongly until one
+            // did. The same gap v0.6 closed for the calculator policy.
+            files.set_bangless(prefs::flag(&prefs, prefs::FILES_BANGLESS, false));
+            files.set_fallback(prefs::flag(&prefs, prefs::FILES_FALLBACK, false));
+
             let mut pipeline = Pipeline::new(
                 apps.clone(),
                 recents.clone(),
@@ -645,6 +752,7 @@ pub fn run() {
             if let Some(store) = clip_store.clone() {
                 pipeline = pipeline.with_clips(store);
             }
+            pipeline = pipeline.with_files(files);
             // Read once at startup rather than waiting for the frontend to push:
             // a keystroke can arrive before the Palette has mounted, and `!v`
             // silently falling through would look like a broken Bang.
@@ -665,6 +773,7 @@ pub fn run() {
             // Reads `settings.db` so a rebound hotkey survives a restart: one
             // indexed lookup on an open connection, which is what that costs.
             hotkey::register(&handle, hotkey::accelerator(&prefs));
+
             let bench = app.state::<Bench>();
             bench.startup_ready();
             // Every span the harness measures starts at a hotkey press, so a taken
@@ -722,6 +831,35 @@ pub fn run() {
                 }
                 _ => eprintln!("[takyon] clipboard capture is off"),
             }
+
+            // The file index, on its own thread and after everything above.
+            //
+            // **Never re-walk at startup** (§5): a mapped index serves at once and
+            // only a missing one costs a walk. Watching starts either way, so a
+            // mapped index is current from the first second.
+            let file_walk = file_index.clone();
+            let index_prefs = prefs.clone();
+            std::thread::spawn(move || {
+                // Off the startup path, where the shell calls cost nothing.
+                file_walk.set_roots(settings::stored_roots(&index_prefs));
+                if !file_walk.is_loaded() {
+                    if let Err(e) = file_walk.rebuild() {
+                        eprintln!("[takyon] the file index could not be written: {e}");
+                    }
+                }
+                file_walk.watch();
+                // A rebuild folds the overlay into the file. Checked on a timer
+                // rather than per event: the threshold is about how big the delta
+                // has grown, which one more event never decides.
+                loop {
+                    std::thread::sleep(index::live::REBUILD_CHECK_EVERY);
+                    if file_walk.wants_rebuild() {
+                        if let Err(e) = file_walk.rebuild() {
+                            eprintln!("[takyon] the file index could not be rebuilt: {e}");
+                        }
+                    }
+                }
+            });
 
             // The application walk, on its own thread: `firstrun::maybe_enable` can sit
             // on a modal dialog indefinitely, and queueing discovery behind it would mean

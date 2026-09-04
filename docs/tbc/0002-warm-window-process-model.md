@@ -188,6 +188,57 @@ converts these into a claim about what the eye sees.
 Reproduce with `scripts\bench-idle.ps1`, which writes a transcript, the memory
 curve, the raw records and a summary into `bench\results\`.
 
+## Measured — v0.7, 2026-09-04
+
+Same machine. Release build, `bun run bench --alt-hotkey` (n=30), with the file
+index now built at boot and four `ReadDirectoryChangesW` watchers running
+throughout the run.
+
+| Metric | Budget | v0.2 | v0.7 | Verdict |
+|---|---|---|---|---|
+| Hotkey to first pixel | < 50 ms | p95 **25.0** (n=100) | min 21.8 · p50 25.1 · p95 **30.4** · max 30.7 (n=30) | PASS |
+| Keystroke to first Entry | < 30 ms | p95 **17.7** (n=100) | min 10.9 · p50 15.0 · p95 **20.7** · max 36.7 (n=30) | PASS |
+| Process start to hotkey responsive | < 500 ms | **254.4 ms** | **308.4 ms** | PASS |
+| Idle RSS, warm and trimmed | < 150 MB | 37.1 MB working set, 250.8 MB committed, 8 processes | **28.4 MB** working set, 250.0 MB committed, 7 processes | PASS |
+
+Three things worth stating plainly:
+
+- **First-Entry p95 is 20.7 ms, 69% of its budget.** Five phases of Sources sit on
+  that path now — applications, system entries, recents, the calculator and
+  commands — and the sample is 30 rather than 100, so the p95 is drawn from a much
+  smaller tail; the max of 36.7 ms is over budget and a larger sample would move
+  the p95 toward it. Re-measure at n=100 before v1.0. This is the first budget
+  that will fail if a Source is added carelessly.
+  The file Source is **not** among the contributors here: it is off by default
+  Bangless (`files.bangless`), so it returns before doing any work.
+- **Startup moved 254 → 308 ms** with the index mapped and the watchers started.
+  Both happen *below* `hotkey::register`, which is where they were deliberately
+  put: resolving the roots costs 3.5 ms of shell calls and mapping the index
+  costs 87 µs, and neither joins the queue above registration.
+- **The process count went 8 → 7** and the working set fell. Neither is a
+  file-index effect worth reading into — WebView2's process count varies by
+  version and by what the machine was doing, and the committed figure barely
+  moved (250.8 → 250.0 MB).
+- **Whole-drive scope costs nothing here.** These numbers are from the build that
+  indexes 309,802 entries across both fixed drives, with watchers on each. The
+  index is mapped, not loaded, so its size does not reach the working set, and the
+  walk is off the startup path entirely.
+
+**One flake worth recording**, because it will look alarming next time: an earlier
+run of the same binary died at show 14 of 30 with `timed out waiting for the
+Palette to report a painted frame`, preceded by Chromium's `Failed to unregister
+class Chrome_WidgetWin_0. Error = 1412`. No panic log was written, and an
+immediate re-run of the same build completed 30/30 with the numbers above. Treat a
+single mid-run timeout as a flake; treat two in a row as a regression.
+
+`--alt-hotkey` again, for the same reason: Raycast holds `Alt+Space` here.
+
+**And the trap that cost two runs:** `cargo test --release` leaves a `takyon.exe`
+in `target\release\` with no frontend embedded, and the bench runs whatever binary
+is there. It reports "timed out waiting for the Palette to report a painted
+frame", which reads exactly like a rendering regression. Always `bun run build`
+immediately before benching.
+
 ## Alternatives
 
 | Option | Improvement if we switch | Added complexity | Switching cost |

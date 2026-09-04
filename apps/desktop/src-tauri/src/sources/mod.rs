@@ -8,5 +8,6 @@
 pub mod apps;
 pub mod calc;
 pub mod commands;
+pub mod files;
 pub mod recents;
 pub mod system;

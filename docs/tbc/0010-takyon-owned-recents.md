@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: built
 pairs-with: TBC-0005
 ---
 
@@ -105,3 +105,35 @@ kind of thing that is fine until the first time somebody asks about it, and then
 it is not fine at all.
 
 If v0.7 slips, this slips with it. It has no value on its own.
+
+---
+
+## Built at v0.7
+
+Shipped as specified, in `frecency.rs` beside the `usage` table. The `opened`
+table has the four columns this note drew, is written from
+`Pipeline::record_activation` for App, File and Folder kinds, is existence-checked
+on read (ADR-0013), and is capped at 100 with the oldest evicted — the guess this
+note flagged, and still a guess.
+
+Three things the build settled that the note left open:
+
+**Where it surfaces.** `!e` with an empty query, filtered to files and folders.
+That answers the bang-registry's "does a Bang with no query show anything useful"
+for one Bang without settling it for all, and it gives the table the one question
+it can answer better than Frecency can.
+
+**Why applications are excluded from that view.** They are still *recorded* — the
+table holds them — but `!e` filters them out, because Frecency already ranks
+applications better than a chronological list would. That was this note's own
+argument for not building the table in v0.3, and it applies to the view rather
+than to the write.
+
+**The off switch shipped with it**, as this note made a condition: Settings →
+File Search → Clear history, with a confirmation naming the real count, following
+v0.6's rule that a destructive control never says "some items".
+
+The triggers above are unchanged and none has fired yet — there has not been
+enough real use. The one to watch first is whether it duplicates Frecency in
+practice, which needs a few weeks of opening files through `!e` before it can be
+answered honestly.

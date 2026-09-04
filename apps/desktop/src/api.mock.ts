@@ -15,11 +15,13 @@
 import type {
   Action,
   AliasRow,
+  AppAliasRow,
   CalcPolicy,
   ClipRetention,
   ClipRow,
   ViewKind,
   Entry,
+  FileIndexReport,
   HotkeyStatus,
   QueryResult,
   SettingsSnapshot,
@@ -339,7 +341,14 @@ let snapshot: SettingsSnapshot = {
   clipBang: true,
   theme: "system",
   uiSize: "default",
+  filesBangless: false,
+  filesFallback: false,
+  filesRoots: ["C:\\Users\\you\\Documents", "C:\\Programming"],
+  filesExcludes: ["node_modules", ".git", "target"],
 };
+
+/** Rows in the owned recents list, for the clear-history confirmation. */
+let openedRows = 12;
 
 /** Executables excluded from clipboard capture, as the browser build reports. */
 let blocked: string[] = ["keepass.exe", "1password.exe"];
@@ -348,6 +357,29 @@ let blocked: string[] = ["keepass.exe", "1password.exe"];
 let aliasRows: AliasRow[] = [
   { alias: "ps", target: "app:photoshop", title: "Adobe Photoshop 2022" },
   { alias: "vpn", target: "app:gone" },
+];
+
+/**
+ * Applications for the alias editor, title-sorted as Rust sorts them.
+ *
+ * Deliberately mixed: two with an alias, one with two, and several with none,
+ * because the empty state is the row the editor exists to fill. Four carry an
+ * icon key and four do not, so the initial-placeholder path is drawn too.
+ */
+let appRows: AppAliasRow[] = [
+  { id: "app:photoshop", title: "Adobe Photoshop 2022", subtitle: "C:\\Program Files\\Adobe\\Photoshop.exe", icon: "0000000000000001", origin: "installed", aliases: ["ps"] },
+  { id: "app:premiere", title: "Adobe Premiere Pro", subtitle: "C:\\Program Files\\Adobe\\Premiere.exe", icon: "0000000000000002", origin: "installed", aliases: ["prem", "pr"] },
+  { id: "app:explorer", title: "File Explorer", subtitle: "C:\\Windows\\explorer.exe", icon: "0000000000000003", origin: "installed", aliases: ["explorer"] },
+  { id: "app:firefox", title: "Firefox", subtitle: "C:\\Program Files\\Mozilla Firefox\\firefox.exe", origin: "installed", aliases: [] },
+  { id: "app:chrome", title: "Google Chrome", subtitle: "C:\\Program Files\\Google\\Chrome\\chrome.exe", origin: "installed", aliases: ["chrome"] },
+  { id: "app:notepad", title: "Notepad", subtitle: "C:\\Windows\\System32\\notepad.exe", origin: "installed", aliases: [] },
+  { id: "app:code", title: "Visual Studio Code", subtitle: "C:\\Program Files\\Microsoft VS Code\\Code.exe", origin: "installed", aliases: [] },
+  { id: "app:calculator", title: "Calculator", subtitle: "Store app", icon: "0000000000000004", origin: "store", aliases: [] },
+  { id: "app:tf2", title: "Team Fortress 2", subtitle: "Steam", origin: "game", aliases: [] },
+  // The long tail, and the reason the group is collapsed by default.
+  { id: "app:a2ping", title: "a2ping", subtitle: "C:\\TeX\\miktex\\bin\\x64\\a2ping.exe", origin: "commandLine", aliases: [] },
+  { id: "app:addr2line", title: "addr2line", subtitle: "C:\\MinGW\\bin\\addr2line.exe", origin: "commandLine", aliases: [] },
+  { id: "app:adb", title: "adb", subtitle: "C:\\Users\\you\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe", origin: "commandLine", aliases: [] },
 ];
 
 /**
@@ -505,6 +537,30 @@ export const mock = {
    * machine regardless of what is installed on it.
    */
   iconUrl: (_key: string) => "",
+  /**
+   * Ready with a plausible count. The visual suite never walks a disk, so a
+   * Building state here would be permanent rather than transient.
+   */
+  setFilesBangless: async (on: boolean) => {
+    snapshot = { ...snapshot, filesBangless: on };
+  },
+  setFilesFallback: async (on: boolean) => {
+    snapshot = { ...snapshot, filesFallback: on };
+  },
+  setFilesRoots: async (roots: string[], excludes: string[]) => {
+    snapshot = { ...snapshot, filesRoots: roots, filesExcludes: excludes };
+  },
+  openedCount: async () => openedRows,
+  clearOpened: async () => {
+    const gone = openedRows;
+    openedRows = 0;
+    return gone;
+  },
+  fileIndexStatus: async (): Promise<FileIndexReport> => ({
+    state: "ready",
+    entries: 26844,
+    generation: 1,
+  }),
   hotkeyStatus: async (): Promise<HotkeyStatus> => ({
     accelerator: liveHotkey,
     registered: hotkeyRegistered,
@@ -580,6 +636,13 @@ export const mock = {
     return [...blocked];
   },
   aliases: async () => [...aliasRows],
+  applicationRows: async (): Promise<AppAliasRow[]> => appRows,
+  setAliasesFor: async (target: string, next: string[]) => {
+    const wanted = next.map((a) => a.trim().toLowerCase()).filter(Boolean);
+    appRows = appRows.map((row) =>
+      row.id === target ? { ...row, aliases: wanted } : row,
+    );
+  },
   setAlias: async (alias: string, target: string | null) => {
     const name = alias.trim();
     if (!name) throw new Error("an alias needs a name");

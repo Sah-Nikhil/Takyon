@@ -21,6 +21,7 @@ import {
   EVENT_SHOW,
   type Action,
   type AliasRow,
+  type AppAliasRow,
   type Placement,
   type Theme,
   type UiSize,
@@ -28,6 +29,7 @@ import {
   type ClipRetention,
   type ClipRow,
   type ViewKind,
+  type FileIndexReport,
   type HotkeyStatus,
   type QueryResult,
   type SettingsSnapshot,
@@ -49,6 +51,38 @@ export const openSettings = () =>
 
 export const hotkeyStatus = () =>
   inTauri ? invoke<HotkeyStatus>("hotkey_status") : mock.hotkeyStatus();
+
+/** Whether file Entries join Bangless results (v0.7 task 11). Default off. */
+export const setFilesBangless = (on: boolean) =>
+  inTauri ? invoke<void>("set_files_bangless", { on }) : mock.setFilesBangless(on);
+
+export const setFilesFallback = (on: boolean) =>
+  inTauri ? invoke<void>("set_files_fallback", { on }) : mock.setFilesFallback(on);
+
+/** Replace the indexed roots and exclusions, then rebuild in the background. */
+export const setFilesRoots = (roots: string[], excludes: string[]) =>
+  inTauri
+    ? invoke<void>("set_files_roots", { roots, excludes })
+    : mock.setFilesRoots(roots, excludes);
+
+/** How many rows the owned recents list holds, for the confirmation. */
+export const openedCount = () =>
+  inTauri ? invoke<number>("opened_count") : mock.openedCount();
+
+export const clearOpened = () =>
+  inTauri ? invoke<number>("clear_opened") : mock.clearOpened();
+
+/**
+ * What the file index can promise right now (§5 task 7).
+ *
+ * Its own call rather than a field on `QueryResult`: the state changes on the
+ * walk's schedule, not the user's, so riding the keystroke path would ship the
+ * same three words on every keypress.
+ */
+export const fileIndexStatus = () =>
+  inTauri
+    ? invoke<FileIndexReport>("file_index_status")
+    : mock.fileIndexStatus();
 
 /**
  * One keystroke, one `invoke` — never one per Source (ADR-0009).
@@ -152,7 +186,21 @@ export const setClipBlocked = (exe: string, blocked: boolean) =>
 export const aliases = () =>
   inTauri ? invoke<AliasRow[]>("aliases") : mock.aliases();
 
-/** Create an alias, or delete it by passing `null` as the target. */
+/** Every application and its aliases, for the Applications page. */
+export const applicationRows = () =>
+  inTauri ? invoke<AppAliasRow[]>("application_rows") : mock.applicationRows();
+
+/**
+ * Replace every alias pointing at one application.
+ *
+ * Set-shaped rather than one at a time: the field holds the whole list, so a
+ * rename is a removal and an addition that must not half-apply.
+ */
+export const setAliasesFor = (target: string, aliases: string[]) =>
+  inTauri
+    ? invoke<void>("set_aliases_for", { target, aliases })
+    : mock.setAliasesFor(target, aliases);
+
 export const setAlias = (alias: string, target: string | null) =>
   inTauri ? invoke<void>("set_alias", { alias, target }) : mock.setAlias(alias, target);
 

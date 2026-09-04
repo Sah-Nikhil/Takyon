@@ -6,10 +6,10 @@
  * makes its controls searchable — `nav.ts` does the rest and a test in
  * `nav.test.ts` holds that promise.
  *
- * Pages for features that do not exist yet are deliberately absent. File Search
- * arrives with v0.7 and AI with v0.9; shipping them now as disabled rows would
- * put dead controls in a window whose whole point is that every control does
- * something.
+ * Pages for features that do not exist yet are deliberately absent. AI arrives
+ * with v0.9; shipping it now as a disabled row would put dead controls in a
+ * window whose whole point is that every control does something. File Search
+ * landed at v0.7 and its page came with it.
  */
 
 import { About } from "./pages/About";
@@ -17,6 +17,7 @@ import { Advanced } from "./pages/Advanced";
 import { Applications } from "./pages/Applications";
 import { Calculator } from "./pages/Calculator";
 import { ClipboardHistory } from "./pages/ClipboardHistory";
+import { FileSearch } from "./pages/FileSearch";
 import { General } from "./pages/General";
 import { Keyboard } from "./pages/Keyboard";
 import { Launcher } from "./pages/Launcher";
@@ -135,6 +136,39 @@ export const PAGES: SettingsPage[] = [
         id: "blocklist",
         label: "Excluded applications",
         keywords: ["blocklist", "password manager", "never record", "exclude"],
+      },
+    ],
+  },
+  {
+    id: "files",
+    title: "File Search",
+    tier: "feature",
+    Component: FileSearch,
+    controls: [
+      {
+        id: "index-roots",
+        label: "Indexed folders",
+        keywords: ["roots", "folders", "index", "where", "scope", "add folder"],
+      },
+      {
+        id: "index-excludes",
+        label: "Skipped folder names",
+        keywords: ["exclude", "skip", "node_modules", "ignore", "target"],
+      },
+      {
+        id: "files-bangless",
+        label: "Show files without typing !e",
+        keywords: ["bang", "!e", "bangless", "results"],
+      },
+      {
+        id: "files-fallback",
+        label: "Also ask Windows Search",
+        keywords: ["windows search", "fallback", "outside", "everywhere"],
+      },
+      {
+        id: "clear-opened",
+        label: "Files you opened through Takyon",
+        keywords: ["history", "recents", "clear", "forget", "privacy"],
       },
     ],
   },

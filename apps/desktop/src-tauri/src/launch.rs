@@ -300,10 +300,42 @@ pub fn explain_shell_error(code: isize) -> String {
 /// would mean a plugin, a capability entry and a second route from the webview to
 /// the OS for the sake of one menu item.
 #[cfg(windows)]
+/// How many times to ask for the clipboard, and how long to wait between.
+///
+/// The clipboard is one global lock and `OpenClipboard` fails outright while
+/// another process holds it — Microsoft's own guidance is to retry. Takyon races
+/// **itself**: `clips::watch` opens it on every change notification.
+#[cfg(windows)]
+const CLIPBOARD_TRIES: u32 = 10;
+#[cfg(windows)]
+const CLIPBOARD_RETRY: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Take the clipboard, waiting out whoever currently holds it.
+///
+/// 100 ms in the worst case, on a path that only runs on an explicit Copy.
+/// Failing without retrying presents as "copy silently did nothing", which is
+/// indistinguishable from a broken action.
+#[cfg(windows)]
+unsafe fn open_clipboard_retrying() -> Result<(), String> {
+    use windows::Win32::System::DataExchange::OpenClipboard;
+
+    let mut last = String::new();
+    for attempt in 0..CLIPBOARD_TRIES {
+        match OpenClipboard(None) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = e.to_string(),
+        }
+        if attempt + 1 < CLIPBOARD_TRIES {
+            std::thread::sleep(CLIPBOARD_RETRY);
+        }
+    }
+    Err(format!("could not open the clipboard: {last}"))
+}
+
 pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     use windows::Win32::Foundation::{HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        CloseClipboard, EmptyClipboard, SetClipboardData,
     };
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_UNICODETEXT;
@@ -313,7 +345,7 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let bytes = wide.len() * 2;
 
     unsafe {
-        OpenClipboard(None).map_err(|e| format!("could not open the clipboard: {e}"))?;
+        open_clipboard_retrying()?;
 
         // Every early return from here has to close the clipboard. Leaving it open
         // locks it for every other process on the desktop, which presents as

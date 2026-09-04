@@ -24,6 +24,11 @@ pub const TIER_NAME_PREFIX: f32 = 800.0;
 pub const TIER_WORD_PREFIX: f32 = 700.0;
 pub const TIER_EXE_PREFIX: f32 = 650.0;
 pub const TIER_ACRONYM: f32 = 600.0;
+/// A phrase inside a name, for **files and folders only** — see [`score_path`].
+///
+/// Last rung, because it is the loosest. Applications never reach it: `chrome`
+/// must not match "Synchrome Tools" on a substring when a real Chrome exists.
+pub const TIER_SUBSTRING: f32 = 550.0;
 
 /// The most a title's length can cost it, in points.
 ///
@@ -53,6 +58,10 @@ const _: () = {
     assert!(TIER_NAME_PREFIX > TIER_WORD_PREFIX);
     assert!(TIER_WORD_PREFIX > TIER_EXE_PREFIX);
     assert!(TIER_EXE_PREFIX > TIER_ACRONYM);
+    // The file-only rung is last, and far enough below the acronym rung that a
+    // long name matched by prefix cannot sink below a short one matched mid-name.
+    assert!(TIER_ACRONYM > TIER_SUBSTRING);
+    assert!(LENGTH_PENALTY_MAX < TIER_ACRONYM - TIER_SUBSTRING);
 };
 
 /// What a title looks like once it has been prepared for matching.
@@ -146,6 +155,45 @@ pub fn score(q: &Query, hay: &Haystack) -> Option<f32> {
     let penalty = (hay.name.chars().count().min(40) as f32 / 40.0) * LENGTH_PENALTY_MAX;
     Some(tier - penalty)
 }
+
+/// Score a **file or folder** name, which gets one rung applications do not.
+///
+/// `EA SPORTS FC 26` ships that way and `FC 26` is what anyone types: name-prefix
+/// wants the start of the name and word-prefix compares whole words, so a phrase
+/// in the middle clears neither. Apps keep the tighter ladder.
+pub fn score_path(q: &Query, hay: &Haystack) -> Option<f32> {
+    if let Some(score) = score(q, hay) {
+        return Some(score);
+    }
+    let needle = q.needle.as_str();
+    // Two characters matched anywhere is most of an index. The short-query path
+    // handles those with a prefix scan instead.
+    if needle.len() < MIN_SUBSTRING_LEN || !hay.name.contains(needle) {
+        return None;
+    }
+    let penalty = (hay.name.chars().count().min(40) as f32 / 40.0) * LENGTH_PENALTY_MAX;
+    Some(TIER_SUBSTRING - penalty)
+}
+
+/// Case-insensitive `contains`, without allocating.
+///
+/// The prefilter in front of [`score_path`]: every rung except the acronym
+/// implies the name contains the needle, so a failing candidate is dropped before
+/// a [`Haystack`] is built. At 300k entries that allocation *is* the query.
+pub fn contains_fold(name: &str, needle_lower: &str) -> bool {
+    let (name, needle) = (name.as_bytes(), needle_lower.as_bytes());
+    if needle.is_empty() || needle.len() > name.len() {
+        return false;
+    }
+    name.windows(needle.len())
+        .any(|w| w.eq_ignore_ascii_case(needle))
+}
+
+/// Shortest needle allowed to match in the middle of a name.
+///
+/// Three, matching the trigram floor: below it the postings cannot narrow the
+/// candidates either, so the two limits move together.
+pub const MIN_SUBSTRING_LEN: usize = 3;
 
 /// Did this Entry match only through its executable's filename?
 ///
@@ -303,6 +351,57 @@ pub fn disambiguate_subtitles(mut entries: Vec<Entry>) -> Vec<Entry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The case that raised the rung: a game folder is `PUBLISHER TITLE YEAR`
+    /// and people type the middle of it.
+    #[test]
+    fn v0_7_a_phrase_inside_a_filename_matches_for_files() {
+        let hay = Haystack::new("EA SPORTS FC 26", None);
+        assert!(score(&Query::new("fc 26"), &hay).is_none(), "the app ladder declines it");
+        assert!(score_path(&Query::new("fc 26"), &hay).is_some());
+        // And the prefix rungs still win where they apply, so ordering is intact.
+        let prefix = score_path(&Query::new("ea sports"), &hay).unwrap();
+        let middle = score_path(&Query::new("fc 26"), &hay).unwrap();
+        assert!(prefix > middle);
+    }
+
+    /// Applications keep the tighter ladder. A substring match on a long product
+    /// name is noise, and this is the rung that would produce it.
+    #[test]
+    fn v0_7_applications_do_not_gain_the_substring_rung() {
+        let hay = Haystack::new("Synchrome Tools", None);
+        assert!(score(&Query::new("chrome"), &hay).is_none());
+        assert!(tier_of("chrome", &hay).is_none());
+    }
+
+    /// Two characters matched anywhere is most of an index. The short-query path
+    /// takes those instead.
+    ///
+    /// `or` rather than `fc` for the negative: `fc` starts a word, so the
+    /// existing word-prefix rung answers it and the floor never applies.
+    #[test]
+    fn v0_7_the_substring_rung_has_a_floor() {
+        let hay = Haystack::new("EA SPORTS FC 26", None);
+        assert!(score_path(&Query::new("or"), &hay).is_none(), "two chars mid-word");
+        assert!(score_path(&Query::new("ort"), &hay).is_some(), "three chars mid-word");
+        // A word prefix is not the substring rung and keeps its own tier.
+        assert!(score_path(&Query::new("fc"), &hay).unwrap() > TIER_SUBSTRING);
+        assert_eq!(MIN_SUBSTRING_LEN, 3);
+    }
+
+    /// Last rung, so anything the application ladder can answer still outranks
+    /// it. Asserted through scoring rather than on the constants, which the
+    /// `const _` block above already checks at compile time.
+    #[test]
+    fn v0_7_the_substring_rung_sits_below_every_other() {
+        let hay = Haystack::new("EA SPORTS FC 26", None);
+        let by_prefix = score_path(&Query::new("ea"), &hay).unwrap();
+        let by_word = score_path(&Query::new("sports"), &hay).unwrap();
+        let by_substring = score_path(&Query::new("orts fc"), &hay).unwrap();
+
+        assert!(by_prefix > by_word);
+        assert!(by_word > by_substring);
+    }
     use crate::entry::{EntryId, EntryKind};
 
     fn exe_hay(name: &str, stem: &str) -> Haystack {
