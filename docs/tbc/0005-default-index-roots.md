@@ -51,3 +51,55 @@ prominently** before anything else — this is a settings-default change, not an
 architecture change. The learned-roots option is where this should eventually go,
 and it becomes cheap once `frecency.db` exists, since the signal it needs is
 already being collected for ranking.
+
+---
+
+## Amended at v0.7 — the code root is probed, not hardcoded
+
+The bet above named `C:\Programming` as a default root and flagged it, correctly,
+as a personal-workflow assumption. It ships as a **probe** instead: at first index
+Takyon tests a short candidate list and keeps whichever paths exist on disk —
+`C:\Programming`, `%USERPROFILE%\source\repos` (Visual Studio's own default),
+`~\dev`, `~\code`, `~\projects`, `~\git`, `~\repos`.
+
+This machine still gets `C:\Programming`, another machine gets whatever its owner
+actually uses, and nobody gets a default pointing at a folder that isn't there.
+The cost is about twenty lines in the defaults and no new UI, against a revisit
+this note already predicted would be the first one needed.
+
+The candidate list is a guess like any other and falls under the same trigger
+conditions as the rest of this note. What it removes is the *certainty* of being
+wrong everywhere except one machine.
+
+## The measurement that decided it
+
+Windows Search was proposed as the thing that would cover code directories, on the
+theory that the OS already indexes them. Measured on the development machine
+against `SystemIndex` through the `Search.CollatorDSO` provider:
+
+| Query | Result | Time |
+|---|---|---|
+| `SCOPE='file:C:/Programming'` | `.idea`, `.vscode`, `0dump`, `0vsc_setup`… | 12 ms |
+| `SCOPE='file:C:/Programming/SELF'` | **zero rows** | 26 ms |
+| `System.FileName LIKE 'takyon%'` | `D:\Takyon`, `D:\Takyon\takyon.exe` | 10 ms |
+
+The crawl scope has `file:///C:\  include=1` — the whole drive is nominally
+indexed, which is why Windows' own Start menu finds the `Programming` *folder*.
+But `WorkingSetRules` also carries `include=0` for `Programming\SELF`,
+`Programming\pitchr`, `Programming\NSE\*`, `Programming\Gigs\*`,
+`Programming\MIT\*` and dozens more, so **not one source file of this repository
+is in the Windows index**. Searching `takyon` in the Start menu returns the
+installed build on `D:\` and nothing from the tree it was built from.
+
+Two conclusions, both load-bearing for v0.7:
+
+1. **Windows Search covering a directory is not something Takyon can rely on**,
+   even on a machine where the whole drive is in scope. Per-folder exclusions are
+   invisible until a query comes back empty, so "the OS already indexes it" is not
+   a property any default can be built on. If code should be findable, Takyon has
+   to walk it.
+2. **The fallback cannot sit on the fast path.** Those queries took 10, 12, 26 and
+   72 ms against a 20 ms p95 budget, on a warm service answering trivial filters.
+
+A default-on fallback would also have been *worse* than none here: it returns some
+results, so it reads as working, and the gap is never noticed.

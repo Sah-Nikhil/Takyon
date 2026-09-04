@@ -23,6 +23,7 @@ pub mod frecency;
 pub mod hotkey;
 pub mod icons;
 pub mod identity;
+pub mod index;
 pub mod launch;
 pub mod prefs;
 pub mod query;

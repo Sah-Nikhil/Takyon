@@ -306,12 +306,21 @@ and the process lifetime.
 
 **Goal:** fast, scoped file search with no elevation and no service (ADR-0007).
 
-- [ ] `FileIndex` trait; unelevated parallel directory walk over curated roots
-- [ ] Memory-mapped inverted index on disk; mmap at boot, never re-walk at startup
+Delivered in three slices — the index offline, then keeping it true, then the
+surface. See the plan for what each covers and why.
+
+**Slice 1 landed.** Measured on a release build against this machine's real roots:
+26,844 entries, a **916 ms** walk against a 60 s budget, a **2.5 MB** index against
+the ~150 MB TBC-0005 watches for, and a query worst case of **568 µs** against the
+20 ms p95 target. Three of the four exit criteria are met; the fourth — a file
+created one second ago is findable — needs the watchers in slice 2.
+
+- [x] `FileIndex` trait; unelevated parallel directory walk over curated roots. Reparse points are indexed but never descended, or an unbounded-depth walk cycles through the first junction it meets
+- [x] Memory-mapped inverted index on disk; mmap at boot, never re-walk at startup. Generation-named files, because Windows will not replace a file that is still mapped
 - [ ] `ReadDirectoryChangesW` watchers per root for live updates
 - [ ] **Watcher-overflow detection** (`ERROR_NOTIFY_ENUM_DIR`) triggering a scoped rescan of the affected subtree, with an index generation counter so a stale index is never silently served
-- [ ] Default roots (Desktop, Documents, Downloads, code dirs) + user-editable roots and exclusions in settings; skip `node_modules`, `.git`, `AppData` by default
-- [ ] Windows Search fallback for locations outside the walked roots
+- [ ] Default roots (Desktop, Documents, Downloads, code dirs) + user-editable roots and exclusions in settings; skip `node_modules`, `.git`, `AppData` by default. **Defaults done, settings UI is slice 3.** The code root is probed rather than hardcoded, and overlapping roots are folded together — OneDrive redirection makes Documents a child of OneDrive on most machines, and both walked is every file indexed twice
+- [ ] Windows Search fallback for locations outside the walked roots — **built in this phase, behind a settings toggle, default off.** Measured: it returns zero rows for `C:\Programming\SELF` on a machine whose whole C: drive is in crawl scope, and its queries run 10–72 ms against a 20 ms budget. On by default it would read as working and hide the gap
 - [ ] `!e` Mode: filenames and folder names, actions for open / reveal in Explorer / copy path
 - [ ] Optional setting: surface file Entries Bangless too (default off, always below apps)
 
