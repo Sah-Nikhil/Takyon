@@ -263,6 +263,82 @@ fn v0_7_measure_what_boot_costs_before_the_hotkey() {
     println!("total on the startup path: {} us", roots_us + load_us);
 }
 
+/// Does a real `!e` hit actually resolve to something openable?
+///
+/// Drives the **activation** path, not the search path: `!e` finds a name, but
+/// opening it goes through `target_for`, which turns an id back into a
+/// `LaunchTarget` and checks the file is still there. Copy path is the one action
+/// that exercises all of that and opens no window — if it resolves, Open and
+/// Reveal resolve, because the three share the lookup.
+///
+/// `TAKYON_OPEN_NEEDLES` names what to try, comma-separated.
+#[test]
+#[ignore]
+fn v0_7_real_hits_resolve_to_openable_targets() {
+    use takyon_lib::actions;
+    use takyon_lib::entry::EntryId;
+    use takyon_lib::frecency::Frecency;
+    use takyon_lib::icons::IconStore;
+    use takyon_lib::query::Pipeline;
+    use takyon_lib::sources::apps::AppSource;
+    use takyon_lib::sources::files::FileSource;
+    use takyon_lib::sources::recents::RecentsSource;
+    use takyon_lib::sources::system::SystemSource;
+
+    let temp = TempDir::new("index-open");
+    let index = std::sync::Arc::new(WalkIndex::load(
+        temp.path().join("index"),
+        roots::defaults(),
+    ));
+    index.rebuild().expect("the index writes");
+
+    let frecency = std::sync::Arc::new(Frecency::open(None).expect("in-memory usage db"));
+    let pipeline = Pipeline::new(
+        std::sync::Arc::new(AppSource::new()),
+        std::sync::Arc::new(RecentsSource::new()),
+        std::sync::Arc::new(SystemSource::new()),
+        std::sync::Arc::new(IconStore::new(None)),
+        frecency.clone(),
+    )
+    .with_files(std::sync::Arc::new(FileSource::new(index)));
+
+    let needles =
+        std::env::var("TAKYON_OPEN_NEEDLES").unwrap_or_else(|_| "Zettelkasten,HH".into());
+    let mut checked = 0;
+    for needle in needles.split(',') {
+        let entries = pipeline.query(&format!("!e {needle}"), 1).entries;
+        println!("!e {needle} -> {} entries", entries.len());
+        for entry in entries.iter().take(3) {
+            // The id **is** the path, lowercased (§2), so this is what activation
+            // will hand the shell.
+            let path = std::path::PathBuf::from(entry.id.as_str());
+            let resolved = pipeline
+                .activate(&entry.id, actions::COPY_PATH.as_str())
+                .is_ok();
+            println!(
+                "  {:<9} {} {}",
+                if resolved { "resolves" } else { "DEAD" },
+                if path.is_dir() { "dir " } else { "file" },
+                entry.subtitle.as_deref().unwrap_or(&entry.title)
+            );
+            assert!(path.exists(), "{} does not exist", path.display());
+            assert!(resolved, "{} did not resolve to a target", path.display());
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "nothing matched, so nothing was checked");
+
+    // Copy path is deliberately **not** a recorded activation: `records_usage`
+    // allows only open, run-as-admin and open-command, because revealing or
+    // copying is something people do while looking *for* something. So the owned
+    // list stays empty here, and that is the assertion.
+    assert!(
+        pipeline.query("!e", 2).entries.is_empty(),
+        "copying a path must not enter the opened history"
+    );
+    let _ = EntryId("unused".into());
+}
+
 /// Why is a given path not findable? Walk one root and query it.
 ///
 /// `TAKYON_PROBE_ROOT` and `TAKYON_PROBE_NEEDLES` (comma-separated) drive it.

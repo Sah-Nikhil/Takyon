@@ -230,29 +230,46 @@ impl WalkIndex {
         };
         let bytes = needle.as_bytes();
         let mut hits = self.overlay_hits(needle, limit);
+
+        // Every match is scored before any is dropped. Stopping at `limit` would
+        // return the first twelve in **walk order**, so a folder named exactly
+        // `HH` loses to `hh.aac` for having been walked later — which is how a
+        // two-letter search stops answering the question that was asked.
+        let mut scored: Vec<(u32, f32)> = Vec::new();
         for id in 0..index.entry_count() {
-            if hits.len() >= limit {
-                break;
-            }
             let name = index.name(id).as_bytes();
             if name.len() >= bytes.len() && name[..bytes.len()].eq_ignore_ascii_case(bytes) {
-                let path = index.path(id);
-                if self.is_removed(&path) {
-                    continue;
-                }
-                hits.push(FileHit {
-                    is_dir: index.is_dir(id),
+                scored.push((
+                    id,
                     // Exact name or prefix, borrowing the ladder's own two rungs
                     // so a short answer sorts against a long one consistently.
-                    score: if name.len() == bytes.len() {
+                    if name.len() == bytes.len() {
                         rank::TIER_EXACT_NAME
                     } else {
                         rank::TIER_NAME_PREFIX
                     },
-                    path,
-                });
+                ));
             }
         }
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        scored.truncate(limit * 4);
+
+        hits.extend(scored.into_iter().filter_map(|(id, score)| {
+            let path = index.path(id);
+            if self.is_removed(&path) {
+                return None;
+            }
+            Some(FileHit {
+                is_dir: index.is_dir(id),
+                score,
+                path,
+            })
+        }));
+        hits.truncate(limit);
         hits
     }
 
@@ -577,6 +594,32 @@ mod tests {
         assert_eq!(short.len(), 1, "bangs.rs starts with ba");
         assert!(short[0].path.ends_with("bangs.rs"));
         assert!(!index.search("ban", 10).is_empty());
+
+        let _ = std::fs::remove_dir_all(&tree);
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// An exact name beats a longer one that merely starts with the needle, and
+    /// it beats it wherever the walk happened to reach each.
+    ///
+    /// `HH` the folder against `hh.aac` the file: the folder is walked later on
+    /// the real machine, so a scan that stopped at the limit never saw it.
+    #[test]
+    fn v0_7_a_short_query_ranks_an_exact_name_first() {
+        let (tree, store, roots) = fixture("short-rank");
+        // Written after the others, so the exact match is late in walk order.
+        for n in 0..30 {
+            std::fs::write(tree.join(format!("re{n}.md")), "x").unwrap();
+        }
+        std::fs::create_dir_all(tree.join("re")).unwrap();
+
+        let index = WalkIndex::load(store.clone(), roots);
+        index.rebuild().unwrap();
+
+        let hits = index.search("re", 5);
+        assert!(!hits.is_empty());
+        assert!(hits[0].path.ends_with("re"), "got {:?}", hits[0].path);
+        assert!(hits[0].is_dir);
 
         let _ = std::fs::remove_dir_all(&tree);
         let _ = std::fs::remove_dir_all(&store);

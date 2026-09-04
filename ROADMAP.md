@@ -344,12 +344,26 @@ Files also gained a substring rung the application ladder does not have. `!e FC 
 returned nothing for `EA SPORTS FC 26`: name-prefix wants the start of the name,
 word-prefix compares whole words, and a phrase in the middle clears neither.
 
+**Two more bugs the whole-drive scope surfaced**, both found by driving real paths
+rather than by a test:
+
+- **Short queries were truncated by walk order, not by score.** `!e HH` returned
+  `hh.aac` from Downloads and never the three folders named exactly `HH`, because
+  the scan stopped at the limit before reaching them. It now scores every match
+  and cuts afterwards, the same fix the trigram path needed
+- **`copy_to_clipboard` had no retry**, so a second Copy path in quick succession
+  failed silently. The Windows clipboard is one global lock and `OpenClipboard`
+  fails outright while another process holds it — and Takyon races *itself*, since
+  `clips::watch` opens the clipboard on every change notification. Ten attempts,
+  10 ms apart. A v0.2 bug that `!e` made reachable by putting Copy path in front
+  of every file
+
 - [x] `FileIndex` trait; unelevated parallel directory walk over curated roots. Reparse points are indexed but never descended, or an unbounded-depth walk cycles through the first junction it meets
 - [x] Memory-mapped inverted index on disk; mmap at boot, never re-walk at startup. Generation-named files, because Windows will not replace a file that is still mapped
 - [x] `ReadDirectoryChangesW` watchers per root for live updates. Deltas land in an in-memory overlay rather than rewriting a 2.5 MB file per event; a query reads mapped hits minus deletions plus additions, and a rebuild folds the overlay back in
 - [x] **Watcher-overflow detection** triggering a scoped rescan of the affected subtree, with an index generation counter so a stale index is never silently served. `Stale` is set **before** the rescan, so a rescan that cannot run leaves the index saying so rather than reporting Ready — there is a test for exactly that ordering
 - [x] Default roots + user-editable roots and exclusions in settings; skip `node_modules`, `.git`, `AppData` by default. **Scope changed after the phase's own trigger fired**: the default is now every fixed drive, not curated folders, because three separate top-level folders a user could see in Explorer were unfindable. 309,802 entries, 2.3 s, 24.6 MB against budgets of 60 s and ~150 MB. See TBC-0005's second amendment
-- [ ] Windows Search fallback for locations outside the walked roots — **built in this phase, behind a settings toggle, default off.** Measured: it returns zero rows for `C:\Programming\SELF` on a machine whose whole C: drive is in crawl scope, and its queries run 10–72 ms against a 20 ms budget. On by default it would read as working and hide the gap
+- [x] Windows Search fallback for locations outside the walked roots — **built, behind a settings toggle, default off.** Measured: it returns zero rows for `C:\Programming\SELF` on a machine whose whole C: drive is in crawl scope, and its queries run 10–72 ms against a 20 ms budget. On by default it would read as working and hide the gap
 - [x] `!e` Mode: filenames and folder names, actions for open / reveal in Explorer / copy path. An empty `!e` is its own state, not nothing — it lists what Takyon has opened ([TBC-0010](./docs/tbc/0010-takyon-owned-recents.md)), which is the first thing that table can answer
 - [x] Optional setting: surface file Entries Bangless too (default off, always below apps). The Bang is unaffected by it: `!e` is the door, this is the setting
 - [x] **A recents list Takyon owns** — one `opened` table in `frecency.db`, written from `record_activation`, existence-checked on read (ADR-0013) and capped at 100. The Settings control that clears it ships in the same phase, which TBC-0010 makes a condition of shipping the list at all
