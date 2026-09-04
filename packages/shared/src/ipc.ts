@@ -159,6 +159,22 @@ export type UiSize = "small" | "default" | "large";
  */
 export type Placement = "cursor" | "primary";
 
+/**
+ * One application as the Applications page lists it (v0.7).
+ *
+ * Keyed by application rather than by alias, unlike `AliasRow`: an alias is
+ * created *on* an application, so the list has to show the ones without any.
+ */
+export interface AppAliasRow {
+  /** The Entry id. Opaque; the UI passes it back and never parses it. */
+  id: string;
+  title: string;
+  /** Path or store, shown to tell two same-named applications apart. */
+  subtitle?: string;
+  /** Every alias pointing here. Usually zero or one; the store allows more. */
+  aliases: string[];
+}
+
 /** One alias and what it points at, for the Applications page (v0.6). */
 export interface AliasRow {
   alias: string;

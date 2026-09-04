@@ -265,13 +265,9 @@ fn v0_7_measure_what_boot_costs_before_the_hotkey() {
 
 /// Does a real `!e` hit actually resolve to something openable?
 ///
-/// Drives the **activation** path, not the search path: `!e` finds a name, but
-/// opening it goes through `target_for`, which turns an id back into a
-/// `LaunchTarget` and checks the file is still there. Copy path is the one action
-/// that exercises all of that and opens no window — if it resolves, Open and
-/// Reveal resolve, because the three share the lookup.
-///
-/// `TAKYON_OPEN_NEEDLES` names what to try, comma-separated.
+/// Drives **activation**, not search: opening goes through `target_for`, which
+/// turns an id back into a `LaunchTarget` and checks the file is there. Copy path
+/// exercises that and opens no window. `TAKYON_OPEN_NEEDLES` sets the needles.
 #[test]
 #[ignore]
 fn v0_7_real_hits_resolve_to_openable_targets() {

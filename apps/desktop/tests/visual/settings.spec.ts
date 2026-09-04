@@ -48,6 +48,78 @@ test("a tier-two page is one click away and renders its own controls", async ({ 
 });
 
 /**
+ * The half v0.6 described as done and did not build: **creating** an alias.
+ * `docs/tbd/v0.3.md` §3 was marked closed with only the review-and-delete side
+ * shipped, so the only way to make one was an `INSERT` by hand.
+ */
+test("an alias can be created on an application that has none", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  const field = page.getByRole("button", { name: "Alias for Notepad" });
+  await expect(field).toHaveText("Add alias");
+  await field.click();
+
+  await page.getByRole("textbox", { name: "Alias for Notepad" }).fill("np");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("button", { name: "Alias for Notepad" })).toHaveText("np");
+  await expect(page).toHaveScreenshot("settings-applications-alias.png");
+});
+
+/** Editing is the same field, and the old name must not survive the rename. */
+test("an existing alias can be renamed and cleared", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await page.getByRole("button", { name: "Alias for Google Chrome" }).click();
+  await page.getByRole("textbox", { name: "Alias for Google Chrome" }).fill("gc");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toHaveText(
+    "gc",
+  );
+
+  // Emptying the field removes it rather than leaving an unnamed rule behind.
+  await page.getByRole("button", { name: "Alias for Google Chrome" }).click();
+  await page.getByRole("textbox", { name: "Alias for Google Chrome" }).fill("");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Alias for Google Chrome" })).toHaveText(
+    "Add alias",
+  );
+});
+
+/** Escape abandons the edit, which is what Escape means everywhere else here. */
+test("escape leaves an alias as it was", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await page.getByRole("button", { name: "Alias for File Explorer" }).click();
+  await page.getByRole("textbox", { name: "Alias for File Explorer" }).fill("zzz");
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByRole("button", { name: "Alias for File Explorer" })).toHaveText(
+    "explorer",
+  );
+});
+
+/** ~1900 applications is more list than anyone scrolls. The filter is the way in. */
+test("the application list filters by name and by alias", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Applications" }).click();
+
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("adobe");
+  await expect(page.getByRole("button", { name: "Alias for Adobe Premiere Pro" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alias for Notepad" })).toHaveCount(0);
+
+  // An alias is searchable too: you remember the shorthand, not the product name.
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("prem");
+  await expect(page.getByRole("button", { name: "Alias for Adobe Premiere Pro" })).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Filter applications" }).fill("qqqq");
+  await expect(page.getByText("No application matches")).toBeVisible();
+});
+
+/**
  * v0.7's page. The entry count is a control here, not decoration: TBC-0005's
  * triggers are both stated in it, and neither is visible without the number.
  */

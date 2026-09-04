@@ -160,6 +160,19 @@ impl AppSource {
     }
 
     /// Look up one App by its id, for launching and for the action menu.
+    /// Every application, title-sorted, for the Settings list.
+    ///
+    /// The whole list, not a page: read once on mount, off every latency budget,
+    /// and paging an in-memory `Vec` is machinery for a scroll position.
+    pub fn all(&self) -> Vec<App> {
+        let Ok(apps) = self.apps.read() else {
+            return Vec::new();
+        };
+        let mut all = apps.clone();
+        all.sort_by_key(|a| a.title.to_lowercase());
+        all
+    }
+
     pub fn find(&self, id: &EntryId) -> Option<App> {
         self.apps.read().ok()?.iter().find(|a| &a.id == id).cloned()
     }

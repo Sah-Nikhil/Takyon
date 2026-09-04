@@ -369,6 +369,75 @@ fn aliases(
     rows
 }
 
+/// One application as the Settings list draws it, with the aliases it has.
+///
+/// Not `AliasRow` inverted: that one is keyed by alias and lists only what has
+/// one. This is keyed by application and lists everything, because an alias is
+/// created *on* an application and you have to see the ones without.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppAliasRow {
+    id: String,
+    title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subtitle: Option<String>,
+    aliases: Vec<String>,
+}
+
+/// Every application and its aliases, for the Applications page.
+///
+/// The whole list in one response — 1891 rows here. Read once on mount, off
+/// every latency budget, and a page cursor would be machinery for a scrollbar.
+#[tauri::command]
+fn application_rows(
+    store: tauri::State<'_, Arc<aliases::AliasStore>>,
+    apps: tauri::State<'_, Arc<AppSource>>,
+) -> Vec<AppAliasRow> {
+    let by_target = store.by_target();
+    apps.all()
+        .into_iter()
+        .map(|app| AppAliasRow {
+            aliases: by_target.get(&app.id).cloned().unwrap_or_default(),
+            id: app.id.0,
+            title: app.title,
+            subtitle: app.subtitle,
+        })
+        .collect()
+}
+
+/// Replace every alias pointing at one application, in one call.
+///
+/// Set-shaped rather than one-at-a-time: the editor is a text field holding the
+/// whole list, so a rename is a removal and an addition that must not be able to
+/// half-apply and leave the old name behind.
+#[tauri::command]
+fn set_aliases_for(
+    target: String,
+    aliases: Vec<String>,
+    store: tauri::State<'_, Arc<aliases::AliasStore>>,
+    apps: tauri::State<'_, Arc<AppSource>>,
+) -> Result<(), String> {
+    let target = EntryId(target);
+    let wanted: Vec<String> = aliases
+        .iter()
+        .map(|a| a.trim().to_lowercase())
+        .filter(|a| !a.is_empty())
+        .collect();
+
+    let by_target = store.by_target();
+    let existing = by_target.get(&target).cloned().unwrap_or_default();
+    for gone in existing.iter().filter(|a| !wanted.contains(a)) {
+        store.remove(gone).map_err(|e| e.to_string())?;
+    }
+    for added in wanted.iter().filter(|a| !existing.contains(a)) {
+        store.set(added, &target).map_err(|e| e.to_string())?;
+    }
+    // In place, so the alias works on the next keystroke rather than the next
+    // launch — which is what `apply_aliases` was built for (v0.3 tbd §3).
+    apps.apply_aliases(&store);
+    Ok(())
+}
+
 /// Create or delete an alias, then re-apply the table (v0.3 tbd §3).
 ///
 /// `apply_aliases` is in-place and needs no re-walk, which is why the editor can
@@ -563,6 +632,8 @@ pub fn run() {
             clip_blocklist,
             set_clip_blocked,
             aliases,
+            application_rows,
+            set_aliases_for,
             set_alias,
             open_crash_logs
         ])

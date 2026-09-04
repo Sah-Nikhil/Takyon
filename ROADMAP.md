@@ -368,6 +368,7 @@ rather than by a test:
 - [x] Optional setting: surface file Entries Bangless too (default off, always below apps). The Bang is unaffected by it: `!e` is the door, this is the setting
 - [x] **A recents list Takyon owns** — one `opened` table in `frecency.db`, written from `record_activation`, existence-checked on read (ADR-0013) and capped at 100. The Settings control that clears it ships in the same phase, which TBC-0010 makes a condition of shipping the list at all
 - [x] **A File Search settings page**, with the live entry count beside the roots. TBC-0005's two triggers are both stated in that number and neither is visible without it
+- [x] **Aliases can finally be created**, which v0.6 claimed and did not build. The Applications page lists every application with an editable alias field, filterable by title or by alias; [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §3 carries what was actually shipped when and why the record was wrong
 
 **Exit criteria:** `!e` returns in under 20 ms at p95, the initial walk completes
 in under 60 s in the background without competing with login, the index survives a

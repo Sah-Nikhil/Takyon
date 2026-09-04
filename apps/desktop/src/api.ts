@@ -21,6 +21,7 @@ import {
   EVENT_SHOW,
   type Action,
   type AliasRow,
+  type AppAliasRow,
   type Placement,
   type Theme,
   type UiSize,
@@ -51,13 +52,7 @@ export const openSettings = () =>
 export const hotkeyStatus = () =>
   inTauri ? invoke<HotkeyStatus>("hotkey_status") : mock.hotkeyStatus();
 
-/**
- * What the file index can promise right now (§5 task 7).
- *
- * Its own call rather than a field on `QueryResult`: the state changes on the
- * walk's schedule, not the user's, so riding the keystroke path would ship the
- * same three words on every keypress.
- */
+/** Whether file Entries join Bangless results (v0.7 task 11). Default off. */
 export const setFilesBangless = (on: boolean) =>
   inTauri ? invoke<void>("set_files_bangless", { on }) : mock.setFilesBangless(on);
 
@@ -77,6 +72,13 @@ export const openedCount = () =>
 export const clearOpened = () =>
   inTauri ? invoke<number>("clear_opened") : mock.clearOpened();
 
+/**
+ * What the file index can promise right now (§5 task 7).
+ *
+ * Its own call rather than a field on `QueryResult`: the state changes on the
+ * walk's schedule, not the user's, so riding the keystroke path would ship the
+ * same three words on every keypress.
+ */
 export const fileIndexStatus = () =>
   inTauri
     ? invoke<FileIndexReport>("file_index_status")
@@ -184,7 +186,21 @@ export const setClipBlocked = (exe: string, blocked: boolean) =>
 export const aliases = () =>
   inTauri ? invoke<AliasRow[]>("aliases") : mock.aliases();
 
-/** Create an alias, or delete it by passing `null` as the target. */
+/** Every application and its aliases, for the Applications page. */
+export const applicationRows = () =>
+  inTauri ? invoke<AppAliasRow[]>("application_rows") : mock.applicationRows();
+
+/**
+ * Replace every alias pointing at one application.
+ *
+ * Set-shaped rather than one at a time: the field holds the whole list, so a
+ * rename is a removal and an addition that must not half-apply.
+ */
+export const setAliasesFor = (target: string, aliases: string[]) =>
+  inTauri
+    ? invoke<void>("set_aliases_for", { target, aliases })
+    : mock.setAliasesFor(target, aliases);
+
 export const setAlias = (alias: string, target: string | null) =>
   inTauri ? invoke<void>("set_alias", { alias, target }) : mock.setAlias(alias, target);
 

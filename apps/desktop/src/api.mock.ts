@@ -15,6 +15,7 @@
 import type {
   Action,
   AliasRow,
+  AppAliasRow,
   CalcPolicy,
   ClipRetention,
   ClipRow,
@@ -359,6 +360,23 @@ let aliasRows: AliasRow[] = [
 ];
 
 /**
+ * Applications for the alias editor, title-sorted as Rust sorts them.
+ *
+ * Deliberately mixed: two with an alias, one with two, and several with none,
+ * because the empty state is the row the editor exists to fill.
+ */
+let appRows: AppAliasRow[] = [
+  { id: "app:photoshop", title: "Adobe Photoshop 2022", subtitle: "C:\\Program Files\\Adobe\\Photoshop.exe", aliases: ["ps"] },
+  { id: "app:premiere", title: "Adobe Premiere Pro", subtitle: "C:\\Program Files\\Adobe\\Premiere.exe", aliases: ["prem", "pr"] },
+  { id: "app:calculator", title: "Calculator", subtitle: "Store app", aliases: [] },
+  { id: "app:explorer", title: "File Explorer", subtitle: "C:\\Windows\\explorer.exe", aliases: ["explorer"] },
+  { id: "app:firefox", title: "Firefox", subtitle: "C:\\Program Files\\Mozilla Firefox\\firefox.exe", aliases: [] },
+  { id: "app:chrome", title: "Google Chrome", subtitle: "C:\\Program Files\\Google\\Chrome\\chrome.exe", aliases: ["chrome"] },
+  { id: "app:notepad", title: "Notepad", subtitle: "C:\\Windows\\System32\\notepad.exe", aliases: [] },
+  { id: "app:code", title: "Visual Studio Code", subtitle: "C:\\Program Files\\Microsoft VS Code\\Code.exe", aliases: [] },
+];
+
+/**
  * Stand in for the other window having written a preference.
  *
  * The two windows share `settings.db` and nothing else, so this is what "Settings
@@ -612,6 +630,13 @@ export const mock = {
     return [...blocked];
   },
   aliases: async () => [...aliasRows],
+  applicationRows: async (): Promise<AppAliasRow[]> => appRows,
+  setAliasesFor: async (target: string, next: string[]) => {
+    const wanted = next.map((a) => a.trim().toLowerCase()).filter(Boolean);
+    appRows = appRows.map((row) =>
+      row.id === target ? { ...row, aliases: wanted } : row,
+    );
+  },
   setAlias: async (alias: string, target: string | null) => {
     const name = alias.trim();
     if (!name) throw new Error("an alias needs a name");
