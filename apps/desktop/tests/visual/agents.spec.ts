@@ -86,17 +86,43 @@ test("a follow-up continues in the same window", async ({ page }) => {
 });
 
 /**
- * ADR-0017's visible half. A signed-out Agent gets one sentence carrying the
- * command, and no row to press.
+ * The preference order falling through. First choice is signed out, so `!c`
+ * reaches the next one that can answer, and names what it skipped.
  */
-test("a signed-out agent says what to run instead of asking", async ({ page }) => {
+test("a signed-out first choice falls through to the next agent", async ({ page }) => {
   const input = await open(page);
   // Set here rather than in Settings: navigating between the two windows is a
   // page load, and the mock's copy of the preference dies with the page.
   await page.evaluate(() => {
     (
-      window as unknown as { __takyon_mock: { setAskAgent: (a: string) => void } }
-    ).__takyon_mock.setAskAgent("opencode");
+      window as unknown as { __takyon_mock: { setAskOrder: (o: string[]) => void } }
+    ).__takyon_mock.setAskOrder(["opencode", "claude", "codex"]);
+  });
+  await input.fill("!c why is the sky blue");
+  await expect(page.getByText("Ask Claude Code")).toBeVisible();
+  await expect(page.getByText("opencode unavailable")).toBeVisible();
+
+  await input.press("Enter");
+  await expect(page.getByText("The sky is blue because of Rayleigh scattering.")).toBeVisible();
+});
+
+/**
+ * ADR-0017's visible half. With nothing left to fall through to, `!c` gets one
+ * sentence carrying the command, and no row to press.
+ */
+test("no agent left to ask says what to run instead of asking", async ({ page }) => {
+  const input = await open(page);
+  await page.evaluate(() => {
+    const mock = (
+      window as unknown as {
+        __takyon_mock: {
+          setAskOrder: (o: string[]) => void;
+          setAgentSignedOut: (k: string) => void;
+        };
+      }
+    ).__takyon_mock;
+    mock.setAgentSignedOut("claude");
+    mock.setAskOrder(["opencode", "claude", "codex"]);
   });
   await input.fill("!c why is the sky blue");
   await expect(page.getByRole("alert")).toContainText("opencode providers login");
@@ -119,6 +145,42 @@ test("the agents page shows one card per agent", async ({ page }) => {
   await expect(page.getByRole("button", { name: /sign in/i })).toHaveCount(0);
 
   await expect(page).toHaveScreenshot("settings-agents.png");
+});
+
+/**
+ * The switch is what lets `!c` name its Agent on the first keystroke: a
+ * switched-off Agent is skipped without being probed.
+ */
+test("an agent can be switched off, and !c stops reaching it", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+
+  const claude = page.getByRole("switch", { name: "Use Claude Code for !c" });
+  await expect(claude).toHaveAttribute("aria-checked", "true");
+  await claude.click();
+  await expect(claude).toHaveAttribute("aria-checked", "false");
+  // Off replaces the whole status line, and takes the pickers with it: a model
+  // locked to an Agent `!c` will never reach means nothing.
+  await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Model for Claude Code")).toHaveCount(0);
+
+  await expect(page).toHaveScreenshot("settings-agents-off.png");
+});
+
+/** Ranking is buttons, not a drag, so the order is reachable from the keyboard. */
+test("the preference order can be reordered from the keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+
+  // Claude leads, so it cannot go up; opencode is last and cannot go down.
+  await expect(page.getByRole("button", { name: "Move Claude Code up" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move opencode down" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Move Codex up" }).click();
+  await expect(page.getByRole("button", { name: "Move Codex up" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move Claude Code up" })).toBeEnabled();
 });
 
 /**

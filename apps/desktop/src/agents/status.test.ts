@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentSnapshot } from "@takyon/shared";
 
-import { agentSummary, blockedReason, canAsk, versionLabel } from "./status";
+import { agentSummary, blockedReason, canAsk, pickAgent, versionLabel } from "./status";
 
 const base: AgentSnapshot = {
   kind: "claude",
@@ -91,10 +91,42 @@ describe("blockedReason", () => {
     );
   });
 
+  /// Unprobed is not blocked: `!c` asks and the Agent's own error is the answer.
+  /// A row that swallowed Enter for three process spawns read as broken.
+  it("v0.9 does not block on an agent it has not probed yet", () => {
+    expect(blockedReason(undefined)).toBeNull();
+  });
+
   it("v0.9 names the missing command", () => {
     expect(blockedReason({ ...base, installed: false })).toBe(
       "Claude Code (`claude`) was not found on PATH.",
     );
+  });
+});
+
+describe("pickAgent", () => {
+  const snapshots: AgentSnapshot[] = [
+    { ...base, kind: "claude" },
+    { ...base, kind: "codex", label: "Codex", binary: "codex", installed: false },
+    { ...base, kind: "opencode", label: "opencode", binary: "opencode", signIn: { status: "out" } },
+  ];
+
+  it("v0.9 takes the first preference that can answer", () => {
+    expect(pickAgent(["opencode", "codex", "claude"], snapshots)).toBe("claude");
+    expect(pickAgent(["claude", "codex", "opencode"], snapshots)).toBe("claude");
+  });
+
+  /// The row has to name someone, and the first preference is the honest guess.
+  it("v0.9 falls back to first preference while probing and when none can", () => {
+    expect(pickAgent(["codex", "claude"], null)).toBe("codex");
+    const allOut = snapshots.map((s) => ({ ...s, signIn: { status: "out" as const } }));
+    expect(pickAgent(["opencode", "claude", "codex"], allOut)).toBe("opencode");
+  });
+
+  /// Nothing switched on is the one state with no Agent to name.
+  it("v0.9 has nothing to pick when every agent is switched off", () => {
+    expect(pickAgent([], snapshots)).toBeNull();
+    expect(pickAgent([], null)).toBeNull();
   });
 });
 

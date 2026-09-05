@@ -428,9 +428,15 @@ export const agentSnapshots = () =>
 export const agentSettings = () =>
   inTauri ? invoke<AgentSettings>("agent_settings") : mock.agentSettings();
 
-/** Which Agent `!c` reaches. Rust caches it for the keystroke path. */
-export const setAskAgent = (agent: AgentKind) =>
-  inTauri ? invoke<void>("set_ask_agent", { agent }) : mock.setAskAgent(agent);
+/** The order `!c` tries Agents in. Rust caches it for the keystroke path. */
+export const setAskOrder = (order: AgentKind[]) =>
+  inTauri ? invoke<void>("set_ask_order", { order }) : mock.setAskOrder(order);
+
+/** Switch one Agent on or off. `!c` skips a switched-off Agent, unprobed. */
+export const setAskEnabled = (agent: AgentKind, enabled: boolean) =>
+  inTauri
+    ? invoke<void>("set_ask_enabled", { agent, enabled })
+    : mock.setAskEnabled(agent, enabled);
 
 /** Where a Turn runs. Blank restores the Scratch directory (ADR-0017). */
 export const setAskCwd = (path: string) =>

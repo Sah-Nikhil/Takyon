@@ -66,8 +66,14 @@ pub struct QueryResult {
 pub struct Ask {
     /// The question, trimmed. Empty means the Bang alone was typed.
     pub query: String,
-    /// Which Agent would answer, from `agents.default`.
-    pub agent: crate::agents::AgentKind,
+    /// Which Agent answers. `None` when every Agent is switched off, which is
+    /// the one state `!c` has nothing to offer.
+    pub agent: Option<crate::agents::AgentKind>,
+    /// The switched-on Agents in preference order (`agents.order`). Preference
+    /// only, and no Sign-in state: reading that costs three process spawns, and
+    /// this is built on the keystroke path. The Palette refines the choice once
+    /// its own probe lands.
+    pub order: Vec<crate::agents::AgentKind>,
 }
 
 
@@ -122,10 +128,10 @@ pub struct Pipeline {
     /// keystroke, so atomic rather than behind the Stability mutex.
     clips_bang: std::sync::atomic::AtomicBool,
     recents_on: std::sync::atomic::AtomicBool,
-    /// Which Agent `!c` reaches (`agents.default`). Cached from `settings.db` for
+    /// The switched-on Agents in preference order. Cached from `settings.db` for
     /// the same reason `clips_bang` is: it is read on the keystroke path, which
     /// must not touch SQLite.
-    ask_agent: std::sync::Mutex<crate::agents::AgentKind>,
+    ask_order: std::sync::Mutex<Vec<crate::agents::AgentKind>>,
     sources: Vec<Arc<dyn Source>>,
     /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
     lock: std::sync::Mutex<Option<StabilityLock>>,
@@ -168,7 +174,7 @@ impl Pipeline {
             clips: None,
             clips_bang: std::sync::atomic::AtomicBool::new(true),
             recents_on: std::sync::atomic::AtomicBool::new(true),
-            ask_agent: std::sync::Mutex::new(crate::agents::AgentKind::Claude),
+            ask_order: std::sync::Mutex::new(crate::agents::AgentKind::ALL.to_vec()),
             frecency,
             sources,
             lock: std::sync::Mutex::new(None),
@@ -190,18 +196,18 @@ impl Pipeline {
         self.clips_bang.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Which Agent `!c` reaches. Written by Settings, read every keystroke.
-    pub fn set_ask_agent(&self, agent: crate::agents::AgentKind) {
-        if let Ok(mut held) = self.ask_agent.lock() {
-            *held = agent;
+    /// The Agents `!c` walks. Written by Settings, read every keystroke.
+    pub fn set_ask_order(&self, order: Vec<crate::agents::AgentKind>) {
+        if let Ok(mut held) = self.ask_order.lock() {
+            *held = order;
         }
     }
 
-    pub fn ask_agent(&self) -> crate::agents::AgentKind {
-        self.ask_agent
+    pub fn ask_order(&self) -> Vec<crate::agents::AgentKind> {
+        self.ask_order
             .lock()
-            .map(|held| *held)
-            .unwrap_or(crate::agents::AgentKind::Claude)
+            .map(|held| held.clone())
+            .unwrap_or_else(|_| crate::agents::AgentKind::ALL.to_vec())
     }
 
     /// Whether the Recents Source contributes Entries (v0.6's Launcher page).
@@ -261,7 +267,7 @@ impl Pipeline {
             Route::Files(needle) => return self.files_result(needle, seq),
             // No toggle either: `!c` is the only door to an Agent, and which
             // Agent answers is the setting (`docs/plans/bang-registry.md`).
-            Route::Ask(question) => return self.ask_result(question, seq, self.ask_agent()),
+            Route::Ask(question) => return self.ask_result(question, seq, self.ask_order()),
             Route::Bangless(line) => line,
         };
 
@@ -320,12 +326,19 @@ impl Pipeline {
     ///
     /// No Sources, no Frecency, no Stability lock: there is nothing to rank. The
     /// frontend takes it from here and calls `agent_ask`.
-    fn ask_result(&self, question: &str, seq: u64, agent: crate::agents::AgentKind) -> QueryResult {
+    fn ask_result(
+        &self,
+        question: &str,
+        seq: u64,
+        order: Vec<crate::agents::AgentKind>,
+    ) -> QueryResult {
+        let agent = order.first().copied();
         QueryResult {
             seq,
             ask: Some(Ask {
                 query: question.to_string(),
                 agent,
+                order,
             }),
             // Reuses the flag that reserves a status row in the *native* window,
             // exactly as `files_result` does: `!c` has no Entries, and without a

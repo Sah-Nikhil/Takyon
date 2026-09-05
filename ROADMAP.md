@@ -423,8 +423,9 @@ answer with working source links, without opening a browser.
 - [x] Promotion to the Chat Surface on the first follow-up (ADR-0001), which is where tools turn on
 - [x] Chat Surface: the same launcher window showing a conversation, never a second window
 - [x] **Model and effort locked in Settings** per authenticated Agent, from that Agent's own list — the only pair a Turn can use
-- [x] Settings → Agents: one card per Agent, with its Sign-in state and its locked pair
+- [x] Settings → Agents: one row per Agent, ranked, with a switch, its Sign-in state and its locked pair
 - [x] One `!c` for all three; which Agent answers is a preference (`docs/plans/bang-registry.md`)
+- [x] **`!c` never waits on a probe** (ADR-0018): the ranked order and the switches are stored preferences, so the Palette names its Agent on the first keystroke and Enter starts a Turn before any Agent has been probed
 
 **Exit criteria:** a question answers inline in the Palette, a follow-up promotes
 into a Chat Surface in the same window, and Escape goes back one step rather than

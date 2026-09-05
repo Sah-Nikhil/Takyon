@@ -23,8 +23,15 @@ import {
 import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
 import { refresh } from "@/prefs";
-import type { Ask, AgentSnapshot, FileIndexReport, HotkeyStatus, ViewKind } from "@takyon/shared";
-import { agentSummary, blockedReason, canAsk } from "@/agents/status";
+import type {
+  Ask,
+  AgentKind,
+  AgentSnapshot,
+  FileIndexReport,
+  HotkeyStatus,
+  ViewKind,
+} from "@takyon/shared";
+import { AGENT_LABELS, agentSummary, blockedReason, pickAgent } from "@/agents/status";
 import { AskView } from "./AskView";
 import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
@@ -83,8 +90,11 @@ export function Palette() {
     three process spawns (v0.9 Traps).
    */
   const [agents, setAgents] = useState<AgentSnapshot[] | null>(null);
-  /** The question the Ask view is answering. Null when it is not open. */
-  const [asking, setAsking] = useState<Ask | null>(null);
+  /**
+   * The question the Ask view is answering, and who is answering it. Null when
+   * the view is closed. Resolved at Enter, so a later probe cannot move it.
+   */
+  const [asking, setAsking] = useState<{ agent: AgentKind; query: string } | null>(null);
   const filesBang = value.trimStart().toLowerCase().startsWith("!e");
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -282,8 +292,14 @@ export function Palette() {
    */
   const startAsk = useCallback(() => {
     if (!ask || !ask.query) return;
-    if (!canAsk(agents?.find((a) => a.kind === ask.agent))) return;
-    setAsking(ask);
+    // The resolved Agent, not the first preference: the row already names the
+    // one that will answer, and the view must ask that same one.
+    const agent = pickAgent(ask.order, agents);
+    if (!agent) return;
+    // Refuses only on a probe that came back and said no. Before it lands the
+    // Turn goes ahead and the Agent's own error is the answer.
+    if (blockedReason(agents?.find((a) => a.kind === agent))) return;
+    setAsking({ agent, query: ask.query });
     setView("ask");
     void api.setView("ask");
   }, [ask, agents]);
@@ -429,14 +445,29 @@ export function Palette() {
     The one row `!c` shows before Enter: which Agent would answer, and whether it
     can. A signed-out Agent gets the sentence and no row to press (ADR-0017).
    */
-  const askAgent = ask ? agents?.find((a) => a.kind === ask.agent) : undefined;
-  const askBlocked = ask ? blockedReason(agents === null ? undefined : askAgent) : null;
+  const askKind = ask ? pickAgent(ask.order, agents) : null;
+  const askAgent = askKind ? agents?.find((a) => a.kind === askKind) : undefined;
+  // Amber and unpressable, in the only two states that earn it: nothing is
+  // switched on, or the probe came back and the Agent it named cannot answer.
+  // An unfinished probe is neither — `!c` asks anyway.
+  const askBlocked = !ask
+    ? null
+    : askKind === null
+      ? "No agent is switched on. Turn one on in Settings."
+      : blockedReason(askAgent);
+  const askLabel = askAgent?.label ?? (askKind ? AGENT_LABELS[askKind] : "");
+  // Named when it is not the first preference, or the row silently answers as
+  // someone else. The order is a preference, so falling through is normal.
+  const skipped = ask && askKind && askKind !== ask.order[0] ? ask.order[0] : null;
+  const askFallback = skipped
+    ? ` · ${agents?.find((a) => a.kind === skipped)?.label ?? AGENT_LABELS[skipped]} unavailable`
+    : "";
   const askNote = !ask
     ? null
     : (askBlocked ??
       (ask.query
-        ? `Ask ${askAgent?.label ?? ask.agent} — press Enter`
-        : `${askAgent?.label ?? ask.agent} · ${agentSummary(askAgent).headline}`));
+        ? `Ask ${askLabel} — press Enter${askFallback}`
+        : `${askLabel}${askAgent ? ` · ${agentSummary(askAgent).headline}` : ""}${askFallback}`));
 
   const showList =
     entries.length > 0 ||

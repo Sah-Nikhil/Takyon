@@ -44,7 +44,7 @@ let nextTurnId = 1;
  * One Agent of each state, so every card the Settings page can draw is on screen
  * at once: signed in, signed out, and not installed at all.
  */
-const AGENT_FIXTURES: AgentSnapshot[] = [
+let agentFixtures: AgentSnapshot[] = [
   {
     kind: "claude",
     label: "Claude Code",
@@ -85,7 +85,8 @@ const AGENT_FIXTURES: AgentSnapshot[] = [
 /** Split into deltas on purpose — see `agentAsk` for why one event is not enough. */
 const MOCK_ANSWER = ["The ", "sky ", "is ", "blue ", "because ", "of ", "Rayleigh ", "scattering."];
 
-let askAgent: AgentKind = "claude";
+let askOrder: AgentKind[] = ["claude", "codex", "opencode"];
+let askEnabled: Record<AgentKind, boolean> = { claude: true, codex: true, opencode: true };
 let askCwd = "";
 let askModels: Partial<Record<AgentKind, string>> = {};
 let askEfforts: Partial<Record<AgentKind, string>> = {};
@@ -102,14 +103,29 @@ function emitTurn(message: TurnMessage) {
 }
 
 /**
- * Choose the Agent `!c` reaches, without going through Settings.
+ * Rank the Agents `!c` tries, without going through Settings.
  *
  * Exposed on `window` in `main.tsx` outside Tauri. Rust persists this in
- * `settings.db`; the mock's copy dies with the page, so a test that switched
- * Agent in the Settings window would find Claude again in the Palette.
+ * `settings.db`; the mock's copy dies with the page, so a test that reordered
+ * in the Settings window would find the default order again in the Palette.
  */
-export function setAskAgent(agent: AgentKind) {
-  askAgent = agent;
+export function setAskOrder(order: AgentKind[]) {
+  askOrder = [...order];
+}
+
+/**
+ * Sign one Agent out, so a test can reach the state where nothing can answer.
+ *
+ * The fixtures leave one Agent signed in, which since the preference became an
+ * order is what stops `!c` being blocked: it falls through instead. Blocked now
+ * means every Agent is out, and this is how a test gets there.
+ */
+export function setAgentSignedOut(kind: AgentKind) {
+  agentFixtures = agentFixtures.map((snapshot) =>
+    snapshot.kind === kind
+      ? { ...snapshot, health: "warning" as const, signIn: { status: "out" as const } }
+      : snapshot,
+  );
 }
 
 /**
@@ -538,7 +554,13 @@ export const mock = {
     // only which Agent would answer and what was asked.
     const ask = askQuery(q);
     if (ask !== null) {
-      return { seq, entries: [], indexing: false, ask: { query: ask, agent: askAgent } };
+      const route = askOrder.filter((kind) => askEnabled[kind]);
+      return {
+        seq,
+        entries: [],
+        indexing: false,
+        ask: { query: ask, agent: route[0] ?? null, order: route },
+      };
     }
     // `!v` is its own view. Unlike a Bangless query, an empty one lists history
     // rather than nothing — the Mode *is* the list.
@@ -772,17 +794,21 @@ export const mock = {
       hideListeners.delete(cb);
     };
   },
-  agentSnapshots: async (): Promise<AgentSnapshot[]> => AGENT_FIXTURES,
+  agentSnapshots: async (): Promise<AgentSnapshot[]> => agentFixtures,
   agentSettings: async (): Promise<AgentSettings> => ({
-    default: askAgent,
+    order: [...askOrder],
+    enabled: { ...askEnabled },
     cwd: askCwd,
     scratch: String.raw`C:\Users\you\AppData\Local\v3sper\launcher\scratch`,
     models: { ...askModels },
     efforts: { ...askEfforts },
   }),
   agentModels: async (agent: AgentKind) => [...AGENT_MODELS[agent]],
-  setAskAgent: async (agent: AgentKind) => {
-    askAgent = agent;
+  setAskOrder: async (order: AgentKind[]) => {
+    askOrder = [...order];
+  },
+  setAskEnabled: async (agent: AgentKind, enabled: boolean) => {
+    askEnabled = { ...askEnabled, [agent]: enabled };
   },
   setAskCwd: async (path: string) => {
     askCwd = path.trim();

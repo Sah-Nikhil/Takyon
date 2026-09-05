@@ -110,6 +110,20 @@ Sign-in state, and how to run a Turn against it. One trait, one file per Agent,
 no Agent-specific branches outside them.
 _Avoid_: provider, adapter, plugin, connector, harness
 
+**Agent order**:
+The ranking of every Agent, first to last, set in Settings. `!c` asks the first
+one switched on and works down from there, so it is a preference rather than a
+choice — the second entry is what answers when the first cannot. Always holds
+every Agent exactly once, switched-off ones included.
+_Avoid_: default agent, fallback chain, priority list, provider order
+
+**Switched on**:
+Whether an Agent is one `!c` may reach at all, set by its switch in Settings.
+Distinct from Sign-in state, and the distinction is the point: this is a stored
+preference, so `!c` reads it on the keystroke, while Sign-in state costs a
+process to learn. A switched-off Agent is skipped without being probed.
+_Avoid_: enabled provider, active agent, available, connected
+
 **Locked pair**:
 The model and effort level chosen in Settings for one Agent. Every Turn uses that
 pair and nothing may override it — not a Bang, not a keystroke, not the frontend,

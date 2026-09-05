@@ -315,7 +315,14 @@ export interface QueryResult {
 export interface Ask {
   /** The question, trimmed. Empty means the Bang alone was typed. */
   query: string;
-  agent: AgentKind;
+  /** Which Agent answers. Null when every Agent is switched off. */
+  agent: AgentKind | null;
+  /**
+   * The switched-on Agents in preference order. No Sign-in state in it: knowing
+   * costs three process spawns and this is the keystroke path, so the Palette
+   * refines the choice once its own probe lands.
+   */
+  order: AgentKind[];
 }
 
 /**
@@ -480,7 +487,10 @@ export interface AgentSnapshot {
 
 /** Agent preferences, in one response for the same reason as `SettingsSnapshot`. */
 export interface AgentSettings {
-  default: AgentKind;
+  /** The preference order, first to last. Every Agent appears once. */
+  order: AgentKind[];
+  /** Which Agents are switched on. `!c` walks the order and skips the rest. */
+  enabled: Partial<Record<AgentKind, boolean>>;
   /** Empty means the Scratch directory below, never the process cwd. */
   cwd: string;
   scratch: string;

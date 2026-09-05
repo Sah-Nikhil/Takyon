@@ -18,7 +18,11 @@ use crate::prefs::{self, Prefs};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSettings {
-    pub default: AgentKind,
+    /// The preference order, first to last. Every Agent appears once, switched
+    /// off ones included — Settings ranks all of them.
+    pub order: Vec<AgentKind>,
+    /// Which Agents are switched on. `!c` walks the order and skips the rest.
+    pub enabled: std::collections::HashMap<String, bool>,
     /// Empty means the Scratch directory. Never the process cwd, which for a
     /// launcher is wherever Windows started it.
     pub cwd: String,
@@ -57,8 +61,16 @@ pub fn agent_settings(prefs: tauri::State<'_, Arc<Prefs>>) -> AgentSettings {
                 .map(|effort| (kind.as_str().to_string(), effort))
         })
         .collect();
+    let enabled = AgentKind::ALL
+        .iter()
+        .map(|kind| {
+            let on = prefs::flag(&prefs, &prefs::ask_enabled_key(*kind), true);
+            (kind.as_str().to_string(), on)
+        })
+        .collect();
     AgentSettings {
-        default: AgentKind::parse(prefs.get(prefs::ASK_AGENT).unwrap_or_default().as_str()),
+        order: super::parse_order(prefs.get(prefs::ASK_ORDER).as_deref()),
+        enabled,
         cwd: prefs.get(prefs::ASK_CWD).unwrap_or_default(),
         scratch: scratch::dir().to_string_lossy().to_string(),
         models,
@@ -75,17 +87,42 @@ pub fn agent_models(agent: AgentKind) -> Vec<String> {
     super::models_for(agent)
 }
 
-/// Choose the Agent `!c` reaches. Writes the preference and the cached copy.
+/// Rank the Agents `!c` tries. Writes the preference and the cached copy.
+///
+/// Normalised rather than trusted: a list short one Agent is a list `!c` cannot
+/// fall back through, so what is stored is always all of them, once each.
 #[tauri::command(async)]
-pub fn set_ask_agent(
-    agent: AgentKind,
+pub fn set_ask_order(
+    order: Vec<AgentKind>,
     prefs: tauri::State<'_, Arc<Prefs>>,
     pipeline: tauri::State<'_, Arc<crate::query::Pipeline>>,
 ) -> Result<(), String> {
-    pipeline.set_ask_agent(agent);
+    let order = super::normalise_order(order);
     prefs
-        .set(prefs::ASK_AGENT, agent.as_str())
-        .map_err(|e| e.to_string())
+        .set(prefs::ASK_ORDER, &super::order_to_json(&order))
+        .map_err(|e| e.to_string())?;
+    // Recomputed from what was just stored rather than from `order`, so the
+    // cached list and the switches can never disagree.
+    pipeline.set_ask_order(super::route(&prefs));
+    Ok(())
+}
+
+/// Switch one Agent on or off. Off is skipped by `!c` without being probed.
+///
+/// The switch, not Sign-in state, is what makes the Palette instant: knowing
+/// whether an Agent is signed in costs a process, and this costs a lookup.
+#[tauri::command(async)]
+pub fn set_ask_enabled(
+    agent: AgentKind,
+    enabled: bool,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+    pipeline: tauri::State<'_, Arc<crate::query::Pipeline>>,
+) -> Result<(), String> {
+    prefs
+        .set(&prefs::ask_enabled_key(agent), if enabled { "1" } else { "0" })
+        .map_err(|e| e.to_string())?;
+    pipeline.set_ask_order(super::route(&prefs));
+    Ok(())
 }
 
 /// Where a Turn runs. Blank restores the Scratch directory.

@@ -23,6 +23,10 @@ param(
     # machines this is developed on.
     [string]$Hotkey = "Ctrl+Alt+Shift+F9",
     [string]$Question = "Reply with exactly one word: ok",
+    # How long the first probe is given before the row is sampled. `!c` no
+    # longer waits for it to ask — the enabled set is a stored preference — but
+    # the row only names the Agent's own label once the probe has answered.
+    [int]$ProbeSeconds = 12,
     # How long a Turn is given before its answer is sampled. A cold `claude`
     # start plus a model round trip; generous, because a false failure here reads
     # as a rendering bug.
@@ -188,7 +192,7 @@ Get-Content $log -ErrorAction SilentlyContinue
 # 1: `!c` is one row, and the native window is that tall rather than empty-height.
 Show-Palette
 Send-Text "!c"
-Start-Sleep -Seconds 5   # the first probe is three process spawns
+Start-Sleep -Seconds $ProbeSeconds   # the first probe is three process spawns
 $bang = Save-Shot "1-bang-only"
 if ($bang.Height -lt 100) {
     Write-Warning "1 FAILED: palette is $($bang.Height)px - the !c row has no reserved space"

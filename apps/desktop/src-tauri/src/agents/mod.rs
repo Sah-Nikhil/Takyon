@@ -47,10 +47,17 @@ impl AgentKind {
     /// Parse a stored preference. Anything unrecognised is the default Agent
     /// rather than an error: a hand-edited `settings.db` must not break `!c`.
     pub fn parse(value: &str) -> AgentKind {
+        AgentKind::from_wire(value).unwrap_or(AgentKind::Claude)
+    }
+
+    /// Parse exactly, or `None`. What `parse_order` needs: there an unknown name
+    /// silently becoming Claude would displace a real preference.
+    pub fn from_wire(value: &str) -> Option<AgentKind> {
         match value.trim().to_lowercase().as_str() {
-            "codex" => AgentKind::Codex,
-            "opencode" => AgentKind::OpenCode,
-            _ => AgentKind::Claude,
+            "claude" => Some(AgentKind::Claude),
+            "codex" => Some(AgentKind::Codex),
+            "opencode" => Some(AgentKind::OpenCode),
+            _ => None,
         }
     }
 }
@@ -275,6 +282,57 @@ pub fn models_for(kind: AgentKind) -> Vec<String> {
     }
 }
 
+/// The order `!c` tries Agents in, from the stored `agents.order` JSON.
+///
+/// Never a partial list. Unknown names drop, duplicates collapse, and whatever
+/// is missing is appended in `ALL` order — a list short one Agent would leave
+/// `!c` with no fallback the day a fourth ships.
+pub fn parse_order(stored: Option<&str>) -> Vec<AgentKind> {
+    let named = stored
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+        .unwrap_or_default();
+    normalise_order(named.iter().filter_map(|n| AgentKind::from_wire(n)).collect())
+}
+
+/// Dedupe an order and back-fill it. The only shape allowed to be stored.
+pub fn normalise_order(chosen: Vec<AgentKind>) -> Vec<AgentKind> {
+    let mut order: Vec<AgentKind> = Vec::with_capacity(AgentKind::ALL.len());
+    for kind in chosen.into_iter().chain(AgentKind::ALL) {
+        if !order.contains(&kind) {
+            order.push(kind);
+        }
+    }
+    order
+}
+
+/// The switched-on Agents in preference order — exactly what `!c` walks.
+///
+/// Preference only: no Agent is probed, because this is read at startup and on
+/// every Settings write, and probing costs three process spawns. Empty means
+/// every Agent is switched off, which the Palette says rather than guessing.
+pub fn route(prefs: &crate::prefs::Prefs) -> Vec<AgentKind> {
+    let stored = match prefs.get(crate::prefs::ASK_ORDER) {
+        Some(order) => parse_order(Some(&order)),
+        // Seeded from the older single-choice key, so an install made before
+        // the order existed keeps its Agent first.
+        None => normalise_order(vec![AgentKind::parse(
+            prefs.get(crate::prefs::ASK_AGENT).unwrap_or_default().as_str(),
+        )]),
+    };
+    stored
+        .into_iter()
+        .filter(|kind| {
+            crate::prefs::flag(prefs, &crate::prefs::ask_enabled_key(*kind), true)
+        })
+        .collect()
+}
+
+/// The order as `settings.db` holds it: one JSON row rather than three keys.
+pub fn order_to_json(order: &[AgentKind]) -> String {
+    let names: Vec<&str> = order.iter().map(|kind| kind.as_str()).collect();
+    serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
+}
+
 /// Probe every Agent. Lazy by contract: never called on the login path.
 pub fn snapshots() -> Vec<Snapshot> {
     drivers()
@@ -341,6 +399,73 @@ mod tests {
         let opencode = driver_for(AgentKind::OpenCode).unwrap();
         assert!(claude.efforts().contains(&"medium"));
         assert!(!opencode.efforts().contains(&"medium"));
+    }
+
+    /// The stored order round trips, so Settings shows back what it wrote.
+    #[test]
+    fn v0_9_a_preference_order_round_trips_through_its_json() {
+        let chosen = vec![AgentKind::OpenCode, AgentKind::Codex, AgentKind::Claude];
+        let json = order_to_json(&chosen);
+        assert_eq!(json, r#"["opencode","codex","claude"]"#);
+        assert_eq!(parse_order(Some(&json)), chosen);
+    }
+
+    /// Every parse yields every Agent exactly once, whatever went in. A short
+    /// list is what costs `!c` its fallback, so there is no way to store one.
+    #[test]
+    fn v0_9_a_preference_order_is_always_every_agent_once() {
+        let cases = [
+            None,
+            Some(r#"[]"#),
+            Some(r#"["codex"]"#),
+            Some(r#"["codex","codex"]"#),
+            Some(r#"["gemini","codex"]"#),
+            Some("not json at all"),
+        ];
+        for stored in cases {
+            let order = parse_order(stored);
+            assert_eq!(order.len(), AgentKind::ALL.len(), "{stored:?}");
+            for kind in AgentKind::ALL {
+                assert!(order.contains(&kind), "{stored:?} lost {kind:?}");
+            }
+        }
+        // A chosen Agent still leads, and the back-fill follows it.
+        assert_eq!(parse_order(Some(r#"["codex"]"#))[0], AgentKind::Codex);
+    }
+
+    /// `!c` walks the switched-on Agents in preference order, and reads only
+    /// preferences to know it — no Agent is probed (v0.9 Traps).
+    #[test]
+    fn v0_9_the_route_is_the_switched_on_agents_in_order() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        assert_eq!(route(&prefs), AgentKind::ALL.to_vec());
+
+        prefs
+            .set(crate::prefs::ASK_ORDER, r#"["opencode","codex","claude"]"#)
+            .unwrap();
+        prefs
+            .set(&crate::prefs::ask_enabled_key(AgentKind::Codex), "0")
+            .unwrap();
+        assert_eq!(route(&prefs), vec![AgentKind::OpenCode, AgentKind::Claude]);
+    }
+
+    /// Every Agent off is a real state, and an empty route is how `!c` learns it.
+    #[test]
+    fn v0_9_switching_every_agent_off_leaves_nothing_to_ask() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        for kind in AgentKind::ALL {
+            prefs.set(&crate::prefs::ask_enabled_key(kind), "0").unwrap();
+        }
+        assert!(route(&prefs).is_empty());
+    }
+
+    /// An install made before the order existed keeps its one chosen Agent
+    /// first, rather than silently reverting to Claude.
+    #[test]
+    fn v0_9_the_older_single_choice_seeds_the_order() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        prefs.set(crate::prefs::ASK_AGENT, "opencode").unwrap();
+        assert_eq!(route(&prefs)[0], AgentKind::OpenCode);
     }
 
     /// The missing-CLI sentence names the binary, because that is the fix.

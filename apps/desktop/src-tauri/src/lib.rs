@@ -648,7 +648,8 @@ pub fn run() {
             open_crash_logs,
             agents::ipc::agent_snapshots,
             agents::ipc::agent_settings,
-            agents::ipc::set_ask_agent,
+            agents::ipc::set_ask_order,
+            agents::ipc::set_ask_enabled,
             agents::ipc::set_ask_cwd,
             agents::ipc::set_ask_model,
             agents::ipc::set_ask_effort,
@@ -775,13 +776,10 @@ pub fn run() {
                 prefs.get(prefs::CALC_POLICY).as_deref().unwrap_or_default(),
             ));
             pipeline.set_recents_enabled(prefs::flag(&prefs, prefs::RECENTS, true));
-            // Which Agent `!c` reaches, for the same reason as the two above: a
-            // `!c` typed before Settings mounts must reach the chosen Agent.
-            // **Only the preference is read here** — no Agent is probed on the
-            // login path, because that is three process spawns (v0.9 Traps).
-            pipeline.set_ask_agent(agents::AgentKind::parse(
-                prefs.get(prefs::ASK_AGENT).unwrap_or_default().as_str(),
-            ));
+            // The Agents `!c` walks, for the same reason as the two above.
+            // **Only preferences are read here** — no Agent is probed on the
+            // login path, because that is three spawns (v0.9 Traps).
+            pipeline.set_ask_order(agents::route(&prefs));
             // Interface size and placement into atomics, before the first show:
             // both sit on latency paths and must never reach SQLite there.
             window::cache_layout_prefs(&prefs);

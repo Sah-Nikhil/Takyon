@@ -8,18 +8,31 @@
  * about the same Agent.
  */
 
-import type { AgentHealth, AgentSnapshot } from "@takyon/shared";
+import type { AgentHealth, AgentKind, AgentSnapshot } from "@takyon/shared";
 
 /**
  * The dot beside an Agent's name. T3 Code's treatment, Takyon's palette.
  *
- * `bg-accent` rather than a green: this build has no success token, and amber is
- * already what the hotkey banner uses for "installed but not right".
+ * Green for ready, against amber and red: the three read as a traffic light and
+ * the accent could not, being the same colour as the selected row. The one place
+ * in the build that uses green, and only for "signed in and answering".
  */
 export const HEALTH_DOT: Record<AgentHealth, string> = {
-  ready: "bg-accent",
+  ready: "bg-emerald-400",
   warning: "bg-amber-400",
   error: "bg-red-400",
+};
+
+/**
+ * The name an Agent goes by before its own probe has answered.
+ *
+ * Needed because the Palette names its Agent on the first keystroke now, and the
+ * label a snapshot carries is not there yet.
+ */
+export const AGENT_LABELS: Record<AgentKind, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  opencode: "opencode",
 };
 
 export interface AgentSummary {
@@ -88,12 +101,30 @@ export function canAsk(snapshot: AgentSnapshot | undefined): boolean {
 }
 
 /**
+ * Which Agent `!c` reaches: the first in the preference order that can answer.
+ *
+ * Refinement, not a gate: the first switched-on Agent answers, and once the
+ * probe lands a signed-out one is stepped over. **Never waits** — an unprobed
+ * `!c` asks anyway and lets the Agent's own error speak (ADR-0018).
+ */
+export function pickAgent(
+  order: readonly AgentKind[],
+  snapshots: AgentSnapshot[] | null,
+): AgentKind | null {
+  const first = order[0] ?? null;
+  if (!snapshots || !first) return first;
+  return order.find((kind) => canAsk(snapshots.find((s) => s.kind === kind))) ?? first;
+}
+
+/**
  * The one line the Palette shows instead of asking. T3 Code's banner copy.
  *
  * Takyon never runs an Agent's login (ADR-0017), so this ends at what to type.
  */
 export function blockedReason(snapshot: AgentSnapshot | undefined): string | null {
-  if (!snapshot) return "Checking which agent can answer.";
+  // Unprobed is not blocked. `!c` asks and lets the Turn fail with the Agent's
+  // own sentence, which is more use than a row that refuses Enter in silence.
+  if (!snapshot) return null;
   if (!snapshot.installed) {
     return snapshot.message ?? `${snapshot.label} (\`${snapshot.binary}\`) was not found on PATH.`;
   }
