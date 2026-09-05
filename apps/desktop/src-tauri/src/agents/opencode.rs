@@ -202,7 +202,7 @@ mod tests {
 
     /// Real `opencode models` output: one provider, many models.
     #[test]
-    fn v0_9_opencode_counts_distinct_providers_not_models() {
+    fn v0_8_opencode_counts_distinct_providers_not_models() {
         let stdout = "opencode/big-pickle\nopencode/mimo-v2.5-free\nanthropic/claude-opus-5\n";
         let providers = connected_providers(stdout);
         assert_eq!(providers.len(), 2);
@@ -216,7 +216,7 @@ mod tests {
 
     /// One provider is singular. The card reads as English or it reads as a bug.
     #[test]
-    fn v0_9_one_connected_provider_is_singular() {
+    fn v0_8_one_connected_provider_is_singular() {
         let snap = snapshot_from_models(None, "opencode/big-pickle\n");
         assert_eq!(snap.sign_in.label.as_deref(), Some("1 provider connected"));
     }
@@ -224,7 +224,7 @@ mod tests {
     /// Nothing connected is a Warning with the command, not an Error: opencode
     /// itself is fine, it just has nothing to answer with.
     #[test]
-    fn v0_9_no_connected_providers_says_what_to_run() {
+    fn v0_8_no_connected_providers_says_what_to_run() {
         let snap = snapshot_from_models(None, "\n   \n");
         assert_eq!(snap.sign_in.status, SignInStatus::Out);
         assert_eq!(snap.health, Health::Warning);
@@ -233,7 +233,7 @@ mod tests {
 
     /// The first Turn runs the read-only `plan` agent; a follow-up does not.
     #[test]
-    fn v0_9_the_inline_path_uses_opencodes_read_only_agent() {
+    fn v0_8_the_inline_path_uses_opencodes_read_only_agent() {
         let base = TurnRequest {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from(r"C:\scratch"),
@@ -255,7 +255,7 @@ mod tests {
 
     /// The first event carrying a session id is what a follow-up resumes.
     #[test]
-    fn v0_9_the_first_opencode_event_yields_the_session() {
+    fn v0_8_the_first_opencode_event_yields_the_session() {
         let mut state = TurnState::default();
         let event = OpenCodeDriver.parse_line(
             r#"{"type":"step_start","sessionID":"ses_1","part":{"type":"step-start"}}"#,
@@ -270,7 +270,7 @@ mod tests {
 
     /// A re-sent part must arrive as a delta, or the answer reads "o ok okay".
     #[test]
-    fn v0_9_a_regrown_text_part_arrives_as_a_delta() {
+    fn v0_8_a_regrown_text_part_arrives_as_a_delta() {
         let mut state = TurnState {
             session: Some("ses_1".into()),
             ..Default::default()
@@ -294,7 +294,7 @@ mod tests {
 
     /// A second part is its own stream, not a continuation of the first.
     #[test]
-    fn v0_9_two_text_parts_do_not_share_a_delta_cursor() {
+    fn v0_8_two_text_parts_do_not_share_a_delta_cursor() {
         let mut state = TurnState {
             session: Some("ses_1".into()),
             ..Default::default()

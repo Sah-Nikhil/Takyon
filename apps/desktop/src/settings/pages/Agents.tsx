@@ -29,7 +29,7 @@ export function Agents() {
   const [cwd, setCwd] = useState("");
 
   // Three process spawns, so on mount and on demand — never per keystroke and
-  // never at login (v0.9 Traps).
+  // never at login (v0.8 Traps).
   const probe = useCallback(() => {
     setSnapshots(null);
     void api.agentSnapshots().then(setSnapshots);

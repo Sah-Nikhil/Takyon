@@ -224,7 +224,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn v0_9_a_version_is_found_inside_whatever_the_cli_printed() {
+    fn v0_8_a_version_is_found_inside_whatever_the_cli_printed() {
         assert_eq!(version_from("2.1.261 (Claude Code)").as_deref(), Some("2.1.261"));
         assert_eq!(version_from("1.18.27").as_deref(), Some("1.18.27"));
         assert_eq!(version_from("codex-cli 0.52.0\n").as_deref(), Some("0.52.0"));
@@ -235,7 +235,7 @@ mod tests {
 
     /// Codex writes its Sign-in answer to stderr, so stderr is read first.
     #[test]
-    fn v0_9_the_first_line_prefers_stderr_because_codex_answers_there() {
+    fn v0_8_the_first_line_prefers_stderr_because_codex_answers_there() {
         let out = Output {
             code: Some(1),
             stdout: "  \nsomething".into(),
@@ -255,7 +255,7 @@ mod tests {
     /// Nothing is resolvable under a name no installer uses. Guards the negative
     /// path the "not found" card depends on.
     #[test]
-    fn v0_9_an_unknown_binary_resolves_to_nothing() {
+    fn v0_8_an_unknown_binary_resolves_to_nothing() {
         assert!(resolve("takyon-agent-that-does-not-exist").is_none());
     }
 }

@@ -218,7 +218,7 @@ mod tests {
 
     /// Exit 0 is the signal; the line beside it is a label, nothing more.
     #[test]
-    fn v0_9_codex_reads_sign_in_from_the_exit_code() {
+    fn v0_8_codex_reads_sign_in_from_the_exit_code() {
         let snap = snapshot_from_login(
             Some("0.52.0".into()),
             Some(0),
@@ -232,7 +232,7 @@ mod tests {
 
     /// The signed-out sentence is T3 Code's, and it carries the command.
     #[test]
-    fn v0_9_a_signed_out_codex_says_what_to_run() {
+    fn v0_8_a_signed_out_codex_says_what_to_run() {
         let snap = snapshot_from_login(None, Some(1), Some("Not logged in"));
         assert_eq!(snap.sign_in.status, SignInStatus::Out);
         assert_eq!(snap.health, Health::Error);
@@ -241,7 +241,7 @@ mod tests {
 
     /// A killed probe has no exit code, and must not read as signed in.
     #[test]
-    fn v0_9_a_timed_out_codex_probe_is_not_signed_in() {
+    fn v0_8_a_timed_out_codex_probe_is_not_signed_in() {
         assert_eq!(
             snapshot_from_login(None, None, None).sign_in.status,
             SignInStatus::Out
@@ -250,7 +250,7 @@ mod tests {
 
     /// Codex refuses to run outside a repository, and Scratch is not one.
     #[test]
-    fn v0_9_codex_always_skips_the_git_repository_check() {
+    fn v0_8_codex_always_skips_the_git_repository_check() {
         let args = CodexDriver.turn_args(&TurnRequest {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from(r"C:\scratch"),
@@ -270,7 +270,7 @@ mod tests {
 
     /// A follow-up is `exec resume <id>`, and the id comes right after `resume`.
     #[test]
-    fn v0_9_a_codex_follow_up_resumes_its_thread() {
+    fn v0_8_a_codex_follow_up_resumes_its_thread() {
         let args = CodexDriver.turn_args(&TurnRequest {
             prompt: "and then?".into(),
             cwd: std::path::PathBuf::from("."),
@@ -286,7 +286,7 @@ mod tests {
 
     /// The thread id is what a follow-up resumes.
     #[test]
-    fn v0_9_the_thread_started_event_yields_the_session() {
+    fn v0_8_the_thread_started_event_yields_the_session() {
         let mut state = TurnState::default();
         let event =
             CodexDriver.parse_line(r#"{"type":"thread.started","thread_id":"th-1"}"#, &mut state);
@@ -299,7 +299,7 @@ mod tests {
 
     /// Only `agent_message` items are answer text. Reasoning is not shown.
     #[test]
-    fn v0_9_only_agent_messages_reach_the_palette() {
+    fn v0_8_only_agent_messages_reach_the_palette() {
         let mut state = TurnState::default();
         let message =
             r#"{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"Hello"}}"#;
@@ -315,7 +315,7 @@ mod tests {
 
     /// The catalogue is Codex's to reshape, so ids are found rather than decoded.
     #[test]
-    fn v0_9_model_ids_are_found_wherever_the_catalogue_puts_them() {
+    fn v0_8_model_ids_are_found_wherever_the_catalogue_puts_them() {
         let json = r#"{"models":[{"id":"gpt-5.3-codex","slug":"gpt-5.3-codex"},
                        {"id":"gpt-5.3-codex-mini"}],"default":{"id":"gpt-5.3-codex"}}"#;
         assert_eq!(model_ids(json), vec!["gpt-5.3-codex", "gpt-5.3-codex-mini"]);
@@ -323,14 +323,14 @@ mod tests {
 
     /// Anything unparseable empties the picker rather than filling it with junk.
     #[test]
-    fn v0_9_an_unreadable_catalogue_yields_no_models() {
+    fn v0_8_an_unreadable_catalogue_yields_no_models() {
         assert!(model_ids("not json").is_empty());
         assert!(model_ids("").is_empty());
     }
 
     /// Effort is a config override for Codex, not a flag, and it is quoted.
     #[test]
-    fn v0_9_codex_spells_effort_as_a_config_override() {
+    fn v0_8_codex_spells_effort_as_a_config_override() {
         let args = CodexDriver.turn_args(&TurnRequest {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from("."),
@@ -345,7 +345,7 @@ mod tests {
 
     /// Both failure shapes carry their own message through unchanged.
     #[test]
-    fn v0_9_codex_failures_keep_their_own_words() {
+    fn v0_8_codex_failures_keep_their_own_words() {
         let mut state = TurnState::default();
         assert_eq!(
             CodexDriver.parse_line(

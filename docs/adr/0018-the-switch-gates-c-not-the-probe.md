@@ -11,7 +11,7 @@ a Turn whether or not any Agent has been probed yet.
 
 ## The problem
 
-v0.9 shipped with the opposite rule. `!c` showed the Agent's Sign-in state, and
+v0.8 shipped with the opposite rule. `!c` showed the Agent's Sign-in state, and
 Enter refused until a probe had come back and said the Agent could answer. That
 probe is three process spawns of somebody else's CLI, and on a cold machine it
 takes longer than anyone will wait in a launcher.

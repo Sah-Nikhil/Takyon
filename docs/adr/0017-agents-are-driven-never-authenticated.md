@@ -56,11 +56,11 @@ parity.
 
 ## Why not spawn the login command ourselves
 
-Tempting, and not refused on principle — see `docs/tbc/0012`. It is out of v0.9
+Tempting, and not refused on principle — see `docs/tbc/0012`. It is out of v0.8
 because a launcher has no console attached, so `claude /login` has nowhere to
 draw its prompt, and getting a real terminal in front of the user
 (`wt.exe` / `conhost.exe`, neither guaranteed present) is its own small project
-with its own failure modes. v0.9 ships the T3 Code surface exactly; the terminal
+with its own failure modes. v0.8 ships the T3 Code surface exactly; the terminal
 path is the amendment, not the design.
 
 ## The rule
@@ -89,7 +89,7 @@ mis-scoped Agent is that it finds nothing.
 **Tools belong to the Turn, not to a window.** The first answer — the one you get
 by reflex, one keystroke from the global hotkey — runs with tools off. Every
 follow-up after it has them, because asking again is a deliberate act. There is
-no second window to draw that line any more (v0.9 keeps the whole conversation in
+no second window to draw that line any more (v0.8 keeps the whole conversation in
 the Palette), so the line is drawn where it always belonged.
 
 ## The model and the effort are locked, and Takyon does not choose them
@@ -106,7 +106,7 @@ you to a more expensive model is spending someone else's money, and an answer
 whose quality changes without the question changing is impossible to reason
 about. And a picker built from the Agent's own list cannot drift: nothing here
 carries a catalogue to go stale, except Claude, which has no models command and
-where the documented aliases stand in (`docs/tbd/v0.9.md` §5).
+where the documented aliases stand in (`docs/tbd/v0.8.md` §5).
 
 Nothing is locked until someone chooses. A fresh install sends no `--model` and
 no effort flag at all — the Agent's own default, which is the only honest answer

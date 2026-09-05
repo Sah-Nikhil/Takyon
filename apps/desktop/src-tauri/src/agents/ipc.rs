@@ -227,7 +227,7 @@ mod tests {
     /// Ids are unique and monotonic, or one Turn's events render into another's
     /// conversation.
     #[test]
-    fn v0_9_turn_ids_never_repeat() {
+    fn v0_8_turn_ids_never_repeat() {
         let first = next_turn_id();
         let second = next_turn_id();
         assert!(second > first);

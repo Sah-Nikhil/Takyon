@@ -1,8 +1,8 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { paletteHeight, VIEW_HEIGHT } from "@takyon/shared";
 
 /**
- * v0.9's visual layer: the `!c` row, the conversation, and the Agents page.
+ * v0.8's visual layer: the `!c` row, the conversation, and the Agents page.
  *
  * TBC-0007's exposure is total — **every Agent, Sign-in state and token is a
  * fixture in `api.mock.ts`.** Whether a real `claude auth status --json` parses

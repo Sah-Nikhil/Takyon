@@ -7,7 +7,7 @@
  * `nav.test.ts` holds that promise.
  *
  * Pages for features that do not exist yet are deliberately absent, and every
- * page here does something today: Agents landed with v0.9, File Search with
+ * page here does something today: Agents landed with v0.8, File Search with
  * v0.7. A disabled row for an unbuilt feature would be a dead control in a
  * window whose whole point is that none of them are.
  */

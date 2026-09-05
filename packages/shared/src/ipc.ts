@@ -304,7 +304,7 @@ export interface QueryResult {
    */
   indexing: boolean;
   /**
-   * Present exactly when the line is `!c` (v0.9). The Ask Mode has no Entries to
+   * Present exactly when the line is `!c` (v0.8). The Ask Mode has no Entries to
    * rank — the answer streams over `EVENT_TURN` — so `entries` stays empty and
    * this carries the question plus which Agent would answer it.
    */
@@ -434,7 +434,7 @@ export const EVENT_HIDE = "takyon://hide";
 /** Every Turn streams over this one channel; `turnId` says which. */
 export const EVENT_TURN = "takyon://turn";
 
-// ── Agents (v0.9) ───────────────────────────────────────────────────
+// ── Agents (v0.8) ───────────────────────────────────────────────────
 
 /**
  * Which Agent. The spellings are stored preferences on the Rust side, so

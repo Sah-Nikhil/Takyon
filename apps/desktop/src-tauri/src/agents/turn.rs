@@ -188,7 +188,7 @@ mod tests {
 
     /// The wire shape the frontend switches on. A rename here is an IPC break.
     #[test]
-    fn v0_9_turn_events_serialise_with_a_kind_tag() {
+    fn v0_8_turn_events_serialise_with_a_kind_tag() {
         let json = serde_json::to_string(&TurnEvent::Text {
             delta: "hi".into(),
         })
@@ -206,7 +206,7 @@ mod tests {
 
     /// The envelope flattens, so the frontend reads one object rather than two.
     #[test]
-    fn v0_9_an_envelope_carries_the_turn_id_beside_the_event() {
+    fn v0_8_an_envelope_carries_the_turn_id_beside_the_event() {
         let json = serde_json::to_string(&Envelope {
             turn_id: 7,
             event: TurnEvent::Done { session: None },
@@ -219,7 +219,7 @@ mod tests {
     /// Cancelling a Turn that never ran must be silent, not a panic — the Palette
     /// can dismiss between spawn and registration.
     #[test]
-    fn v0_9_cancelling_an_unknown_turn_does_nothing() {
+    fn v0_8_cancelling_an_unknown_turn_does_nothing() {
         let turns = Turns::default();
         turns.cancel(404);
     }

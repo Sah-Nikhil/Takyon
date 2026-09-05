@@ -60,7 +60,7 @@ impl AgentDriver for ClaudeDriver {
     ///
     /// `claude` has no models command, and an alias always resolves to the
     /// latest of its family — a bundled catalogue would be a list that goes
-    /// stale between releases, which is what `docs/tbd/v0.9.md` §5 records.
+    /// stale between releases, which is what `docs/tbd/v0.8.md` §5 records.
     fn models(&self, _exe: &std::path::Path) -> Vec<String> {
         ["opus", "sonnet", "haiku", "fable"]
             .iter()
@@ -78,7 +78,7 @@ impl AgentDriver for ClaudeDriver {
             "--verbose".into(),
             // Nobody is there to answer a permission prompt: a Turn that waits on
             // one waits forever. Denying is the only honest setting until v1.0
-            // gives follow-up Turns a permission UI (docs/tbd/v0.9.md).
+            // gives follow-up Turns a permission UI (docs/tbd/v0.8.md).
             "--permission-prompts".into(),
             "none".into(),
         ];
@@ -284,7 +284,7 @@ mod tests {
 
     /// The real payload from `claude auth status --json` on a Pro account.
     #[test]
-    fn v0_9_a_signed_in_claude_reports_its_plan_and_account() {
+    fn v0_8_a_signed_in_claude_reports_its_plan_and_account() {
         let snap = snapshot_from_auth(
             Some("2.1.261".into()),
             &json!({
@@ -305,7 +305,7 @@ mod tests {
 
     /// Signed out is an Error with the command to run, never a silent card.
     #[test]
-    fn v0_9_a_signed_out_claude_says_what_to_run() {
+    fn v0_8_a_signed_out_claude_says_what_to_run() {
         let snap = snapshot_from_auth(None, &json!({ "loggedIn": false }));
         assert_eq!(snap.sign_in.status, SignInStatus::Out);
         assert_eq!(snap.health, Health::Error);
@@ -314,7 +314,7 @@ mod tests {
 
     /// An API key beats the subscription, and Bedrock is read from apiProvider.
     #[test]
-    fn v0_9_claude_account_labels_follow_t3_codes_rules() {
+    fn v0_8_claude_account_labels_follow_t3_codes_rules() {
         assert_eq!(auth_label(Some("pro"), Some("apiKey")).as_deref(), Some("Claude API Key"));
         assert_eq!(auth_label(Some("max20"), None).as_deref(), Some("Claude Max 20x Subscription"));
         assert_eq!(
@@ -328,13 +328,13 @@ mod tests {
 
     /// An unknown plan name is title-cased rather than dropped.
     #[test]
-    fn v0_9_an_unknown_claude_plan_still_reads_as_english() {
+    fn v0_8_an_unknown_claude_plan_still_reads_as_english() {
         assert_eq!(subscription_auth_label("super_duper"), "Claude Super Duper Subscription");
     }
 
     /// The init line is where the session id to resume comes from.
     #[test]
-    fn v0_9_the_init_event_yields_the_session_to_resume() {
+    fn v0_8_the_init_event_yields_the_session_to_resume() {
         let mut state = TurnState::default();
         let event = ClaudeDriver.parse_line(
             r#"{"type":"system","subtype":"init","session_id":"s-1","model":"claude-opus-5"}"#,
@@ -352,7 +352,7 @@ mod tests {
 
     /// Text blocks come through; thinking blocks are dropped in the same message.
     #[test]
-    fn v0_9_only_text_blocks_reach_the_palette() {
+    fn v0_8_only_text_blocks_reach_the_palette() {
         let mut state = TurnState::default();
         let line = r#"{"type":"assistant","message":{"content":[
             {"type":"thinking","thinking":"secret"},
@@ -369,7 +369,7 @@ mod tests {
 
     /// The result line repeats the answer, so only its error form is news.
     #[test]
-    fn v0_9_a_successful_result_line_is_not_re_rendered() {
+    fn v0_8_a_successful_result_line_is_not_re_rendered() {
         let mut state = TurnState::default();
         let ok = r#"{"type":"result","subtype":"success","is_error":false,"result":"Hello"}"#;
         assert_eq!(ClaudeDriver.parse_line(ok, &mut state), None);
@@ -384,7 +384,7 @@ mod tests {
     /// A partial line must never render. `turn.rs` buffers, so the parser only
     /// has to refuse rather than guess.
     #[test]
-    fn v0_9_a_half_line_parses_to_nothing_rather_than_to_text() {
+    fn v0_8_a_half_line_parses_to_nothing_rather_than_to_text() {
         let mut state = TurnState::default();
         assert_eq!(ClaudeDriver.parse_line(r#"{"type":"assis"#, &mut state), None);
         assert_eq!(ClaudeDriver.parse_line("not json at all", &mut state), None);
@@ -392,7 +392,7 @@ mod tests {
 
     /// The first Turn must carry `--tools ""`; a follow-up must not.
     #[test]
-    fn v0_9_the_inline_path_disables_claudes_tools() {
+    fn v0_8_the_inline_path_disables_claudes_tools() {
         let base = TurnRequest {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from("."),
@@ -413,7 +413,7 @@ mod tests {
 
     /// Model and effort are both flags on Claude, and both are sent when locked.
     #[test]
-    fn v0_9_claude_sends_the_locked_model_and_effort() {
+    fn v0_8_claude_sends_the_locked_model_and_effort() {
         let args = ClaudeDriver.turn_args(&TurnRequest {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from("."),
@@ -431,7 +431,7 @@ mod tests {
     /// Nothing locked means no flag at all, which is the Agent's own default —
     /// never a guess of ours.
     #[test]
-    fn v0_9_an_unlocked_model_sends_no_flag() {
+    fn v0_8_an_unlocked_model_sends_no_flag() {
         let args = ClaudeDriver.turn_args(&TurnRequest {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from("."),
@@ -447,7 +447,7 @@ mod tests {
     /// A follow-up resumes rather than starting over, or a conversation has no
     /// memory between Turns.
     #[test]
-    fn v0_9_a_follow_up_resumes_the_session() {
+    fn v0_8_a_follow_up_resumes_the_session() {
         let args = ClaudeDriver.turn_args(&TurnRequest {
             prompt: "and then?".into(),
             cwd: std::path::PathBuf::from("."),

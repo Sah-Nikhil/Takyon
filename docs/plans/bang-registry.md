@@ -3,7 +3,7 @@
 **Status: parked deliberately.** Bangs are not being designed until the base
 launcher (v0.1–v0.7) works. This file holds the recommendation as it stood when
 the question was deferred, so the discussion resumes from here rather than from
-scratch. Partly resumed at v0.9: the `!c` question below is settled, the picker and
+scratch. Partly resumed at v0.8: the `!c` question below is settled, the picker and
 user-defined Bangs are not.
 
 What is already settled and should not be re-litigated: Bangs are **prefix-only**
@@ -25,7 +25,7 @@ launcher.
 touches the parser, the picker, every piece of UI copy and all documentation, to
 serve a preference nobody has actually asked for. Revisit only if real users ask.
 
-## Settled at v0.9: one `!c`, not one Bang per Agent
+## Settled at v0.8: one `!c`, not one Bang per Agent
 
 Takyon drives three Agents — Claude Code, Codex and opencode (ADR-0017) — and all
 three answer through **`!c` alone**. The Agent is a preference, chosen in

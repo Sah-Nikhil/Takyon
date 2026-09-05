@@ -350,7 +350,7 @@ mod tests {
 
     /// The wire spellings are stored preferences. A rename here is a migration.
     #[test]
-    fn v0_9_agent_kinds_round_trip_through_their_stored_spelling() {
+    fn v0_8_agent_kinds_round_trip_through_their_stored_spelling() {
         for kind in AgentKind::ALL {
             assert_eq!(AgentKind::parse(kind.as_str()), kind);
         }
@@ -360,14 +360,14 @@ mod tests {
 
     /// A typo must leave `!c` working rather than breaking it.
     #[test]
-    fn v0_9_an_unrecognised_stored_agent_falls_back_rather_than_failing() {
+    fn v0_8_an_unrecognised_stored_agent_falls_back_rather_than_failing() {
         assert_eq!(AgentKind::parse("gemini"), AgentKind::Claude);
         assert_eq!(AgentKind::parse(""), AgentKind::Claude);
     }
 
     /// Every kind has a driver, or `!c` can select an Agent that cannot answer.
     #[test]
-    fn v0_9_every_agent_kind_has_a_driver() {
+    fn v0_8_every_agent_kind_has_a_driver() {
         for kind in AgentKind::ALL {
             let driver = driver_for(kind).expect("every kind ships a driver");
             assert_eq!(driver.kind(), kind);
@@ -380,7 +380,7 @@ mod tests {
     /// Every Agent offers effort levels, and every one of them is a word that
     /// Agent will actually accept — Settings refuses anything else.
     #[test]
-    fn v0_9_every_agent_offers_its_own_effort_vocabulary() {
+    fn v0_8_every_agent_offers_its_own_effort_vocabulary() {
         for driver in drivers() {
             let efforts = driver.efforts();
             assert!(!efforts.is_empty(), "{} offers no effort", driver.label());
@@ -394,7 +394,7 @@ mod tests {
     /// The three vocabularies genuinely differ, which is why the list is per
     /// Agent rather than one shared enum.
     #[test]
-    fn v0_9_effort_vocabularies_are_not_interchangeable() {
+    fn v0_8_effort_vocabularies_are_not_interchangeable() {
         let claude = driver_for(AgentKind::Claude).unwrap();
         let opencode = driver_for(AgentKind::OpenCode).unwrap();
         assert!(claude.efforts().contains(&"medium"));
@@ -403,7 +403,7 @@ mod tests {
 
     /// The stored order round trips, so Settings shows back what it wrote.
     #[test]
-    fn v0_9_a_preference_order_round_trips_through_its_json() {
+    fn v0_8_a_preference_order_round_trips_through_its_json() {
         let chosen = vec![AgentKind::OpenCode, AgentKind::Codex, AgentKind::Claude];
         let json = order_to_json(&chosen);
         assert_eq!(json, r#"["opencode","codex","claude"]"#);
@@ -413,7 +413,7 @@ mod tests {
     /// Every parse yields every Agent exactly once, whatever went in. A short
     /// list is what costs `!c` its fallback, so there is no way to store one.
     #[test]
-    fn v0_9_a_preference_order_is_always_every_agent_once() {
+    fn v0_8_a_preference_order_is_always_every_agent_once() {
         let cases = [
             None,
             Some(r#"[]"#),
@@ -434,9 +434,9 @@ mod tests {
     }
 
     /// `!c` walks the switched-on Agents in preference order, and reads only
-    /// preferences to know it — no Agent is probed (v0.9 Traps).
+    /// preferences to know it — no Agent is probed (v0.8 Traps).
     #[test]
-    fn v0_9_the_route_is_the_switched_on_agents_in_order() {
+    fn v0_8_the_route_is_the_switched_on_agents_in_order() {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         assert_eq!(route(&prefs), AgentKind::ALL.to_vec());
 
@@ -451,7 +451,7 @@ mod tests {
 
     /// Every Agent off is a real state, and an empty route is how `!c` learns it.
     #[test]
-    fn v0_9_switching_every_agent_off_leaves_nothing_to_ask() {
+    fn v0_8_switching_every_agent_off_leaves_nothing_to_ask() {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         for kind in AgentKind::ALL {
             prefs.set(&crate::prefs::ask_enabled_key(kind), "0").unwrap();
@@ -462,7 +462,7 @@ mod tests {
     /// An install made before the order existed keeps its one chosen Agent
     /// first, rather than silently reverting to Claude.
     #[test]
-    fn v0_9_the_older_single_choice_seeds_the_order() {
+    fn v0_8_the_older_single_choice_seeds_the_order() {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         prefs.set(crate::prefs::ASK_AGENT, "opencode").unwrap();
         assert_eq!(route(&prefs)[0], AgentKind::OpenCode);
@@ -470,7 +470,7 @@ mod tests {
 
     /// The missing-CLI sentence names the binary, because that is the fix.
     #[test]
-    fn v0_9_a_missing_agent_names_the_command_that_is_absent() {
+    fn v0_8_a_missing_agent_names_the_command_that_is_absent() {
         let snap = Snapshot::missing(AgentKind::Codex, "Codex", "codex");
         assert!(!snap.installed);
         assert_eq!(snap.health, Health::Error);

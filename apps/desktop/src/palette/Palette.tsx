@@ -87,7 +87,7 @@ export function Palette() {
   /*
     Every Agent's Sign-in state, read only while `!c` is being typed. Off the
     keystroke path for the same reason `fileIndex` is, and more so: a probe is
-    three process spawns (v0.9 Traps).
+    three process spawns (v0.8 Traps).
    */
   const [agents, setAgents] = useState<AgentSnapshot[] | null>(null);
   /**

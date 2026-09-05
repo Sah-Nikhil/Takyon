@@ -46,7 +46,7 @@ currency together, is MPL-2.0.
   history (`ans * 2`), complex numbers, arbitrary precision, date arithmetic
   (`today + 3 weeks`), or bases and bitwise work beyond a couple of operators.
 - Maintaining it starts costing more than a day per phase.
-- Currency arrives at v0.8 and wants a units engine deep enough that ours is the
+- Currency arrives at v0.9 and wants a units engine deep enough that ours is the
   thing standing in the way.
 
 ## Alternatives
@@ -69,6 +69,6 @@ one-file replacement, which is the main reason the module is drawn this way.
 **Grammar outgrown**: same swap, and `evalexpr` is the pick, on licence and on
 being the least surprising.
 
-**Currency at v0.8 wanting a real units engine**: that is the one case worth
+**Currency at v0.9 wanting a real units engine**: that is the one case worth
 reconsidering `rink-core` wholesale, and it needs the ADR-0005 licence question
 answered first rather than alongside.

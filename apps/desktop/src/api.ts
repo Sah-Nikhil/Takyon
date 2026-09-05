@@ -416,7 +416,7 @@ export function onHide(cb: () => void): () => void {
   };
 }
 
-// ── Agents (v0.9) ───────────────────────────────────────────────────
+// ── Agents (v0.8) ───────────────────────────────────────────────────
 
 /**
  * Probe every Agent. Three process spawns, so call it on mount, never per

@@ -36,7 +36,7 @@ takyon/
 │       │   ├── query.rs           the pipeline (§3)
 │       │   ├── rank.rs            matching, Frecency, the Stability rule
 │       │   ├── bang.rs            parser + Mode registry
-│       │   ├── agents/            AgentDriver trait, three drivers, Turns (v0.9)
+│       │   ├── agents/            AgentDriver trait, three drivers, Turns (v0.8)
 │       │   ├── sources/           apps · files · clipboard · calc · recents
 │       │   ├── index/             walker · watcher · store (mmap)
 │       │   ├── store/             settings · frecency · clips (SQLite)
@@ -99,7 +99,7 @@ pub trait FileIndex: Send + Sync {
     fn status(&self) -> IndexStatus;      // Ready | Building { pct } | Stale
 }
 
-pub trait SearchProvider: Send + Sync {          // v0.8
+pub trait SearchProvider: Send + Sync {          // v0.9
     async fn urls(&self, q: &str, n: usize) -> Result<Vec<SearchResult>>;
 }
 
@@ -598,7 +598,7 @@ checkable). No chaining in V1.
 `!` alone opens the picker. **Unknown Bang falls through to Bangless**, treating
 the line literally and showing a hint row — provisional, and one of the open
 questions in `docs/plans/bang-registry.md`, which is where the Bang design
-resumes before v0.8.
+resumes before v0.9.
 
 **A Bang is never the only door** (v0.5). Clipboard history is reachable by
 typing its name, through a `Command` Entry, and `!v` is a toggleable shortcut
@@ -607,7 +607,7 @@ nobody finds: `docs/plans/bang-registry.md` already says the `!` picker is the
 only discovery mechanism, and it is not built. New Modes should assume the same
 shape — a Command that opens them, and a Bang for people who know it.
 
-**Built at v0.5, not v0.8** — `!v` needed it. `bang.rs` implements the grammar
+**Built at v0.5, not v0.9** — `!v` needed it. `bang.rs` implements the grammar
 above and registers one Bang; `query.rs` routes on it before anything else,
 which is what keeps ADR-0002 checkable by reading one function. Not built: the
 `!` picker (a bare `!` currently falls through), the hint row, and user-defined
@@ -679,10 +679,10 @@ dismiss-on-focus-loss destroys the window every time you try to inspect it.
 
 ## 12. Deliberately not specified here
 
-- **~~`!c` and the Chat Surface internals.~~** Settled and built at v0.9: a fresh
+- **~~`!c` and the Chat Surface internals.~~** Settled and built at v0.8: a fresh
   process per Turn resumed by session id, the Scratch directory, and tools off
-  inline. `docs/plans/v0.9-agents.md` carries the reasoning, ADR-0017 the rule
-  that shapes it. The **permission UI** is what remains (`docs/tbd/v0.9.md` §1).
+  inline. `docs/plans/v0.8-agents.md` carries the reasoning, ADR-0017 the rule
+  that shapes it. The **permission UI** is what remains (`docs/tbd/v0.8.md` §1).
 - **The Bang registry beyond V1's four.** See `docs/plans/bang-registry.md`.
 - **A plugin API.** Designing one before three real plugins exist is guesswork.
 - **The colour palette.** The mark is locked; colour is not (`docs/brand.md`).

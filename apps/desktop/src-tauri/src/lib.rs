@@ -778,7 +778,7 @@ pub fn run() {
             pipeline.set_recents_enabled(prefs::flag(&prefs, prefs::RECENTS, true));
             // The Agents `!c` walks, for the same reason as the two above.
             // **Only preferences are read here** — no Agent is probed on the
-            // login path, because that is three spawns (v0.9 Traps).
+            // login path, because that is three spawns (v0.8 Traps).
             pipeline.set_ask_order(agents::route(&prefs));
             // Interface size and placement into atomics, before the first show:
             // both sit on latency paths and must never reach SQLite there.

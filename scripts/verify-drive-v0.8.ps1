@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-Drive the automatable half of docs/verify/v0.9.md.
+Drive the automatable half of docs/verify/v0.8.md.
 
-The Playwright suite reaches every v0.9 surface through Vite and none of them
+The Playwright suite reaches every v0.8 surface through Vite and none of them
 through Tauri, so it cannot see the half that is the native window: whether the
 Palette is the right height for the one-line `!c` row, whether it grows to the
 surface height when an answer opens, and whether a follow-up stays in that one
@@ -18,7 +18,7 @@ script stay manual; this drives 1, 2, 3 and 4.
 [CmdletBinding()]
 param(
     [string]$Exe = "apps\desktop\src-tauri\target\release\takyon.exe",
-    [string]$OutDir = "$env:TEMP\takyon-verify-v0.9",
+    [string]$OutDir = "$env:TEMP\takyon-verify-v0.8",
     # Free chord. Alt+Space is contested by Raycast and PowerToys Run on most
     # machines this is developed on.
     [string]$Hotkey = "Ctrl+Alt+Shift+F9",
@@ -256,7 +256,7 @@ Get-Content $log -ErrorAction SilentlyContinue
 Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
 Write-Output ""
 Write-Output "shots in $OutDir"
-Write-Output "still needs a person: sections 5 to 9 of docs/verify/v0.9.md - the"
+Write-Output "still needs a person: sections 5 to 9 of docs/verify/v0.8.md - the"
 Write-Output "tools-off proof, the locked model and effort, every Sign-in state, the"
 Write-Output "no-console-flash check and the working-directory control. All of them"
 Write-Output "need state this script must not create on the operator's machine."

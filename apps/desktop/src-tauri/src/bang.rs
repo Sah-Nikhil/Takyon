@@ -9,8 +9,8 @@
 //! raw query, never a ranked search. That is what makes ADR-0002 checkable by
 //! reading — a line with no Bang cannot reach the network.
 //!
-//! Three Bangs: `!v` at v0.5, `!e` at v0.7, `!c` at v0.9. Registry, `!` picker
-//! and user-defined Bangs are `docs/plans/bang-registry.md`, part-resumed at v0.9.
+//! Three Bangs: `!v` at v0.5, `!e` at v0.7, `!c` at v0.8. Registry, `!` picker
+//! and user-defined Bangs are `docs/plans/bang-registry.md`, part-resumed at v0.8.
 
 /// Where a line of input goes, and what that Mode sees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,7 +45,7 @@ pub fn parse(line: &str) -> Route<'_> {
     };
 
     // The ident ends at the first whitespace. A bare `!` yields an empty one,
-    // which matches nothing and falls through — the picker is v0.8.
+    // which matches nothing and falls through — the picker is v0.9.
     let end = after_sigil
         .find(char::is_whitespace)
         .unwrap_or(after_sigil.len());
@@ -107,7 +107,7 @@ mod tests {
     /// `!c` routes to the Agent Mode, and an empty query is its own state — the
     /// card naming the Agent that would answer.
     #[test]
-    fn v0_9_the_agent_bang_routes_to_the_ask_mode() {
+    fn v0_8_the_agent_bang_routes_to_the_ask_mode() {
         assert_eq!(parse("!c"), Route::Ask(""));
         assert_eq!(parse("!c why is the sky blue"), Route::Ask("why is the sky blue"));
         assert_eq!(parse("!C  trimmed  "), Route::Ask("trimmed"));

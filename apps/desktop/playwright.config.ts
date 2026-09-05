@@ -20,14 +20,20 @@ export default defineConfig({
     baseURL: "http://localhost:1420",
     // Screenshot diffs are only useful if the renderer is deterministic.
     colorScheme: "dark",
+    // Clip timestamps render through `toLocaleString`. Pin both, or a baseline
+    // is a picture of the machine that took it. The clock itself is pinned per
+    // page in `tests/visual/fixtures.ts`.
+    locale: "en-US",
+    timezoneId: "UTC",
   },
   expect: {
     toHaveScreenshot: {
       animations: "disabled",
       caret: "hide",
-      // Font rasterisation differs a little between machines; zero tolerance
-      // makes the suite fail for reasons that are not regressions.
-      maxDiffPixelRatio: 0.01,
+      // Absolute, not a ratio: 1% of this window was 5702 px, which passed two
+      // whole sidebar rows and a wrong version number between v0.6 and v0.8.
+      // 150 px absorbs font rasterisation and nothing larger.
+      maxDiffPixels: 150,
     },
   },
   projects: [

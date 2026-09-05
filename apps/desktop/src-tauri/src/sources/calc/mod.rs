@@ -9,7 +9,7 @@
 //!
 //! Currency is absent by decision, not omission: live rates are an outbound
 //! request on the Bangless path, which ADR-0002 calls a correctness bug. It
-//! waits for v0.8's Bangs — `docs/tbd/v0.4.md`.
+//! waits for v0.9's Bangs — `docs/tbd/v0.4.md`.
 
 mod expr;
 mod fmt;

@@ -2,7 +2,7 @@
 //!
 //! Currency is deliberately absent — it needs live rates, which is an outbound
 //! request on the Bangless path and therefore a correctness bug (ADR-0002). It
-//! waits for v0.8's Bangs; `docs/tbd/v0.4.md` carries the reasoning.
+//! waits for v0.9's Bangs; `docs/tbd/v0.4.md` carries the reasoning.
 //!
 //! Conversion goes through a base unit per dimension rather than a table of
 //! pairs: pairs are O(n²) to write and O(n²) to get wrong.
@@ -252,7 +252,7 @@ mod tests {
     }
 
     /// Currency is not here, and its absence is the ADR-0002 guarantee for this
-    /// phase rather than an oversight. `docs/tbd/v0.4.md`, owned by v0.8.
+    /// phase rather than an oversight. `docs/tbd/v0.4.md`, owned by v0.9.
     #[test]
     fn v0_4_no_currency_unit_exists_at_all() {
         for name in ["usd", "inr", "eur", "gbp", "dollar", "dollars", "rupee"] {

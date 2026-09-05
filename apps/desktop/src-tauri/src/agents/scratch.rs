@@ -41,7 +41,7 @@ mod tests {
     /// An empty or blank setting means Scratch, not a Turn in the process cwd —
     /// which for a launcher is wherever Windows happened to start it.
     #[test]
-    fn v0_9_a_blank_working_directory_setting_means_scratch() {
+    fn v0_8_a_blank_working_directory_setting_means_scratch() {
         assert_eq!(resolve(None), dir());
         assert_eq!(resolve(Some("")), dir());
         assert_eq!(resolve(Some("   ")), dir());
@@ -49,13 +49,13 @@ mod tests {
 
     /// A configured directory that has gone away falls back rather than failing.
     #[test]
-    fn v0_9_a_missing_configured_directory_falls_back_to_scratch() {
+    fn v0_8_a_missing_configured_directory_falls_back_to_scratch() {
         assert_eq!(resolve(Some(r"Z:\not\a\real\path")), dir());
     }
 
     /// A real directory is used as given.
     #[test]
-    fn v0_9_an_existing_configured_directory_is_used() {
+    fn v0_8_an_existing_configured_directory_is_used() {
         let temp = std::env::temp_dir();
         let as_text = temp.to_string_lossy().to_string();
         assert_eq!(resolve(Some(&as_text)), temp);
@@ -63,7 +63,7 @@ mod tests {
 
     /// Scratch exists after being asked for, or every Turn starts by failing.
     #[test]
-    fn v0_9_the_scratch_directory_is_created_on_demand() {
+    fn v0_8_the_scratch_directory_is_created_on_demand() {
         assert!(dir().is_dir());
     }
 }

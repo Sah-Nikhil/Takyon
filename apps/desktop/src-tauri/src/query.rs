@@ -5,7 +5,7 @@
 //!                       └─▶ Bang(mode, rest) ─▶ that Mode alone
 //! ```
 //!
-//! v0.2 builds the left branch with one Source. `bang.rs` is v0.8 and the
+//! v0.2 builds the left branch with one Source. `bang.rs` is v0.9 and the
 //! Stability lock v0.3; both are in the flow above because this file's shape
 //! decides whether adding them is a line or a rewrite.
 //!
@@ -50,7 +50,7 @@ pub struct QueryResult {
     /// list. Those look identical and one of them is a lie — an empty list means "you
     /// have no such app", which right after login is exactly wrong.
     pub indexing: bool,
-    /// Present exactly when the line is `!c` (v0.9). The Ask Mode has no Entries
+    /// Present exactly when the line is `!c` (v0.8). The Ask Mode has no Entries
     /// to rank — the answer streams over `takyon://turn` — so this carries the
     /// question and which Agent would answer it, and `entries` stays empty.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -322,7 +322,7 @@ impl Pipeline {
         }
     }
 
-    /// The `!c` Mode (v0.9 task 7).
+    /// The `!c` Mode (v0.8 task 7).
     ///
     /// No Sources, no Frecency, no Stability lock: there is nothing to rank. The
     /// frontend takes it from here and calls `agent_ask`.
@@ -771,7 +771,7 @@ pub fn records_usage(action: &str) -> bool {
 
 /// Present so a future Source cannot quietly become a network client.
 ///
-/// Not idle belt-and-braces: v0.8 adds a `SearchProvider` and v0.9 a subprocess,
+/// Not idle belt-and-braces: v0.9 adds a `SearchProvider` and v0.8 a subprocess,
 /// and both will be tempting to reach for "just for suggestions". ADR-0002 calls
 /// that a correctness bug, and this is where the claim is checkable.
 pub fn bangless_sources_are_local() -> bool {

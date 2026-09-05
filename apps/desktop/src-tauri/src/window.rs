@@ -83,7 +83,7 @@ const BANNER_MARGIN: u32 = 8;
 pub enum View {
     ClipboardHistory,
     /// `!c` with a question typed. The answer streams and scrolls, so it needs
-    /// the same fixed height rather than a row count (v0.9).
+    /// the same fixed height rather than a row count (v0.8).
     Ask,
 }
 

@@ -1,4 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { expect, test } from "./fixtures";
+
+/** Same source `vite.config.ts` injects from, so the two cannot drift. */
+const { version: APP_VERSION } = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../../package.json", import.meta.url)),
+    "utf8",
+  ),
+) as { version: string };
 
 /**
  * The Settings window (v0.6 slice 1): shell, two-tier navigation, search, and a
@@ -406,13 +416,15 @@ test("the Palette honours a light override", async ({ page }) => {
 
 /**
  * About reads a build-time define for the version, so it fails at render rather
- * than at compile if `vite.config.ts` stops injecting one.
+ * than at compile if `vite.config.ts` stops injecting one. Asserted against
+ * `package.json`, not a `\d` pattern: the pattern matched 0.6.0 through two
+ * releases while the baseline stayed stale.
  */
 test("About names the version and the identity slug", async ({ page }) => {
   await page.goto("/?window=settings");
   await page.getByRole("button", { name: "About" }).click();
 
-  await expect(page.getByText(/^Version \d/)).toBeVisible();
+  await expect(page.getByText(`Version ${APP_VERSION}`)).toBeVisible();
   // ADR-0011: what Windows keys off is the slug, never the display name.
   await expect(page.getByText("com.v3sper.launcher")).toBeVisible();
 

@@ -1,5 +1,5 @@
 /**
- * The `!c` conversation, inside the Palette (v0.9 task 7).
+ * The `!c` conversation, inside the Palette (v0.8 task 7).
  *
  * **One window.** A follow-up continues here rather than opening a second one:
  * Promotion (ADR-0001) is the Palette becoming a conversation, not a new
