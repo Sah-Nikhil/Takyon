@@ -1,165 +1,192 @@
-# Takyon, 3-minute pitch
+# Takyon, hackathon material
 
-Not part of the doc taxonomy in `CLAUDE.md`. Hackathon material, safe to delete.
+Not part of the doc taxonomy in `CLAUDE.md`. Safe to delete after submission.
 
-Total 3:00. Times are cumulative. Record at 1920x1080, capture the Palette at
-150% scaling so text is legible when the video is scaled down.
-
----
-
-## 0:00 to 0:20, the problem, on camera or voiceover over a black frame
-
-> Every launcher that answers questions sends your keystrokes to a server.
-> Spotlight does. Raycast does. The moment a launcher gets useful, it gets
-> chatty.
->
-> Takyon doesn't. And I can show you.
-
-**On screen:** Takyon's mark, then cut straight to the demo. No title card longer
-than two seconds.
+Angle: Takyon is the fastest way to reach anything on your machine, and the
+fastest way to reach past it. One keystroke, one box, everything behind it.
 
 ---
 
-## 0:20 to 0:50, the guarantee, and the proof
+## 1. What does it solve?
 
-**Screen recording, one take:** Resource Monitor open on the right filtered to
-`takyon.exe`, the Network tab visible. Press the hotkey. Type `chrome`, then
-`2+2`, then `report.pdf`, slowly.
+Everything on a Windows machine lives behind a different door. Start menu for
+apps. Explorer for files. A shortcut nobody remembers for clipboard history. A
+calculator app for one sum. A browser tab for a question. A terminal for the AI
+CLI you already pay for.
 
-> Applications, a calculation, a file. All of it local, all of it under 30
-> milliseconds. Watch the network graph while I type.
+Takyon is one key that opens all of them. Press `Alt+Space`, type, press Enter.
+Applications, files, clipboard history, math, Windows settings pages, Steam and
+Epic games, all in the same list, first answer on screen in under 30
+milliseconds. It ranks by what you actually open, so by the second keystroke the
+thing you wanted is already first.
 
-**On screen:** the connection count stays at zero. Hold on it for two full
-seconds. This is the shot the whole pitch rests on, so don't rush it.
+Then it reaches past your desktop. `!s` answers a live question from the web and
+shows you the sources it read. `!c` hands the question to the AI CLI you are
+already signed in to. Same box, same keystroke, no tab, no terminal, no losing
+your place.
 
-> Nothing. Not a suggestion request, not telemetry, not a prefetch. A line
-> without a bang never touches the network, and that's a correctness rule in the
-> codebase, not a preference.
-
----
-
-## 0:50 to 1:35, the bangs, where it does leave
-
-**Screen recording:** type `!s who won the last f1 race`, press Enter.
-
-> One character changes that. Bang-s searches the web.
-
-**On screen:** the header turns amber and reads "Left this machine, Brave
-Search". Let the phases show: searching, reading sources, then the answer
-streaming in with `[1]` `[2]` citations and the source list underneath.
-
-> The colour is the tell. Everything contained is cool, everything outbound is
-> warm, so you can see the boundary rather than trust it.
->
-> Brave returns the pages, Takyon reads them over the HTTP stack Windows already
-> ships, and then it hands the text to an agent to answer from.
-
-**Screen recording:** click source `[1]`, browser opens the real page. Cut back.
-
-**Screen recording:** type `!c when is the next total solar eclipse`, Enter.
-
-> Bang-c asks an agent directly. Claude Code, Codex or opencode, whichever you
-> already have installed and signed in to.
+The whole point is time. Ten seconds of hunting, forty times a day, is where your
+attention goes. Takyon gives it back.
 
 ---
 
-## 1:35 to 2:05, the part judges will ask about
+## 2. What issues did you face, and how did you solve them?
 
-**On camera, or over the Settings, Agents page:**
+**Fast and useful pull in opposite directions.** Every feature wants to run when
+you press the key, and the budget is 50 milliseconds. Fixed by never building the
+window: it is created once at login, hidden, kept warm, and its memory trimmed
+while it sits there. Showing it allocates nothing. First pixel measures 22.6 ms,
+idle cost 107 MB.
 
-> Takyon holds no LLM account. No API key of its own, no subscription, no
-> proxy in the middle. It runs the CLI you already pay for, as a subprocess, and
-> reads its output.
->
-> That means signing in never happens in my app. It happens in Claude's own CLI,
-> where it already did.
+**A green test suite that was lying.** The screenshot tests allowed 1% of pixels
+to differ, which on this window is 5,702 pixels. Enough to hide two missing rows
+and a wrong version number across two releases. Swapped the percentage for a flat
+150 pixel budget and proved it by restoring an old baseline, which now fails by
+1,020 pixels. Separately, the Settings window had never rendered in a real build,
+because creating a window from the main thread deadlocks Tauri. Both were found
+by driving the installed product instead of trusting a clean compile.
 
-**On screen:** the Agents page. Show the ranked list, a switch per agent, the
-locked model and effort dropdowns.
+**AI features usually mean an account, a key and a bill.** Takyon has none. It
+drives the agent CLIs you already have installed and signed in, Claude Code,
+Codex or opencode, as a subprocess. You rank them, and the first one switched on
+answers. That same ranking gives `!s` its writer for free, so web search works on
+a machine that only has Codex.
 
-> You rank them. Bang-c asks the first one that's switched on, so a signed-out
-> agent gets stepped over instead of being a dead end. And bang-s uses that same
-> ranking to write its answer, which means web search works on a machine that has
-> only Codex installed.
+**Web search wanted to double the size of the app.** A Rust HTTPS client would
+have added roughly 2 MB of TLS to a 2.5 MB product. Windows already ships an HTTP
+stack with TLS, the certificate store and your proxy settings, so Takyon calls
+that instead. The installer did not grow at all.
 
-**On screen:** Settings, Web Search page. Point at the key field.
-
-> The one key it does hold, yours for Brave, is wrapped with DPAPI for your
-> Windows account and never sent back to the interface. Settings shows you four
-> characters of it.
-
----
-
-## 2:05 to 2:35, the engineering claim
-
-**On screen:** a terminal running `bun run bench`, or the numbers as plain text
-over the Palette.
-
-> Hotkey to first pixel: 22.6 milliseconds against a 50 millisecond budget.
-> Login to responsive: 311. Idle memory: 107 megabytes.
->
-> The whole installer is two and a half megabytes.
-
-**On screen:** File Explorer showing `Takyon_0.9.0_x64-setup.exe`, 2.5 MB.
-
-> Web search needed HTTPS. The obvious move was a Rust HTTP client, which would
-> have added about two megabytes of TLS to a two-and-a-half megabyte product. So
-> it calls WinHTTP instead. The OS already has TLS, a certificate store and your
-> proxy settings. The installer didn't grow at all.
+**The first answers read like essays.** Nobody wants five paragraphs to learn a
+score. Rebuilt `!s` on Arc Search's shape: it names the pages it is reading, then
+gives a headline and a few labelled one line findings, each ending in the sources
+behind it, with a line of its own wherever the sources disagree.
 
 ---
 
-## 2:35 to 3:00, close
+# 3-minute pitch script
 
-**On camera:**
+Total 3:00, times cumulative. Record at 1920x1080. Capture the Palette at 150%
+scaling so the text survives being scaled down. Every clip is real, no mockups.
 
-> Nine phases built. Applications, files, clipboard history, a calculator,
-> ranking that learns what you actually open, agents, and now web search. 562
-> Rust tests, 98 screenshot tests, four test layers because a launcher can't be
-> verified by one.
+## 0:00 to 0:15, the hook
+
+**On screen:** a plain Windows desktop. Nothing open.
+
+> Opening an app. Finding a file. Checking something you copied ten minutes ago.
+> One sum. One question. Five different places on your computer.
+
+**Press the hotkey. The Palette appears mid-sentence.**
+
+> Or one.
+
+## 0:15 to 0:50, everything on your machine
+
+**One take, no cuts.** Type and Enter each of these, roughly four seconds apart:
+
+1. `chrome`, Enter. Chrome opens.
+2. Hotkey, `2+2*3`, the answer sits in the row.
+3. Hotkey, `report`, a file appears with its real icon. Enter opens it.
+4. Hotkey, `bluetooth`, the Windows Bluetooth page. Enter.
+
+> An application, a calculation, a file, a Windows settings page. Same box, same
+> keystroke, no menu, no Explorer window. The first result is on screen in about
+> twenty milliseconds, which is faster than you can watch it happen.
+
+## 0:50 to 1:20, it learns, and it does more than open
+
+**Screen recording:** type a single letter and show the top row being the app you
+actually use. Then press `Ctrl+K` on a result.
+
+> It ranks by what you actually open, so one letter is usually enough.
+
+**On screen:** the action menu, then reveal in Explorer.
+
+> Enter is not the only thing you can do. Reveal it, copy its path, run it as
+> administrator, without touching the mouse.
+
+**Screen recording:** hotkey, `!v`, the clipboard history list, filter by type,
+Enter to paste.
+
+> Bang v is everything you have copied, searchable, pasted back where you were.
+
+## 1:20 to 2:05, past your machine
+
+**Screen recording:** type `!s who won the last f1 race`, Enter. Let it run live.
+
+> One character reaches the web instead.
+
+**On screen:** the header turns amber and says the query left the machine. The
+hosts being read appear. Then the headline, then the findings, each ending in
+numbered chips.
+
+> It searches, reads the actual pages, and gives you a headline and four lines,
+> each one citing where it came from. Not ten blue links, and not an essay.
+
+**Screen recording:** click citation `[2]`, the real page opens in the browser.
+
+> Every number is the page behind it, one click away. Where the sources disagree,
+> it says so instead of quietly picking one.
+
+## 2:05 to 2:30, the AI you already pay for
+
+**Screen recording:** `!c when is the next total solar eclipse`, Enter. The answer
+streams in. Type a follow up in the same window.
+
+> Bang c asks an agent directly, and a follow up keeps going in the same window.
+
+**On screen:** Settings, Agents page. Show the ranked list and the switches.
+
+> Takyon has no AI account and no API key. It drives Claude Code, Codex or
+> opencode, whichever you already have signed in, and you decide the order.
+> Nothing new to sign up for, nothing extra to pay.
+
+## 2:30 to 2:45, the numbers
+
+**On screen:** the bench output, or the four numbers on a card, then the
+installer in Explorer with its size visible.
+
+> Hotkey to first pixel, 22.6 milliseconds. Login to responsive, 311. Idle
+> memory, 107 megabytes. The installer is two and a half.
+
+## 2:45 to 3:00, close
+
+**On camera, or over the Palette sitting open and empty.**
+
+> Nine versions. Apps, files, clipboard, calculator, ranking that learns, agents,
+> and web search. Four layers of tests, because a launcher cannot be checked by
+> one.
 >
-> What's left is a code-signing certificate, so it can appear over elevated
-> windows, and a week of somebody who isn't me using it.
->
-> Takyon. Local by default. Networked only when you say so, one character at a
-> time.
+> Takyon. One key, everything behind it.
 
-**Final frame:** the mark, the repo URL, and the one line worth remembering:
-"a bangless query never touches the network."
+**Final frame:** the mark, the repo URL, `Alt+Space`.
 
 ---
 
 ## Shot list, in recording order
 
-Record these before writing any voiceover over them. Every one is real, no
-mockups.
-
-1. Resource Monitor beside the Palette, typing a bangless query, zero
-   connections. **The most important shot in the video.**
-2. `!s` with a live question: header, phases, streaming answer, sources.
-3. Clicking a source, browser opening the real page.
-4. `!c` with a question, answer streaming, then a follow-up continuing in the
-   same window.
-5. Settings, Agents: the ranked list, switches, the model and effort dropdowns.
-6. Settings, Web Search: the key field with a stored key showing four characters.
-7. `bun run bench` output, or the numbers on a card.
-8. The installer in Explorer with its size visible.
-9. `Ctrl+K` action menu on a result, if there's a spare two seconds.
+1. Empty desktop, then the Palette appearing on the hotkey.
+2. The four in a row take: app, calculation, file, settings page.
+3. One letter, correct top row. Frecency doing its job.
+4. `Ctrl+K` action menu, reveal in Explorer.
+5. `!v` clipboard history, filtered, pasted.
+6. `!s` live: header, hosts being read, headline, findings, citations.
+7. Clicking a citation, the real page opening.
+8. `!c` answer, then a follow up in the same window.
+9. Settings, Agents: ranked list, switches, model and effort dropdowns.
+10. Bench numbers, and the installer size in Explorer.
 
 ## Recording notes
 
-- **Turn off animations** in Settings before recording the Palette, or the idle
-  beat will fight your cuts.
-- The hotkey is `Alt+Space` by default and it collides with PowerToys Run. Rebind
-  to something free before recording, or the video shows the wrong window opening.
-- Record `!s` with a real Brave key. Fixtures look identical on camera, and
-  saying "this is live" while it isn't is the one thing that sinks a demo if
-  somebody asks you to run it again.
-- Keep every clip under twelve seconds. Nine shots at eight seconds each is
-  seventy two seconds of footage, which is enough for a three minute cut.
+- Turn animations off in Settings before recording, or the idle beat fights your
+  cuts.
+- `Alt+Space` collides with PowerToys Run and with Raycast. Rebind before
+  recording, or the video shows the wrong window opening.
+- Record `!s` and `!c` live, with a real Brave key and a signed in agent. If a
+  judge asks you to run it again, you want it to work.
+- Keep every clip under twelve seconds.
 
 ## What to cut if you run long
 
-In this order: the Ctrl+K shot, the follow-up half of shot 4, and the WinHTTP
-explanation at 2:05. Never cut the Resource Monitor shot or the DPAPI sentence.
-Those are the two claims nobody else in the room will be making.
+In this order: the `Ctrl+K` shot, the `!v` shot, then the follow up half of the
+`!c` shot. Never cut the four in a row take or the `!s` citations.
