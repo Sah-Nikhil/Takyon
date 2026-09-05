@@ -20,6 +20,7 @@ import {
   failPreferenceWrite,
   menuRequest,
   failWebSearch,
+  holdSearchAtReading,
   openedUrls,
   setAnswer,
   setAutostart,
@@ -75,6 +76,8 @@ if (!inTauri) {
     // browser cannot reach, so the no-key state is unreachable without this.
     setWebKeyStored,
     failWebSearch,
+    // Hold a search at its reading phase, which otherwise lasts 20ms.
+    holdSearchAtReading,
     // What the mock Agent answers, so the renderer can be driven with markdown.
     setAnswer,
     // What the mock was asked to open. Enter on `!s` and a source row both end

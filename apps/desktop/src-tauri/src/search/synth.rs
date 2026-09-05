@@ -46,11 +46,21 @@ pub fn citations(hits: Vec<Hit>, bodies: Vec<Result<String, SearchError>>) -> Ve
 pub fn prompt(question: &str, citations: &[Citation]) -> String {
     let mut out = String::with_capacity(PROMPT_BUDGET);
     out.push_str(
-        "Answer the question using only the numbered sources below. \
-         Cite them inline as [1], [2] and so on, at the end of the sentence they \
-         support. Two or three short paragraphs, no preamble, no heading, and no \
-         bullet list unless the question asks for one. If the sources do not \
-         answer the question, say exactly that and say what they do cover.\n\n",
+        "You have read several web pages. Answer the question from them, reading \
+         across all of them rather than summarising each in turn.\n\n\
+         Reply in exactly this shape and nothing else:\n\
+         HEADLINE: six to ten words naming the answer, not the topic.\n\
+         Then three to six lines, each one:\n\
+         - **Label** — one sentence of detail. [n]\n\n\
+         The label is two or three words naming what the line is about (Final \
+         score, Who directed it, Cost). The detail is one sentence, specific, \
+         with the number or name in it. Every line ends with the source numbers \
+         it came from, like [2] or [1][4]. The numbers go at the end of the line \
+         and nowhere else in it.\n\n\
+         Where the sources disagree, say so in a line of its own and name each \
+         reading with the source behind it. Where they do not answer the question, say \
+         that in a line of its own rather than filling it in from memory. No \
+         preamble, no closing line, no heading other than HEADLINE.\n\n",
     );
     out.push_str("Question: ");
     out.push_str(question.trim());
@@ -147,7 +157,27 @@ mod tests {
     #[test]
     fn v0_9_the_prompt_asks_for_numbered_citations() {
         let prompt = prompt("why", &[]);
-        assert!(prompt.contains("[1], [2]"));
+        assert!(prompt.contains("[1]"));
+    }
+
+    /// The answer shape is Arc Search's, not an essay: a headline, then labelled
+    /// one-line findings. Prose paragraphs are what this replaced.
+    #[test]
+    fn v0_9_the_prompt_asks_for_a_headline_and_labelled_findings() {
+        let prompt = prompt("what happened in the chiefs game", &[]);
+        assert!(prompt.contains("HEADLINE:"), "no headline instruction");
+        assert!(prompt.contains("**Label**"), "no labelled-bullet instruction");
+        assert!(prompt.contains("- "), "no bullet instruction");
+    }
+
+    /// Several sources are read to be compared, not concatenated. Where they
+    /// disagree the answer has to say so rather than picking one silently.
+    #[test]
+    fn v0_9_the_prompt_asks_the_sources_to_be_compared() {
+        let prompt = prompt("who won", &[]);
+        let lower = prompt.to_lowercase();
+        assert!(lower.contains("disagree"), "nothing about conflicting sources");
+        assert!(lower.contains("across"), "nothing about reading across sources");
     }
 
     /// `!s` asks whoever `!c` would ask, so a Codex-only machine still answers.

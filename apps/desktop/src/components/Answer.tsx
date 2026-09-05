@@ -13,8 +13,7 @@
 
 import { type ReactNode } from "react";
 
-/** `**bold**`, `*italic*`, `_italic_`, `` `code` ``, in one pass. */
-const INLINE = /(\*\*[^*]+\*\*|\*[^*\n]+\*|_[^_\n]+_|`[^`\n]+`)/g;
+import { parseInline } from "./answerText";
 
 export function Answer({ text, className = "" }: { text: string; className?: string }) {
   // Blank-line separated, so an answer keeps the shape it was written in and a
@@ -33,39 +32,32 @@ export function Answer({ text, className = "" }: { text: string; className?: str
 
 /** One paragraph's inline marks. Single newlines survive as line breaks. */
 function inline(text: string): ReactNode[] {
-  return text.split(INLINE).map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-      return (
-        <strong key={i} className="font-semibold text-fg">
-          {part.slice(2, -2)}
-        </strong>
-      );
+  return parseInline(text).map((span, i) => {
+    switch (span.kind) {
+      case "bold":
+        return (
+          <strong key={i} className="font-semibold text-fg">
+            {span.text}
+          </strong>
+        );
+      case "italic":
+        return (
+          <em key={i} className="italic">
+            {span.text}
+          </em>
+        );
+      case "code":
+        return (
+          <code key={i} className="rounded-[0.25rem] bg-control px-1 py-px font-mono text-[0.92em]">
+            {span.text}
+          </code>
+        );
+      default:
+        // `whitespace-pre-wrap` would swallow a wrapped line's indent, so single
+        // newlines become breaks here instead.
+        return span.text
+          .split("\n")
+          .flatMap((line, j) => (j === 0 ? [line] : [<br key={`${i}-${j}`} />, line]));
     }
-    if (
-      ((part.startsWith("*") && part.endsWith("*")) ||
-        (part.startsWith("_") && part.endsWith("_"))) &&
-      part.length > 2
-    ) {
-      return (
-        <em key={i} className="italic">
-          {part.slice(1, -1)}
-        </em>
-      );
-    }
-    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
-      return (
-        <code
-          key={i}
-          className="rounded-[0.25rem] bg-control px-1 py-px font-mono text-[0.92em]"
-        >
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    // `whitespace-pre-wrap` on the paragraph would swallow the leading indent of
-    // a wrapped line, so single newlines are kept as breaks here instead.
-    return part.split("\n").flatMap((line, j) =>
-      j === 0 ? [line] : [<br key={`${i}-${j}`} />, line],
-    );
   });
 }

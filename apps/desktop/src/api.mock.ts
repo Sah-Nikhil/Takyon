@@ -110,34 +110,51 @@ const AGENT_MODELS: Record<AgentKind, string[]> = {
   opencode: ["opencode/big-pickle", "opencode/nemotron-3-ultra-free"],
 };
 
-/** Hits the mock provider returns. Three, so a citation list has a shape. */
+/** Hits the mock provider returns. Six, the number Arc Search reads. */
 const SEARCH_HITS: SearchHit[] = [
   {
-    title: "Scuderia Ferrari",
-    url: "https://example.com/ferrari",
-    description: "The oldest surviving team in Formula One, racing since 1950.",
+    title: "Chiefs beat Ravens in AFC Championship",
+    url: "https://espn.com/nfl/recap",
+    description: "Kansas City held on to win 17-10 at Baltimore.",
   },
   {
-    title: "2026 constructors' standings",
-    url: "https://example.org/standings",
-    description: "Points by team for the current season.",
+    title: "AFC Championship: as it happened",
+    url: "https://www.theguardian.com/sport/live",
+    description: "Minute by minute coverage of the game.",
   },
   {
-    title: "F1 regulations for 2026",
-    url: "https://example.net/regulations",
-    description: "Power unit and aerodynamic rules.",
+    title: "Chiefs 17-10 Ravens: box score",
+    url: "https://cnn.com/sport/box-score",
+    description: "Scoring plays, turnovers and drive charts.",
+  },
+  {
+    title: "Kelce's night in numbers",
+    url: "https://usatoday.com/sports/kelce",
+    description: "Eleven catches for 116 yards.",
+  },
+  {
+    title: "What the win means for the Super Bowl",
+    url: "https://today.com/sports/super-bowl",
+    description: "Kansas City reach their fourth in five seasons.",
+  },
+  {
+    title: "Reaction from both locker rooms",
+    url: "https://twitter.com/nfl/status/1",
+    description: "Players and coaches after the final whistle.",
   },
 ];
 
-/** Split into deltas for the same reason `MOCK_ANSWER` is. */
+/**
+ * Arc Search's answer shape: a headline, then labelled findings with the sources
+ * behind each one. Split into deltas for the same reason `MOCK_ANSWER` is.
+ */
 const MOCK_SYNTHESIS = [
-  "Ferrari ",
-  "has ",
-  "raced ",
-  "in ",
-  "Formula One ",
-  "since ",
-  "1950 [1].",
+  "HEADLINE: Chiefs beat the Ravens to reach the Super Bowl\n",
+  "- **Final score** — Kansas City 17, Baltimore 10, at Baltimore. [1][3]\n",
+  "- **Key play** — An interception in the fourth quarter ended the last drive. [2]\n",
+  "- **Standout** — Travis Kelce caught eleven passes for 116 yards. [4]\n",
+  "- **What is next** — Kansas City reach their fourth Super Bowl in five seasons. [5]\n",
+  "- **Sources disagree** — [2] calls the fumble a muffed catch; [3] scores it a fumble. [2][3]\n",
 ];
 
 /** What the mock was asked to open, so a test can assert on it. */
@@ -164,6 +181,22 @@ function emitSearch(message: SearchMessage) {
  */
 export function setWebKeyStored(key: string | null) {
   webKey = key;
+}
+
+/**
+ * Hold a search at its reading phase until released. The mock answers in about
+ * twenty milliseconds, so asserting on a phase means racing it; a test that
+ * wants the reading list asks for it to stand still instead.
+ */
+let holdReading = false;
+let releaseReading: (() => void) | null = null;
+
+export function holdSearchAtReading(on: boolean) {
+  holdReading = on;
+  if (!on && releaseReading) {
+    releaseReading();
+    releaseReading = null;
+  }
 }
 
 /** Make the next search fail with this message. Null restores success. */
@@ -976,14 +1009,19 @@ export const mock = {
     emitSearch({ searchId, kind: "searching", provider: "Brave Search" });
     const turnId = nextTurnId++;
     setTimeout(() => emitSearch({ searchId, kind: "reading", sources: SEARCH_HITS }), 10);
-    setTimeout(() => {
+    const answering = () => {
       emitSearch({ searchId, kind: "answering", turnId, agent: "Claude Code" });
       emitTurn({ turnId, kind: "started", session: `mock-search-${turnId}` });
       for (const [i, delta] of MOCK_SYNTHESIS.entries()) {
         setTimeout(() => emitTurn({ turnId, kind: "text", delta }), 10 * (i + 1));
       }
       setTimeout(() => emitTurn({ turnId, kind: "done" }), 10 * (MOCK_SYNTHESIS.length + 1));
-    }, 20);
+    };
+    if (holdReading) {
+      releaseReading = answering;
+    } else {
+      setTimeout(answering, 20);
+    }
     void query;
     return searchId;
   },

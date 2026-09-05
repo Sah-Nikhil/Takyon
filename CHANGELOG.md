@@ -19,8 +19,10 @@ after you press Enter.
   the HTTP stack Windows already ships, reduces each to its prose, and hands that
   text to an Agent to answer from. No browser engine is bundled or driven
   (ADR-0005), and no Rust HTTP client either (ADR-0019).
-- **The answer streams, with numbered sources.** Citations like `[1]` match the
-  list underneath, and selecting a source opens it in your browser.
+- **The answer is a briefing, not an essay.** Arc Search's shape: while it works
+  the Palette names the pages it is reading, by host. Then a headline and a few
+  labelled findings, each ending in the sources behind it, and a line of its own
+  wherever the sources disagree. Every citation is a chip that opens its page.
 - **The summariser is the Agent you already ranked.** Whichever Agent `!c` would
   ask writes the answer, with tools off, in the Scratch directory — so a machine
   with only Codex installed still has `!s`.

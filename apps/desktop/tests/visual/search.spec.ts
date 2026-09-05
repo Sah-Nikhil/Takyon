@@ -13,6 +13,7 @@ type Mock = {
   emitShow: () => void;
   setWebKeyStored: (key: string | null) => void;
   failWebSearch: (message: string | null) => void;
+  holdSearchAtReading: (on: boolean) => void;
   openedUrls: () => string[];
 };
 
@@ -74,34 +75,86 @@ test("with no key stored the row says where to get one", async ({ page }) => {
   await expect(page).toHaveScreenshot("palette-web-nokey.png");
 });
 
-test("the answer streams in with its sources", async ({ page }) => {
+/**
+ * Arc Search's middle screen: the pages being read, by host, before a word of
+ * the answer exists. This is what tells you whether to trust it.
+ */
+test("while it reads it names the pages by host", async ({ page }) => {
+  const input = await open(page);
+  // Held rather than raced: the mock answers in twenty milliseconds.
+  await page.evaluate(() =>
+    (window as unknown as { __takyon_mock: Mock }).__takyon_mock.holdSearchAtReading(true),
+  );
+  await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
+  await input.fill("!s what happened in the chiefs game");
+  await input.press("Enter");
+
+  const reading = page.getByTestId("reading");
+  await expect(reading).toContainText("Reading 6 web pages");
+  await expect(reading).toContainText("espn.com");
+  // The host, not the URL, and `www.` is dropped: it is noise on every row.
+  await expect(reading).toContainText("theguardian.com");
+  await expect(reading).not.toContainText("https://");
+  await expect(page.getByRole("status")).toHaveText("Reading 6 web pages");
+
+  await expect(page).toHaveScreenshot("palette-web-reading.png");
+});
+
+test("the answer is a headline and labelled findings, with its sources", async ({ page }) => {
   const input = await open(page);
   await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
-  await input.fill("!s ferrari in f1");
+  await input.fill("!s what happened in the chiefs game");
   await input.press("Enter");
 
   // The header is the outbound state: warm, and in words (v0.9 task 7).
   await expect(page.getByTestId("outbound")).toHaveText("Left this machine · Brave Search");
-  // Sources land before the answer is finished, and stay while it is written.
+
+  const findings = page.getByTestId("findings");
+  await expect(findings.getByRole("heading")).toHaveText(
+    "Chiefs beat the Ravens to reach the Super Bowl",
+  );
+  await expect(findings).toContainText("Final score");
+  await expect(findings).toContainText("Kansas City 17, Baltimore 10, at Baltimore.");
+  // Reading across sources rather than summarising each: a disagreement between
+  // two of them is a finding of its own.
+  await expect(findings).toContainText("Sources disagree");
+  // The citation numbers are gone from the prose and are buttons instead.
+  await expect(findings).not.toContainText("[1][3]");
+  await expect(findings.getByRole("button", { name: /^Source 1:/ })).toBeVisible();
+
+  // The reading list has given way to the answer, and the sources sit below it.
+  await expect(page.getByTestId("reading")).toHaveCount(0);
   await expect(page.getByTestId("sources")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Scuderia Ferrari/ })).toBeVisible();
-  await expect(page.getByText("Ferrari has raced in Formula One since 1950 [1].")).toBeVisible();
 
   await expect(page).toHaveScreenshot("palette-web-answered.png");
+});
+
+/** A citation inside a finding opens the source it points at. */
+test("a citation opens its own source", async ({ page }) => {
+  const input = await open(page);
+  await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
+  await input.fill("!s what happened in the chiefs game");
+  await input.press("Enter");
+  await page.getByTestId("findings").getByRole("button", { name: /^Source 4:/ }).click();
+
+  const opened = await page.evaluate(() =>
+    (window as unknown as { __takyon_mock: Mock }).__takyon_mock.openedUrls(),
+  );
+  expect(opened).toContain("https://usatoday.com/sports/kelce");
 });
 
 /** A source row opens its URL, which is the only thing the list is for. */
 test("a source opens in the browser", async ({ page }) => {
   const input = await open(page);
   await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
-  await input.fill("!s ferrari in f1");
+  await input.fill("!s what happened in the chiefs game");
   await input.press("Enter");
-  await page.getByRole("button", { name: /Scuderia Ferrari/ }).click();
+  await page.getByTestId("sources").getByRole("button", { name: /Chiefs beat Ravens/ }).click();
 
   const opened = await page.evaluate(() =>
     (window as unknown as { __takyon_mock: Mock }).__takyon_mock.openedUrls(),
   );
-  expect(opened).toContain("https://example.com/ferrari");
+  expect(opened).toContain("https://espn.com/nfl/recap");
 });
 
 /**

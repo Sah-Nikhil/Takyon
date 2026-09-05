@@ -432,6 +432,7 @@ is the price one window charges: a conversation dies when the Palette does.*
 - [x] Parallel page fetch + Readability-style extraction — no browser (ADR-0005). **HTTP is WinHTTP** (ADR-0019): OS TLS, the user's own proxy, and nothing added to the installer
 - [x] Per-request timeout and a total budget, so one slow page cannot hold the answer. A page that fails is named in the prompt rather than dropped
 - [x] Synthesised answer rendered inline with its sources, streaming. **The summariser is whichever Agent `!c` would ask** — tools off, in the Scratch directory — so a Codex-only machine still gets `!s`
+- [x] **The shape is Arc Search's**: while it works the Palette names the pages it is reading, by host; then a headline and three to six labelled findings, each ending in the sources behind it, with a line of its own where the sources disagree. Citations are chips that open their source, and the numbered list sits at the bottom
 - [x] Enter opens the query in the default browser and default search engine, by passing it as an argument to the browser `AssocQueryStringW` names
 - [x] Selecting a source Entry opens that URL. http(s) only, checked in Rust: these URLs come from a remote provider
 - [x] **The outbound state is visible**, in colour and in words: the row and the answer header are warm and say the query left the machine (`docs/brand.md`)
