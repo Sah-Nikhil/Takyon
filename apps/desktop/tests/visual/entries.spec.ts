@@ -147,24 +147,26 @@ test("a query matching nothing shows an empty list rather than stale rows", asyn
 });
 
 /**
- * The window between login and the application walk finishing. Without this row
- * the Palette shows an empty list, which means "you have no such app" — exactly
- * wrong in the first second after login, and the moment a user decides the
- * launcher does not know about their apps.
+ * The walk is a background job and the Palette is not where it reports: the tray
+ * tooltip and Settings → Applications say it instead.
+ *
+ * Reverses v0.2's call, whose cost is recorded in `docs/tbd/v0.9.md` §10.
  */
-test("an in-progress walk says so instead of showing nothing", async ({ page }) => {
+test("an in-progress walk does not put a status row in the palette", async ({ page }) => {
   const input = await open(page);
   await setIndexing(page, true);
 
   await input.fill("zzzznothing");
-  await expect(page.getByText("Indexing applications…")).toBeVisible();
+  await expect(page.getByText("Indexing applications…")).toHaveCount(0);
+  // No reserved row either: an empty list is an empty window, not a blank strip.
+  await expect(page.getByRole("option")).toHaveCount(0);
 
-  await fitTo(page, 0, true);
+  await fitTo(page, 0);
   await expect(page).toHaveScreenshot("palette-indexing.png");
 
-  // And it goes away once there is something real to show.
+  // A real match still draws, walk or no walk.
   await input.fill("photo");
-  await expect(page.getByText("Indexing applications…")).toHaveCount(0);
+  await expect(page.getByRole("option").first()).toBeVisible();
 });
 
 /**

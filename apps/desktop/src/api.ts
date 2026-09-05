@@ -419,6 +419,11 @@ export function onHide(cb: () => void): () => void {
   };
 }
 
+/** Whether the first application walk is still running. Settings and the tray
+ *  are the only things that ask; the Palette stopped at v0.9. */
+export const appsIndexing = () =>
+  inTauri ? invoke<boolean>("apps_indexing") : mock.appsIndexing();
+
 // ── Agents (v0.8) ───────────────────────────────────────────────────
 
 /**

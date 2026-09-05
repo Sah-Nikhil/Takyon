@@ -39,6 +39,7 @@ const GROUPS: ReadonlyArray<{ origin: AppOrigin; title: string; hint: string }> 
 
 export function Applications() {
   const [rows, setRows] = useState<AppAliasRow[]>([]);
+  const [indexing, setIndexing] = useState(true);
   /**
    * Aliases whose application is gone — an uninstall, or a rename.
    *
@@ -60,6 +61,7 @@ export function Applications() {
 
   const load = useCallback(() => {
     void api.applicationRows().then(setRows);
+    void api.appsIndexing().then(setIndexing);
     // `title` is absent exactly when the target no longer resolves, which is the
     // one thing the by-application list cannot show.
     void api.aliases().then((all) => setOrphans(all.filter((a) => !a.title)));
@@ -190,9 +192,11 @@ export function Applications() {
         />
       </Row>
 
+      {/* Asked rather than inferred: an empty list is also what a finished walk
+          that found nothing looks like, and those are different sentences. */}
       {rows.length === 0 && (
         <div className="px-3.5 py-2.5 text-[12.5px] text-fg/40">
-          Still finding applications…
+          {indexing ? "Still finding applications…" : "No applications found."}
         </div>
       )}
 

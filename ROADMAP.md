@@ -42,6 +42,7 @@ into `docs/tbc/0002` as the first real evidence for or against the warm model.
 
 **Goal:** it replaces the Start menu for opening things.
 
+- [x] **Amended at v0.9**: the "Indexing applications…" row is gone from the Palette. The walk reports in the tray tooltip and in Settings → Applications instead, because the row was competing with a Bang's own status line — [`docs/tbd/v0.9.md`](./docs/tbd/v0.9.md) §10
 - [x] `AppSource`: Start Menu `.lnk` (user + machine), `shell:AppsFolder` (UWP/Store), bare `.exe` on PATH, Steam games. **1032 applications in ~480 ms** on the dev machine, release build, on the deferred-init thread. No disk cache — PowerToys Run deleted theirs for three bug classes it could not fix (microsoft/PowerToys#6048), and the expensive half is already persisted in `icons.bin`. Revisit with a number if that walk ever exceeds ~1 s. **`.lnk` files are never `Resolve`d**: raw path plus an existence check, because `Resolve` hunts the network for moved UNC targets and can trigger MSI repair
 - [x] Matching: the six-rung ladder from §3, which was **amended** — its 900/800 rungs described the same set, so one was unreachable
 - [x] Icon extraction into a single memory-mapped `icons.bin`, lazy fill, off the UI thread, placeholder while missing. Reaches the webview through a **`takyon-icon://` URI scheme**, not as bytes in the query response; §6 records why

@@ -100,16 +100,29 @@ export function Select<T extends string>({
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [open]);
 
+  // `preventScroll`, always: focusing an element that overhangs the fold makes
+  // the browser scroll it into view, which drags the section under it and reads
+  // as the page jumping when a dropdown opens.
   useEffect(() => {
-    if (open) list.current?.focus();
+    if (open) list.current?.focus({ preventScroll: true });
   }, [open]);
 
-  // Keeps the active row on screen when the arrows walk past the fold.
+  /*
+    Keeps the active row on screen when the arrows walk past the fold, by
+    scrolling the list itself. `scrollIntoView` would do it in one line and also
+    scroll every scrollable ancestor, which moves the page behind the list.
+   */
   useEffect(() => {
     if (!open) return;
-    list.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({
-      block: "nearest",
-    });
+    const box = list.current;
+    const row = box?.querySelector<HTMLElement>(`[data-index="${active}"]`);
+    if (!box || !row) return;
+    const top = row.offsetTop;
+    const bottom = top + row.offsetHeight;
+    if (top < box.scrollTop) box.scrollTop = top;
+    else if (bottom > box.scrollTop + box.clientHeight) {
+      box.scrollTop = bottom - box.clientHeight;
+    }
   }, [open, active]);
 
   const onListKeyDown = (e: React.KeyboardEvent) => {

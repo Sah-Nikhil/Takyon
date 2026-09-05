@@ -298,11 +298,14 @@ export interface QueryResult {
   seq: number;
   entries: Entry[];
   /**
-   * True while the first application walk is still running. The Palette says so
-   * rather than drawing an empty list — an empty list means "no such app", which
-   * in the first second after login is exactly wrong.
+   * Reserve one row in the window for a status line.
+   *
+   * **Not "the application walk is running".** It meant both until v0.9, and
+   * `!s` inherited the second meaning: two rows rendered in a window sized for
+   * one, so the list scrolled and the scrollbar covered the message. The walk
+   * reports in Settings and the tray now.
    */
-  indexing: boolean;
+  statusRow: boolean;
   /**
    * Present exactly when the line is `!c` (v0.8). The Ask Mode has no Entries to
    * rank — the answer streams over `EVENT_TURN` — so `entries` stays empty and

@@ -689,7 +689,7 @@ export const mock = {
       return {
         seq,
         entries: [],
-        indexing: false,
+        statusRow: false,
         ask: { query: ask, agent: route[0] ?? null, order: route },
       };
     }
@@ -700,7 +700,7 @@ export const mock = {
       return {
         seq,
         entries: [],
-        indexing: false,
+        statusRow: false,
         web: { query: web, provider: "Brave Search", hasKey: webKey !== null },
       };
     }
@@ -711,7 +711,7 @@ export const mock = {
       return {
         seq,
         entries: CLIP_FIXTURES.filter((e) => e.title.toLowerCase().includes(clips)),
-        indexing: false,
+        statusRow: false,
       };
     }
     return {
@@ -722,7 +722,9 @@ export const mock = {
             ...[...FIXTURES, COMMAND_FIXTURE].filter((e) => matches(e, q)),
           ]
         : [],
-      indexing: q.trim() ? indexing : false,
+      // The walk reserves no row since v0.9: it reports in Settings and the
+      // tray, and `indexing` here only drives those.
+      statusRow: false,
     };
   },
   /** The same table Rust ships, so the footer draws in the browser build too. */
@@ -936,6 +938,7 @@ export const mock = {
       hideListeners.delete(cb);
     };
   },
+  appsIndexing: async () => indexing,
   agentSnapshots: async (): Promise<AgentSnapshot[]> => agentFixtures,
   agentSettings: async (): Promise<AgentSettings> => ({
     order: [...askOrder],

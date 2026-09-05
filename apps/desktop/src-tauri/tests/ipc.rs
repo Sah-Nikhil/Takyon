@@ -30,7 +30,7 @@ use tauri::webview::InvokeRequest;
 use tauri::Manager;
 
 /// `interface QueryResult` in `packages/shared/src/ipc.ts`.
-const QUERY_RESULT_KEYS: [&str; 3] = ["seq", "entries", "indexing"];
+const QUERY_RESULT_KEYS: [&str; 3] = ["seq", "entries", "statusRow"];
 /// `interface Entry`. The optionals must be absent rather than null when Rust
 /// has none, or the frontend's `field?: T` types become `T | null`.
 const ENTRY_REQUIRED: [&str; 5] = ["id", "title", "kind", "score", "actions"];
@@ -291,7 +291,7 @@ fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
     assert_eq!(keys, expected, "QueryResult drifted from ipc.ts");
 
     assert!(object["seq"].is_u64());
-    assert!(object["indexing"].is_boolean());
+    assert!(object["statusRow"].is_boolean());
 
     let entries = object["entries"].as_array().expect("entries is an array");
     assert!(!entries.is_empty(), "nothing matched, so nothing was checked");

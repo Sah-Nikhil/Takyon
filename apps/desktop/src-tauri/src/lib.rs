@@ -122,7 +122,7 @@ fn query(
         .entries
         .first()
         .is_some_and(|e| e.kind == entry::EntryKind::Calc);
-    window::set_rows(&app, result.entries.len(), result.indexing, calc_card);
+    window::set_rows(&app, result.entries.len(), result.status_row, calc_card);
     result
 }
 
@@ -394,6 +394,16 @@ struct AppAliasRow {
     aliases: Vec<String>,
 }
 
+/// Whether the first application walk is still running.
+///
+/// Its own call rather than inferred from an empty list: an empty list is also
+/// what a finished walk that found nothing looks like, and those are different
+/// sentences. The Palette stopped asking at v0.9 (`docs/tbd/v0.9.md` §10).
+#[tauri::command]
+fn apps_indexing(pipeline: tauri::State<'_, Arc<query::Pipeline>>) -> bool {
+    pipeline.apps.is_indexing()
+}
+
 /// Every application and its aliases, for the Applications page.
 ///
 /// The whole list in one response — 1891 rows here. Read once on mount, off
@@ -645,6 +655,7 @@ pub fn run() {
             set_clip_blocked,
             aliases,
             application_rows,
+            apps_indexing,
             set_aliases_for,
             set_alias,
             open_crash_logs,
@@ -899,8 +910,12 @@ pub fn run() {
             // on a modal dialog indefinitely, and queueing discovery behind it would mean
             // the launcher knows no applications until the prompt is answered. Nothing to
             // serve in the meantime, deliberately — ADR-0012.
+            let tray_handle = handle.clone();
             std::thread::spawn(move || {
                 apps.refresh(&icons);
+                // The walk's one report to the user, now that the Palette does
+                // not carry it (docs/tbd/v0.9.md §10).
+                tray::set_indexing(&tray_handle, false);
                 // After the walk, because an alias attaches to an application
                 // that has to exist first. Cheap enough to redo whenever the
                 // alias table changes, which is what v0.6's editor will do.

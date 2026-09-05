@@ -101,6 +101,36 @@ test.describe("in settings", () => {
     await expect(claude).toHaveCount(0);
   });
 
+  /**
+   * Opening a list must not move the page under it. Focusing an element that
+   * extends past the fold makes the browser scroll it into view, which drags the
+   * section heading off screen and reads as the layout jumping.
+   */
+  test("opening a list does not scroll the page", async ({ page }) => {
+    // Short on purpose: the list has to overhang the fold for the browser to
+    // want to scroll it into view, which is the window the bug appeared in.
+    await page.setViewportSize({ width: 880, height: 420 });
+    await page.goto("/?window=settings");
+    await page.getByRole("button", { name: "Agents" }).click();
+
+    // Where a fixed thing on the page sits. If anything scrolls, this moves.
+    const heading = page.getByText("Ask !c with");
+    const where = async () => (await heading.boundingBox())?.y ?? null;
+
+    const before = await where();
+    expect(before).not.toBeNull();
+
+    await page.getByRole("combobox", { name: "Effort for Claude Code" }).click();
+    await expect(page.getByRole("listbox", { name: "Effort for Claude Code" })).toBeVisible();
+    expect(await where()).toBe(before);
+
+    // Walking the list scrolls the list, and nothing outside it.
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("End");
+    expect(await where()).toBe(before);
+  });
+
   /** Typeahead is the native behaviour people notice only when it is missing. */
   test("typing jumps to a row by name", async ({ page }) => {
     await page.goto("/?window=settings");

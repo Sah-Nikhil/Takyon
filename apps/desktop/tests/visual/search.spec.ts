@@ -14,6 +14,7 @@ type Mock = {
   setWebKeyStored: (key: string | null) => void;
   failWebSearch: (message: string | null) => void;
   holdSearchAtReading: (on: boolean) => void;
+  setIndexing: (on: boolean) => void;
   openedUrls: () => string[];
 };
 
@@ -42,6 +43,28 @@ test("!s alone names the provider and says the query will leave", async ({ page 
 
   await fitTo(page, 0);
   await expect(page).toHaveScreenshot("palette-web-empty.png");
+});
+
+/**
+ * The bug this covers: `!s` reserved a status row *and* drew the application
+ * walk's notice, so two rows rendered in a window sized for one. The list
+ * scrolled, and the scrollbar sat over the message.
+ */
+test("the bang shows exactly one row, whatever the walk is doing", async ({ page }) => {
+  const input = await open(page);
+  await page.evaluate(() =>
+    (window as unknown as { __takyon_mock: Mock }).__takyon_mock.setIndexing(true),
+  );
+  await input.fill("!s ferrari in f1");
+
+  await expect(page.getByTestId("web-note")).toBeVisible();
+  await expect(page.getByText("Indexing applications…")).toHaveCount(0);
+
+  // One row in a window sized for one, so nothing scrolls and nothing is hidden
+  // behind a scrollbar.
+  const list = page.locator("[cmdk-list]");
+  const overflow = await list.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(overflow).toBeLessThanOrEqual(0);
 });
 
 test("a typed question offers Enter", async ({ page }) => {

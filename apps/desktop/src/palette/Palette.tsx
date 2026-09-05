@@ -56,7 +56,6 @@ const PRIMARY_ACTION: Partial<Record<EntryKind, string>> = {
 export function Palette() {
   const [value, setValue] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [indexing, setIndexing] = useState(false);
   /*
     The file index's state, read only while `!e` is being typed (v0.7 task 7).
     Off the keystroke path deliberately: it changes on the walk's schedule, not
@@ -148,7 +147,6 @@ export function Palette() {
       if (result.seq < newestSeen.current) return;
       newestSeen.current = result.seq;
       setEntries(result.entries);
-      setIndexing(result.indexing);
       setAsk(result.ask ?? null);
       setWeb(result.web ?? null);
       // Selection follows the top Entry on every new result set. From v0.3 the
@@ -459,10 +457,10 @@ export function Palette() {
     ? null
     : fileIndex?.state === "stale"
       ? "Some changes were missed — rescanning, results may be incomplete"
-      : // Rust reserved the row via `indexing`, so falling back to the general
+      : // Rust reserved the row via `statusRow`, so falling back to the general
         // wording keeps a reserved row from rendering empty while the first
         // status read is still in flight.
-        fileIndex?.state === "building" || indexing
+        fileIndex?.state === "building"
         ? "Building the file index…"
         : null;
 
@@ -508,11 +506,7 @@ export function Palette() {
         : `${web.provider} · your question leaves this machine`;
 
   const showList =
-    entries.length > 0 ||
-    webNote !== null ||
-    fileIndexNote !== null ||
-    askNote !== null ||
-    (indexing && value.trim().length > 0);
+    entries.length > 0 || webNote !== null || fileIndexNote !== null || askNote !== null;
 
   /*
     Replaces the root rather than overlaying it: Rust has already resized to
@@ -632,19 +626,6 @@ export function Palette() {
              */
             className="overflow-y-auto border-t border-white/5 px-2 py-1"
           >
-            {/*
-              `!c` sets the same flag to reserve its row, so it is excluded here
-              alongside `!e` — "Indexing applications…" under a question would be
-              a status row about the wrong thing entirely.
-             */}
-            {indexing && entries.length === 0 && !filesBang && !ask && (
-              <div
-                className="flex items-center px-2 text-[13px] text-fg/40"
-                style={{ height: ROW_HEIGHT }}
-              >
-                Indexing applications…
-              </div>
-            )}
             {/*
               Above the results, not below: Stale means the list may be missing
               rows, and a caveat under the answer is one nobody reads (ADR-0007).

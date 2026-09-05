@@ -44,12 +44,12 @@ pub struct QueryResult {
     /// for a prefix of what is now in the input box.
     pub seq: u64,
     pub entries: Vec<Entry>,
-    /// True while the first application walk is still running.
+    /// Reserve one row in the window for a status line.
     ///
-    /// Lets the Palette say "Indexing applications…" instead of drawing an empty
-    /// list. Those look identical and one of them is a lie — an empty list means "you
-    /// have no such app", which right after login is exactly wrong.
-    pub indexing: bool,
+    /// **Not "the application walk is running"**, which it also meant until
+    /// v0.9: `!s` inherited that and drew two rows in a window sized for one.
+    /// The walk reports in Settings and the tray (`docs/tbd/v0.9.md` §10).
+    pub status_row: bool,
     /// Present exactly when the line is `!c` (v0.8). The Ask Mode has no Entries
     /// to rank — the answer streams over `takyon://turn` — so this carries the
     /// question and which Agent would answer it, and `entries` stays empty.
@@ -308,7 +308,6 @@ impl Pipeline {
         };
 
         let q = Query::new(line);
-        let indexing = self.apps.is_indexing();
 
         if q.is_empty() {
             // An empty Palette has no top row to protect, and leaving a stale
@@ -320,9 +319,9 @@ impl Pipeline {
                 seq,
                 entries: Vec::new(),
                 // Nothing is shown for an empty query, so nothing needs explaining.
-                // Reporting `indexing` here would put a status row under a Palette
+                // Reporting the walk here would put a status row under a Palette
                 // that has been deliberately left blank (ADR-0001).
-                indexing: false,
+                status_row: false,
                 ask: None,
             web: None,
             };
@@ -354,7 +353,8 @@ impl Pipeline {
         QueryResult {
             seq,
             entries,
-            indexing,
+            // The walk no longer draws a row, so a Bangless line reserves none.
+            status_row: false,
             ask: None,
             web: None,
         }
@@ -382,7 +382,7 @@ impl Pipeline {
             // Reuses the flag that reserves a status row in the *native* window,
             // exactly as `files_result` does: `!c` has no Entries, and without a
             // reserved row its one line falls outside the window.
-            indexing: true,
+            status_row: true,
             ..QueryResult::default()
         }
     }
@@ -400,7 +400,7 @@ impl Pipeline {
                 has_key: self.web_key_present(),
             }),
             // Reserves the status row in the native window, exactly as `!c` does.
-            indexing: true,
+            status_row: true,
             ..QueryResult::default()
         }
     }
@@ -424,7 +424,7 @@ impl Pipeline {
             // ADR-0016 applies here too: the source application is shown only
             // where two clips would otherwise read identically.
             entries: rank::disambiguate_subtitles(entries),
-            indexing: false,
+            status_row: false,
             ask: None,
             web: None,
         }
@@ -458,7 +458,7 @@ impl Pipeline {
             // (TBC-0006 sizes it from the row count, which the webview cannot
             // change). Which words go in that row is the frontend's business —
             // `file_index_status` tells it Building from Stale.
-            indexing: !matches!(
+            status_row: !matches!(
                 files.index().status(),
                 crate::index::IndexStatus::Ready
             ),
@@ -1427,14 +1427,16 @@ otepad.exe")]);
         let p = pipeline_with(vec![app("Notepad", r"C:\Windows\notepad.exe")]);
         let result = p.query("   ", 1);
         assert!(result.entries.is_empty());
-        assert!(!result.indexing);
+        assert!(!result.status_row);
     }
 
-    /// The window between the hotkey going live and the walk finishing. The
-    /// Palette has to be able to tell the user the difference between "still
-    /// looking" and "no such app".
+    /// The window between the hotkey going live and the walk finishing.
+    ///
+    /// **Amended at v0.9**: the walk reports in Settings and the tray, not the
+    /// Palette, so a Bangless line reserves no row while it runs. The Palette
+    /// stays a list (`docs/tbd/v0.9.md` §10).
     #[test]
-    fn v0_2_a_query_during_the_first_walk_says_it_is_still_indexing() {
+    fn v0_9_a_query_during_the_first_walk_reserves_no_row_in_the_palette() {
         let source = AppSource::new(); // indexing until refreshed
         let p = Pipeline::new(
             Arc::new(source),
@@ -1444,8 +1446,10 @@ otepad.exe")]);
             Arc::new(Frecency::open(None).unwrap()),
         );
         let result = p.query("anything", 1);
-        assert!(result.indexing);
+        assert!(!result.status_row);
         assert!(result.entries.is_empty());
+        // The walk itself is still reported, just not through the Palette.
+        assert!(p.apps.is_indexing());
     }
 
     #[test]
