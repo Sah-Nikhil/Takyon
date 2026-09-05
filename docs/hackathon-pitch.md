@@ -66,127 +66,53 @@ behind it, with a line of its own wherever the sources disagree.
 
 # 3-minute pitch script
 
-Total 3:00, times cumulative. Record at 1920x1080. Capture the Palette at 150%
-scaling so the text survives being scaled down. Every clip is real, no mockups.
+Rules for this cut. The demo is the pitch, so keep talking to a minimum. No line
+is longer than fifteen words. Nothing is explained twice, once on screen and once
+out loud. Total spoken is about 130 words, which is well under a minute, and the
+rest of the three minutes is the app doing things.
 
-## 0:00 to 0:15, the hook
+Where a beat says nothing, say nothing. Silence over a working demo reads as
+confidence.
 
-**On screen:** a plain Windows desktop. Nothing open.
+| Time | On screen | Say |
+| --- | --- | --- |
+| 0:00 | Empty desktop. Press the hotkey. Palette appears. | "One keystroke. Watch what fits behind it." |
+| 0:10 | Type `chrome`, Enter. Chrome opens. | "Apps." |
+| 0:18 | Hotkey, `2+2*3`, answer in the row. | "Math." |
+| 0:26 | Hotkey, `report`, Enter, the file opens. | "Files." |
+| 0:34 | Hotkey, `bluetooth`, Enter, the Windows page opens. | "Windows settings, without digging through menus." |
+| 0:42 | Type one letter. The app you use is already first. | "It learns what you open. One letter is usually enough." |
+| 0:52 | `Ctrl+K` on a result, then reveal in Explorer. | "Enter opens it. Ctrl+K does everything else." |
+| 1:04 | `!v`, filter the clipboard list, Enter to paste. | "Bang v is everything you've copied." |
+| 1:20 | `!s who won the last f1 race`, Enter. Let it run. | "Bang s searches the web." |
+| 1:30 | Hosts appear, then headline, then findings. **Say nothing.** | (silence) |
+| 1:50 | Click a citation. The real page opens. | "Every line cites its source. Click it, there's the page." |
+| 2:05 | `!c when is the next total solar eclipse`, answer streams. | "Bang c asks an AI agent." |
+| 2:20 | Settings, Agents. The ranked list and switches. | "No account, no API key. It runs the CLI you already pay for." |
+| 2:35 | The four numbers, then the installer size in Explorer. | "Opens in 22 milliseconds. The installer is 2.5 megabytes." |
+| 2:50 | The mark, `Alt+Space`, the repo URL. | "Takyon. One key, everything behind it." |
 
-> Opening an app. Finding a file. Checking something you copied ten minutes ago.
-> One sum. One question. Five different places on your computer.
+## The three lines that have to survive
 
-**Press the hotkey. The Palette appears mid-sentence.**
+If you fluff everything else, land these:
 
-> Or one.
-
-## 0:15 to 0:50, everything on your machine
-
-**One take, no cuts.** Type and Enter each of these, roughly four seconds apart:
-
-1. `chrome`, Enter. Chrome opens.
-2. Hotkey, `2+2*3`, the answer sits in the row.
-3. Hotkey, `report`, a file appears with its real icon. Enter opens it.
-4. Hotkey, `bluetooth`, the Windows Bluetooth page. Enter.
-
-> An application, a calculation, a file, a Windows settings page. Same box, same
-> keystroke, no menu, no Explorer window. The first result is on screen in about
-> twenty milliseconds, which is faster than you can watch it happen.
-
-## 0:50 to 1:20, it learns, and it does more than open
-
-**Screen recording:** type a single letter and show the top row being the app you
-actually use. Then press `Ctrl+K` on a result.
-
-> It ranks by what you actually open, so one letter is usually enough.
-
-**On screen:** the action menu, then reveal in Explorer.
-
-> Enter is not the only thing you can do. Reveal it, copy its path, run it as
-> administrator, without touching the mouse.
-
-**Screen recording:** hotkey, `!v`, the clipboard history list, filter by type,
-Enter to paste.
-
-> Bang v is everything you have copied, searchable, pasted back where you were.
-
-## 1:20 to 2:05, past your machine
-
-**Screen recording:** type `!s who won the last f1 race`, Enter. Let it run live.
-
-> One character reaches the web instead.
-
-**On screen:** the header turns amber and says the query left the machine. The
-hosts being read appear. Then the headline, then the findings, each ending in
-numbered chips.
-
-> It searches, reads the actual pages, and gives you a headline and four lines,
-> each one citing where it came from. Not ten blue links, and not an essay.
-
-**Screen recording:** click citation `[2]`, the real page opens in the browser.
-
-> Every number is the page behind it, one click away. Where the sources disagree,
-> it says so instead of quietly picking one.
-
-## 2:05 to 2:30, the AI you already pay for
-
-**Screen recording:** `!c when is the next total solar eclipse`, Enter. The answer
-streams in. Type a follow up in the same window.
-
-> Bang c asks an agent directly, and a follow up keeps going in the same window.
-
-**On screen:** Settings, Agents page. Show the ranked list and the switches.
-
-> Takyon has no AI account and no API key. It drives Claude Code, Codex or
-> opencode, whichever you already have signed in, and you decide the order.
-> Nothing new to sign up for, nothing extra to pay.
-
-## 2:30 to 2:45, the numbers
-
-**On screen:** the bench output, or the four numbers on a card, then the
-installer in Explorer with its size visible.
-
-> Hotkey to first pixel, 22.6 milliseconds. Login to responsive, 311. Idle
-> memory, 107 megabytes. The installer is two and a half.
-
-## 2:45 to 3:00, close
-
-**On camera, or over the Palette sitting open and empty.**
-
-> Nine versions. Apps, files, clipboard, calculator, ranking that learns, agents,
-> and web search. Four layers of tests, because a launcher cannot be checked by
-> one.
->
-> Takyon. One key, everything behind it.
-
-**Final frame:** the mark, the repo URL, `Alt+Space`.
-
----
-
-## Shot list, in recording order
-
-1. Empty desktop, then the Palette appearing on the hotkey.
-2. The four in a row take: app, calculation, file, settings page.
-3. One letter, correct top row. Frecency doing its job.
-4. `Ctrl+K` action menu, reveal in Explorer.
-5. `!v` clipboard history, filtered, pasted.
-6. `!s` live: header, hosts being read, headline, findings, citations.
-7. Clicking a citation, the real page opening.
-8. `!c` answer, then a follow up in the same window.
-9. Settings, Agents: ranked list, switches, model and effort dropdowns.
-10. Bench numbers, and the installer size in Explorer.
+1. "One keystroke. Watch what fits behind it."
+2. "No account, no API key. It runs the CLI you already pay for."
+3. "Takyon. One key, everything behind it."
 
 ## Recording notes
 
-- Turn animations off in Settings before recording, or the idle beat fights your
-  cuts.
-- `Alt+Space` collides with PowerToys Run and with Raycast. Rebind before
-  recording, or the video shows the wrong window opening.
+- Record the demo first, then talk over it. Writing the voiceover first is what
+  makes a pitch wordy.
+- Turn animations off in Settings, or the idle beat fights your cuts.
+- `Alt+Space` collides with PowerToys Run and with Raycast. Rebind first, or the
+  video shows the wrong window opening.
 - Record `!s` and `!c` live, with a real Brave key and a signed in agent. If a
   judge asks you to run it again, you want it to work.
+- Put the query you typed as a caption when it flies past too fast to read.
 - Keep every clip under twelve seconds.
 
-## What to cut if you run long
+## If you run long
 
-In this order: the `Ctrl+K` shot, the `!v` shot, then the follow up half of the
-`!c` shot. Never cut the four in a row take or the `!s` citations.
+Cut in this order: the `Ctrl+K` beat, the `!v` beat, then the numbers beat. Never
+cut the four in a row at 0:10 to 0:42, or the `!s` citations.
