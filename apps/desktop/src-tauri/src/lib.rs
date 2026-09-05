@@ -11,6 +11,7 @@
 //! thread. Adding work above `hotkey::register` is how that budget quietly breaks.
 
 pub mod actions;
+pub mod agents;
 pub mod aliases;
 pub mod bang;
 pub mod bench;
@@ -264,6 +265,7 @@ fn clip_clear(clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> usize {
 fn set_view(app: tauri::AppHandle, view: Option<String>) {
     let view = match view.as_deref() {
         Some("clipboard-history") => Some(window::View::ClipboardHistory),
+        Some("ask") => Some(window::View::Ask),
         _ => None,
     };
     window::set_view(&app, view);
@@ -643,7 +645,16 @@ pub fn run() {
             application_rows,
             set_aliases_for,
             set_alias,
-            open_crash_logs
+            open_crash_logs,
+            agents::ipc::agent_snapshots,
+            agents::ipc::agent_settings,
+            agents::ipc::set_ask_agent,
+            agents::ipc::set_ask_cwd,
+            agents::ipc::set_ask_model,
+            agents::ipc::set_ask_effort,
+            agents::ipc::agent_models,
+            agents::ipc::agent_ask,
+            agents::ipc::agent_cancel
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -764,10 +775,19 @@ pub fn run() {
                 prefs.get(prefs::CALC_POLICY).as_deref().unwrap_or_default(),
             ));
             pipeline.set_recents_enabled(prefs::flag(&prefs, prefs::RECENTS, true));
+            // Which Agent `!c` reaches, for the same reason as the two above: a
+            // `!c` typed before Settings mounts must reach the chosen Agent.
+            // **Only the preference is read here** — no Agent is probed on the
+            // login path, because that is three process spawns (v0.9 Traps).
+            pipeline.set_ask_agent(agents::AgentKind::parse(
+                prefs.get(prefs::ASK_AGENT).unwrap_or_default().as_str(),
+            ));
             // Interface size and placement into atomics, before the first show:
             // both sit on latency paths and must never reach SQLite there.
             window::cache_layout_prefs(&prefs);
             app.manage(Arc::new(pipeline));
+            // Empty at startup: a Turn only exists once someone asks for one.
+            app.manage(Arc::new(agents::turn::Turns::default()));
 
             // The first thing that makes the app useful, and it stays first.
             // Reads `settings.db` so a rebound hotkey survives a restart: one

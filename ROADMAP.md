@@ -412,21 +412,28 @@ answer with working source links, without opening a browser.
 
 ---
 
-## v0.9 — Claude Code (`!c`)
+## v0.9 — Agents (`!c`)
 
 **Goal:** ask a question from the hotkey; get an answer in place.
 
-- [ ] `claude` CLI subprocess, streaming JSON output rendered as it arrives
-- [ ] Detect missing or logged-out CLI and explain it, rather than failing silently
-- [ ] Inline answer in the Palette; **tools disabled** on this path
-- [ ] Promotion to the Chat Surface on the first follow-up (ADR-0001); full agent mode lives only there
-- [ ] Chat Surface: its own window, own lifecycle, survives Palette dismissal
+- [x] `AgentDriver` trait and a registry, with drivers for **Claude Code, Codex and opencode** — the surface and the shape follow T3 Code's `ProviderDriver` (ADR-0017)
+- [x] CLI subprocess per Turn, streaming JSON rendered as it arrives, buffered to the newline
+- [x] Detect a missing or signed-out Agent and explain it, rather than failing silently
+- [x] Inline answer in the Palette; **tools disabled** on the first Turn, and every Turn in the Scratch directory
+- [x] Promotion to the Chat Surface on the first follow-up (ADR-0001), which is where tools turn on
+- [x] Chat Surface: the same launcher window showing a conversation, never a second window
+- [x] **Model and effort locked in Settings** per authenticated Agent, from that Agent's own list — the only pair a Turn can use
+- [x] Settings → Agents: one card per Agent, with its Sign-in state and its locked pair
+- [x] One `!c` for all three; which Agent answers is a preference (`docs/plans/bang-registry.md`)
 
 **Exit criteria:** a question answers inline in the Palette, a follow-up promotes
-into a Chat Surface, and Escape on the Palette never destroys a conversation.
+into a Chat Surface in the same window, and Escape goes back one step rather than
+destroying a conversation.
 
-*Design not finalised — session model, working directory, and tool policy are
-still open. Write `docs/plans/v0.9-claude-code.md` before starting.*
+*Sign-in is delegated to each Agent's own CLI and Takyon never runs it
+(ADR-0017); the terminal-launching version is TBC-0012. What the phase left
+undone is `docs/tbd/v0.9.md` — start with §1, the permission UI, and §3, which
+is the price one window charges: a conversation dies when the Palette does.*
 
 ---
 

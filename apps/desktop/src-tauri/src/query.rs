@@ -32,7 +32,10 @@ use crate::sources::recents::RecentsSource;
 use crate::sources::system::SystemSource;
 
 /// What one keystroke gets back.
-#[derive(Debug, Serialize)]
+///
+/// `Default` is the empty answer, which the Mode branches spread over: they
+/// differ in one or two fields and listing the rest is how one gets forgotten.
+#[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResult {
     /// Echoed from the request. **The frontend discards any response whose `seq`
@@ -47,7 +50,26 @@ pub struct QueryResult {
     /// list. Those look identical and one of them is a lie — an empty list means "you
     /// have no such app", which right after login is exactly wrong.
     pub indexing: bool,
+    /// Present exactly when the line is `!c` (v0.9). The Ask Mode has no Entries
+    /// to rank — the answer streams over `takyon://turn` — so this carries the
+    /// question and which Agent would answer it, and `entries` stays empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ask: Option<Ask>,
 }
+
+/// The `!c` Mode's state for one keystroke.
+///
+/// Data, not rendered copy: whether to show a Sign-in line or a streaming answer
+/// is the frontend's call, the way `file_index_status` splits at v0.7.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ask {
+    /// The question, trimmed. Empty means the Bang alone was typed.
+    pub query: String,
+    /// Which Agent would answer, from `agents.default`.
+    pub agent: crate::agents::AgentKind,
+}
+
 
 /// How long a query must stand still before its top row freezes (§3).
 pub const LOCK_DELAY_MS: u64 = 100;
@@ -100,6 +122,10 @@ pub struct Pipeline {
     /// keystroke, so atomic rather than behind the Stability mutex.
     clips_bang: std::sync::atomic::AtomicBool,
     recents_on: std::sync::atomic::AtomicBool,
+    /// Which Agent `!c` reaches (`agents.default`). Cached from `settings.db` for
+    /// the same reason `clips_bang` is: it is read on the keystroke path, which
+    /// must not touch SQLite.
+    ask_agent: std::sync::Mutex<crate::agents::AgentKind>,
     sources: Vec<Arc<dyn Source>>,
     /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
     lock: std::sync::Mutex<Option<StabilityLock>>,
@@ -142,6 +168,7 @@ impl Pipeline {
             clips: None,
             clips_bang: std::sync::atomic::AtomicBool::new(true),
             recents_on: std::sync::atomic::AtomicBool::new(true),
+            ask_agent: std::sync::Mutex::new(crate::agents::AgentKind::Claude),
             frecency,
             sources,
             lock: std::sync::Mutex::new(None),
@@ -161,6 +188,20 @@ impl Pipeline {
 
     pub fn bang_enabled(&self) -> bool {
         self.clips_bang.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Which Agent `!c` reaches. Written by Settings, read every keystroke.
+    pub fn set_ask_agent(&self, agent: crate::agents::AgentKind) {
+        if let Ok(mut held) = self.ask_agent.lock() {
+            *held = agent;
+        }
+    }
+
+    pub fn ask_agent(&self) -> crate::agents::AgentKind {
+        self.ask_agent
+            .lock()
+            .map(|held| *held)
+            .unwrap_or(crate::agents::AgentKind::Claude)
     }
 
     /// Whether the Recents Source contributes Entries (v0.6's Launcher page).
@@ -218,6 +259,9 @@ impl Pipeline {
             // No toggle: `!e` is the door to file search, and task 11's setting
             // governs Bangless Entries rather than the Bang.
             Route::Files(needle) => return self.files_result(needle, seq),
+            // No toggle either: `!c` is the only door to an Agent, and which
+            // Agent answers is the setting (`docs/plans/bang-registry.md`).
+            Route::Ask(question) => return self.ask_result(question, seq, self.ask_agent()),
             Route::Bangless(line) => line,
         };
 
@@ -237,6 +281,7 @@ impl Pipeline {
                 // Reporting `indexing` here would put a status row under a Palette
                 // that has been deliberately left blank (ADR-0001).
                 indexing: false,
+                ask: None,
             };
         }
 
@@ -267,6 +312,26 @@ impl Pipeline {
             seq,
             entries,
             indexing,
+            ask: None,
+        }
+    }
+
+    /// The `!c` Mode (v0.9 task 7).
+    ///
+    /// No Sources, no Frecency, no Stability lock: there is nothing to rank. The
+    /// frontend takes it from here and calls `agent_ask`.
+    fn ask_result(&self, question: &str, seq: u64, agent: crate::agents::AgentKind) -> QueryResult {
+        QueryResult {
+            seq,
+            ask: Some(Ask {
+                query: question.to_string(),
+                agent,
+            }),
+            // Reuses the flag that reserves a status row in the *native* window,
+            // exactly as `files_result` does: `!c` has no Entries, and without a
+            // reserved row its one line falls outside the window.
+            indexing: true,
+            ..QueryResult::default()
         }
     }
 
@@ -290,6 +355,7 @@ impl Pipeline {
             // where two clips would otherwise read identically.
             entries: rank::disambiguate_subtitles(entries),
             indexing: false,
+            ask: None,
         }
     }
 
@@ -302,8 +368,7 @@ impl Pipeline {
         let Some(files) = &self.files else {
             return QueryResult {
                 seq,
-                entries: Vec::new(),
-                indexing: false,
+                ..QueryResult::default()
             };
         };
         let entries = if needle.is_empty() {
@@ -326,6 +391,7 @@ impl Pipeline {
                 files.index().status(),
                 crate::index::IndexStatus::Ready
             ),
+            ask: None,
         }
     }
 

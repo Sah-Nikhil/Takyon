@@ -19,6 +19,7 @@ import {
   failAutostart,
   failPreferenceWrite,
   menuRequest,
+  setAskAgent,
   setIndexing,
   setStoredPreference,
 } from "./api.mock";
@@ -54,11 +55,17 @@ if (!inTauri) {
     // What "Settings wrote a preference while the Palette was hidden" looks like
     // when there is no settings.db to write to.
     setStoredPreference,
+    // Which Agent `!c` reaches. Rust persists it; the mock's copy dies with the
+    // page, so a visual test that switched Agent in Settings would find Claude
+    // again after navigating to the Palette.
+    setAskAgent,
   };
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ErrorBoundary>{kind === "settings" ? <Settings /> : <Palette />}</ErrorBoundary>
+    <ErrorBoundary>
+      {kind === "settings" ? <Settings /> : <Palette />}
+    </ErrorBoundary>
   </React.StrictMode>,
 );

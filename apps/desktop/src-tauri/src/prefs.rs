@@ -65,6 +65,32 @@ pub const FILES_EXCLUDES: &str = "files.excludes";
 /// Whether the tray icon is drawn. `"1"` or `"0"`, default on.
 pub const TRAY: &str = "launcher.tray";
 
+/// Which Agent `!c` reaches. `agents::AgentKind` spells the values.
+///
+/// Read on the keystroke path through a cached copy in `Pipeline`, never from
+/// SQLite — the 30 ms first-Entry budget has no room for a query.
+pub const ASK_AGENT: &str = "agents.default";
+
+/// Where a Turn runs. Absent means the Scratch directory (ADR-0017).
+pub const ASK_CWD: &str = "agents.cwd";
+
+/// The model one Agent must use, keyed by kind: `agents.model.claude`.
+///
+/// Chosen in Settings and used for **every** Turn — there is no per-query
+/// override anywhere. Absent means the Agent's own default, which is the right
+/// answer for anyone who has not chosen.
+pub fn ask_model_key(kind: crate::agents::AgentKind) -> String {
+    format!("agents.model.{}", kind.as_str())
+}
+
+/// The effort level one Agent must use: `agents.effort.claude`.
+///
+/// Locked the same way and for the same reason as the model. Each Agent spells
+/// effort differently; the values come from that Agent's own vocabulary.
+pub fn ask_effort_key(kind: crate::agents::AgentKind) -> String {
+    format!("agents.effort.{}", kind.as_str())
+}
+
 /// Where the Palette opens: `"cursor"` (default) or `"primary"`.
 pub const PLACEMENT: &str = "launcher.placement";
 

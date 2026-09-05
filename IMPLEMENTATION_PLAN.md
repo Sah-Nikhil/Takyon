@@ -26,7 +26,7 @@ takyon/
 │   │   ├── api.ts                 THE seam — the only file that calls invoke()
 │   │   ├── palette/               the Palette
 │   │   ├── settings/              settings window
-│   │   └── chat/                  Chat Surface (v0.9, does not exist yet)
+│   │   └── agents/                Agent status copy and the Turn hook
 │   └── src-tauri/
 │       ├── src/
 │       │   ├── lib.rs             builder chain, plugin registration
@@ -36,6 +36,7 @@ takyon/
 │       │   ├── query.rs           the pipeline (§3)
 │       │   ├── rank.rs            matching, Frecency, the Stability rule
 │       │   ├── bang.rs            parser + Mode registry
+│       │   ├── agents/            AgentDriver trait, three drivers, Turns (v0.9)
 │       │   ├── sources/           apps · files · clipboard · calc · recents
 │       │   ├── index/             walker · watcher · store (mmap)
 │       │   ├── store/             settings · frecency · clips (SQLite)
@@ -678,9 +679,10 @@ dismiss-on-focus-loss destroys the window every time you try to inspect it.
 
 ## 12. Deliberately not specified here
 
-- **`!c` and the Chat Surface internals.** Session model, working directory and
-  tool policy are unresolved. `docs/plans/v0.9-claude-code.md` gets written before
-  that work starts.
+- **~~`!c` and the Chat Surface internals.~~** Settled and built at v0.9: a fresh
+  process per Turn resumed by session id, the Scratch directory, and tools off
+  inline. `docs/plans/v0.9-agents.md` carries the reasoning, ADR-0017 the rule
+  that shapes it. The **permission UI** is what remains (`docs/tbd/v0.9.md` §1).
 - **The Bang registry beyond V1's four.** See `docs/plans/bang-registry.md`.
 - **A plugin API.** Designing one before three real plugins exist is guesswork.
 - **The colour palette.** The mark is locked; colour is not (`docs/brand.md`).

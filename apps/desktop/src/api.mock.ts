@@ -14,8 +14,12 @@
 
 import type {
   Action,
+  AgentKind,
+  AgentSettings,
+  AgentSnapshot,
   AliasRow,
   AppAliasRow,
+  TurnMessage,
   CalcPolicy,
   ClipRetention,
   ClipRow,
@@ -32,7 +36,81 @@ type ShowListener = (payload: ShowPayload) => void;
 
 const showListeners = new Set<ShowListener>();
 const hideListeners = new Set<() => void>();
+const turnListeners = new Set<(message: TurnMessage) => void>();
 let nextShowId = 1;
+let nextTurnId = 1;
+
+/**
+ * One Agent of each state, so every card the Settings page can draw is on screen
+ * at once: signed in, signed out, and not installed at all.
+ */
+const AGENT_FIXTURES: AgentSnapshot[] = [
+  {
+    kind: "claude",
+    label: "Claude Code",
+    binary: "claude",
+    installed: true,
+    version: "2.1.261",
+    health: "ready",
+    signIn: {
+      status: "in",
+      label: "Claude Pro Subscription",
+      account: "you@example.com",
+    },
+    efforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
+    kind: "codex",
+    label: "Codex",
+    binary: "codex",
+    installed: false,
+    health: "error",
+    signIn: { status: "unknown" },
+    message: "Codex (`codex`) was not found on PATH.",
+    efforts: [],
+  },
+  {
+    kind: "opencode",
+    label: "opencode",
+    binary: "opencode",
+    installed: true,
+    version: "1.18.27",
+    health: "warning",
+    signIn: { status: "out" },
+    message: "No providers are connected to opencode. Run `opencode providers login`.",
+    efforts: ["minimal", "high", "max"],
+  },
+];
+
+/** Split into deltas on purpose — see `agentAsk` for why one event is not enough. */
+const MOCK_ANSWER = ["The ", "sky ", "is ", "blue ", "because ", "of ", "Rayleigh ", "scattering."];
+
+let askAgent: AgentKind = "claude";
+let askCwd = "";
+let askModels: Partial<Record<AgentKind, string>> = {};
+let askEfforts: Partial<Record<AgentKind, string>> = {};
+
+/** What each Agent would report from its own model listing. */
+const AGENT_MODELS: Record<AgentKind, string[]> = {
+  claude: ["opus", "sonnet", "haiku", "fable"],
+  codex: ["gpt-5.3-codex", "gpt-5.3-codex-mini"],
+  opencode: ["opencode/big-pickle", "opencode/nemotron-3-ultra-free"],
+};
+
+function emitTurn(message: TurnMessage) {
+  for (const l of turnListeners) l(message);
+}
+
+/**
+ * Choose the Agent `!c` reaches, without going through Settings.
+ *
+ * Exposed on `window` in `main.tsx` outside Tauri. Rust persists this in
+ * `settings.db`; the mock's copy dies with the page, so a test that switched
+ * Agent in the Settings window would find Claude again in the Palette.
+ */
+export function setAskAgent(agent: AgentKind) {
+  askAgent = agent;
+}
 
 /**
  * Drive a show from a test or from the browser console. Exposed on `window` in
@@ -245,6 +323,14 @@ function clipQuery(q: string): string | null {
   return rest.trim().toLowerCase();
 }
 
+/** The `!c` Bang, parsed the same way. Case is kept: it is a question, not a key. */
+function askQuery(q: string): string | null {
+  if (!/^!c/i.test(q)) return null;
+  const rest = q.slice(2);
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  return rest.trim();
+}
+
 /**
  * A deliberately crude stand-in for `rank.rs`.
  *
@@ -448,6 +534,12 @@ export const mock = {
   },
   openSettings: async () => {},
   query: async (q: string, seq: number): Promise<QueryResult> => {
+    // `!c` carries no Entries at all: the answer streams, so the response says
+    // only which Agent would answer and what was asked.
+    const ask = askQuery(q);
+    if (ask !== null) {
+      return { seq, entries: [], indexing: false, ask: { query: ask, agent: askAgent } };
+    }
     // `!v` is its own view. Unlike a Bangless query, an empty one lists history
     // rather than nothing — the Mode *is* the list.
     const clips = clipQuery(q);
@@ -678,6 +770,49 @@ export const mock = {
     hideListeners.add(cb);
     return () => {
       hideListeners.delete(cb);
+    };
+  },
+  agentSnapshots: async (): Promise<AgentSnapshot[]> => AGENT_FIXTURES,
+  agentSettings: async (): Promise<AgentSettings> => ({
+    default: askAgent,
+    cwd: askCwd,
+    scratch: String.raw`C:\Users\you\AppData\Local\v3sper\launcher\scratch`,
+    models: { ...askModels },
+    efforts: { ...askEfforts },
+  }),
+  agentModels: async (agent: AgentKind) => [...AGENT_MODELS[agent]],
+  setAskAgent: async (agent: AgentKind) => {
+    askAgent = agent;
+  },
+  setAskCwd: async (path: string) => {
+    askCwd = path.trim();
+  },
+  setAskModel: async (agent: AgentKind, model: string) => {
+    askModels = { ...askModels, [agent]: model.trim() };
+  },
+  setAskEffort: async (agent: AgentKind, effort: string) => {
+    askEfforts = { ...askEfforts, [agent]: effort.trim() };
+  },
+  agentAsk: async (args: { agent: AgentKind; prompt: string; session?: string }) => {
+    const turnId = nextTurnId++;
+    const session = args.session ?? `mock-session-${turnId}`;
+    // Three ticks rather than one: a single event would never catch a renderer
+    // that overwrites the answer instead of appending to it.
+    emitTurn({ turnId, kind: "started", session, model: "mock-model" });
+    for (const [i, delta] of MOCK_ANSWER.entries()) {
+      setTimeout(() => emitTurn({ turnId, kind: "text", delta }), 10 * (i + 1));
+    }
+    setTimeout(
+      () => emitTurn({ turnId, kind: "done", session }),
+      10 * (MOCK_ANSWER.length + 1),
+    );
+    return turnId;
+  },
+  agentCancel: async (_turnId: number) => {},
+  onTurn: (cb: (message: TurnMessage) => void) => {
+    turnListeners.add(cb);
+    return () => {
+      turnListeners.delete(cb);
     };
   },
 };

@@ -6,14 +6,15 @@
  * makes its controls searchable — `nav.ts` does the rest and a test in
  * `nav.test.ts` holds that promise.
  *
- * Pages for features that do not exist yet are deliberately absent. AI arrives
- * with v0.9; shipping it now as a disabled row would put dead controls in a
- * window whose whole point is that every control does something. File Search
- * landed at v0.7 and its page came with it.
+ * Pages for features that do not exist yet are deliberately absent, and every
+ * page here does something today: Agents landed with v0.9, File Search with
+ * v0.7. A disabled row for an unbuilt feature would be a dead control in a
+ * window whose whole point is that none of them are.
  */
 
 import { About } from "./pages/About";
 import { Advanced } from "./pages/Advanced";
+import { Agents } from "./pages/Agents";
 import { Applications } from "./pages/Applications";
 import { Calculator } from "./pages/Calculator";
 import { ClipboardHistory } from "./pages/ClipboardHistory";
@@ -169,6 +170,39 @@ export const PAGES: SettingsPage[] = [
         id: "clear-opened",
         label: "Files you opened through Takyon",
         keywords: ["history", "recents", "clear", "forget", "privacy"],
+      },
+    ],
+  },
+  {
+    id: "agents",
+    title: "Agents",
+    tier: "feature",
+    Component: Agents,
+    controls: [
+      {
+        id: "ask-agent",
+        label: "Ask !c with",
+        keywords: ["agent", "claude", "codex", "opencode", "ai", "bang", "!c"],
+      },
+      {
+        id: "ask-cwd",
+        label: "Run agents in",
+        keywords: ["working directory", "folder", "scratch", "project", "cwd"],
+      },
+      {
+        id: "agent-claude",
+        label: "Claude Code",
+        keywords: ["claude", "anthropic", "sign in", "model", "effort", "subscription"],
+      },
+      {
+        id: "agent-codex",
+        label: "Codex",
+        keywords: ["codex", "openai", "chatgpt", "sign in", "model", "effort", "reasoning"],
+      },
+      {
+        id: "agent-opencode",
+        label: "opencode",
+        keywords: ["opencode", "providers", "sign in", "model", "effort", "variant"],
       },
     ],
   },

@@ -24,9 +24,18 @@ function Key({ children }: { children: React.ReactNode }) {
 export function Footer({
   entry,
   labels,
+  hint,
 }: {
   entry: Entry | undefined;
   labels: Record<string, Action>;
+  /**
+   * What Enter does where there is no Entry to describe — `!c`, which has none.
+   *
+   * Anything but `undefined` also drops the action menu: `Ctrl+K` needs a
+   * selected row, and naming a shortcut that does nothing is worse than naming
+   * none. `null` is the Mode with nothing for Enter to do either.
+   */
+  hint?: string | null;
 }) {
   /*
     The Entry's *first* action is what plain Enter does, for every Kind — a Rust
@@ -35,7 +44,7 @@ export function Footer({
     nothing else would notice.
    */
   const primary = entry?.actions[0];
-  const label = primary ? labels[primary]?.label : undefined;
+  const label = hint === undefined ? (primary ? labels[primary]?.label : undefined) : hint;
 
   return (
     <div
@@ -49,13 +58,19 @@ export function Footer({
           <>
             <span>{label}</span>
             <Key>↵</Key>
-            <span aria-hidden className="text-fg/15">
-              |
-            </span>
+            {hint === undefined && (
+              <span aria-hidden className="text-fg/15">
+                |
+              </span>
+            )}
           </>
         )}
-        <span>Actions</span>
-        <Key>Ctrl K</Key>
+        {hint === undefined && (
+          <>
+            <span>Actions</span>
+            <Key>Ctrl K</Key>
+          </>
+        )}
       </div>
     </div>
   );
