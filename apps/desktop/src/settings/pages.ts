@@ -7,8 +7,8 @@
  * `nav.test.ts` holds that promise.
  *
  * Pages for features that do not exist yet are deliberately absent, and every
- * page here does something today: Agents landed with v0.8, File Search with
- * v0.7. A disabled row for an unbuilt feature would be a dead control in a
+ * page here does something today: Web Search landed with v0.9, Agents with
+ * v0.8, File Search with v0.7. A disabled row for an unbuilt feature would be a dead control in a
  * window whose whole point is that none of them are.
  */
 
@@ -22,6 +22,7 @@ import { FileSearch } from "./pages/FileSearch";
 import { General } from "./pages/General";
 import { Keyboard } from "./pages/Keyboard";
 import { Launcher } from "./pages/Launcher";
+import { WebSearch } from "./pages/WebSearch";
 import type { SettingsPage } from "./nav";
 
 export const PAGES: SettingsPage[] = [
@@ -216,6 +217,29 @@ export const PAGES: SettingsPage[] = [
         id: "calc-policy",
         label: "Answer arithmetic",
         keywords: ["calculator", "maths", "equals", "convert"],
+      },
+    ],
+  },
+  {
+    id: "web-search",
+    title: "Web Search",
+    tier: "feature",
+    Component: WebSearch,
+    controls: [
+      {
+        id: "brave-key",
+        label: "Brave Search key",
+        keywords: ["brave", "api key", "token", "search", "!s", "web"],
+      },
+      {
+        id: "brave-key-clear",
+        label: "Remove the key",
+        keywords: ["brave", "delete key", "revoke", "clear"],
+      },
+      {
+        id: "web-outbound",
+        label: "Only the question, and only on Enter",
+        keywords: ["network", "privacy", "outbound", "adr-0002", "offline"],
       },
     ],
   },

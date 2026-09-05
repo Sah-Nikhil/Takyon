@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AgentKind, AgentSnapshot } from "@takyon/shared";
 
 import { agentSummary, HEALTH_DOT } from "@/agents/status";
+import { Answer } from "@/components/Answer";
 import { useTurn } from "@/agents/useTurn";
 
 interface Message {
@@ -166,15 +167,15 @@ function Bubble({ role, text }: Message) {
   const you = role === "you";
   return (
     <div className={you ? "flex justify-end" : "flex justify-start"}>
-      <div
-        className={
-          you
-            ? "max-w-[80%] whitespace-pre-wrap rounded-xl bg-white/10 px-3 py-1.5 text-[13px] leading-relaxed"
-            : "max-w-[85%] whitespace-pre-wrap text-[13.5px] leading-relaxed text-fg/90"
-        }
-      >
-        {text}
-      </div>
+      {you ? (
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-xl bg-white/10 px-3 py-1.5 text-[13px] leading-relaxed">
+          {text}
+        </div>
+      ) : (
+        // An Agent writes markdown whatever it is asked for, so the answer is
+        // rendered rather than printed with its asterisks in it.
+        <Answer text={text} className="max-w-[85%] text-[13.5px] leading-relaxed text-fg/90" />
+      )}
     </div>
   );
 }

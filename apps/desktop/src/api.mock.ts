@@ -28,8 +28,11 @@ import type {
   FileIndexReport,
   HotkeyStatus,
   QueryResult,
+  SearchHit,
+  SearchMessage,
   SettingsSnapshot,
   ShowPayload,
+  WebSettings,
 } from "@takyon/shared";
 
 type ShowListener = (payload: ShowPayload) => void;
@@ -83,7 +86,16 @@ let agentFixtures: AgentSnapshot[] = [
 ];
 
 /** Split into deltas on purpose — see `agentAsk` for why one event is not enough. */
-const MOCK_ANSWER = ["The ", "sky ", "is ", "blue ", "because ", "of ", "Rayleigh ", "scattering."];
+let MOCK_ANSWER = ["The ", "sky ", "is ", "blue ", "because ", "of ", "Rayleigh ", "scattering."];
+
+/**
+ * Replace what the mock Agent answers, so a test can drive the renderer with
+ * markdown. Split on spaces for the same reason the default is split: one event
+ * would never catch a renderer that overwrites instead of appending.
+ */
+export function setAnswer(text: string) {
+  MOCK_ANSWER = text.split(/(?<=\s)/);
+}
 
 let askOrder: AgentKind[] = ["claude", "codex", "opencode"];
 let askEnabled: Record<AgentKind, boolean> = { claude: true, codex: true, opencode: true };
@@ -97,6 +109,67 @@ const AGENT_MODELS: Record<AgentKind, string[]> = {
   codex: ["gpt-5.3-codex", "gpt-5.3-codex-mini"],
   opencode: ["opencode/big-pickle", "opencode/nemotron-3-ultra-free"],
 };
+
+/** Hits the mock provider returns. Three, so a citation list has a shape. */
+const SEARCH_HITS: SearchHit[] = [
+  {
+    title: "Scuderia Ferrari",
+    url: "https://example.com/ferrari",
+    description: "The oldest surviving team in Formula One, racing since 1950.",
+  },
+  {
+    title: "2026 constructors' standings",
+    url: "https://example.org/standings",
+    description: "Points by team for the current season.",
+  },
+  {
+    title: "F1 regulations for 2026",
+    url: "https://example.net/regulations",
+    description: "Power unit and aerodynamic rules.",
+  },
+];
+
+/** Split into deltas for the same reason `MOCK_ANSWER` is. */
+const MOCK_SYNTHESIS = [
+  "Ferrari ",
+  "has ",
+  "raced ",
+  "in ",
+  "Formula One ",
+  "since ",
+  "1950 [1].",
+];
+
+/** What the mock was asked to open, so a test can assert on it. */
+const opened: string[] = [];
+
+/** Everything opened since the page loaded. Exposed on `window` in `main.tsx`. */
+export function openedUrls(): string[] {
+  return [...opened];
+}
+
+let webKey: string | null = null;
+let webFailure: string | null = null;
+let nextSearchId = 1;
+const searchListeners = new Set<(message: SearchMessage) => void>();
+
+function emitSearch(message: SearchMessage) {
+  for (const l of searchListeners) l(message);
+}
+
+/**
+ * Store or clear the key without going through Settings, so a Palette test can
+ * reach the no-key state. Rust keeps this DPAPI-wrapped on disk; the mock's copy
+ * dies with the page.
+ */
+export function setWebKeyStored(key: string | null) {
+  webKey = key;
+}
+
+/** Make the next search fail with this message. Null restores success. */
+export function failWebSearch(message: string | null) {
+  webFailure = message;
+}
 
 function emitTurn(message: TurnMessage) {
   for (const l of turnListeners) l(message);
@@ -347,6 +420,14 @@ function askQuery(q: string): string | null {
   return rest.trim();
 }
 
+/** The `!s` Bang, parsed the same way. Case is kept: it is a question. */
+function webQuery(q: string): string | null {
+  if (!/^!s/i.test(q)) return null;
+  const rest = q.slice(2);
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  return rest.trim();
+}
+
 /**
  * A deliberately crude stand-in for `rank.rs`.
  *
@@ -494,8 +575,20 @@ export function setStoredPreference(patch: Partial<SettingsSnapshot>) {
   snapshot = { ...snapshot, ...patch };
 }
 
-/** Whether the browser build reports autostart as registered. */
-let lastAutostart = false;
+/**
+ * Whether the browser build reports autostart as registered.
+ *
+ * Seeded from `__takyon_autostart` where a test set one before the page loaded:
+ * the switch reads this on mount, so a value set afterwards is a value the
+ * mounted switch has already missed.
+ *
+ * **True by default, because that is what a real install has**: `firstrun::maybe_enable`
+ * turns it on and it stopped being a question at v0.6. The OS owns the answer
+ * (ADR-0015) and a browser has no OS, so a false default here drew every
+ * baseline showing a switch the product ships turned on.
+ */
+let lastAutostart =
+  (globalThis as { __takyon_autostart?: boolean }).__takyon_autostart ?? true;
 
 /**
  * An error the next autostart write should reject with, or null to succeed.
@@ -505,6 +598,11 @@ let lastAutostart = false;
  * other test reaches, and forcing the failure by hand means a group policy.
  */
 let autostartFailure: string | null = null;
+/** Report autostart as unregistered, which no real first run leaves behind. */
+export function setAutostart(on: boolean) {
+  lastAutostart = on;
+}
+
 export function failAutostart(message: string | null) {
   autostartFailure = message;
 }
@@ -560,6 +658,17 @@ export const mock = {
         entries: [],
         indexing: false,
         ask: { query: ask, agent: route[0] ?? null, order: route },
+      };
+    }
+    // `!s` carries no Entries either, and no request is made here: typing the
+    // Bang sends nothing, exactly as `query.rs` does it (ADR-0002).
+    const web = webQuery(q);
+    if (web !== null) {
+      return {
+        seq,
+        entries: [],
+        indexing: false,
+        web: { query: web, provider: "Brave Search", hasKey: webKey !== null },
       };
     }
     // `!v` is its own view. Unlike a Bangless query, an empty one lists history
@@ -835,6 +944,62 @@ export const mock = {
     return turnId;
   },
   agentCancel: async (_turnId: number) => {},
+  webSettings: async (): Promise<WebSettings> => ({
+    provider: "Brave Search",
+    hasKey: webKey !== null,
+    hint: webKey ? `…${webKey.slice(-4)}` : undefined,
+    signupUrl: "https://brave.com/search/api/",
+  }),
+  setWebKey: async (keyValue: string) => {
+    webKey = keyValue.trim() === "" ? null : keyValue.trim();
+  },
+  webSearch: async (query: string) => {
+    const searchId = nextSearchId++;
+    if (webFailure !== null) {
+      setTimeout(() => emitSearch({ searchId, kind: "failed", message: webFailure! }), 10);
+      return searchId;
+    }
+    if (webKey === null) {
+      setTimeout(
+        () =>
+          emitSearch({
+            searchId,
+            kind: "failed",
+            message: "No Brave Search key. Add one in Settings → Web search.",
+          }),
+        10,
+      );
+      return searchId;
+    }
+    // The same three phases Rust emits, in order and on separate ticks: a
+    // renderer that skips straight to the answer would pass a single-event mock.
+    emitSearch({ searchId, kind: "searching", provider: "Brave Search" });
+    const turnId = nextTurnId++;
+    setTimeout(() => emitSearch({ searchId, kind: "reading", sources: SEARCH_HITS }), 10);
+    setTimeout(() => {
+      emitSearch({ searchId, kind: "answering", turnId, agent: "Claude Code" });
+      emitTurn({ turnId, kind: "started", session: `mock-search-${turnId}` });
+      for (const [i, delta] of MOCK_SYNTHESIS.entries()) {
+        setTimeout(() => emitTurn({ turnId, kind: "text", delta }), 10 * (i + 1));
+      }
+      setTimeout(() => emitTurn({ turnId, kind: "done" }), 10 * (MOCK_SYNTHESIS.length + 1));
+    }, 20);
+    void query;
+    return searchId;
+  },
+  webCancel: async (_searchId: number) => {},
+  openUrl: async (url: string) => {
+    opened.push(url);
+  },
+  openWebQuery: async (query: string) => {
+    opened.push(`search:${query}`);
+  },
+  onSearch: (cb: (message: SearchMessage) => void) => {
+    searchListeners.add(cb);
+    return () => {
+      searchListeners.delete(cb);
+    };
+  },
   onTurn: (cb: (message: TurnMessage) => void) => {
     turnListeners.add(cb);
     return () => {

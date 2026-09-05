@@ -5,13 +5,17 @@ on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
 anything leaves the machine.
 
-**Status: v0.1 through v0.8 are built and v0.8 has shipped.** The Palette is
-warm, the hotkey works, and it finds and launches applications, files, clipboard
-history and calculations, with Frecency, settings and a `Ctrl+K` action menu.
-v0.8 "AI" adds **Agents**: `!c` drives Claude Code, Codex or opencode as a
-subprocess, answers inline with tools off, and promotes into a Chat Surface on a
-follow-up. There is no CI. **v0.9 (`!s`, web search) is unbuilt** — check
-`ROADMAP.md` before assuming anything.
+**Status: v0.1 through v0.9 are built.** The Palette is warm, the hotkey works,
+and it finds and launches applications, files, clipboard history and
+calculations, with Frecency, settings and a `Ctrl+K` action menu. v0.8 adds
+**Agents**: `!c` drives Claude Code, Codex or opencode as a subprocess, answers
+inline with tools off, and promotes into a Chat Surface on a follow-up. v0.9 adds
+**web search**: `!s` retrieves through Brave, reads the pages over WinHTTP and
+has an Agent answer from them, streaming, with numbered sources. There is no CI.
+
+**v0.9's exit criterion is unproven**: this machine holds no Brave key, so no
+real search has ever run and `docs/verify/v0.9.md` has not been executed. Check
+`ROADMAP.md` and `docs/tbd/v0.9.md` before assuming anything about it.
 
 Agents and web search traded phase numbers when v0.8 shipped. Agents was built
 first while `!s` kept being deferred, so the shipped work took the next release
@@ -96,7 +100,12 @@ under `docs/`.
 - External services: **Brave Search API** for `!s` retrieval only (ADR-0005), and
   the user's own **Agent CLIs** — `claude`, `codex`, `opencode` — as subprocesses
   for `!c`. Takyon never holds an LLM account or key of its own, and never runs
-  an Agent's login (**ADR-0017**; the terminal path is `docs/tbc/0012`).
+  an Agent's login (**ADR-0017**; the terminal path is `docs/tbc/0012`). The one
+  key it does hold, Brave's, is DPAPI-wrapped in `creds\` and never reaches the
+  webview.
+- HTTP: **WinHTTP through the `windows` crate** (ADR-0019), never a Rust client.
+  OS TLS, the user's own proxy, and nothing added to the installer. The seam is
+  `search::fetch`, which is what a macOS target would reimplement.
 
 ## Commands
 - dev: `bun run dev`
@@ -174,7 +183,7 @@ seams that actually matter are Rust traits — `FileIndex`, `AppSource`,
 - **Use the vocabulary in `CONTEXT.md` exactly**, in identifiers, comments and UI
   copy: Palette, Bang, Bangless, Mode, Promotion, Chat Surface, Entry, Source,
   Frecency, Stability, Agent, Agent Driver, Sign-in state, Turn, Scratch
-  directory. Don't reintroduce "result", "provider", "command" — note that
+  directory, Hit, Citation. Don't reintroduce "result", "provider", "command" — note that
   T3 Code, the reference for v0.8's surface, calls an Agent a *provider*, and
   that word is taken here twice over.
 - **Nothing UI-aware in Rust Sources.** Sources return Entries; ranking and

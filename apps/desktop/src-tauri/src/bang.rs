@@ -9,8 +9,9 @@
 //! raw query, never a ranked search. That is what makes ADR-0002 checkable by
 //! reading — a line with no Bang cannot reach the network.
 //!
-//! Three Bangs: `!v` at v0.5, `!e` at v0.7, `!c` at v0.8. Registry, `!` picker
-//! and user-defined Bangs are `docs/plans/bang-registry.md`, part-resumed at v0.8.
+//! Four Bangs: `!v` at v0.5, `!e` at v0.7, `!c` at v0.8, `!s` at v0.9. Registry,
+//! `!` picker and user-defined Bangs are `docs/plans/bang-registry.md`,
+//! part-resumed at v0.8.
 
 /// Where a line of input goes, and what that Mode sees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,6 +27,9 @@ pub enum Route<'a> {
     /// `!c` — ask an Agent. The rest is the question, or empty for the card
     /// naming the Agent that would answer and its Sign-in state.
     Ask(&'a str),
+    /// `!s` — web search. The rest is the question, or empty for the row naming
+    /// the provider and whether it holds a key.
+    Web(&'a str),
 }
 
 /// The clipboard Bang. One letter, and `v` because `Ctrl+V` is what it replaces.
@@ -37,6 +41,9 @@ pub const FILES: &str = "e";
 /// The Agent Bang. One `!c` for all three Agents; which one answers is a
 /// preference rather than a Bang (`docs/plans/bang-registry.md`).
 pub const ASK: &str = "c";
+
+/// The web Bang. `s` for search, the spelling every browser's own bang list uses.
+pub const WEB: &str = "s";
 
 /// Route one line of input.
 pub fn parse(line: &str) -> Route<'_> {
@@ -55,6 +62,7 @@ pub fn parse(line: &str) -> Route<'_> {
         CLIPS => Route::Clips(rest.trim()),
         FILES => Route::Files(rest.trim()),
         ASK => Route::Ask(rest.trim()),
+        WEB => Route::Web(rest.trim()),
         // Unknown Bang is treated literally rather than rejected (§9). A hint row
         // saying so is part of the registry work, not of this parser.
         _ => Route::Bangless(line),
@@ -116,11 +124,23 @@ mod tests {
         assert_eq!(parse("!claude"), Route::Bangless("!claude"));
     }
 
+    /// `!s` routes to web search, and an empty query is its own state — the row
+    /// naming the provider and whether it holds a key.
+    #[test]
+    fn v0_9_the_web_bang_routes_to_web_search() {
+        assert_eq!(parse("!s"), Route::Web(""));
+        assert_eq!(parse("!s ferrari in f1"), Route::Web("ferrari in f1"));
+        assert_eq!(parse("!S  trimmed  "), Route::Web("trimmed"));
+        // Position 0 only, and the ident ends at whitespace, exactly as `!v`.
+        assert_eq!(parse("find !s thing"), Route::Bangless("find !s thing"));
+        assert_eq!(parse("!search"), Route::Bangless("!search"));
+    }
+
     /// Unknown Bangs fall through with the line intact (§9), so nothing is lost
     /// while the registry is still parked.
     #[test]
     fn v0_5_an_unknown_bang_falls_through_to_bangless() {
-        assert_eq!(parse("!s ferrari"), Route::Bangless("!s ferrari"));
+        assert_eq!(parse("!z ferrari"), Route::Bangless("!z ferrari"));
         assert_eq!(parse("!"), Route::Bangless("!"));
         assert_eq!(parse("!!"), Route::Bangless("!!"));
     }

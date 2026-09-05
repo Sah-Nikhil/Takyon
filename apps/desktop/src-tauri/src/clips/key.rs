@@ -104,20 +104,34 @@ fn into_key(bytes: Vec<u8>) -> std::io::Result<ClipKey> {
 
 /// Wrap with DPAPI, bound to the current user account.
 pub fn protect(plain: &[u8]) -> std::io::Result<Vec<u8>> {
-    dpapi(plain, true)
+    dpapi(plain, ENTROPY, true)
 }
 
 /// Unwrap a blob produced by [`protect`].
 pub fn unprotect(wrapped: &[u8]) -> std::io::Result<Vec<u8>> {
-    dpapi(wrapped, false)
+    dpapi(wrapped, ENTROPY, false)
+}
+
+/// Wrap under a caller's own entropy, for a secret that is not this key.
+///
+/// Domain separation: the Brave key and the clipboard key are different secrets
+/// with different lifetimes, and a blob wrapped for one must not unwrap in the
+/// other's code path by accident.
+pub fn protect_with(plain: &[u8], entropy: &[u8]) -> std::io::Result<Vec<u8>> {
+    dpapi(plain, entropy, true)
+}
+
+/// Unwrap a blob produced by [`protect_with`] under the same entropy.
+pub fn unprotect_with(wrapped: &[u8], entropy: &[u8]) -> std::io::Result<Vec<u8>> {
+    dpapi(wrapped, entropy, false)
 }
 
 /// The two DPAPI calls, which differ only in direction.
 ///
 /// Both hand back a `LocalAlloc`ed buffer that has to be freed here — the one
 /// mistake in this API that leaks silently rather than failing.
-fn dpapi(input: &[u8], encrypt: bool) -> std::io::Result<Vec<u8>> {
-    let mut entropy = ENTROPY.to_vec();
+fn dpapi(input: &[u8], entropy: &[u8], encrypt: bool) -> std::io::Result<Vec<u8>> {
+    let mut entropy = entropy.to_vec();
     let mut input = input.to_vec();
     let in_blob = CRYPT_INTEGER_BLOB {
         cbData: input.len() as u32,
@@ -192,6 +206,20 @@ mod tests {
         assert!(
             !wrapped.windows(KEY_LEN).any(|w| w == key.bytes().as_slice()),
             "the plaintext key appears verbatim inside its own DPAPI blob"
+        );
+    }
+
+    /// Two secrets, two entropies. A blob wrapped for the clipboard key must not
+    /// unwrap in the Brave key's path, or the separation is decoration.
+    #[test]
+    fn v0_9_a_blob_does_not_cross_between_entropies() {
+        let wrapped = protect(b"clip-key-material").expect("protect");
+        assert!(unprotect_with(&wrapped, b"some.other.domain/v1").is_err());
+        let other = protect_with(b"brave-key", b"some.other.domain/v1").expect("protect");
+        assert!(unprotect(&other).is_err());
+        assert_eq!(
+            unprotect_with(&other, b"some.other.domain/v1").expect("unprotect"),
+            b"brave-key"
         );
     }
 

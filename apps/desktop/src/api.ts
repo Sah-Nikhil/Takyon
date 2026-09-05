@@ -25,6 +25,9 @@ import {
   type AgentSettings,
   type AgentSnapshot,
   type TurnMessage,
+  type SearchMessage,
+  type WebSettings,
+  EVENT_SEARCH,
   type AliasRow,
   type AppAliasRow,
   type Placement,
@@ -483,6 +486,44 @@ export const agentCancel = (turnId: number) =>
 export function onTurn(cb: (message: TurnMessage) => void): () => void {
   if (!inTauri) return mock.onTurn(cb);
   const p = listen<TurnMessage>(EVENT_TURN, (e) => cb(e.payload));
+  return () => {
+    void p.then((un) => un());
+  };
+}
+
+// ── Web search (v0.9) ───────────────────────────────────────────────
+
+/** What Settings shows for `!s`. The key itself never crosses this seam. */
+export const webSettings = () =>
+  inTauri ? invoke<WebSettings>("web_settings") : mock.webSettings();
+
+/** Store the key, or clear it with a blank string. */
+export const setWebKey = (keyValue: string) =>
+  inTauri ? invoke<void>("set_web_key", { keyValue }) : mock.setWebKey(keyValue);
+
+/**
+ * Run one search. Resolves with its id; progress arrives on `onSearch` and the
+ * answer on `onTurn`, because the answer is an ordinary Turn.
+ */
+export const webSearch = (query: string) =>
+  inTauri ? invoke<number>("web_search", { query }) : mock.webSearch(query);
+
+/** Stop a search between steps. The Turn it started is stopped by `agentCancel`. */
+export const webCancel = (searchId: number) =>
+  inTauri ? invoke<void>("web_cancel", { searchId }) : mock.webCancel(searchId);
+
+/** Open one source in the default browser. Rust refuses anything but http(s). */
+export const openUrl = (url: string) =>
+  inTauri ? invoke<void>("open_url", { url }) : mock.openUrl(url);
+
+/** Enter on `!s`: the query, in the default browser's own search engine. */
+export const openWebQuery = (query: string) =>
+  inTauri ? invoke<void>("open_web_query", { query }) : mock.openWebQuery(query);
+
+/** Subscribe to search progress. Returns an unsubscribe function. */
+export function onSearch(cb: (message: SearchMessage) => void): () => void {
+  if (!inTauri) return mock.onSearch(cb);
+  const p = listen<SearchMessage>(EVENT_SEARCH, (e) => cb(e.payload));
   return () => {
     void p.then((un) => un());
   };

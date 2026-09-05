@@ -219,7 +219,7 @@ export type ClipRetention = "forever" | "6-months" | "1-month" | "1-week" | "1-d
  * Not a second window: a third WebView2 would cost the login budget and a large
  * share of the 150 MB ceiling. The warm Palette grows, and Escape goes back.
  */
-export type ViewKind = "clipboard-history" | "ask";
+export type ViewKind = "clipboard-history" | "ask" | "web";
 
 /**
  * How tall a full-window View is, logical pixels. Mirrors `VIEW_HEIGHT` in
@@ -309,6 +309,24 @@ export interface QueryResult {
    * this carries the question plus which Agent would answer it.
    */
   ask?: Ask;
+  /**
+   * Present exactly when the line is `!s` (v0.9). Same shape and same reason as
+   * `ask`: the answer streams, so there is nothing to rank.
+   */
+  web?: Web;
+}
+
+/** The `!s` Mode's state for one keystroke. */
+export interface Web {
+  /** The question, trimmed. Empty means the Bang alone was typed. */
+  query: string;
+  /** Which service answers. One today (ADR-0005), named so the row can say it. */
+  provider: string;
+  /**
+   * Whether a key is stored. False is a state with its own copy, not an error:
+   * the fix is Settings → Web search, and the row says so.
+   */
+  hasKey: boolean;
 }
 
 /** The `!c` Mode's state for one keystroke. */
@@ -512,3 +530,41 @@ export type TurnEvent =
 
 /** A `TurnEvent` with the Turn it belongs to. Rust flattens the two together. */
 export type TurnMessage = TurnEvent & { turnId: number };
+
+// ── Web search (v0.9) ───────────────────────────────────────────────
+
+/** The channel `!s` reports progress on. The answer itself is a Turn. */
+export const EVENT_SEARCH = "takyon://search";
+
+/** One search result, before its page has been read. */
+export interface SearchHit {
+  title: string;
+  url: string;
+  /** The provider's own snippet, with its highlight markup stripped. */
+  description: string;
+}
+
+/**
+ * One thing that happened during a search.
+ *
+ * `answering` carries a `turnId`: the answer arrives on `EVENT_TURN` like any
+ * other Turn, so streaming and cancellation are not written twice.
+ */
+export type SearchEvent =
+  | { kind: "searching"; provider: string }
+  | { kind: "reading"; sources: SearchHit[] }
+  | { kind: "answering"; turnId: number; agent: string }
+  | { kind: "failed"; message: string };
+
+/** A `SearchEvent` with the search it belongs to. Rust flattens the two. */
+export type SearchMessage = SearchEvent & { searchId: number };
+
+/** What Settings shows for web search. The key itself never crosses IPC. */
+export interface WebSettings {
+  provider: string;
+  hasKey: boolean;
+  /** Last four characters of the stored key, so a wrong paste is visible. */
+  hint?: string;
+  /** Where a key comes from. In the response so provider and page move together. */
+  signupUrl: string;
+}

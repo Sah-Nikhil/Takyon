@@ -81,6 +81,10 @@ impl AgentDriver for ClaudeDriver {
             // gives follow-up Turns a permission UI (docs/tbd/v0.8.md).
             "--permission-prompts".into(),
             "none".into(),
+            // The one driver with a real system prompt. Appended, not replaced:
+            // Claude's own default carries behaviour a Turn still needs.
+            "--append-system-prompt".into(),
+            super::ANSWER_STYLE.to_string(),
         ];
         if !req.tools {
             // A real switch, unlike Codex and opencode, which only have a

@@ -19,6 +19,16 @@ const { version: APP_VERSION } = JSON.parse(
  */
 test.use({ viewport: { width: 880, height: 620 } });
 
+/**
+ * Report autostart as unregistered, before the page loads. The mock reports it
+ * **on** by default, because that is what `firstrun::maybe_enable` leaves behind
+ * on a real install, and the switch reads the value on mount.
+ */
+const clearAutostart = (page: import("@playwright/test").Page) =>
+  page.addInitScript(() => {
+    (globalThis as { __takyon_autostart?: boolean }).__takyon_autostart = false;
+  });
+
 /** Make the next autostart write refuse, or allow it again with `null`. */
 const failAutostart = (page: import("@playwright/test").Page, message: string | null) =>
   page.evaluate((msg) => {
@@ -512,6 +522,7 @@ test("a refused preference write leaves the switch on what is stored", async ({ 
 test("a refused autostart write shows its error and leaves the switch where the OS has it", async ({
   page,
 }) => {
+  await clearAutostart(page);
   await page.goto("/?window=settings");
   await failAutostart(page, "Access is denied. (os error 5)");
 
@@ -530,6 +541,7 @@ test("a refused autostart write shows its error and leaves the switch where the 
 });
 
 test("the same switch works once the write is allowed again", async ({ page }) => {
+  await clearAutostart(page);
   await page.goto("/?window=settings");
   const startup = page.getByRole("switch", { name: "Start Takyon when I log in" });
 

@@ -3,7 +3,7 @@ members = ["uiaccess"]
 
 [package]
 name = "takyon"
-version = "0.8.0"
+version = "0.9.0"
 description = "Takyon - a local-first keyboard launcher for Windows"
 authors = ["Nikhil Sah <sah.nikhil11@gmail.com>"]
 edition = "2021"
@@ -110,6 +110,9 @@ windows = { version = "0.61", features = [
   # already above, plus `Win32_System_LibraryLoader` for its `HINSTANCE`.
   "Win32_Security_Cryptography",
   "Win32_System_LibraryLoader",
+  # v0.9. WinHTTP is the HTTP client for `!s` (ADR-0019): OS TLS and the user's
+  # own proxy, and nothing added to the installer.
+  "Win32_Networking_WinHttp",
   "Win32_UI_Input_KeyboardAndMouse",
 ] }
 

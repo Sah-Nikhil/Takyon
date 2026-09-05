@@ -19,8 +19,13 @@ import {
   failAutostart,
   failPreferenceWrite,
   menuRequest,
+  failWebSearch,
+  openedUrls,
+  setAnswer,
+  setAutostart,
   setAgentSignedOut,
   setAskOrder,
+  setWebKeyStored,
   setIndexing,
   setStoredPreference,
 } from "./api.mock";
@@ -52,6 +57,9 @@ if (!inTauri) {
     // The only way to make the autostart write refuse on demand. On a real
     // machine it takes a group policy or a locked hive (tbd v0.1 §3).
     failAutostart,
+    // Autostart reads as on in the browser because that is what a real install
+    // has. A test that needs the unregistered state asks for it.
+    setAutostart,
     failPreferenceWrite,
     // What "Settings wrote a preference while the Palette was hidden" looks like
     // when there is no settings.db to write to.
@@ -63,6 +71,15 @@ if (!inTauri) {
     // Every Agent signed out is the only state that blocks `!c` now that the
     // preference is an order, and no fixture is in it.
     setAgentSignedOut,
+    // Whether `!s` holds a key. Rust keeps it DPAPI-wrapped on disk, which a
+    // browser cannot reach, so the no-key state is unreachable without this.
+    setWebKeyStored,
+    failWebSearch,
+    // What the mock Agent answers, so the renderer can be driven with markdown.
+    setAnswer,
+    // What the mock was asked to open. Enter on `!s` and a source row both end
+    // in the shell, which a browser has no way to observe.
+    openedUrls,
   };
 }
 

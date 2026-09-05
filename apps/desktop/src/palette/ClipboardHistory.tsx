@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FOOTER_HEIGHT, type ClipRow } from "@takyon/shared";
 import * as api from "@/api";
+import { Select } from "@/components/Select";
 
 /** Type filter. One kind stored at v0.5; the control is the seam for images. */
 const TYPES = [
@@ -179,18 +180,13 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
           placeholder="Type to filter entries..."
           className="h-9 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/35"
         />
-        <select
+        <Select
+          label="Type"
           value={type}
-          onChange={(e) => setType(e.target.value as TypeId)}
-          aria-label="Type"
-          className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[12px] text-fg/80 outline-none"
-        >
-          {TYPES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+          options={TYPES.map((t) => ({ value: t.id, label: t.label }))}
+          onChange={(next: string) => setType(next as TypeId)}
+          className="w-32 shrink-0"
+        />
       </div>
 
       <div className="flex min-h-0 flex-1">

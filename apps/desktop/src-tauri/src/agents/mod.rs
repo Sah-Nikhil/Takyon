@@ -160,6 +160,27 @@ impl Snapshot {
     }
 }
 
+/// The house style every Turn answers in.
+///
+/// A launcher answer is read in a 560px box, one keystroke from whatever the
+/// user was doing. Three paragraphs of preamble is the wrong shape for that, and
+/// no Agent's default is this terse. Sent as a system prompt where the CLI has
+/// one and prepended to the first Turn's prompt where it does not.
+pub const ANSWER_STYLE: &str = "Answer in as few words as the question allows. No preamble, no restatement of the question, no closing offer, no summary of what you just said. Drop articles and filler; fragments are fine. One line when one line answers it. Prose, not bullets, unless the answer is genuinely a list. Never abbreviate identifiers, API names, file paths, error strings, names or numbers, and never drop a caveat that changes the answer.";
+
+/// The prompt for an Agent with no system-prompt flag of its own.
+///
+/// First Turn only: a resumed session already carries the style, and repeating
+/// it every follow-up spends tokens saying what was already said.
+pub fn styled_prompt(req: &TurnRequest) -> String {
+    match req.session {
+        Some(_) => req.prompt.clone(),
+        None => format!("{ANSWER_STYLE}
+
+{}", req.prompt),
+    }
+}
+
 /// What one Turn needs to know before it can be spawned.
 #[derive(Clone, Debug)]
 pub struct TurnRequest {
@@ -466,6 +487,60 @@ mod tests {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         prefs.set(crate::prefs::ASK_AGENT, "opencode").unwrap();
         assert_eq!(route(&prefs)[0], AgentKind::OpenCode);
+    }
+
+    /// Every Turn answers in the house style, whichever Agent writes it. Claude
+    /// takes it as a system prompt; the other two have no flag for one, so it
+    /// leads the prompt instead.
+    #[test]
+    fn v0_9_every_driver_carries_the_answer_style_on_a_first_turn() {
+        let base = TurnRequest {
+            prompt: "who directed fast five".into(),
+            cwd: std::path::PathBuf::from(r"C:\scratch"),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        for driver in drivers() {
+            let args = driver.turn_args(&base);
+            assert!(
+                args.iter().any(|a| a.contains(ANSWER_STYLE)),
+                "{} sent no answer style",
+                driver.label()
+            );
+            // Never instead of the question.
+            assert!(
+                args.iter().any(|a| a.contains("who directed fast five")),
+                "{} lost the question",
+                driver.label()
+            );
+        }
+    }
+
+    /// A follow-up must not repeat the style: the session already carries it, and
+    /// resending it every Turn is tokens spent saying what was already said.
+    #[test]
+    fn v0_9_a_resumed_turn_does_not_repeat_the_style_in_its_prompt() {
+        let resumed = TurnRequest {
+            prompt: "and the producer".into(),
+            cwd: std::path::PathBuf::from(r"C:\scratch"),
+            session: Some("abc".into()),
+            model: None,
+            effort: None,
+            tools: true,
+        };
+        assert_eq!(styled_prompt(&resumed), "and the producer");
+        assert!(styled_prompt(&TurnRequest { session: None, ..resumed }).contains(ANSWER_STYLE));
+    }
+
+    /// The style has to actually ask for brevity, or it is decoration that costs
+    /// a system prompt on every Turn.
+    #[test]
+    fn v0_9_the_answer_style_asks_for_brevity_and_protects_exactness() {
+        assert!(ANSWER_STYLE.contains("as few words"));
+        assert!(ANSWER_STYLE.contains("No preamble"));
+        assert!(ANSWER_STYLE.contains("Never abbreviate"));
     }
 
     /// The missing-CLI sentence names the binary, because that is the fix.

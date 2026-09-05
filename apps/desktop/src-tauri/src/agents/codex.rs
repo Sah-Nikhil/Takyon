@@ -101,7 +101,8 @@ impl AgentDriver for CodexDriver {
             args.push("-c".into());
             args.push(format!("model_reasoning_effort=\"{effort}\""));
         }
-        args.push(req.prompt.clone());
+        // No system-prompt flag, so the style leads the first Turn's prompt.
+        args.push(super::styled_prompt(req));
         args
     }
 
@@ -264,8 +265,8 @@ mod tests {
         assert_eq!(args[cd + 1], r"C:\scratch");
         let sandbox = args.iter().position(|a| a == "--sandbox").expect("sandbox flag");
         assert_eq!(args[sandbox + 1], "read-only");
-        // The prompt is last, after every flag.
-        assert_eq!(args.last().unwrap(), "hi");
+        // The prompt is last, after every flag, with the house style ahead of it.
+        assert!(args.last().unwrap().ends_with("hi"));
     }
 
     /// A follow-up is `exec resume <id>`, and the id comes right after `resume`.

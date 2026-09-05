@@ -55,6 +55,10 @@ pub struct QueryResult {
     /// question and which Agent would answer it, and `entries` stays empty.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ask: Option<Ask>,
+    /// Present exactly when the line is `!s` (v0.9). Same shape as `ask` and for
+    /// the same reason: the answer streams, so there is nothing to rank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web: Option<Web>,
 }
 
 /// The `!c` Mode's state for one keystroke.
@@ -76,6 +80,23 @@ pub struct Ask {
     pub order: Vec<crate::agents::AgentKind>,
 }
 
+
+/// The `!s` Mode's state for one keystroke.
+///
+/// `has_key` is read from a cached flag, never from disk: this is built on the
+/// keystroke path. No request is made here either — `!s` reaches the network on
+/// Enter, not while being typed (ADR-0002 and the phase's own debounce trap).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Web {
+    /// The question, trimmed. Empty means the Bang alone was typed.
+    pub query: String,
+    /// Which service answers. One today (ADR-0005), named so the row can say it.
+    pub provider: &'static str,
+    /// Whether a Brave key is stored. False is a state with its own copy, not an
+    /// error: the fix is a Settings page, and the row says so.
+    pub has_key: bool,
+}
 
 /// How long a query must stand still before its top row freezes (§3).
 pub const LOCK_DELAY_MS: u64 = 100;
@@ -132,6 +153,9 @@ pub struct Pipeline {
     /// the same reason `clips_bang` is: it is read on the keystroke path, which
     /// must not touch SQLite.
     ask_order: std::sync::Mutex<Vec<crate::agents::AgentKind>>,
+    /// Whether a Brave key is stored, cached for the keystroke path. Written at
+    /// startup and on every Settings write, exactly as `ask_order` is.
+    web_key: std::sync::atomic::AtomicBool,
     sources: Vec<Arc<dyn Source>>,
     /// The Stability rule. `Mutex` because a keystroke both reads and replaces it.
     lock: std::sync::Mutex<Option<StabilityLock>>,
@@ -175,6 +199,7 @@ impl Pipeline {
             clips_bang: std::sync::atomic::AtomicBool::new(true),
             recents_on: std::sync::atomic::AtomicBool::new(true),
             ask_order: std::sync::Mutex::new(crate::agents::AgentKind::ALL.to_vec()),
+            web_key: std::sync::atomic::AtomicBool::new(false),
             frecency,
             sources,
             lock: std::sync::Mutex::new(None),
@@ -214,6 +239,16 @@ impl Pipeline {
     ///
     /// Filtered after the fan-out, not by dropping the Source: it answers from an
     /// in-memory snapshot, and rebuilding `sources` would need a lock per keystroke.
+    /// Record whether a Brave key is stored. Settings and startup call this.
+    pub fn set_web_key_present(&self, present: bool) {
+        self.web_key
+            .store(present, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn web_key_present(&self) -> bool {
+        self.web_key.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn set_recents_enabled(&self, on: bool) {
         self.recents_on
             .store(on, std::sync::atomic::Ordering::Relaxed);
@@ -268,6 +303,7 @@ impl Pipeline {
             // No toggle either: `!c` is the only door to an Agent, and which
             // Agent answers is the setting (`docs/plans/bang-registry.md`).
             Route::Ask(question) => return self.ask_result(question, seq, self.ask_order()),
+            Route::Web(question) => return self.web_result(question, seq),
             Route::Bangless(line) => line,
         };
 
@@ -288,6 +324,7 @@ impl Pipeline {
                 // that has been deliberately left blank (ADR-0001).
                 indexing: false,
                 ask: None,
+            web: None,
             };
         }
 
@@ -319,6 +356,7 @@ impl Pipeline {
             entries,
             indexing,
             ask: None,
+            web: None,
         }
     }
 
@@ -340,9 +378,28 @@ impl Pipeline {
                 agent,
                 order,
             }),
+            web: None,
             // Reuses the flag that reserves a status row in the *native* window,
             // exactly as `files_result` does: `!c` has no Entries, and without a
             // reserved row its one line falls outside the window.
+            indexing: true,
+            ..QueryResult::default()
+        }
+    }
+
+    /// The `!s` Mode (v0.9 task 5).
+    ///
+    /// Nothing leaves the machine here. Building this is a struct literal; the
+    /// request happens on Enter, in `search::ipc`.
+    fn web_result(&self, question: &str, seq: u64) -> QueryResult {
+        QueryResult {
+            seq,
+            web: Some(Web {
+                query: question.to_string(),
+                provider: crate::search::PROVIDER_LABEL,
+                has_key: self.web_key_present(),
+            }),
+            // Reserves the status row in the native window, exactly as `!c` does.
             indexing: true,
             ..QueryResult::default()
         }
@@ -369,6 +426,7 @@ impl Pipeline {
             entries: rank::disambiguate_subtitles(entries),
             indexing: false,
             ask: None,
+            web: None,
         }
     }
 
@@ -405,6 +463,7 @@ impl Pipeline {
                 crate::index::IndexStatus::Ready
             ),
             ask: None,
+            web: None,
         }
     }
 
@@ -1047,6 +1106,30 @@ otepad.exe")]);
         assert_eq!(entries[0].title, "Disk Cleanup", "{seen:?}");
         // Still reachable — the keyword works, it just does not win.
         assert!(entries.iter().any(|e| e.title == "Storage"), "{seen:?}");
+    }
+
+    /// `!s` is its own Mode with no Entries: the answer streams, exactly as `!c`.
+    #[test]
+    fn v0_9_the_web_bang_is_a_mode_with_no_entries() {
+        let p = pipeline_with(vec![app("Steam", r"C:\steam.exe")]);
+        let result = p.query("!s ferrari in f1", 1);
+        let web = result.web.expect("!s yields a web payload");
+        assert_eq!(web.query, "ferrari in f1");
+        assert!(result.entries.is_empty(), "!s ranks nothing");
+    }
+
+    /// The Bang alone is a state of its own, and it says whether a key is held —
+    /// `!s` with no key must explain itself rather than failing at Enter.
+    #[test]
+    fn v0_9_the_web_bang_alone_reports_whether_a_key_is_held() {
+        let p = pipeline_with(vec![]);
+        p.set_web_key_present(false);
+        let web = p.query("!s", 1).web.expect("a payload");
+        assert_eq!(web.query, "");
+        assert!(!web.has_key);
+
+        p.set_web_key_present(true);
+        assert!(p.query("!s ferrari", 2).web.expect("a payload").has_key);
     }
 
     /// A control-panel task sits below every app, whatever it scores.

@@ -99,8 +99,11 @@ pub trait FileIndex: Send + Sync {
     fn status(&self) -> IndexStatus;      // Ready | Building { pct } | Stale
 }
 
-pub trait SearchProvider: Send + Sync {          // v0.9
-    async fn urls(&self, q: &str, n: usize) -> Result<Vec<SearchResult>>;
+pub trait SearchProvider: Send + Sync {          // v0.9, as built
+    fn label(&self) -> &'static str;
+    // Blocking, not async: it runs on a Turn's own thread, and the rest of the
+    // Rust here is thread-based. WinHTTP is blocking too (ADR-0019).
+    fn search(&self, query: &str, key: &str) -> Result<Vec<Hit>, SearchError>;
 }
 
 pub trait GameLibrary {                          // v0.3

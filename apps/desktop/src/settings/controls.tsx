@@ -144,27 +144,37 @@ export function Chips<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
+    // One track rather than loose buttons: six chords side by side read as six
+    // controls, and they are one choice.
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex flex-wrap items-center gap-1"
+      className="flex flex-wrap items-center gap-1 rounded-card border border-hairline bg-control/40 p-1"
     >
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={option.value === value}
-          onClick={() => onChange(option.value)}
-          className={`rounded-control px-2.5 py-1 text-[12.5px] transition-colors ${
-            option.value === value
-              ? "bg-row-selected text-fg"
-              : "text-fg/55 hover:bg-row-hover hover:text-fg/80"
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
+      {options.map((option) => {
+        const chosen = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={chosen}
+            onClick={() => onChange(option.value)}
+            /*
+              The chosen one is *lifted*, not merely tinted. 10% of the
+              foreground on a near-black plate is a shade, and the old row could
+              be read as having nothing selected at all.
+            */
+            className={`rounded-control px-2.5 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
+              chosen
+                ? "bg-plate text-fg ring-1 ring-accent/45 shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
+                : "text-fg/55 hover:bg-row-hover hover:text-fg/85"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

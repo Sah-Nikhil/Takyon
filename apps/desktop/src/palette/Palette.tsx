@@ -25,6 +25,7 @@ import * as api from "@/api";
 import { refresh } from "@/prefs";
 import type {
   Ask,
+  Web as WebMode,
   AgentKind,
   AgentSnapshot,
   FileIndexReport,
@@ -33,6 +34,7 @@ import type {
 } from "@takyon/shared";
 import { AGENT_LABELS, agentSummary, blockedReason, pickAgent } from "@/agents/status";
 import { AskView } from "./AskView";
+import { SearchView } from "./SearchView";
 import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
 import { Footer } from "./Footer";
@@ -95,6 +97,13 @@ export function Palette() {
    * the view is closed. Resolved at Enter, so a later probe cannot move it.
    */
   const [asking, setAsking] = useState<{ agent: AgentKind; query: string } | null>(null);
+  /*
+    The `!s` Mode's state for this keystroke, or null. Rust decides, exactly as
+    it does for `!c`, and no request is made while it is being typed (ADR-0002).
+   */
+  const [web, setWeb] = useState<WebMode | null>(null);
+  /** The query the search view is answering. Null when the view is closed. */
+  const [searching, setSearching] = useState<string | null>(null);
   const filesBang = value.trimStart().toLowerCase().startsWith("!e");
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -141,6 +150,7 @@ export function Palette() {
       setEntries(result.entries);
       setIndexing(result.indexing);
       setAsk(result.ask ?? null);
+      setWeb(result.web ?? null);
       // Selection follows the top Entry on every new result set. From v0.3 the
       // Stability rule freezes it ~100 ms after the last keystroke so that a late
       // Source cannot move what Enter is about to launch; until then, "the top
@@ -198,6 +208,8 @@ export function Palette() {
       setView(null);
       setAsk(null);
       setAsking(null);
+      setWeb(null);
+      setSearching(null);
       // Dropped rather than kept: an Agent signed in or out through its CLI
       // between two summons, and a stale card is worse than a second probe.
       setAgents(null);
@@ -242,6 +254,8 @@ export function Palette() {
       // The Ask view goes with the window. A Turn it started does not — only
       // `agentCancel` stops one, and `useTurn` fires that on unmount.
       setAsking(null);
+      setWeb(null);
+      setSearching(null);
     });
   }, []);
 
@@ -303,6 +317,17 @@ export function Palette() {
     setView("ask");
     void api.setView("ask");
   }, [ask, agents]);
+
+  /*
+    Enter on the `!s` row. A search is a paid request and an Agent Turn, so it
+    happens once, on Enter, never per keystroke (v0.9 Traps).
+   */
+  const startSearch = useCallback(() => {
+    if (!web || !web.query || !web.hasKey) return;
+    setSearching(web.query);
+    setView("web");
+    void api.setView("web");
+  }, [web]);
 
   const closeMenu = useCallback(() => {
     setMenu(null);
@@ -469,8 +494,22 @@ export function Palette() {
         ? `Ask ${askLabel} — press Enter${askFallback}`
         : `${askLabel}${askAgent ? ` · ${agentSummary(askAgent).headline}` : ""}${askFallback}`));
 
+  /*
+    The one row `!s` shows before Enter: what will happen, and where the key
+    comes from when there is none. Amber for the no-key state, which is not an
+    error but does need an action.
+   */
+  const webNote = !web
+    ? null
+    : !web.hasKey
+      ? `No ${web.provider} key. Add one in Settings → Web search.`
+      : web.query
+        ? `Search the web with ${web.provider} — press Enter`
+        : `${web.provider} · your question leaves this machine`;
+
   const showList =
     entries.length > 0 ||
+    webNote !== null ||
     fileIndexNote !== null ||
     askNote !== null ||
     (indexing && value.trim().length > 0);
@@ -484,6 +523,14 @@ export function Palette() {
     return (
       <div className="relative flex h-full w-full flex-col p-2">
         <ClipboardHistory onClose={closeView} />
+      </div>
+    );
+  }
+
+  if (view === "web" && searching && web) {
+    return (
+      <div className="relative flex h-full w-full flex-col p-2">
+        <SearchView query={searching} provider={web.provider} onClose={closeView} />
       </div>
     );
   }
@@ -541,6 +588,7 @@ export function Palette() {
             // `!c` has no Entry to activate: the answer streams into a surface
             // rather than being launched.
             if (ask) startAsk();
+            else if (web) startSearch();
             else run(selected, actionForEvent(e, selectedKind));
           }
         }}
@@ -613,6 +661,22 @@ export function Palette() {
               One row, and never a pressable one when the Agent cannot answer:
               the sentence is the whole response in that case (ADR-0017).
              */}
+            {/*
+              Warm rather than neutral, in both its states: this is the row that
+              says a keystroke will leave the machine (`docs/brand.md`).
+             */}
+            {webNote && (
+              <div
+                className={`flex items-center px-2 text-[13px] ${
+                  web?.hasKey ? "text-amber-200/90" : "text-amber-300"
+                }`}
+                style={{ height: ROW_HEIGHT }}
+                role={web?.hasKey ? undefined : "alert"}
+                data-testid="web-note"
+              >
+                {webNote}
+              </div>
+            )}
             {askNote && (
               <div
                 className={`flex items-center px-2 text-[13px] ${
@@ -663,7 +727,17 @@ export function Palette() {
             // `!c` has no Entry, so the footer names the Bang's own verb instead
             // of a menu that has nothing to open. `null` where there is nothing
             // for Enter to do either — an unanswerable Agent, or no question yet.
-            hint={ask ? (ask.query && !askBlocked ? "Ask" : null) : undefined}
+            hint={
+              ask
+                ? ask.query && !askBlocked
+                  ? "Ask"
+                  : null
+                : web
+                  ? web.query && web.hasKey
+                    ? "Search"
+                    : null
+                  : undefined
+            }
           />
         )}
       </Command>

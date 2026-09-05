@@ -163,7 +163,7 @@ test("an agent can be switched off, and !c stops reaching it", async ({ page }) 
   // Off replaces the whole status line, and takes the pickers with it: a model
   // locked to an Agent `!c` will never reach means nothing.
   await expect(page.getByText("Off", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Model for Claude Code")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Model for Claude Code" })).toHaveCount(0);
 
   await expect(page).toHaveScreenshot("settings-agents-off.png");
 });
@@ -184,6 +184,67 @@ test("the preference order can be reordered from the keyboard", async ({ page })
 });
 
 /**
+ * A switched-off Agent has no position worth moving: `!c` walks the switched-on
+ * ones and steps over the rest, so its rank is inert.
+ */
+test("a switched-off agent cannot be reordered", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+
+  const codexDown = page.getByRole("button", { name: "Move Codex down" });
+  await expect(codexDown).toBeEnabled();
+
+  await page.getByRole("switch", { name: "Use Codex for !c" }).click();
+  await expect(codexDown).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move Codex up" })).toBeDisabled();
+
+  // Switching it back on returns the rank it always had.
+  await page.getByRole("switch", { name: "Use Codex for !c" }).click();
+  await expect(codexDown).toBeEnabled();
+});
+
+/**
+ * The open list, which no baseline covered while it was a native `<select>`:
+ * the OS drew that popup, and a screenshot could not see it.
+ */
+test("the model list opens in the window's own palette", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+  await page.getByRole("combobox", { name: "Model for Claude Code" }).click();
+
+  const list = page.getByRole("listbox", { name: "Model for Claude Code" });
+  await expect(list).toBeVisible();
+  // Nothing is chosen yet, so nothing is marked — the highlight belongs to the
+  // keyboard and the two are different facts.
+  await expect(list.getByRole("option", { name: "opus" })).toHaveAttribute(
+    "aria-selected",
+    "false",
+  );
+  await expect(page).toHaveScreenshot("settings-agents-model-open.png");
+});
+
+/** Arrows move, Enter chooses, Escape leaves the value where it was. */
+test("the list is driven from the keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+
+  const model = page.getByRole("combobox", { name: "Model for Claude Code" });
+  await model.focus();
+  await model.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(model).toHaveText("opus");
+
+  await model.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Escape");
+  await expect(model).toHaveText("opus");
+});
+
+/**
  * The model is a list, never free text, and it only exists for an Agent that can
  * answer. Picking one locks it: it is the only model a Turn can use.
  */
@@ -192,21 +253,27 @@ test("model and effort are locked from a list, per authenticated agent", async (
   await page.goto("/?window=settings");
   await page.getByRole("button", { name: "Agents" }).click();
 
-  const model = page.getByLabel("Model for Claude Code");
+  // The dropdown is ours, not the platform's: a native popup draws itself with
+  // the OS renderer and cannot carry this window's palette.
+  const model = page.getByRole("combobox", { name: "Model for Claude Code" });
   await expect(model).toBeEnabled();
-  await expect(model.locator("option")).toHaveText([
+  await model.click();
+  const models = page.getByRole("listbox", { name: "Model for Claude Code" });
+  await expect(models.getByRole("option")).toHaveText([
     "Agent default",
     "opus",
     "sonnet",
     "haiku",
     "fable",
   ]);
-  await model.selectOption("opus");
-  await expect(model).toHaveValue("opus");
+  await models.getByRole("option", { name: "opus", exact: true }).click();
+  await expect(model).toHaveText("opus");
 
   // Effort comes from the agent's own vocabulary, which differs per agent.
-  const effort = page.getByLabel("Effort for Claude Code");
-  await expect(effort.locator("option")).toHaveText([
+  const effort = page.getByRole("combobox", { name: "Effort for Claude Code" });
+  await effort.click();
+  const efforts = page.getByRole("listbox", { name: "Effort for Claude Code" });
+  await expect(efforts.getByRole("option")).toHaveText([
     "Agent default",
     "low",
     "medium",
@@ -214,11 +281,11 @@ test("model and effort are locked from a list, per authenticated agent", async (
     "xhigh",
     "max",
   ]);
-  await effort.selectOption("high");
-  await expect(effort).toHaveValue("high");
+  await efforts.getByRole("option", { name: "high", exact: true }).click();
+  await expect(effort).toHaveText("high");
 
   // Codex is not installed and opencode is signed out: neither gets a picker.
-  await expect(page.getByLabel("Model for Codex")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Model for Codex" })).toHaveCount(0);
   await expect(page.getByText("Sign in to choose a model")).toHaveCount(2);
 
   await expect(page).toHaveScreenshot("settings-agents-locked.png");

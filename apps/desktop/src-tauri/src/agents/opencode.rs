@@ -106,7 +106,8 @@ impl AgentDriver for OpenCodeDriver {
             args.push("-s".into());
             args.push(session.clone());
         }
-        args.push(req.prompt.clone());
+        // Same as Codex: no system prompt to append to, so it leads the prompt.
+        args.push(super::styled_prompt(req));
         args
     }
 
@@ -247,7 +248,8 @@ mod tests {
         assert_eq!(args[agent + 1], READ_ONLY_AGENT);
         let dir = args.iter().position(|a| a == "--dir").expect("dir flag");
         assert_eq!(args[dir + 1], r"C:\scratch");
-        assert_eq!(args.last().unwrap(), "hi");
+        // The prompt is last, after every flag, with the house style ahead of it.
+        assert!(args.last().unwrap().ends_with("hi"));
 
         let with_tools = OpenCodeDriver.turn_args(&TurnRequest { tools: true, ..base });
         assert!(!with_tools.contains(&"--agent".to_string()));

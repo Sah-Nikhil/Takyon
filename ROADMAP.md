@@ -427,14 +427,20 @@ is the price one window charges: a conversation dies when the Palette does.*
 
 **Goal:** an answer in the Palette, not a browser tab.
 
-- [ ] `SearchProvider` trait; Brave Search API behind it (ADR-0005)
-- [ ] Parallel page fetch + Readability-style extraction — no browser (ADR-0005)
-- [ ] Synthesised answer rendered inline with its sources
-- [ ] Enter opens the query in the default browser and default search engine
-- [ ] Selecting a source Entry opens that URL
+- [x] `SearchProvider` trait; Brave Search API behind it (ADR-0005). One provider, chosen by name — a second one needs a preference and TBC-0004 owns that
+- [x] **The key is DPAPI-wrapped** in `credsrave.key.dpapi`, never in `settings.db`, and never sent back to the webview: Settings shows its last four characters. It is a bearer token for someone else's paid account
+- [x] Parallel page fetch + Readability-style extraction — no browser (ADR-0005). **HTTP is WinHTTP** (ADR-0019): OS TLS, the user's own proxy, and nothing added to the installer
+- [x] Per-request timeout and a total budget, so one slow page cannot hold the answer. A page that fails is named in the prompt rather than dropped
+- [x] Synthesised answer rendered inline with its sources, streaming. **The summariser is whichever Agent `!c` would ask** — tools off, in the Scratch directory — so a Codex-only machine still gets `!s`
+- [x] Enter opens the query in the default browser and default search engine, by passing it as an argument to the browser `AssocQueryStringW` names
+- [x] Selecting a source Entry opens that URL. http(s) only, checked in Rust: these URLs come from a remote provider
+- [x] **The outbound state is visible**, in colour and in words: the row and the answer header are warm and say the query left the machine (`docs/brand.md`)
+- [x] **No debounce, because nothing fires on a keystroke.** Typing `!s` sends nothing; the request happens on Enter (ADR-0002)
+- [ ] **Run the manual verification script** ([`docs/verify/v0.9.md`](./docs/verify/v0.9.md)). Every layer below the network is green and `cargo test --test web_search -- --ignored` reaches the live internet, but **no real search has ever run**: this machine holds no Brave key, so the one test that would spend one skips itself. [`docs/tbd/v0.9.md`](./docs/tbd/v0.9.md) §1
 
 **Exit criteria:** a question like "Ferrari in F1" returns a readable synthesised
-answer with working source links, without opening a browser.
+answer with working source links, without opening a browser. *Not yet claimed —
+it needs a key on this machine.*
 
 ---
 

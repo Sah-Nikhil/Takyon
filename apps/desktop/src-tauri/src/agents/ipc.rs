@@ -214,8 +214,9 @@ pub fn agent_cancel(turn_id: u64, turns: tauri::State<'_, Arc<Turns>>) {
 }
 
 /// Turn ids are minted here, not by the frontend: two windows asking at once
-/// would otherwise collide on the one event channel.
-fn next_turn_id() -> u64 {
+/// would otherwise collide on the one event channel. `!s` mints from the same
+/// counter, so a search's answer and an `!c` answer can never share an id.
+pub fn next_turn_id() -> u64 {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }

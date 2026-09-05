@@ -85,6 +85,9 @@ pub enum View {
     /// `!c` with a question typed. The answer streams and scrolls, so it needs
     /// the same fixed height rather than a row count (v0.8).
     Ask,
+    /// `!s` with a question typed. Same height and same reason: a streamed
+    /// answer over a source list, both scrolling (v0.9).
+    Web,
 }
 
 /// How tall a full-window View is, logical pixels.

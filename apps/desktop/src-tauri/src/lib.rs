@@ -29,6 +29,7 @@ pub mod launch;
 pub mod prefs;
 pub mod query;
 pub mod rank;
+pub mod search;
 pub mod settings;
 pub mod sources;
 pub mod tray;
@@ -266,6 +267,7 @@ fn set_view(app: tauri::AppHandle, view: Option<String>) {
     let view = match view.as_deref() {
         Some("clipboard-history") => Some(window::View::ClipboardHistory),
         Some("ask") => Some(window::View::Ask),
+        Some("web") => Some(window::View::Web),
         _ => None,
     };
     window::set_view(&app, view);
@@ -655,7 +657,13 @@ pub fn run() {
             agents::ipc::set_ask_effort,
             agents::ipc::agent_models,
             agents::ipc::agent_ask,
-            agents::ipc::agent_cancel
+            agents::ipc::agent_cancel,
+            search::ipc::web_settings,
+            search::ipc::set_web_key,
+            search::ipc::web_search,
+            search::ipc::web_cancel,
+            search::ipc::open_url,
+            search::ipc::open_web_query
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -780,12 +788,20 @@ pub fn run() {
             // **Only preferences are read here** — no Agent is probed on the
             // login path, because that is three spawns (v0.8 Traps).
             pipeline.set_ask_order(agents::route(&prefs));
+            // Whether `!s` holds a key, cached the same way and for the same
+            // reason: the row is drawn on the keystroke path and DPAPI is a
+            // file read plus a syscall.
+            pipeline.set_web_key_present(
+                identity::data_dir().as_deref().map(search::key::present).unwrap_or(false),
+            );
             // Interface size and placement into atomics, before the first show:
             // both sit on latency paths and must never reach SQLite there.
             window::cache_layout_prefs(&prefs);
             app.manage(Arc::new(pipeline));
             // Empty at startup: a Turn only exists once someone asks for one.
             app.manage(Arc::new(agents::turn::Turns::default()));
+            // Same shape as `Turns`: nothing runs until someone types `!s`.
+            app.manage(Arc::new(search::ipc::Searches::default()));
 
             // The first thing that makes the app useful, and it stays first.
             // Reads `settings.db` so a rebound hotkey survives a restart: one

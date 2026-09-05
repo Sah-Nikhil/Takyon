@@ -18,6 +18,7 @@ import type { AgentKind, AgentSettings, AgentSnapshot } from "@takyon/shared";
 
 import * as api from "@/api";
 import { AGENT_LABELS, agentSummary, canAsk, HEALTH_DOT, versionLabel } from "@/agents/status";
+import { Select } from "@/components/Select";
 import { Group, Row, Switch, useApplied } from "../controls";
 
 /** Shown while `agent_settings` is still out. Rust's order, same reason. */
@@ -212,8 +213,23 @@ function AgentRow({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Move label={`Move ${label} up`} glyph="↑" on={canMoveUp} onClick={() => onMove(-1)} />
-          <Move label={`Move ${label} down`} glyph="↓" on={canMoveDown} onClick={() => onMove(1)} />
+          {/*
+            A switched-off Agent cannot be reordered: `!c` walks the switched-on
+            ones, so its position is inert and moving it looks like it did
+            something. Switch it on first, then rank it.
+          */}
+          <Move
+            label={`Move ${label} up`}
+            glyph="↑"
+            on={enabled && canMoveUp}
+            onClick={() => onMove(-1)}
+          />
+          <Move
+            label={`Move ${label} down`}
+            glyph="↓"
+            on={enabled && canMoveDown}
+            onClick={() => onMove(1)}
+          />
           <Switch checked={enabled} label={`Use ${label} for !c`} onChange={onToggle} />
         </div>
       </div>
@@ -300,19 +316,14 @@ function Picker({
 }) {
   const loading = options === null;
   return (
-    <select
-      aria-label={label}
+    <Select
+      label={label}
       value={value}
       disabled={loading}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-8 w-44 max-w-full rounded-md border border-white/10 bg-black/20 px-2 text-[13px] text-fg outline-none disabled:text-fg/30"
-    >
-      <option value="">{loading ? loadingLabel : emptyLabel}</option>
-      {(options ?? []).map((option) => (
-        <option key={option} value={option}>
-          {option}
-        </option>
-      ))}
-    </select>
+      placeholder={loading ? loadingLabel : emptyLabel}
+      options={(options ?? []).map((option) => ({ value: option, label: option }))}
+      onChange={onChange}
+      className="w-44 max-w-full"
+    />
   );
 }

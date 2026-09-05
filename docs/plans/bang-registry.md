@@ -48,6 +48,17 @@ else, which is what makes ADR-0002 checkable by reading `bang.rs`. A second
 grammar inside a Bang's payload ends that. Revisit only alongside chaining
 (`post-v1.md`), which is the same problem.
 
+## Settled at v0.9: `!s` is one Bang and Enter is the only trigger
+
+`!s` was added exactly as `!c` was — a constant and a match arm — and the V1 set
+above is now three quarters built: `!e`, `!c`, `!s`, with `!v` from v0.5.
+
+One question the phase answered by construction: **a Bang with a query fires
+nothing until Enter**. `!s` reaches the network only on Enter, which is stronger
+than the debounce the plan asked for and is why no timer exists. That generalises
+to any future Bang that costs money or a request, and it is the reason the second
+open question below now matters less than it did.
+
 ## Open questions when this resumes
 
 - Do Bangs contribute Entries to the `Ctrl+K` action menu, or is a Mode's action

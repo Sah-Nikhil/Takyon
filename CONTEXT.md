@@ -95,6 +95,20 @@ stopped typing, even as slower Sources report late. Prevents launching the wrong
 thing by pressing Enter mid-reorder.
 _Avoid_: debounce, settling, locking
 
+**Hit**:
+One result a search provider names, before its page has been read: a title, a URL
+and the provider's own snippet. A Hit is not an Entry — it is never ranked and
+never appears in the Bangless list.
+_Avoid_: result, link, search result, item
+
+**Citation**:
+A Hit together with whatever text its page yielded, numbered so the answer can
+refer to it as `[1]`. Deliberately not "Source", which already names the producers
+of Entries. The answer's own list is headed **Sources** in the interface, because
+that is what a reader expects above a set of links, and this is the one place the
+two words are allowed to diverge.
+_Avoid_: source (in code), reference, document, page
+
 ### Agents
 
 **Agent**:

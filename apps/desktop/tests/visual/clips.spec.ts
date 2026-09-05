@@ -93,7 +93,7 @@ test("Enter on the command opens the history surface", async ({ page }) => {
 
   // The two-pane surface: filter, type control, day grouping, detail pane.
   await expect(page.getByPlaceholder("Type to filter entries...")).toBeVisible();
-  await expect(page.getByLabel("Type")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Type" })).toBeVisible();
   await expect(page.getByText("Today")).toBeVisible();
   await expect(page.getByText("Information")).toBeVisible();
   await expect(page.getByText("Source")).toBeVisible();
