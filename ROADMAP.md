@@ -131,7 +131,7 @@ Both are in [`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §10.
 
 - [x] Inline expression evaluation, result as the top Entry, Enter copies it
 - [x] Unit conversion — length, mass, temperature, data, time, all from static tables
-- [ ] Currency conversion — **deferred to v0.8**. It needs a rate source, so ADR-0002 requires it to be Bang-gated or opt-in, and at v0.4 neither gate exists: `bang.rs` is v0.8 and there is no settings store until v0.6. No currency code was written, and a test asserts no currency unit resolves. [`docs/tbd/v0.4.md`](./docs/tbd/v0.4.md) §2
+- [ ] Currency conversion — **deferred to v0.9**. It needs a rate source, so ADR-0002 requires it to be Bang-gated or opt-in, and at v0.4 neither gate exists: `bang.rs` is v0.9 and there is no settings store until v0.6. No currency code was written, and a test asserts no currency unit resolves. [`docs/tbd/v0.4.md`](./docs/tbd/v0.4.md) §2
 - [x] **New:** `=` forces a calculation, and a Settings switch chooses whether anything else may
 
 **Exit criteria:** you stop opening a calculator app. **Met** — `12*1.18` and
@@ -185,7 +185,7 @@ instead.
 - [x] **The history surface** — a full-window View the Palette navigates *into*: back arrow, filter input, type control, day-grouped list, detail pane with Information (source, type, characters, copied), and a "Paste ↵ | Actions Ctrl K" footer. **Not a second window**: another WebView2 would cost the login budget and a large share of the 150 MB ceiling, so the warm Palette resizes to `VIEW_HEIGHT` and `Escape` navigates back rather than dismissing
 - [x] **`!v` becomes a toggle** (`clips.bang` in `settings.db`, default on). Turned off, `!v` is ordinary text that falls through to Bangless and matches nothing — the command is still there, so the feature never disappears with the accelerator
 - [x] Paste-back — clipboard first, then a synthesised `Ctrl+V` after an 80 ms settle. Ordered that way deliberately: a failed keystroke leaves the user one manual paste away, a failed copy leaves them with nothing. Format preservation is a seam (`ClipKind`) rather than code, because only text is captured at v0.5
-- [x] **New:** `bang.rs`, brought forward from v0.8 because `!v` needs it. Position 0, ident to whitespace, unknown Bang falls through to Bangless (IMPLEMENTATION_PLAN §9). The registry and the `!` picker stay parked in [`docs/plans/bang-registry.md`](./docs/plans/bang-registry.md)
+- [x] **New:** `bang.rs`, brought forward from v0.9 because `!v` needs it. Position 0, ident to whitespace, unknown Bang falls through to Bangless (IMPLEMENTATION_PLAN §9). The registry and the `!` picker stay parked in [`docs/plans/bang-registry.md`](./docs/plans/bang-registry.md)
 
 **Exit criteria:** copying a password out of a password manager leaves no trace in
 the history, verified by inspecting the database. *Not yet claimed* — the storage
@@ -238,7 +238,7 @@ slice 2 the remaining feature pages; slice 3 appearance and the colour question.
 
 - [x] **Slice 1.** Separate settings window, `Ctrl+,` from the Palette and from the tray
 - [x] `settings.db`; UI is the only editor (no hand-edited config file). Extended rather than created — `prefs.rs` and the `settings` table opened at v0.5 for `clips.retention`
-- [x] **Two-tier navigation, Raycast-style**: a short fixed set of app-level pages above a divider, then one alphabetical page per feature. Every future Source or Mode adds a tier-two page without touching the navigation — `navSections` is pure and `nav.test.ts` holds the promise by appending a page and asserting where it lands. **Pages for features that do not exist yet are deliberately absent**: File Search arrives with v0.7 and AI with v0.9, and shipping them now as disabled rows would put dead controls in a window whose whole point is that every control does something
+- [x] **Two-tier navigation, Raycast-style**: a short fixed set of app-level pages above a divider, then one alphabetical page per feature. Every future Source or Mode adds a tier-two page without touching the navigation — `navSections` is pure and `nav.test.ts` holds the promise by appending a page and asserting where it lands. **Pages for features that do not exist yet are deliberately absent**: File Search arrives with v0.7 and AI with v0.8, and shipping them now as disabled rows would put dead controls in a window whose whole point is that every control does something
 - [x] Settings search box — and it returns **individual settings, not page names**, because past ~15 pages "Clipboard History" is not what someone is hunting for, "retention" is. t3code's `searchSettings` is the reference
 - [x] Migrate the v0.1 "Turn off animations" switch from `localStorage` into `settings.db`. **The calculator Policy went with it**, since `prefs.ts` held both and migrating one is half a job. Migration is idempotent — a key already stored wins, so a stale legacy value cannot undo a later choice
 - [x] **Autostart moves to General and gains nothing else.** The one behavioural fix landed: a refused registry write now shows its error beside the control and refetches in a `finally`, closing [`docs/tbd/v0.1.md`](./docs/tbd/v0.1.md) §3. Still read from the OS on every mount, never mirrored (ADR-0015). No "close to tray" and no "start hidden"
@@ -397,7 +397,33 @@ Playwright, typecheck, lint, and the comment ceiling.
 
 ---
 
-## v0.8 — Web search (`!s`)
+## v0.8 — Agents (`!c`)
+
+**Goal:** ask a question from the hotkey; get an answer in place.
+
+- [x] `AgentDriver` trait and a registry, with drivers for **Claude Code, Codex and opencode** — the surface and the shape follow T3 Code's `ProviderDriver` (ADR-0017)
+- [x] CLI subprocess per Turn, streaming JSON rendered as it arrives, buffered to the newline
+- [x] Detect a missing or signed-out Agent and explain it, rather than failing silently
+- [x] Inline answer in the Palette; **tools disabled** on the first Turn, and every Turn in the Scratch directory
+- [x] Promotion to the Chat Surface on the first follow-up (ADR-0001), which is where tools turn on
+- [x] Chat Surface: the same launcher window showing a conversation, never a second window
+- [x] **Model and effort locked in Settings** per authenticated Agent, from that Agent's own list — the only pair a Turn can use
+- [x] Settings → Agents: one row per Agent, ranked, with a switch, its Sign-in state and its locked pair
+- [x] One `!c` for all three; which Agent answers is a preference (`docs/plans/bang-registry.md`)
+- [x] **`!c` never waits on a probe** (ADR-0018): the ranked order and the switches are stored preferences, so the Palette names its Agent on the first keystroke and Enter starts a Turn before any Agent has been probed
+
+**Exit criteria:** a question answers inline in the Palette, a follow-up promotes
+into a Chat Surface in the same window, and Escape goes back one step rather than
+destroying a conversation.
+
+*Sign-in is delegated to each Agent's own CLI and Takyon never runs it
+(ADR-0017); the terminal-launching version is TBC-0012. What the phase left
+undone is `docs/tbd/v0.8.md` — start with §1, the permission UI, and §3, which
+is the price one window charges: a conversation dies when the Palette does.*
+
+---
+
+## v0.9 — Web search (`!s`)
 
 **Goal:** an answer in the Palette, not a browser tab.
 
@@ -409,24 +435,6 @@ Playwright, typecheck, lint, and the comment ceiling.
 
 **Exit criteria:** a question like "Ferrari in F1" returns a readable synthesised
 answer with working source links, without opening a browser.
-
----
-
-## v0.9 — Claude Code (`!c`)
-
-**Goal:** ask a question from the hotkey; get an answer in place.
-
-- [ ] `claude` CLI subprocess, streaming JSON output rendered as it arrives
-- [ ] Detect missing or logged-out CLI and explain it, rather than failing silently
-- [ ] Inline answer in the Palette; **tools disabled** on this path
-- [ ] Promotion to the Chat Surface on the first follow-up (ADR-0001); full agent mode lives only there
-- [ ] Chat Surface: its own window, own lifecycle, survives Palette dismissal
-
-**Exit criteria:** a question answers inline in the Palette, a follow-up promotes
-into a Chat Surface, and Escape on the Palette never destroys a conversation.
-
-*Design not finalised — session model, working directory, and tool policy are
-still open. Write `docs/plans/v0.9-claude-code.md` before starting.*
 
 ---
 

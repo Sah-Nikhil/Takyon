@@ -65,6 +65,48 @@ pub const FILES_EXCLUDES: &str = "files.excludes";
 /// Whether the tray icon is drawn. `"1"` or `"0"`, default on.
 pub const TRAY: &str = "launcher.tray";
 
+/// The order `!c` tries Agents in, as a JSON array: `["claude","codex",…]`.
+///
+/// `!c` asks the first Agent on it that is installed and signed in, so the list
+/// is a preference rather than a choice. Read on the keystroke path through a
+/// cached copy in `Pipeline`, never SQLite — no room in the 30 ms budget.
+pub const ASK_ORDER: &str = "agents.order";
+
+/// The single chosen Agent, before `ASK_ORDER` replaced it.
+///
+/// Read once at startup to seed the order so an existing install keeps its
+/// choice first. Never written.
+pub const ASK_AGENT: &str = "agents.default";
+
+/// Where a Turn runs. Absent means the Scratch directory (ADR-0017).
+pub const ASK_CWD: &str = "agents.cwd";
+
+/// Whether one Agent is switched on: `agents.enabled.claude`. Default on.
+///
+/// `!c` skips a switched-off Agent without probing it, which is what lets the
+/// Palette name an Agent on the first keystroke rather than after three spawns.
+/// Sign-in state cannot do that job: reading it costs a process.
+pub fn ask_enabled_key(kind: crate::agents::AgentKind) -> String {
+    format!("agents.enabled.{}", kind.as_str())
+}
+
+/// The model one Agent must use, keyed by kind: `agents.model.claude`.
+///
+/// Chosen in Settings and used for **every** Turn — there is no per-query
+/// override anywhere. Absent means the Agent's own default, which is the right
+/// answer for anyone who has not chosen.
+pub fn ask_model_key(kind: crate::agents::AgentKind) -> String {
+    format!("agents.model.{}", kind.as_str())
+}
+
+/// The effort level one Agent must use: `agents.effort.claude`.
+///
+/// Locked the same way and for the same reason as the model. Each Agent spells
+/// effort differently; the values come from that Agent's own vocabulary.
+pub fn ask_effort_key(kind: crate::agents::AgentKind) -> String {
+    format!("agents.effort.{}", kind.as_str())
+}
+
 /// Where the Palette opens: `"cursor"` (default) or `"primary"`.
 pub const PLACEMENT: &str = "launcher.placement";
 

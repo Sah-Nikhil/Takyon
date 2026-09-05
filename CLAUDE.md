@@ -5,12 +5,19 @@ on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
 anything leaves the machine.
 
-**Status: v0.1 and v0.2 built.** The Palette is warm, the hotkey works, and it
-finds and launches applications — Start Menu shortcuts, Store apps, `PATH`
-executables and Steam games — with icons, a `Ctrl+K` action menu and a
-content-sized window. There is no CI. Frecency, the Stability rule, the
-calculator, clipboard history, settings, file search and both network Bangs are
-all still unbuilt; check `ROADMAP.md` before assuming anything past v0.2 exists.
+**Status: v0.1 through v0.8 are built and v0.8 has shipped.** The Palette is
+warm, the hotkey works, and it finds and launches applications, files, clipboard
+history and calculations, with Frecency, settings and a `Ctrl+K` action menu.
+v0.8 "AI" adds **Agents**: `!c` drives Claude Code, Codex or opencode as a
+subprocess, answers inline with tools off, and promotes into a Chat Surface on a
+follow-up. There is no CI. **v0.9 (`!s`, web search) is unbuilt** — check
+`ROADMAP.md` before assuming anything.
+
+Agents and web search traded phase numbers when v0.8 shipped. Agents was built
+first while `!s` kept being deferred, so the shipped work took the next release
+number and web search moved down to v0.9. Anything dated before that release
+naming "v0.8" means web search; the renumber is why `docs/plans/v0.4-calculator.md`
+defers currency to a phase that is now v0.9.
 
 Two things are outstanding rather than done: a real code-signing certificate for
 the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
@@ -87,8 +94,9 @@ under `docs/`.
   signing is a v0.1 requirement, not a shipping-time one, and portable mode is
   impossible as a result.
 - External services: **Brave Search API** for `!s` retrieval only (ADR-0005), and
-  the user's own **Claude Code CLI** as a subprocess for `!c` — Takyon never
-  holds an LLM account or key of its own.
+  the user's own **Agent CLIs** — `claude`, `codex`, `opencode` — as subprocesses
+  for `!c`. Takyon never holds an LLM account or key of its own, and never runs
+  an Agent's login (**ADR-0017**; the terminal path is `docs/tbc/0012`).
 
 ## Commands
 - dev: `bun run dev`
@@ -129,6 +137,10 @@ tests-afterwards. Four layers, because a launcher can't be verified by one:
    can't run outside Tauri and this layer becomes impossible. (Playwright as a dev
    dependency is unrelated to ADR-0005, which only forbids *shipping* a browser
    engine in the product.)
+   **Import `test` and `expect` from `./fixtures`, never from `@playwright/test`**
+   — the fixture pins the page clock, and clip rows are offsets from `Date.now()`.
+   The screenshot budget is `maxDiffPixels: 150`, absolute: the ratio it replaced
+   passed a wrong version number and two missing sidebar rows for two releases.
 4. **Manual verification script per phase** in `docs/verify/` — the global hotkey,
    focus-loss dismissal, tray, multi-monitor placement and the UIAccess
    elevated-window overlay genuinely cannot be automated cheaply. Write the script
@@ -161,7 +173,10 @@ seams that actually matter are Rust traits — `FileIndex`, `AppSource`,
 ## Conventions
 - **Use the vocabulary in `CONTEXT.md` exactly**, in identifiers, comments and UI
   copy: Palette, Bang, Bangless, Mode, Promotion, Chat Surface, Entry, Source,
-  Frecency, Stability. Don't reintroduce "result", "provider", "command".
+  Frecency, Stability, Agent, Agent Driver, Sign-in state, Turn, Scratch
+  directory. Don't reintroduce "result", "provider", "command" — note that
+  T3 Code, the reference for v0.8's surface, calls an Agent a *provider*, and
+  that word is taken here twice over.
 - **Nothing UI-aware in Rust Sources.** Sources return Entries; ranking and
   rendering are separate. This is what keeps the native-Palette escape hatch in
   `docs/tbc/0002` affordable.

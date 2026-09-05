@@ -219,7 +219,7 @@ export type ClipRetention = "forever" | "6-months" | "1-month" | "1-week" | "1-d
  * Not a second window: a third WebView2 would cost the login budget and a large
  * share of the 150 MB ceiling. The warm Palette grows, and Escape goes back.
  */
-export type ViewKind = "clipboard-history";
+export type ViewKind = "clipboard-history" | "ask";
 
 /**
  * How tall a full-window View is, logical pixels. Mirrors `VIEW_HEIGHT` in
@@ -303,6 +303,26 @@ export interface QueryResult {
    * in the first second after login is exactly wrong.
    */
   indexing: boolean;
+  /**
+   * Present exactly when the line is `!c` (v0.8). The Ask Mode has no Entries to
+   * rank — the answer streams over `EVENT_TURN` — so `entries` stays empty and
+   * this carries the question plus which Agent would answer it.
+   */
+  ask?: Ask;
+}
+
+/** The `!c` Mode's state for one keystroke. */
+export interface Ask {
+  /** The question, trimmed. Empty means the Bang alone was typed. */
+  query: string;
+  /** Which Agent answers. Null when every Agent is switched off. */
+  agent: AgentKind | null;
+  /**
+   * The switched-on Agents in preference order. No Sign-in state in it: knowing
+   * costs three process spawns and this is the keystroke path, so the Palette
+   * refines the choice once its own probe lands.
+   */
+  order: AgentKind[];
 }
 
 /**
@@ -411,3 +431,84 @@ export function paletteHeight(
 /** Event names Rust emits. String constants so a rename is a compile error on both sides. */
 export const EVENT_SHOW = "takyon://show";
 export const EVENT_HIDE = "takyon://hide";
+/** Every Turn streams over this one channel; `turnId` says which. */
+export const EVENT_TURN = "takyon://turn";
+
+// ── Agents (v0.8) ───────────────────────────────────────────────────
+
+/**
+ * Which Agent. The spellings are stored preferences on the Rust side, so
+ * renaming one breaks a saved setting rather than only a type.
+ */
+export type AgentKind = "claude" | "codex" | "opencode";
+
+/**
+ * What Takyon can say about an Agent's credentials (`CONTEXT.md` §Agents).
+ *
+ * `unknown` is not a failure: installed but would not answer, which is a
+ * different sentence from `out` and must stay one (ADR-0017).
+ */
+export type SignInStatus = "in" | "out" | "unknown";
+
+export interface SignIn {
+  status: SignInStatus;
+  /** The Agent's own words — "Claude Pro Subscription", "2 providers connected". */
+  label?: string;
+  /** The account the Agent named, where it names one. */
+  account?: string;
+}
+
+/** How usable an Agent is right now. T3 Code's states, same meanings. */
+export type AgentHealth = "ready" | "warning" | "error";
+
+/**
+ * Everything a Settings card and the `!c` empty state need.
+ *
+ * Facts only. The headline is assembled in `agents/status.ts`, the way T3 Code's
+ * `providerStatus.ts` does it.
+ */
+export interface AgentSnapshot {
+  kind: AgentKind;
+  label: string;
+  /** The command the user would type, and the "not found" sentence's subject. */
+  binary: string;
+  installed: boolean;
+  version?: string;
+  health: AgentHealth;
+  signIn: SignIn;
+  /** The Agent's own sentence, carrying the command to run when signed out. */
+  message?: string;
+  /**
+   * Effort levels this Agent accepts, weakest first. Each CLI spells effort
+   * differently, so the list is the Agent's own vocabulary rather than ours.
+   */
+  efforts: string[];
+}
+
+/** Agent preferences, in one response for the same reason as `SettingsSnapshot`. */
+export interface AgentSettings {
+  /** The preference order, first to last. Every Agent appears once. */
+  order: AgentKind[];
+  /** Which Agents are switched on. `!c` walks the order and skips the rest. */
+  enabled: Partial<Record<AgentKind, boolean>>;
+  /** Empty means the Scratch directory below, never the process cwd. */
+  cwd: string;
+  scratch: string;
+  /**
+   * The locked-in model per Agent. Chosen in Settings, used for **every** Turn,
+   * and there is no per-query override anywhere. Absent is the Agent's default.
+   */
+  models: Partial<Record<AgentKind, string>>;
+  /** The locked-in effort level per Agent. Same rule as the model. */
+  efforts: Partial<Record<AgentKind, string>>;
+}
+
+/** One thing that happened during a Turn, as Rust tags it. */
+export type TurnEvent =
+  | { kind: "started"; session?: string; model?: string }
+  | { kind: "text"; delta: string }
+  | { kind: "done"; session?: string }
+  | { kind: "failed"; message: string };
+
+/** A `TurnEvent` with the Turn it belongs to. Rust flattens the two together. */
+export type TurnMessage = TurnEvent & { turnId: number };

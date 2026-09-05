@@ -14,14 +14,17 @@ and disappears on Escape. Holds no state between openings.
 _Avoid_: launcher, bar, spotlight, command palette, window
 
 **Chat Surface**:
-A separate, persistent window holding a multi-turn conversation. Exists only after
-a Promotion; has its own lifecycle and survives the Palette being dismissed.
+The Palette showing a multi-turn conversation rather than a list. Exists only
+after a Promotion, replaces the Entry list while it is open, and Escape goes back
+to the search line. **Not a second window** — one launcher window holds
+everything, so a conversation lives as long as the Palette is up.
 _Avoid_: thread window, chat window, conversation panel
 
 **Promotion**:
 The moment a Palette interaction becomes a Chat Surface, triggered by the user
 asking a follow-up. Lazy by definition — a single question answered inline is
-never promoted.
+never promoted. It is also where tools turn on: the reflex answer has none, and
+asking again is an explicit act (ADR-0017).
 _Avoid_: expanding, opening a thread, escalating
 
 ### Input
@@ -91,3 +94,57 @@ The guarantee that the Palette's top Entry does not change once the user has
 stopped typing, even as slower Sources report late. Prevents launching the wrong
 thing by pressing Enter mid-reorder.
 _Avoid_: debounce, settling, locking
+
+### Agents
+
+**Agent**:
+A coding-agent CLI that Takyon drives as a subprocess — Claude Code, Codex,
+opencode. Takyon holds no account, key or token for any of them; it runs the one
+the user already installed and already signed in to. "Agent" is the whole
+program, not the model inside it.
+_Avoid_: provider, backend, model, assistant, LLM, integration
+
+**Agent Driver**:
+The Rust implementation of one Agent: where its binary is, how to read its
+Sign-in state, and how to run a Turn against it. One trait, one file per Agent,
+no Agent-specific branches outside them.
+_Avoid_: provider, adapter, plugin, connector, harness
+
+**Agent order**:
+The ranking of every Agent, first to last, set in Settings. `!c` asks the first
+one switched on and works down from there, so it is a preference rather than a
+choice — the second entry is what answers when the first cannot. Always holds
+every Agent exactly once, switched-off ones included.
+_Avoid_: default agent, fallback chain, priority list, provider order
+
+**Switched on**:
+Whether an Agent is one `!c` may reach at all, set by its switch in Settings.
+Distinct from Sign-in state, and the distinction is the point: this is a stored
+preference, so `!c` reads it on the keystroke, while Sign-in state costs a
+process to learn. A switched-off Agent is skipped without being probed.
+_Avoid_: enabled provider, active agent, available, connected
+
+**Locked pair**:
+The model and effort level chosen in Settings for one Agent. Every Turn uses that
+pair and nothing may override it — not a Bang, not a keystroke, not the frontend,
+which never sends either value. Picked from what that Agent itself reports.
+_Avoid_: model setting, default model, preset, profile
+
+**Sign-in state**:
+What Takyon can currently say about an Agent's credentials, asked of the Agent
+itself and never stored by Takyon: **signed in** (with the account label the
+Agent reports), **signed out**, or **unknown** when the Agent is installed but
+would not answer. Signing in happens in the Agent's own CLI (ADR-0017).
+_Avoid_: auth status, login state, credentials, session
+
+**Turn**:
+One question and the answer to it. The unit an Agent Driver runs, the unit that
+streams, and the unit a Palette Escape may never interrupt once a Chat Surface
+owns it.
+_Avoid_: request, message, exchange, round trip, completion
+
+**Scratch directory**:
+The empty directory a Turn runs in when the user has not chosen another one. Its
+job is to be uninteresting: an Agent pointed at a directory the user did not pick
+must not find a repo there (ADR-0017).
+_Avoid_: workspace, project, sandbox, temp dir

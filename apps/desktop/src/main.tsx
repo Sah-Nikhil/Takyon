@@ -19,6 +19,8 @@ import {
   failAutostart,
   failPreferenceWrite,
   menuRequest,
+  setAgentSignedOut,
+  setAskOrder,
   setIndexing,
   setStoredPreference,
 } from "./api.mock";
@@ -54,11 +56,20 @@ if (!inTauri) {
     // What "Settings wrote a preference while the Palette was hidden" looks like
     // when there is no settings.db to write to.
     setStoredPreference,
+    // The order `!c` tries Agents in. Rust persists it; the mock's copy dies
+    // with the page, so a visual test that reordered in Settings would find the
+    // default order again after navigating to the Palette.
+    setAskOrder,
+    // Every Agent signed out is the only state that blocks `!c` now that the
+    // preference is an order, and no fixture is in it.
+    setAgentSignedOut,
   };
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ErrorBoundary>{kind === "settings" ? <Settings /> : <Palette />}</ErrorBoundary>
+    <ErrorBoundary>
+      {kind === "settings" ? <Settings /> : <Palette />}
+    </ErrorBoundary>
   </React.StrictMode>,
 );

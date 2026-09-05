@@ -23,7 +23,16 @@ import {
 import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
 import { refresh } from "@/prefs";
-import type { FileIndexReport, HotkeyStatus, ViewKind } from "@takyon/shared";
+import type {
+  Ask,
+  AgentKind,
+  AgentSnapshot,
+  FileIndexReport,
+  HotkeyStatus,
+  ViewKind,
+} from "@takyon/shared";
+import { AGENT_LABELS, agentSummary, blockedReason, pickAgent } from "@/agents/status";
+import { AskView } from "./AskView";
 import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
 import { Footer } from "./Footer";
@@ -70,6 +79,22 @@ export function Palette() {
     It exists to stop the idle pulse animating against a hidden window.
    */
   const [shown, setShown] = useState(!api.inTauri);
+  /*
+    The `!c` Mode's state for this keystroke, or null. Rust decides, because
+    `bang.rs` owns the grammar and which Agent answers is a stored preference.
+   */
+  const [ask, setAsk] = useState<Ask | null>(null);
+  /*
+    Every Agent's Sign-in state, read only while `!c` is being typed. Off the
+    keystroke path for the same reason `fileIndex` is, and more so: a probe is
+    three process spawns (v0.8 Traps).
+   */
+  const [agents, setAgents] = useState<AgentSnapshot[] | null>(null);
+  /**
+   * The question the Ask view is answering, and who is answering it. Null when
+   * the view is closed. Resolved at Enter, so a later probe cannot move it.
+   */
+  const [asking, setAsking] = useState<{ agent: AgentKind; query: string } | null>(null);
   const filesBang = value.trimStart().toLowerCase().startsWith("!e");
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -115,6 +140,7 @@ export function Palette() {
       newestSeen.current = result.seq;
       setEntries(result.entries);
       setIndexing(result.indexing);
+      setAsk(result.ask ?? null);
       // Selection follows the top Entry on every new result set. From v0.3 the
       // Stability rule freezes it ~100 ms after the last keystroke so that a late
       // Source cannot move what Enter is about to launch; until then, "the top
@@ -136,6 +162,22 @@ export function Palette() {
     void api.hotkeyStatus().then(setHotkey);
   }, []);
 
+  /*
+    Probed on the first `!c` of a summon, then reused. Once rather than on an
+    interval, unlike the file index: an Agent's Sign-in state changes when the
+    user runs a CLI command, not while they type.
+   */
+  useEffect(() => {
+    if (ask === null || agents !== null) return;
+    let live = true;
+    void api.agentSnapshots().then((all) => {
+      if (live) setAgents(all);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ask, agents]);
+
   useEffect(() => {
     void api
       .actionLabels()
@@ -154,6 +196,11 @@ export function Palette() {
       setEntries([]);
       setMenu(null);
       setView(null);
+      setAsk(null);
+      setAsking(null);
+      // Dropped rather than kept: an Agent signed in or out through its CLI
+      // between two summons, and a stale card is worse than a second probe.
+      setAgents(null);
       setShown(true);
       // The Settings window may have written a preference while the Palette was
       // hidden. Re-reading here is what makes the two windows agree without any
@@ -191,6 +238,10 @@ export function Palette() {
       // No `setActionMenu(null)`: `reset_shape` already did that.
       setValue("");
       setEntries([]);
+      setAsk(null);
+      // The Ask view goes with the window. A Turn it started does not — only
+      // `agentCancel` stops one, and `useTurn` fires that on unmount.
+      setAsking(null);
     });
   }, []);
 
@@ -229,10 +280,29 @@ export function Palette() {
   const closeView = useCallback(() => {
     setView(null);
     void api.setView(null);
+    setAsking(null);
     // Back to an empty root, which is where every summon starts (ADR-0001).
     setValue("");
     setEntries([]);
   }, []);
+
+  /*
+    Enter on the `!c` row, never a keystroke: a Turn is a process, and asking as
+    the user types would spawn one per character.
+   */
+  const startAsk = useCallback(() => {
+    if (!ask || !ask.query) return;
+    // The resolved Agent, not the first preference: the row already names the
+    // one that will answer, and the view must ask that same one.
+    const agent = pickAgent(ask.order, agents);
+    if (!agent) return;
+    // Refuses only on a probe that came back and said no. Before it lands the
+    // Turn goes ahead and the Agent's own error is the answer.
+    if (blockedReason(agents?.find((a) => a.kind === agent))) return;
+    setAsking({ agent, query: ask.query });
+    setView("ask");
+    void api.setView("ask");
+  }, [ask, agents]);
 
   const closeMenu = useCallback(() => {
     setMenu(null);
@@ -371,8 +441,39 @@ export function Palette() {
         ? "Building the file index…"
         : null;
 
+  /*
+    The one row `!c` shows before Enter: which Agent would answer, and whether it
+    can. A signed-out Agent gets the sentence and no row to press (ADR-0017).
+   */
+  const askKind = ask ? pickAgent(ask.order, agents) : null;
+  const askAgent = askKind ? agents?.find((a) => a.kind === askKind) : undefined;
+  // Amber and unpressable, in the only two states that earn it: nothing is
+  // switched on, or the probe came back and the Agent it named cannot answer.
+  // An unfinished probe is neither — `!c` asks anyway.
+  const askBlocked = !ask
+    ? null
+    : askKind === null
+      ? "No agent is switched on. Turn one on in Settings."
+      : blockedReason(askAgent);
+  const askLabel = askAgent?.label ?? (askKind ? AGENT_LABELS[askKind] : "");
+  // Named when it is not the first preference, or the row silently answers as
+  // someone else. The order is a preference, so falling through is normal.
+  const skipped = ask && askKind && askKind !== ask.order[0] ? ask.order[0] : null;
+  const askFallback = skipped
+    ? ` · ${agents?.find((a) => a.kind === skipped)?.label ?? AGENT_LABELS[skipped]} unavailable`
+    : "";
+  const askNote = !ask
+    ? null
+    : (askBlocked ??
+      (ask.query
+        ? `Ask ${askLabel} — press Enter${askFallback}`
+        : `${askLabel}${askAgent ? ` · ${agentSummary(askAgent).headline}` : ""}${askFallback}`));
+
   const showList =
-    entries.length > 0 || fileIndexNote !== null || (indexing && value.trim().length > 0);
+    entries.length > 0 ||
+    fileIndexNote !== null ||
+    askNote !== null ||
+    (indexing && value.trim().length > 0);
 
   /*
     Replaces the root rather than overlaying it: Rust has already resized to
@@ -383,6 +484,19 @@ export function Palette() {
     return (
       <div className="relative flex h-full w-full flex-col p-2">
         <ClipboardHistory onClose={closeView} />
+      </div>
+    );
+  }
+
+  if (view === "ask" && asking) {
+    return (
+      <div className="relative flex h-full w-full flex-col p-2">
+        <AskView
+          agent={asking.agent}
+          question={asking.query}
+          snapshot={agents?.find((a) => a.kind === asking.agent)}
+          onClose={closeView}
+        />
       </div>
     );
   }
@@ -424,7 +538,10 @@ export function Palette() {
           }
           if (e.key === "Enter") {
             e.preventDefault();
-            run(selected, actionForEvent(e, selectedKind));
+            // `!c` has no Entry to activate: the answer streams into a surface
+            // rather than being launched.
+            if (ask) startAsk();
+            else run(selected, actionForEvent(e, selectedKind));
           }
         }}
       >
@@ -467,7 +584,12 @@ export function Palette() {
              */
             className="overflow-y-auto border-t border-white/5 px-2 py-1"
           >
-            {indexing && entries.length === 0 && !filesBang && (
+            {/*
+              `!c` sets the same flag to reserve its row, so it is excluded here
+              alongside `!e` — "Indexing applications…" under a question would be
+              a status row about the wrong thing entirely.
+             */}
+            {indexing && entries.length === 0 && !filesBang && !ask && (
               <div
                 className="flex items-center px-2 text-[13px] text-fg/40"
                 style={{ height: ROW_HEIGHT }}
@@ -485,6 +607,21 @@ export function Palette() {
                 style={{ height: ROW_HEIGHT }}
               >
                 {fileIndexNote}
+              </div>
+            )}
+            {/*
+              One row, and never a pressable one when the Agent cannot answer:
+              the sentence is the whole response in that case (ADR-0017).
+             */}
+            {askNote && (
+              <div
+                className={`flex items-center px-2 text-[13px] ${
+                  askBlocked ? "text-amber-300" : "text-fg/70"
+                }`}
+                style={{ height: ROW_HEIGHT }}
+                role={askBlocked ? "alert" : undefined}
+              >
+                {askNote}
               </div>
             )}
             {entries.map((entry) => (
@@ -519,7 +656,16 @@ export function Palette() {
           row to describe. `FOOTER_HEIGHT` is added to the window in the same
           branch, on both sides of the seam.
          */}
-        {showList && <Footer entry={selectedEntry} labels={labels} />}
+        {showList && (
+          <Footer
+            entry={selectedEntry}
+            labels={labels}
+            // `!c` has no Entry, so the footer names the Bang's own verb instead
+            // of a menu that has nothing to open. `null` where there is nothing
+            // for Enter to do either — an unanswerable Agent, or no question yet.
+            hint={ask ? (ask.query && !askBlocked ? "Ask" : null) : undefined}
+          />
+        )}
       </Command>
 
       {menu && (

@@ -19,7 +19,12 @@ import {
 import {
   EVENT_HIDE,
   EVENT_SHOW,
+  EVENT_TURN,
   type Action,
+  type AgentKind,
+  type AgentSettings,
+  type AgentSnapshot,
+  type TurnMessage,
   type AliasRow,
   type AppAliasRow,
   type Placement,
@@ -406,6 +411,78 @@ export function onShow(cb: (payload: ShowPayload) => void): () => void {
 export function onHide(cb: () => void): () => void {
   if (!inTauri) return mock.onHide(cb);
   const p = listen(EVENT_HIDE, () => cb());
+  return () => {
+    void p.then((un) => un());
+  };
+}
+
+// ── Agents (v0.8) ───────────────────────────────────────────────────
+
+/**
+ * Probe every Agent. Three process spawns, so call it on mount, never per
+ * keystroke — the Palette's `!c` empty state reads a cached copy.
+ */
+export const agentSnapshots = () =>
+  inTauri ? invoke<AgentSnapshot[]>("agent_snapshots") : mock.agentSnapshots();
+
+export const agentSettings = () =>
+  inTauri ? invoke<AgentSettings>("agent_settings") : mock.agentSettings();
+
+/** The order `!c` tries Agents in. Rust caches it for the keystroke path. */
+export const setAskOrder = (order: AgentKind[]) =>
+  inTauri ? invoke<void>("set_ask_order", { order }) : mock.setAskOrder(order);
+
+/** Switch one Agent on or off. `!c` skips a switched-off Agent, unprobed. */
+export const setAskEnabled = (agent: AgentKind, enabled: boolean) =>
+  inTauri
+    ? invoke<void>("set_ask_enabled", { agent, enabled })
+    : mock.setAskEnabled(agent, enabled);
+
+/** Where a Turn runs. Blank restores the Scratch directory (ADR-0017). */
+export const setAskCwd = (path: string) =>
+  inTauri ? invoke<void>("set_ask_cwd", { path }) : mock.setAskCwd(path);
+
+/** The models this Agent offers, for the Settings picker. One spawn per call. */
+export const agentModels = (agent: AgentKind) =>
+  inTauri ? invoke<string[]>("agent_models", { agent }) : mock.agentModels(agent);
+
+/** Lock in the model. Used for every Turn; there is no per-query override. */
+export const setAskModel = (agent: AgentKind, model: string) =>
+  inTauri ? invoke<void>("set_ask_model", { agent, model }) : mock.setAskModel(agent, model);
+
+/** Lock in the effort level, from that Agent's own vocabulary. */
+export const setAskEffort = (agent: AgentKind, effort: string) =>
+  inTauri ? invoke<void>("set_ask_effort", { agent, effort }) : mock.setAskEffort(agent, effort);
+
+/**
+ * Start a Turn. Resolves with its id; the answer arrives on `onTurn`.
+ *
+ * `tools` is false for the first Turn and true for every follow-up: an Agent that
+ * can edit files must never be one keystroke from the global hotkey.
+ */
+export const agentAsk = (args: {
+  agent: AgentKind;
+  prompt: string;
+  session?: string;
+  tools: boolean;
+}) =>
+  inTauri
+    ? invoke<number>("agent_ask", {
+        agent: args.agent,
+        prompt: args.prompt,
+        session: args.session ?? null,
+        tools: args.tools,
+      })
+    : mock.agentAsk(args);
+
+/** Stop a Turn. The only thing that does — never the Palette's Escape. */
+export const agentCancel = (turnId: number) =>
+  inTauri ? invoke<void>("agent_cancel", { turnId }) : mock.agentCancel(turnId);
+
+/** Subscribe to Turn events. Returns an unsubscribe function. */
+export function onTurn(cb: (message: TurnMessage) => void): () => void {
+  if (!inTauri) return mock.onTurn(cb);
+  const p = listen<TurnMessage>(EVENT_TURN, (e) => cb(e.payload));
   return () => {
     void p.then((un) => un());
   };

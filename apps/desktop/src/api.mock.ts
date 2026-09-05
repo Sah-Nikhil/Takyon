@@ -14,8 +14,12 @@
 
 import type {
   Action,
+  AgentKind,
+  AgentSettings,
+  AgentSnapshot,
   AliasRow,
   AppAliasRow,
+  TurnMessage,
   CalcPolicy,
   ClipRetention,
   ClipRow,
@@ -32,7 +36,97 @@ type ShowListener = (payload: ShowPayload) => void;
 
 const showListeners = new Set<ShowListener>();
 const hideListeners = new Set<() => void>();
+const turnListeners = new Set<(message: TurnMessage) => void>();
 let nextShowId = 1;
+let nextTurnId = 1;
+
+/**
+ * One Agent of each state, so every card the Settings page can draw is on screen
+ * at once: signed in, signed out, and not installed at all.
+ */
+let agentFixtures: AgentSnapshot[] = [
+  {
+    kind: "claude",
+    label: "Claude Code",
+    binary: "claude",
+    installed: true,
+    version: "2.1.261",
+    health: "ready",
+    signIn: {
+      status: "in",
+      label: "Claude Pro Subscription",
+      account: "you@example.com",
+    },
+    efforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
+    kind: "codex",
+    label: "Codex",
+    binary: "codex",
+    installed: false,
+    health: "error",
+    signIn: { status: "unknown" },
+    message: "Codex (`codex`) was not found on PATH.",
+    efforts: [],
+  },
+  {
+    kind: "opencode",
+    label: "opencode",
+    binary: "opencode",
+    installed: true,
+    version: "1.18.27",
+    health: "warning",
+    signIn: { status: "out" },
+    message: "No providers are connected to opencode. Run `opencode providers login`.",
+    efforts: ["minimal", "high", "max"],
+  },
+];
+
+/** Split into deltas on purpose — see `agentAsk` for why one event is not enough. */
+const MOCK_ANSWER = ["The ", "sky ", "is ", "blue ", "because ", "of ", "Rayleigh ", "scattering."];
+
+let askOrder: AgentKind[] = ["claude", "codex", "opencode"];
+let askEnabled: Record<AgentKind, boolean> = { claude: true, codex: true, opencode: true };
+let askCwd = "";
+let askModels: Partial<Record<AgentKind, string>> = {};
+let askEfforts: Partial<Record<AgentKind, string>> = {};
+
+/** What each Agent would report from its own model listing. */
+const AGENT_MODELS: Record<AgentKind, string[]> = {
+  claude: ["opus", "sonnet", "haiku", "fable"],
+  codex: ["gpt-5.3-codex", "gpt-5.3-codex-mini"],
+  opencode: ["opencode/big-pickle", "opencode/nemotron-3-ultra-free"],
+};
+
+function emitTurn(message: TurnMessage) {
+  for (const l of turnListeners) l(message);
+}
+
+/**
+ * Rank the Agents `!c` tries, without going through Settings.
+ *
+ * Exposed on `window` in `main.tsx` outside Tauri. Rust persists this in
+ * `settings.db`; the mock's copy dies with the page, so a test that reordered
+ * in the Settings window would find the default order again in the Palette.
+ */
+export function setAskOrder(order: AgentKind[]) {
+  askOrder = [...order];
+}
+
+/**
+ * Sign one Agent out, so a test can reach the state where nothing can answer.
+ *
+ * The fixtures leave one Agent signed in, which since the preference became an
+ * order is what stops `!c` being blocked: it falls through instead. Blocked now
+ * means every Agent is out, and this is how a test gets there.
+ */
+export function setAgentSignedOut(kind: AgentKind) {
+  agentFixtures = agentFixtures.map((snapshot) =>
+    snapshot.kind === kind
+      ? { ...snapshot, health: "warning" as const, signIn: { status: "out" as const } }
+      : snapshot,
+  );
+}
 
 /**
  * Drive a show from a test or from the browser console. Exposed on `window` in
@@ -245,6 +339,14 @@ function clipQuery(q: string): string | null {
   return rest.trim().toLowerCase();
 }
 
+/** The `!c` Bang, parsed the same way. Case is kept: it is a question, not a key. */
+function askQuery(q: string): string | null {
+  if (!/^!c/i.test(q)) return null;
+  const rest = q.slice(2);
+  if (rest !== "" && !/^\s/.test(rest)) return null;
+  return rest.trim();
+}
+
 /**
  * A deliberately crude stand-in for `rank.rs`.
  *
@@ -448,6 +550,18 @@ export const mock = {
   },
   openSettings: async () => {},
   query: async (q: string, seq: number): Promise<QueryResult> => {
+    // `!c` carries no Entries at all: the answer streams, so the response says
+    // only which Agent would answer and what was asked.
+    const ask = askQuery(q);
+    if (ask !== null) {
+      const route = askOrder.filter((kind) => askEnabled[kind]);
+      return {
+        seq,
+        entries: [],
+        indexing: false,
+        ask: { query: ask, agent: route[0] ?? null, order: route },
+      };
+    }
     // `!v` is its own view. Unlike a Bangless query, an empty one lists history
     // rather than nothing — the Mode *is* the list.
     const clips = clipQuery(q);
@@ -678,6 +792,53 @@ export const mock = {
     hideListeners.add(cb);
     return () => {
       hideListeners.delete(cb);
+    };
+  },
+  agentSnapshots: async (): Promise<AgentSnapshot[]> => agentFixtures,
+  agentSettings: async (): Promise<AgentSettings> => ({
+    order: [...askOrder],
+    enabled: { ...askEnabled },
+    cwd: askCwd,
+    scratch: String.raw`C:\Users\you\AppData\Local\v3sper\launcher\scratch`,
+    models: { ...askModels },
+    efforts: { ...askEfforts },
+  }),
+  agentModels: async (agent: AgentKind) => [...AGENT_MODELS[agent]],
+  setAskOrder: async (order: AgentKind[]) => {
+    askOrder = [...order];
+  },
+  setAskEnabled: async (agent: AgentKind, enabled: boolean) => {
+    askEnabled = { ...askEnabled, [agent]: enabled };
+  },
+  setAskCwd: async (path: string) => {
+    askCwd = path.trim();
+  },
+  setAskModel: async (agent: AgentKind, model: string) => {
+    askModels = { ...askModels, [agent]: model.trim() };
+  },
+  setAskEffort: async (agent: AgentKind, effort: string) => {
+    askEfforts = { ...askEfforts, [agent]: effort.trim() };
+  },
+  agentAsk: async (args: { agent: AgentKind; prompt: string; session?: string }) => {
+    const turnId = nextTurnId++;
+    const session = args.session ?? `mock-session-${turnId}`;
+    // Three ticks rather than one: a single event would never catch a renderer
+    // that overwrites the answer instead of appending to it.
+    emitTurn({ turnId, kind: "started", session, model: "mock-model" });
+    for (const [i, delta] of MOCK_ANSWER.entries()) {
+      setTimeout(() => emitTurn({ turnId, kind: "text", delta }), 10 * (i + 1));
+    }
+    setTimeout(
+      () => emitTurn({ turnId, kind: "done", session }),
+      10 * (MOCK_ANSWER.length + 1),
+    );
+    return turnId;
+  },
+  agentCancel: async (_turnId: number) => {},
+  onTurn: (cb: (message: TurnMessage) => void) => {
+    turnListeners.add(cb);
+    return () => {
+      turnListeners.delete(cb);
     };
   },
 };

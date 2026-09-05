@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 /**
  * v0.1 has one screen worth a baseline: the Palette as it looks the instant it
