@@ -40,6 +40,27 @@ after you press Enter.
   account, stored beside the clipboard key rather than in `settings.db`, and
   never sent back to the interface — Settings shows its last four characters.
 
+### 0.9.1
+
+Fixes found by driving the installed 0.9.0 build.
+
+- **`!s` no longer draws two status rows.** `indexing` in the query response
+  meant both "the application walk is running" and "reserve a row", so the Bang
+  reserved one and inherited the other. Two rows in a window sized for one made
+  the list scroll, and the scrollbar covered the message.
+- **The application walk reports where it belongs.** The tray tooltip says
+  "indexing applications…" until it lands, and Settings → Applications asks
+  whether it is running rather than inferring it from an empty list — a walk that
+  finished and found nothing now says so.
+- **Answers render their markdown.** `**bold**` arrived with its asterisks.
+- **The dropdowns are ours.** A native `<select>` popup is drawn by the OS, in a
+  light grey that belongs to no part of this app. One hand-built listbox now
+  serves both windows, with arrows, Home, End, typeahead, Escape and a flip when
+  there is no room below.
+- **The hotkey chips read as one control**, and the chosen chord is lifted with
+  a ring rather than tinted ten percent.
+- **A switched-off Agent cannot be reordered**, since `!c` steps over it.
+
 ### Known limits
 
 - **No real search has run on this machine.** Every layer below the network is
@@ -77,6 +98,27 @@ installed and signed in to, and the answer streams into the Palette.
   stored preferences, so the Palette names its Agent on the first keystroke.
   Reading Sign-in state costs three process spawns and used to block Enter until
   they finished — on a cold machine that read as a broken launcher.
+
+### 0.9.1
+
+Fixes found by driving the installed 0.9.0 build.
+
+- **`!s` no longer draws two status rows.** `indexing` in the query response
+  meant both "the application walk is running" and "reserve a row", so the Bang
+  reserved one and inherited the other. Two rows in a window sized for one made
+  the list scroll, and the scrollbar covered the message.
+- **The application walk reports where it belongs.** The tray tooltip says
+  "indexing applications…" until it lands, and Settings → Applications asks
+  whether it is running rather than inferring it from an empty list — a walk that
+  finished and found nothing now says so.
+- **Answers render their markdown.** `**bold**` arrived with its asterisks.
+- **The dropdowns are ours.** A native `<select>` popup is drawn by the OS, in a
+  light grey that belongs to no part of this app. One hand-built listbox now
+  serves both windows, with arrows, Home, End, typeahead, Escape and a flip when
+  there is no room below.
+- **The hotkey chips read as one control**, and the chosen chord is lifted with
+  a ring rather than tinted ten percent.
+- **A switched-off Agent cannot be reordered**, since `!c` steps over it.
 
 ### Known limits
 
