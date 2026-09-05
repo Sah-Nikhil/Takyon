@@ -151,17 +151,37 @@ Get-ChildItem $OutDir -Filter *.png -ErrorAction SilentlyContinue | Remove-Item 
 if (-not (Test-Path $Exe)) { throw "no build at $Exe - run 'bun run build' first" }
 $underTest = (Resolve-Path $Exe).Path
 
-# An installed Takyon swallows every summon through single-instance and the build
+# Any running Takyon swallows every summon through single-instance and the build
 # under test never runs, silently.
+#
+# **Every** one, not just a different build. A stale copy of this same binary,
+# left by a run that threw before its cleanup, is the worse case: the imposter
+# check passes, the new process hands off and exits, and the hotkey belongs to a
+# process this script is not driving. The symptom is the type-guard below
+# refusing on a foreground window that is neither Takyon nor obviously wrong.
 Get-Process takyon -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -ne $underTest } |
-    ForEach-Object { Write-Output "stopping imposter pid $($_.Id) $($_.Path)"; Stop-Process -Id $_.Id -Force }
+    ForEach-Object {
+        $which = if ($_.Path -eq $underTest) { "stale" } else { "imposter" }
+        Write-Output "stopping $which pid $($_.Id) $($_.Path)"
+        Stop-Process -Id $_.Id -Force
+    }
+Start-Sleep -Milliseconds 500
 
 $env:TAKYON_HOTKEY = $Hotkey
 $log = Join-Path $OutDir "stderr.txt"
 $app = Start-Process -FilePath $Exe -RedirectStandardError $log `
     -RedirectStandardOutput (Join-Path $OutDir "stdout.txt") -PassThru
 Write-Output "under test: pid $($app.Id)"
+
+# Stop the child however this script ends, including on a throw. Without it the
+# type-guard's refusal leaves a Takyon running, and the *next* run then hands off
+# to it through single-instance and drives the wrong process.
+trap {
+    Write-Warning "aborted: $_"
+    Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+    break
+}
+
 Start-Sleep -Seconds 6
 Get-Content $log -ErrorAction SilentlyContinue
 

@@ -134,12 +134,21 @@ fn v0_9_a_real_turn_answers() {
         }
         let driver = agents::driver_for(snapshot.kind).expect("a driver for every kind");
         let exe = agents::probe::resolve(driver.binary()).expect("installed");
+        // The locked pair is sent, not defaulted. Each Agent spells effort its
+        // own way — `--effort`, a `-c` config override, `--variant` — and a
+        // wrong spelling fails the Turn at runtime with nothing else to catch it.
+        let model = agents::models_for(snapshot.kind).into_iter().next();
+        let effort = driver.efforts().first().map(|e| e.to_string());
+        eprintln!(
+            "[takyon] {} asking with model {model:?} effort {effort:?}",
+            snapshot.label
+        );
         let args = driver.turn_args(&agents::TurnRequest {
             prompt: "Reply with exactly one word: ok".into(),
             cwd: agents::scratch::dir(),
             session: None,
-            model: None,
-            effort: None,
+            model,
+            effort,
             tools: false,
         });
         let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -161,6 +170,55 @@ fn v0_9_a_real_turn_answers() {
         );
         assert!(!answer.trim().is_empty(), "{} said nothing", snapshot.label);
         assert!(state.session.is_some(), "{} reported no session", snapshot.label);
+    }
+}
+
+/// A tools-off Turn writes nothing, asked directly to write something.
+///
+/// `docs/verify/v0.9.md` §5 as a test rather than a person, and the claim
+/// ADR-0017 rests on. Its own empty directory, not the real Scratch, so a
+/// failure is visible rather than mixed in. `#[ignore]`: real tokens.
+#[test]
+#[ignore]
+fn v0_9_a_tools_off_turn_writes_nothing() {
+    let sandbox = std::env::temp_dir().join(format!("takyon-toolsoff-{}", std::process::id()));
+    std::fs::create_dir_all(&sandbox).expect("a directory to watch");
+
+    let mut checked = 0;
+    for snapshot in agents::snapshots() {
+        if snapshot.sign_in.status != SignInStatus::In {
+            continue;
+        }
+        let driver = agents::driver_for(snapshot.kind).expect("a driver for every kind");
+        let exe = agents::probe::resolve(driver.binary()).expect("installed");
+        let args = driver.turn_args(&agents::TurnRequest {
+            prompt: "Create a file called proof.txt in the current directory, containing the word proof.".into(),
+            cwd: sandbox.clone(),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        });
+        let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+        let _ = agents::probe::run(&exe, &borrowed, Duration::from_secs(180));
+
+        let left: Vec<_> = std::fs::read_dir(&sandbox)
+            .expect("the sandbox still exists")
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            left.is_empty(),
+            "{} wrote {left:?} with tools off",
+            snapshot.label
+        );
+        eprintln!("[takyon] {} wrote nothing with tools off", snapshot.label);
+        checked += 1;
+    }
+
+    let _ = std::fs::remove_dir_all(&sandbox);
+    if checked == 0 {
+        eprintln!("[takyon] no Agent signed in; tools-off assertion skipped");
     }
 }
 
