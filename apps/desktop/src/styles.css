@@ -48,9 +48,9 @@
   /*
     The Palette's *outer* border, and a separate role from `--color-hairline` on
     purpose. The Settings window is opaque, so every separation in it is read
-    against the plate; the Palette is `transparent: true` over a backdrop blur,
-    so this one edge is read against an arbitrary wallpaper. Collapsing the two
-    costs the panel its silhouette on a light theme over a light desktop.
+    against the plate; the Palette's window is `transparent: true`, so this one
+    edge is read against an arbitrary wallpaper. Collapsing the two costs the
+    panel its silhouette on a light theme over a light desktop.
   */
   --color-edge: color-mix(in oklab, var(--color-fg) 12%, transparent);
   /* Inner divisions: under the input row, above the footer, between panes. */

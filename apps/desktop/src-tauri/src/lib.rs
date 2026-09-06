@@ -652,7 +652,13 @@ pub fn run() {
                             .header("Cache-Control", "public, max-age=86400")
                             .body(bytes),
                         // A miss is cosmetic: the row draws its letter tile.
-                        None => tauri::http::Response::builder().status(404).body(Vec::new()),
+                        // Never cached, though — a host is usually missing only
+                        // because its icon is still being fetched, and a stored
+                        // 404 would outlive the fetch that fixes it.
+                        None => tauri::http::Response::builder()
+                            .status(404)
+                            .header("Cache-Control", "no-store")
+                            .body(Vec::new()),
                     };
                     if let Ok(response) = response {
                         responder.respond(response);

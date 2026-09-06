@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface SelectOption<T extends string> {
   value: T;
@@ -21,6 +22,42 @@ export interface SelectOption<T extends string> {
 
 /** How much room a popup needs below the button before it flips above it. */
 const FLIP_MARGIN = 8;
+
+/** Gap between button and popup, both directions. */
+const OFFSET = 6;
+
+/** Tallest a popup gets before it scrolls. Matches the old `max-h-60`. */
+const MAX_HEIGHT = 240;
+
+/** Where a popup sits on screen, in viewport coordinates. */
+interface Anchor {
+  left: number;
+  width: number;
+  /** Distance from the viewport top, or from its bottom when flipped above. */
+  top?: number;
+  bottom?: number;
+  maxHeight: number;
+}
+
+/**
+ * Measure the button and decide which side the popup opens on.
+ *
+ * Viewport coordinates, because the popup is portalled to `<body>` and
+ * positioned `fixed` — see the render for why it cannot stay in the card.
+ */
+function anchorFor(box: DOMRect, rows: number): Anchor {
+  const wanted = Math.min(rows * 30 + 12, MAX_HEIGHT);
+  const below = window.innerHeight - box.bottom - OFFSET - FLIP_MARGIN;
+  const above = box.top - OFFSET - FLIP_MARGIN;
+  const flip = below < wanted && above > below;
+  return {
+    left: box.left,
+    width: box.width,
+    top: flip ? undefined : box.bottom + OFFSET,
+    bottom: flip ? window.innerHeight - box.top + OFFSET : undefined,
+    maxHeight: Math.max(80, Math.min(wanted, flip ? above : below)),
+  };
+}
 
 export function Select<T extends string>({
   value,
@@ -49,7 +86,7 @@ export function Select<T extends string>({
   );
 
   const [open, setOpen] = useState(false);
-  const [above, setAbove] = useState(false);
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
   /** Which row the keyboard is on. Separate from `value`: moving is not choosing. */
   const [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null);
@@ -71,11 +108,10 @@ export function Select<T extends string>({
 
   const openList = useCallback(() => {
     if (disabled) return;
-    // Flip before painting: a popup that opens off the bottom of a 620px window
-    // and corrects itself a frame later reads as a glitch.
+    // Measure before painting: a popup that opens off the bottom of a 620px
+    // window and corrects itself a frame later reads as a glitch.
     const box = button.current?.getBoundingClientRect();
-    const need = Math.min(rows.length * 30 + 12, 240);
-    setAbove(!!box && box.bottom + need + FLIP_MARGIN > window.innerHeight);
+    if (box) setAnchor(anchorFor(box, rows.length));
     setActive(Math.max(0, rows.findIndex((row) => row.value === value)));
     setOpen(true);
   }, [disabled, rows, value]);
@@ -93,12 +129,36 @@ export function Select<T extends string>({
   // otherwise act on it and leave this list open behind it.
   useEffect(() => {
     if (!open) return;
+    // The list is portalled out of `root`, so it has to be asked separately, or
+    // pointer-down on a row closes the popup before its click can choose one.
     const onDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      const node = e.target as Node;
+      if (!root.current?.contains(node) && !list.current?.contains(node)) {
+        setOpen(false);
+      }
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [open]);
+
+  /*
+    The popup is `fixed`, so it does not move with the page under it. Re-measure
+    on any scroll or resize rather than closing: the settings pane scrolls under
+    a dropdown whenever the keyboard reaches one near the fold.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const track = () => {
+      const box = button.current?.getBoundingClientRect();
+      if (box) setAnchor(anchorFor(box, rows.length));
+    };
+    window.addEventListener("scroll", track, true);
+    window.addEventListener("resize", track);
+    return () => {
+      window.removeEventListener("scroll", track, true);
+      window.removeEventListener("resize", track);
+    };
+  }, [open, rows.length]);
 
   // `preventScroll`, always: focusing an element that overhangs the fold makes
   // the browser scroll it into view, which drags the section under it and reads
@@ -198,7 +258,12 @@ export function Select<T extends string>({
         <Chevron open={open} />
       </button>
 
-      {open && (
+      {/*
+        Portalled to `<body>` and positioned `fixed`. Absolute inside the wrapper
+        was clipped by the settings card, whose `overflow-hidden` rounds its rows
+        — the hotkey list lost its last two options and nothing said so.
+      */}
+      {open && anchor && createPortal(
         <div
           ref={list}
           id={`${id}-list`}
@@ -207,9 +272,14 @@ export function Select<T extends string>({
           aria-activedescendant={`${id}-row-${active}`}
           tabIndex={-1}
           onKeyDown={onListKeyDown}
-          className={`absolute z-50 max-h-60 w-full overflow-y-auto rounded-control border border-hairline bg-card p-1 shadow-panel outline-none ${
-            above ? "bottom-full mb-1.5" : "top-full mt-1.5"
-          }`}
+          style={{
+            left: anchor.left,
+            width: anchor.width,
+            top: anchor.top,
+            bottom: anchor.bottom,
+            maxHeight: anchor.maxHeight,
+          }}
+          className="fixed z-50 overflow-y-auto rounded-control border border-hairline bg-card p-1 shadow-panel outline-none"
         >
           {rows.map((row, i) => {
             const chosen = row.value === value;
@@ -234,7 +304,8 @@ export function Select<T extends string>({
               </div>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

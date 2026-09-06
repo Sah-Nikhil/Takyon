@@ -182,16 +182,6 @@ export const PAGES: SettingsPage[] = [
         keywords: ["roots", "folders", "index", "where", "scope", "scopes", "add folder"],
       },
       {
-        id: "index-excludes",
-        label: "Folder names to skip",
-        keywords: ["exclude", "skip", "node_modules", "ignore", "target", "pattern"],
-      },
-      {
-        id: "files-reset",
-        label: "Reset to defaults",
-        keywords: ["reset", "defaults", "start over", "restore"],
-      },
-      {
         id: "files-bangless",
         label: "Show files without typing !e",
         keywords: ["bang", "!e", "bangless", "results"],
@@ -205,6 +195,16 @@ export const PAGES: SettingsPage[] = [
         id: "clear-opened",
         label: "Files you opened through Takyon",
         keywords: ["history", "recents", "clear", "forget", "privacy"],
+      },
+      {
+        id: "files-reset",
+        label: "Reset to defaults",
+        keywords: ["reset", "defaults", "start over", "restore"],
+      },
+      {
+        id: "index-excludes",
+        label: "Folder names to skip",
+        keywords: ["exclude", "skip", "node_modules", "ignore", "target", "pattern"],
       },
     ],
   },

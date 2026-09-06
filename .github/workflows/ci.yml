@@ -1,0 +1,91 @@
+name: CI
+
+# Dormant until this repo is pushed to GitHub. Runs the same four layers
+# `bun run test` runs locally, plus typecheck and lint — the gate release.yml
+# waits on rather than repeating.
+#
+# Two of the three jobs are on Windows on purpose:
+#
+#   - `rust` because the crate is Windows-only. Twenty files reach for the
+#     `windows` crate and it is declared under `[target.'cfg(windows)']`, so a
+#     Linux runner would not compile the product at all. See docs/plans/macos.md.
+#   - `visual` because the screenshot baselines were rasterised by Windows. Same
+#     Chromium on Linux puts every glyph in a slightly different place, and the
+#     150px budget is deliberately tight enough to notice.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ts:
+    name: Typecheck, lint and TypeScript tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint:ts
+      # The root script's own scope. Not `bun test` bare: that would sweep
+      # `tests/visual`, whose specs import Playwright and are not bun tests.
+      - run: bun test apps/desktop/src packages/shared/src
+
+  rust:
+    name: cargo test and clippy (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          # Shared with release.yml's build job. GitHub only exposes
+          # default-branch caches to tag refs, so a tag-scoped save would never
+          # warm the next tag. Debug here vs release there, so this warms the
+          # registry and dependency build rather than the final artefacts.
+          shared-key: rust-desktop
+      # `--workspace`: the uiaccess helper is a second crate and has to build.
+      # The `--ignored` tests stay out — `web_search` reaches DuckDuckGo for
+      # real, and a network flake is not a broken commit.
+      - run: cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - run: cargo clippy --workspace --all-targets --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
+
+  visual:
+    name: Playwright screenshots (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~\.bun\install\cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      # Chromium alone: playwright.config.ts declares one project.
+      - run: bunx playwright install chromium
+        working-directory: apps/desktop
+      - run: bun run test:visual
+      # The actual/diff pair for every failure, which is the only way to tell a
+      # real regression from a rasterisation drift without a local repro.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-diffs
+          path: apps/desktop/test-results/
+          retention-days: 7

@@ -60,9 +60,8 @@ export function useSearch() {
       active.current = await webSearch(query);
     } catch (e) {
       setState({
+        ...started(),
         phase: "failed",
-        sources: [],
-        answer: "",
         error: e instanceof Error ? e.message : String(e),
       });
     }

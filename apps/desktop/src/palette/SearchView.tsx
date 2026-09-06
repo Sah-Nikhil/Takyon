@@ -92,7 +92,7 @@ export function SearchView({
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate shadow-panel"
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         e.stopPropagation();
@@ -133,7 +133,7 @@ export function SearchView({
             caption. Arc keeps it in the search field; there is no field here. */}
         <p className="text-[13px] text-fg/60">{query}</p>
 
-        {reading && state.sources.length > 0 && <Reading sources={state.sources} />}
+        {reading && state.sources.length > 0 && <Reading sources={state.sources} icons={state.icons} />}
 
         {answered && (
           <div data-testid="findings">
@@ -194,7 +194,7 @@ export function SearchView({
                 {/* Arc drops a card strip under the first group, before the
                     answer carries on. One strip only: a second reads as an ad
                     break rather than as evidence. */}
-                {s === 0 && state.sources.length > 0 && <Cards sources={state.sources} />}
+                {s === 0 && state.sources.length > 0 && <Cards sources={state.sources} icons={state.icons} />}
               </div>
             ))}
           </div>
@@ -207,7 +207,12 @@ export function SearchView({
         )}
 
         {!reading && state.sources.length > 0 && (
-          <Sources sources={state.sources} lit={litSource} onHover={setLitSource} />
+          <Sources
+            sources={state.sources}
+            icons={state.icons}
+            lit={litSource}
+            onHover={setLitSource}
+          />
         )}
       </div>
 
@@ -233,14 +238,14 @@ export function SearchView({
  * Hosts rather than titles: the host is what a person recognises at a glance,
  * and it says whether the answer is worth trusting before a word of it exists.
  */
-function Reading({ sources }: { sources: SearchHit[] }) {
+function Reading({ sources, icons }: { sources: SearchHit[]; icons: number }) {
   return (
     <div className="mt-4" data-testid="reading">
       <p className="text-[15px] font-semibold text-accent">Reading {sources.length} web pages</p>
       <ul className="mt-2 space-y-1">
         {sources.map((source) => (
           <li key={source.url} className="flex items-center gap-2.5">
-            <Favicon host={hostOf(source.url)} size={15} />
+            <Favicon host={hostOf(source.url)} size={15} epoch={icons} />
             <span className="truncate text-[13px] text-fg/60">{hostOf(source.url)}</span>
           </li>
         ))}
@@ -255,7 +260,7 @@ function Reading({ sources }: { sources: SearchHit[] }) {
  * Horizontal rather than wrapped: a strip that wraps is a grid, and a grid of
  * six sources competes with the answer instead of sitting under it.
  */
-function Cards({ sources }: { sources: SearchHit[] }) {
+function Cards({ sources, icons }: { sources: SearchHit[]; icons: number }) {
   return (
     <div className="mt-4 -mx-4 overflow-x-auto px-4 pb-1" data-testid="source-cards">
       <div className="flex w-max gap-2">
@@ -273,7 +278,7 @@ function Cards({ sources }: { sources: SearchHit[] }) {
                 {source.title}
               </span>
               <span className="flex items-center gap-1.5">
-                <Favicon host={host} size={13} />
+                <Favicon host={host} size={13} epoch={icons} />
                 <span className="truncate text-[11px] text-fg/60">{host}</span>
                 <OpenNewWindow
                   aria-hidden
@@ -330,10 +335,12 @@ function Cite({
  */
 function Sources({
   sources,
+  icons,
   lit,
   onHover,
 }: {
   sources: SearchHit[];
+  icons: number;
   lit: number | null;
   onHover: (n: number | null) => void;
 }) {
@@ -361,7 +368,7 @@ function Sources({
               >
                 {n}
               </span>
-              <Favicon host={hostOf(source.url)} size={14} />
+              <Favicon host={hostOf(source.url)} size={14} epoch={icons} />
               <span className="truncate text-[12.5px] text-fg/76">{source.title}</span>
               <span className="ms-auto shrink-0 truncate text-[11px] text-fg/60">
                 {hostOf(source.url)}

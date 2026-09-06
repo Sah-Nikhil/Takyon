@@ -123,3 +123,19 @@ it("a fallback keeps sources already shown", () => {
   state = reduceSearch(state, { searchId: 1, kind: "searching", provider: "DuckDuckGo" });
   expect(state.sources).toEqual(sources);
 });
+
+/**
+ * v0.10.1. Sources go on screen before their favicons are fetched, so the first
+ * ask misses on every host new to the cache. The epoch is what tells those rows
+ * to ask again; without it they keep the letter tile for the whole search.
+ */
+it("an icons event bumps the epoch without touching the phase", () => {
+  const sources = [{ title: "t", url: "https://e.x/a", description: "d" }];
+  let state = reduceSearch(started(), { searchId: 1, kind: "reading", sources });
+  expect(state.icons).toBe(0);
+
+  state = reduceSearch(state, { searchId: 1, kind: "icons" });
+  expect(state.icons).toBe(1);
+  expect(state.phase).toBe("reading");
+  expect(state.sources).toEqual(sources);
+});

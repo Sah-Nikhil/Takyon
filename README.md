@@ -10,7 +10,7 @@ character to the front of the line and the same box reaches further: `!s` answer
 a question from the live web with every source cited, and `!c` hands it to the AI
 CLI you are already signed in to.
 
-Windows only, built on Tauri 2. Current release is **0.9.5**.
+Windows only, built on Tauri 2. Current release is **0.10.0**.
 
 ---
 
@@ -439,7 +439,9 @@ appearance.
   default and every claim about it is reasoned rather than observed —
   `docs/verify/v0.10.md` section E, which nothing can automate.
 - **No updater.** Releases carry no `latest.json` or signature yet.
-- **Windows only.** The workspace has macOS seams in place, but no macOS target.
+- **Windows only.** The frontend is portable and the workspace was split for a
+  second target, but 7,410 lines of the Rust core call Win32 and nothing carries
+  a macOS arm. `docs/plans/macos.md` sizes the port.
 - **No telemetry**, and none planned before v1.
 
 ---

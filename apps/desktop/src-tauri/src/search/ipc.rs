@@ -32,6 +32,11 @@ pub enum SearchEvent {
     Reading { sources: Vec<Hit> },
     /// A Turn is answering. Its text arrives on `takyon://turn`.
     Answering { turn_id: u64, agent: String },
+    /// Favicons for this search's hosts are cached now (ADR-0022).
+    ///
+    /// Sources are on screen before their icons exist, and a row that asked for
+    /// one too early has no other way to learn it arrived.
+    Icons,
     /// Nothing came back. `message` is shown as written.
     Failed { message: String },
 }
@@ -227,6 +232,8 @@ fn run(
      */
     if let Some(dir) = data_dir(app) {
         super::favicon::cache_all(&dir, &urls, &pages);
+        // The rows drew letter tiles while this ran. Tell them to ask again.
+        emit(app, id, SearchEvent::Icons);
     }
     let citations = synth::citations(hits, pages);
     if cancelled.load(Ordering::Relaxed) {

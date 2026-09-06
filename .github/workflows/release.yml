@@ -1,0 +1,174 @@
+name: release
+
+# Dormant until this repo is pushed to GitHub. Cut a release by bumping the
+# version (`bun run bump`), committing, then pushing the commit and its tag
+# together — CI has to have run on the same commit, see `preflight`.
+#
+# No secrets are needed. There is no updater yet, so nothing here signs an
+# artefact or writes a `latest.json`: `tauri-plugin-updater` is a v1.0 item
+# (ROADMAP), and an unsigned manifest would look like a working update feed
+# while being one nothing can verify. Assets are the installer and its
+# SHA256SUMS.txt, the same pair `bun run release` writes into `releases/`.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  preflight:
+    name: Verify the tag and wait for CI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      # All five version files move together (`bun run bump`), and
+      # tauri.conf.json is the one the installer filename is built from.
+      - name: Verify the tag matches the repo version
+        run: |
+          V=$(bun -e "console.log(require('./apps/desktop/src-tauri/tauri.conf.json').version)")
+          if [ "v$V" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match tauri.conf.json version v$V"
+            exit 1
+          fi
+
+      - name: Find this commit's CI run
+        id: ci_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" \
+            --jq '[.check_runs[] | select(.name | startswith("Typecheck") or startswith("cargo test") or startswith("Playwright"))] | length')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      # Refused rather than run inline, unlike tesseract's. Two of the three CI
+      # jobs need a Windows runner, so an inline fallback here could only ever
+      # re-run the TypeScript layer — and would then report a release as checked
+      # while the Rust core and every screenshot went untested.
+      - name: Refuse a tag whose commit never ran CI
+        if: steps.ci_run.outputs.count == '0'
+        run: |
+          echo "No CI run on ${GITHUB_SHA}. Push the commit to main first, then the tag."
+          exit 1
+
+      - name: Wait for CI to pass on this commit
+        timeout-minutes: 40
+        uses: lewagon/wait-on-check-action@1d57e2c51a58d812d2765e036a028b6bdb5a6154 # v1.8.1
+        with:
+          ref: ${{ github.sha }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+          running-workflow-name: preflight
+          allowed-conclusions: success
+
+  build-windows:
+    name: Build the Windows installer
+    needs: preflight
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          shared-key: rust-desktop
+      - uses: actions/cache@v4
+        with:
+          path: ~\.bun\install\cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      # `tauri build`, never a bare `cargo build --release`. A bare cargo build
+      # produces a takyon.exe that launches, registers the hotkey and shows the
+      # Palette with a completely dead frontend (CLAUDE.md, Gotchas).
+      - run: bun run build
+      # `sha256sum` format, two spaces, so `sha256sum -c` verifies it directly.
+      # Same file `bun run release` writes locally.
+      - name: Record the installer hash
+        shell: bash
+        run: |
+          cd apps/desktop/src-tauri/target/release/bundle/nsis
+          for f in *-setup.exe; do sha256sum "$f"; done > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            apps/desktop/src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+
+  # There is no macOS build yet, and this job cannot succeed until there is:
+  # `search::fetch` is WinHTTP (ADR-0019), the clipboard key is DPAPI, the file
+  # index is `ReadDirectoryChangesW` and the app source is COM. docs/plans/macos.md
+  # states what the port needs and in what order.
+  #
+  # Wired up anyway, and off by default: set the repository variable
+  # MACOS_BUILD to `true` once the port compiles and this releases a .dmg
+  # without another edit here. `continue-on-error` so it can never gate the
+  # Windows release even after it is switched on.
+  build-macos:
+    name: Build the macOS app (Apple Silicon, not yet portable)
+    needs: preflight
+    if: vars.MACOS_BUILD == 'true'
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          shared-key: rust-desktop-mac
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: bun --cwd=apps/desktop run tauri build --target aarch64-apple-darwin
+      - name: Record the disk image hash
+        run: |
+          cd apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+          for f in *.dmg; do shasum -a 256 "$f"; done > SHA256SUMS-macos.txt
+          cat SHA256SUMS-macos.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          if-no-files-found: warn
+          path: |
+            apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/SHA256SUMS-macos.txt
+
+  publish:
+    name: Publish the GitHub release
+    # `always()` plus an explicit Windows check: build-macos is skipped whenever
+    # MACOS_BUILD is unset, and a skipped dependency would otherwise cancel this.
+    needs: [build-windows, build-macos]
+    if: always() && needs.build-windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          # Says what the assets do and do not carry, so nobody waits for an
+          # in-app update that does not exist yet.
+          body: |
+            Verify a download with `sha256sum -c SHA256SUMS.txt`.
+
+            No in-app updater in this release — `tauri-plugin-updater` is a v1.0
+            item, so there is no `latest.json` and no signature to check.

@@ -333,6 +333,29 @@ test("the hotkey is rebound from pinned choices", async ({ page }) => {
 });
 
 /**
+ * v0.10.0 shipped this dropdown clipped. `Group` rounds its rows with
+ * `overflow-hidden`, and the popup was `absolute` inside it, so the list was cut
+ * at the card's edge and lost its last options with nothing to say so. The
+ * suite missed it because every test until now picked the second row.
+ */
+test("the hotkey list escapes the card that would clip it", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 460 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Keyboard" }).click();
+
+  const select = page.getByRole("combobox", { name: "Open Takyon with" });
+  await select.click();
+  const list = page.getByRole("listbox", { name: "Open Takyon with" });
+
+  // Portalled: no ancestor between it and `<body>` can clip it.
+  await expect(list).toHaveJSProperty("parentElement.tagName", "BODY");
+
+  // And the row a clipped list could not reach is reachable.
+  await list.getByRole("option", { name: "Ctrl + Shift + P", exact: true }).click();
+  await expect(select).toContainText("Ctrl + Shift + P");
+});
+
+/**
  * v0.10: the Windows key is a switch, not a chord, because it is a different
  * mechanism (`superkey.rs`). Off by default, and turning it on must not disturb
  * the accelerator — the two bindings are independent.

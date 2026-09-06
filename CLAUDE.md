@@ -14,7 +14,14 @@ inline with tools off, and promotes into a Chat Surface on a follow-up. v0.9 add
 reads the pages over WinHTTP and has an Agent answer from them, streaming, with
 numbered sources. v0.10 is **appearance**: five theme families each carrying a
 light and a dark half, Compact and Expanded window modes, and the Windows key as
-an optional second binding. There is no CI.
+an optional second binding.
+
+**CI exists but has never run.** `.github/workflows/ci.yml` (typecheck, lint,
+every test layer) and `release.yml` (tag → Windows installer → GitHub Release)
+are written and their YAML parses, and that is all that can be said: this repo
+has no GitHub remote yet, so neither workflow has executed once. Two of the
+three CI jobs are on `windows-latest` deliberately — the crate is Windows-only,
+and the screenshot baselines were rasterised by Windows.
 
 **Two verification scripts are unrun, and they are the two newest.**
 `docs/verify/v0.10.md` section E has never been executed by anyone — the
@@ -36,6 +43,13 @@ defers currency to a phase that is now v0.9.
 Two things are outstanding rather than done: a real code-signing certificate for
 the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
 Steam steps are blocked because this machine's library holds no game.
+
+**Windows only, and further from macOS than the workspace layout suggests.**
+`apps/` and `packages/shared` were split ahead of need so the seams would exist,
+and the frontend genuinely is portable — but 7,410 lines across 20 Rust files
+name the `windows` crate, there is no `cfg(target_os = "macos")` anywhere, and
+two of the five seams CLAUDE.md claims (`ClipboardStore`, `Hotkey`) were never
+actually written as traits. `docs/plans/macos.md` states the whole picture.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
