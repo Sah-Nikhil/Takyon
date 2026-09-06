@@ -428,8 +428,8 @@ is the price one window charges: a conversation dies when the Palette does.*
 
 **Goal:** an answer in the Palette, not a browser tab.
 
-- [x] `SearchProvider` trait; Brave Search API behind it (ADR-0005). One provider, chosen by name — a second one needs a preference and TBC-0004 owns that
-- [x] **The key is DPAPI-wrapped** in `creds\brave.key.dpapi`, never in `settings.db`, and never sent back to the webview: Settings shows its last four characters. It is a bearer token for someone else's paid account
+- [x] `SearchProvider` trait, with **DuckDuckGo (no key) and Exa (keyed)** behind it (ADR-0021, resolving TBC-0004 and amending ADR-0005's choice of Brave, whose free tier now wants a card). Exa is asked first when a key is stored and **any failure falls through to DuckDuckGo silently** — `!s` is never a dead end, at the cost of a wrong key never announcing itself. Brave is kept behind the trait, selected by nothing
+- [x] **The key is DPAPI-wrapped** in `creds\web.key.dpapi`, never in `settings.db`, and never sent back to the webview: Settings shows its last four characters. It is a bearer token for someone else's paid account
 - [x] Parallel page fetch + Readability-style extraction — no browser (ADR-0005). **HTTP is WinHTTP** (ADR-0019): OS TLS, the user's own proxy, and nothing added to the installer
 - [x] Per-request timeout and a total budget, so one slow page cannot hold the answer. A page that fails is named in the prompt rather than dropped
 - [x] Synthesised answer rendered inline with its sources, streaming. **The summariser is whichever Agent `!c` would ask** — tools off, in the Scratch directory — so a Codex-only machine still gets `!s`
@@ -438,7 +438,7 @@ is the price one window charges: a conversation dies when the Palette does.*
 - [x] Selecting a source Entry opens that URL. http(s) only, checked in Rust: these URLs come from a remote provider
 - [x] **The outbound state is visible**, in colour and in words: the row and the answer header are warm and say the query left the machine (`docs/brand.md`)
 - [x] **No debounce, because nothing fires on a keystroke.** Typing `!s` sends nothing; the request happens on Enter (ADR-0002)
-- [ ] **Run the manual verification script** ([`docs/verify/v0.9.md`](./docs/verify/v0.9.md)). Every layer below the network is green and `cargo test --test web_search -- --ignored` reaches the live internet, but **no real search has ever run**: this machine holds no Brave key, so the one test that would spend one skips itself. [`docs/tbd/v0.9.md`](./docs/tbd/v0.9.md) §1
+- [ ] **Run the manual verification script** ([`docs/verify/v0.9.md`](./docs/verify/v0.9.md)). No longer blocked on a key: `v0_10_a_real_keyless_search_returns_coherent_hits` runs one real DuckDuckGo search and passes, so retrieval is proven end to end. What is still unrun by hand is the script itself, and section 7b in particular — the fallback repainting the outbound header is the one place ADR-0021's silent failure is observable
 - [x] **0.9.3: the identity slug is `com.v3sper.takyon`** (ADR-0020, superseding ADR-0011). Data directory, `Run` value, single-instance mutex and UIAccess pipe move with it; `identity::migrate_legacy_data_dir` renames the old directory in place on first start and both DPAPI keys are rewrapped as they are read, so clipboard history survives. The migration moves entry by entry and keeps whatever is already at the destination: guarding on "the new directory is absent" abandoned the real data, because an empty one always exists by the time anything checks
 
 **Exit criteria:** a question like "Ferrari in F1" returns a readable synthesised

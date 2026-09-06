@@ -40,7 +40,7 @@ fn v0_9_a_key_survives_a_round_trip_through_a_real_directory() {
 #[test]
 fn v0_9_a_search_without_a_key_never_leaves_the_machine() {
     let started = std::time::Instant::now();
-    let error = search::provider()
+    let error = search::keyed()
         .search("ferrari in f1", "")
         .expect_err("an empty key cannot search");
     assert_eq!(error, SearchError::NoKey);
@@ -121,20 +121,45 @@ fn v0_9_a_real_search_returns_coherent_hits() {
         return;
     };
     let Some(stored) = key::load(&dir) else {
-        eprintln!("no Brave key stored; skipped");
+        eprintln!("no Exa key stored; skipped");
         return;
     };
 
-    let hits = search::provider()
+    let hits = search::keyed()
         .search("ferrari formula one", &stored)
-        .expect("Brave answered");
+        .expect("Exa answered");
+    assert_coherent(&hits);
+}
+
+/// The keyless provider against the live endpoint. Unlike the keyed one this
+/// needs no stored anything, so it runs anywhere `--ignored` is asked for and is
+/// the only end-to-end proof that `!s` works on a machine with no key at all.
+///
+/// It is also the tripwire for the maintenance cost in ADR-0021: DuckDuckGo
+/// renames a class and this fails, where the unit tests keep passing against a
+/// fixture frozen the day it was captured.
+#[test]
+#[ignore]
+fn v0_10_a_real_keyless_search_returns_coherent_hits() {
+    let hits = search::keyless()
+        .search("ferrari formula one", "")
+        .expect("DuckDuckGo answered");
+    assert_coherent(&hits);
+    // The redirector unwraps, or every source click and page read goes through
+    // duckduckgo.com instead of the site the row names.
+    for hit in &hits {
+        assert!(!hit.url.contains("duckduckgo.com/l/"), "{}", hit.url);
+    }
+}
+
+/// What any provider's live results have to satisfy.
+fn assert_coherent(hits: &[takyon_lib::search::Hit]) {
     assert!(!hits.is_empty(), "a well-known query returned nothing");
     assert!(hits.len() <= search::MAX_HITS);
-
-    for hit in &hits {
+    for hit in hits {
         assert!(!hit.title.is_empty(), "a hit had no title");
         assert!(fetch::parse_url(&hit.url).is_some(), "{}", hit.url);
-        // Highlight markup rendered raw is the failure this catches.
-        assert!(!hit.title.contains("<strong>"), "{}", hit.title);
+        // Markup rendered raw is the failure this catches.
+        assert!(!hit.title.contains('<'), "{}", hit.title);
     }
 }

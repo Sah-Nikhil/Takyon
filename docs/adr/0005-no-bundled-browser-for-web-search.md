@@ -1,8 +1,15 @@
 ---
 status: accepted
+amended-by: 0021
 ---
 
 # `!s` uses a search API plus HTTP extraction, never a bundled browser
+
+> **Amended by [ADR-0021](0021-duckduckgo-keyless-with-exa-when-keyed.md).** The
+> decision below — a search API plus our own extraction, never a bundled browser
+> — stands unchanged. The *provider* does not: Brave's free tier now requires a
+> card, and `!s` searches with DuckDuckGo by default and Exa when a key is
+> stored. Read "Brave Search" below as "the search API of the day".
 
 An Arc-Search-style answer needs two distinct things: a list of URLs, and the text
 of those pages. We get the URL list from a search API (Brave Search, whose free

@@ -10,12 +10,14 @@ and it finds and launches applications, files, clipboard history and
 calculations, with Frecency, settings and a `Ctrl+K` action menu. v0.8 adds
 **Agents**: `!c` drives Claude Code, Codex or opencode as a subprocess, answers
 inline with tools off, and promotes into a Chat Surface on a follow-up. v0.9 adds
-**web search**: `!s` retrieves through Brave, reads the pages over WinHTTP and
-has an Agent answer from them, streaming, with numbered sources. There is no CI.
+**web search**: `!s` retrieves through DuckDuckGo, or Exa when a key is stored,
+reads the pages over WinHTTP and has an Agent answer from them, streaming, with
+numbered sources. There is no CI.
 
-**v0.9's exit criterion is unproven**: this machine holds no Brave key, so no
-real search has ever run and `docs/verify/v0.9.md` has not been executed. Check
-`ROADMAP.md` and `docs/tbd/v0.9.md` before assuming anything about it.
+**Retrieval is proven, the script is not.** ADR-0021 moved `!s` off Brave, whose
+free tier now wants a card, so a real keyless search runs here and the live test
+passes. `docs/verify/v0.9.md` still has not been executed by hand — section 7b in
+particular. Check `ROADMAP.md` and `docs/tbd/v0.9.md` before assuming anything.
 
 Agents and web search traded phase numbers when v0.8 shipped. Agents was built
 first while `!s` kept being deferred, so the shipped work took the next release
@@ -102,12 +104,17 @@ under `docs/`.
   elevated windows, which requires a signed binary in a trusted location. Code
   signing is a v0.1 requirement, not a shipping-time one, and portable mode is
   impossible as a result.
-- External services: **Brave Search API** for `!s` retrieval only (ADR-0005), and
-  the user's own **Agent CLIs** — `claude`, `codex`, `opencode` — as subprocesses
-  for `!c`. Takyon never holds an LLM account or key of its own, and never runs
-  an Agent's login (**ADR-0017**; the terminal path is `docs/tbc/0012`). The one
-  key it does hold, Brave's, is DPAPI-wrapped in `creds\` and never reaches the
-  webview.
+- External services: **DuckDuckGo** (no key) and **Exa** (keyed) for `!s`
+  retrieval only (**ADR-0021**, amending ADR-0005's choice of Brave). Exa is asked
+  first when a key is stored and **any failure falls silently through to
+  DuckDuckGo** — `!s` is never a dead end, at the cost of a wrong key never
+  announcing itself. `ddg.rs` parses HTML, so run
+  `cargo test --test web_search -- --ignored` before a release: a class rename
+  there breaks `!s` and only that test notices. Plus the user's own **Agent
+  CLIs** — `claude`, `codex`, `opencode` — as subprocesses for `!c`. Takyon never
+  holds an LLM account or key of its own, and never runs an Agent's login
+  (**ADR-0017**; the terminal path is `docs/tbc/0012`). The one key it does hold
+  is DPAPI-wrapped in `creds\` and never reaches the webview.
 - HTTP: **WinHTTP through the `windows` crate** (ADR-0019), never a Rust client.
   OS TLS, the user's own proxy, and nothing added to the installer. The seam is
   `search::fetch`, which is what a macOS target would reimplement.

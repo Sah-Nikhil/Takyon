@@ -1,8 +1,8 @@
-//! The Brave key, wrapped with Windows DPAPI.
+//! The web-search key, wrapped with Windows DPAPI.
 //!
 //! Same treatment as the clipboard key (ADR-0008), for a stronger reason: this
 //! one is a bearer token for someone else's paid account. It lives at
-//! `creds\brave.key.dpapi` and never in `settings.db`, which is plain SQLite
+//! `creds\web.key.dpapi` and never in `settings.db`, which is plain SQLite
 //! anyone can open.
 //!
 //! The key is never sent to the frontend. Settings asks whether one is stored
@@ -12,7 +12,7 @@
 use std::path::{Path, PathBuf};
 
 /// The key file, relative to the data directory.
-pub const KEY_PATH: &[&str] = &["creds", "brave.key.dpapi"];
+pub const KEY_PATH: &[&str] = &["creds", "web.key.dpapi"];
 
 /// Characters of the key shown back in Settings. Enough to tell two keys apart,
 /// too few to use.
@@ -20,9 +20,9 @@ const HINT_LEN: usize = 4;
 
 /// Entropy for this key alone, separate from the clipboard's (ADR-0008).
 ///
-/// Two secrets with different lifetimes: a blob wrapped for one must not unwrap
-/// in the other's code path. Frozen — changing it orphans a stored key, which
-/// reads as `!s` forgetting a key it never lost.
+/// A blob wrapped for one secret must not unwrap in the other's code path.
+/// Frozen, and still spelled `brave` after ADR-0021 moved the provider to Exa:
+/// entropy is an input to decryption, not a label.
 const ENTROPY: &[u8] = b"com.v3sper.takyon/brave.key/v1";
 
 /// The pre-ADR-0020 entropy. [`load`] rewraps a key found under it, same as the

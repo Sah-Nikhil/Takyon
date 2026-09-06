@@ -701,7 +701,12 @@ export const mock = {
         seq,
         entries: [],
         statusRow: false,
-        web: { query: web, provider: "Brave Search", hasKey: webKey !== null },
+        web: {
+          query: web,
+          provider: "Exa",
+          keylessProvider: "DuckDuckGo",
+          hasKey: webKey !== null,
+        },
       };
     }
     // `!v` is its own view. Unlike a Bangless query, an empty one lists history
@@ -981,10 +986,11 @@ export const mock = {
   },
   agentCancel: async (_turnId: number) => {},
   webSettings: async (): Promise<WebSettings> => ({
-    provider: "Brave Search",
+    provider: "Exa",
+    keylessProvider: "DuckDuckGo",
     hasKey: webKey !== null,
     hint: webKey ? `…${webKey.slice(-4)}` : undefined,
-    signupUrl: "https://brave.com/search/api/",
+    signupUrl: "https://dashboard.exa.ai/api-keys",
   }),
   setWebKey: async (keyValue: string) => {
     webKey = keyValue.trim() === "" ? null : keyValue.trim();
@@ -1001,7 +1007,7 @@ export const mock = {
           emitSearch({
             searchId,
             kind: "failed",
-            message: "No Brave Search key. Add one in Settings → Web search.",
+            message: "No Exa key. Add one in Settings → Web search.",
           }),
         10,
       );
@@ -1009,7 +1015,7 @@ export const mock = {
     }
     // The same three phases Rust emits, in order and on separate ticks: a
     // renderer that skips straight to the answer would pass a single-event mock.
-    emitSearch({ searchId, kind: "searching", provider: "Brave Search" });
+    emitSearch({ searchId, kind: "searching", provider: webKey !== null ? "Exa" : "DuckDuckGo" });
     const turnId = nextTurnId++;
     setTimeout(() => emitSearch({ searchId, kind: "reading", sources: SEARCH_HITS }), 10);
     const answering = () => {

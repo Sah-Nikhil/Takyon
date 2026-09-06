@@ -4,7 +4,7 @@
 //! response is parsed rather than deserialised into a mirror of Brave's schema:
 //! only three fields are used, and a shape change elsewhere must not break `!s`.
 
-use super::{fetch, Hit, SearchError, SearchProvider, MAX_HITS};
+use super::{fetch, strip_markup, Hit, SearchError, SearchProvider, MAX_HITS};
 
 /// The endpoint. Host and path apart, so `fetch` can take them separately.
 const HOST: &str = "api.search.brave.com";
@@ -15,6 +15,10 @@ pub struct BraveProvider;
 impl SearchProvider for BraveProvider {
     fn label(&self) -> &'static str {
         super::PROVIDER_LABEL
+    }
+
+    fn needs_key(&self) -> bool {
+        true
     }
 
     fn search(&self, query: &str, key: &str) -> Result<Vec<Hit>, SearchError> {
@@ -79,28 +83,6 @@ pub fn parse_hits(body: &str) -> Result<Vec<Hit>, SearchError> {
         })
         .take(MAX_HITS)
         .collect())
-}
-
-/// Drop Brave's `<strong>` highlighting, and anything that would let a title lie
-/// about itself.
-///
-/// U+202E draws a title's own text reversed, which is how a row is made to name
-/// a site it did not come from. Detail in `docs/tbd/v0.9.md` §9.
-fn strip_markup(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut inside = false;
-    for ch in text.chars() {
-        match ch {
-            '<' => inside = true,
-            '>' => inside = false,
-            _ if inside => {}
-            // Bidi overrides and isolates, plus the invisible marks beside them.
-            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}' => {}
-            _ if ch.is_control() => {}
-            _ => out.push(ch),
-        }
-    }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

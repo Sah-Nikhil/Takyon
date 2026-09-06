@@ -40,6 +40,34 @@ after you press Enter.
   account, stored beside the clipboard key rather than in `settings.db`, and
   never sent back to the interface — Settings shows its last four characters.
 
+### 0.9.4
+
+`!s` no longer needs anyone to sign up for anything.
+
+- **DuckDuckGo answers by default.** No key, no account, no card. A fresh install
+  can search the web the moment it is installed. `html.duckduckgo.com` renders
+  without JavaScript, so results come back over the same WinHTTP stack the page
+  reads already use and no browser engine is involved (ADR-0005 still stands).
+- **Exa replaces Brave as the keyed provider.** Brave's free tier now wants a card
+  on file, which is a barrier for one person and a worse one for anybody `!s` ever
+  ships to, since every user needs their own key. Exa is built for this kind of
+  retrieval and returns page text with each result. Brave is kept behind the trait
+  but nothing selects it.
+- **A failing Exa falls through to DuckDuckGo, silently.** A wrong key, a spent
+  quota or an outage becomes slightly worse answers rather than a red row, so `!s`
+  is never a dead end. The cost is real and deliberate: **a broken key does not
+  announce itself.** The answer header names whichever service actually replied,
+  and Settings → Web search states the rule in words.
+- **The no-key state stopped being an error.** The `!s` row used to read "No key.
+  Add one in Settings" and Enter did nothing. It now names the provider that will
+  answer, and Enter works.
+- The stored key moved from `credsrave.key.dpapi` to `creds\web.key.dpapi`,
+  since it is no longer Brave's and should not be named for whoever is current. A
+  key stored under the old name is not migrated; paste it again.
+
+ADR-0021 has the reasoning, including why driving a headless browser at Google was
+considered and rejected a second time. TBC-0004 is resolved.
+
 ### 0.9.3
 
 The identity rename, under a version number that means one thing.

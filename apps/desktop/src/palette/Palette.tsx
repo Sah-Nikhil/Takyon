@@ -321,7 +321,7 @@ export function Palette() {
     happens once, on Enter, never per keystroke (v0.9 Traps).
    */
   const startSearch = useCallback(() => {
-    if (!web || !web.query || !web.hasKey) return;
+    if (!web || !web.query) return;
     setSearching(web.query);
     setView("web");
     void api.setView("web");
@@ -493,17 +493,16 @@ export function Palette() {
         : `${askLabel}${askAgent ? ` · ${agentSummary(askAgent).headline}` : ""}${askFallback}`));
 
   /*
-    The one row `!s` shows before Enter: what will happen, and where the key
-    comes from when there is none. Amber for the no-key state, which is not an
-    error but does need an action.
+    The one row `!s` shows before Enter: which service the question will go to,
+    and that it will go somewhere. Since ADR-0021 a missing key is not a dead
+    end — it selects the keyless provider — so there is no action to prompt for.
    */
+  const searchWith = !web ? "" : web.hasKey ? web.provider : web.keylessProvider;
   const webNote = !web
     ? null
-    : !web.hasKey
-      ? `No ${web.provider} key. Add one in Settings → Web search.`
-      : web.query
-        ? `Search the web with ${web.provider} — press Enter`
-        : `${web.provider} · your question leaves this machine`;
+    : web.query
+      ? `Search the web with ${searchWith} — press Enter`
+      : `${searchWith} · your question leaves this machine`;
 
   const showList =
     entries.length > 0 || webNote !== null || fileIndexNote !== null || askNote !== null;
@@ -524,7 +523,11 @@ export function Palette() {
   if (view === "web" && searching && web) {
     return (
       <div className="relative flex h-full w-full flex-col p-2">
-        <SearchView query={searching} provider={web.provider} onClose={closeView} />
+        <SearchView
+          query={searching}
+          provider={web.hasKey ? web.provider : web.keylessProvider}
+          onClose={closeView}
+        />
       </div>
     );
   }
@@ -648,11 +651,8 @@ export function Palette() {
              */}
             {webNote && (
               <div
-                className={`flex items-center px-2 text-[13px] ${
-                  web?.hasKey ? "text-amber-200/90" : "text-amber-300"
-                }`}
+                className="flex items-center px-2 text-[13px] text-amber-200/90"
                 style={{ height: ROW_HEIGHT }}
-                role={web?.hasKey ? undefined : "alert"}
                 data-testid="web-note"
               >
                 {webNote}
@@ -714,7 +714,7 @@ export function Palette() {
                   ? "Ask"
                   : null
                 : web
-                  ? web.query && web.hasKey
+                  ? web.query
                     ? "Search"
                     : null
                   : undefined

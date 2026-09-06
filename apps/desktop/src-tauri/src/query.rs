@@ -91,10 +91,12 @@ pub struct Ask {
 pub struct Web {
     /// The question, trimmed. Empty means the Bang alone was typed.
     pub query: String,
-    /// Which service answers. One today (ADR-0005), named so the row can say it.
+    /// The keyed service, named so the row can say it.
     pub provider: &'static str,
-    /// Whether a Brave key is stored. False is a state with its own copy, not an
-    /// error: the fix is a Settings page, and the row says so.
+    /// The service that answers with no key (ADR-0021). A missing key is not a
+    /// dead end, so the row names this one instead of asking for a key.
+    pub keyless_provider: &'static str,
+    /// Whether a key is stored. Read from a cached flag, never from disk.
     pub has_key: bool,
 }
 
@@ -396,7 +398,8 @@ impl Pipeline {
             seq,
             web: Some(Web {
                 query: question.to_string(),
-                provider: crate::search::PROVIDER_LABEL,
+                provider: crate::search::exa::LABEL,
+                keyless_provider: crate::search::ddg::LABEL,
                 has_key: self.web_key_present(),
             }),
             // Reserves the status row in the native window, exactly as `!c` does.

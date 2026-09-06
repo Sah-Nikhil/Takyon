@@ -25,6 +25,8 @@ export function SearchView({
   onClose,
 }: {
   query: string;
+  /** The provider before one has answered. Corrected by the first `searching`
+   *  event, and again if `!s` falls back to the keyless one (ADR-0021). */
   provider: string;
   onClose: () => void;
 }) {
@@ -77,7 +79,7 @@ export function SearchView({
         {/* Warm, and only here: this is the one surface where data left. */}
         <span aria-hidden className="size-2 shrink-0 rounded-full bg-amber-400" />
         <span className="shrink-0 text-[13px] text-amber-200/90" data-testid="outbound">
-          Left this machine · {provider}
+          Left this machine · {state.provider ?? provider}
         </span>
         <span className="ms-auto shrink-0 text-[12px] text-fg/40" role="status">
           {state.phase === "searching"

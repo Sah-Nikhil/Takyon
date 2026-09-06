@@ -77,7 +77,11 @@ impl Searches {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSettings {
+    /// The keyed provider, used when a key is stored.
     pub provider: &'static str,
+    /// The provider that answers with no key at all, and whenever the keyed one
+    /// fails (ADR-0021). Named so Settings can say `!s` works without a key.
+    pub keyless_provider: &'static str,
     pub has_key: bool,
     /// Last four characters of the stored key, so a wrong paste is visible.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -87,14 +91,15 @@ pub struct WebSettings {
     pub signup_url: &'static str,
 }
 
-/// Where a key comes from. Brave's own console (ADR-0005).
-const SIGNUP_URL: &str = "https://brave.com/search/api/";
+/// Where a key comes from. Exa's dashboard (ADR-0021).
+const SIGNUP_URL: &str = super::exa::SIGNUP_URL;
 
 #[tauri::command(async)]
 pub fn web_settings(app: AppHandle) -> WebSettings {
     let dir = data_dir(&app);
     WebSettings {
-        provider: super::PROVIDER_LABEL,
+        provider: super::exa::LABEL,
+        keyless_provider: super::ddg::LABEL,
         has_key: dir.as_deref().map(key::present).unwrap_or(false),
         hint: dir.as_deref().and_then(key::hint),
         signup_url: SIGNUP_URL,
@@ -181,21 +186,24 @@ fn run(
     turns: &Arc<Turns>,
     prefs: &Prefs,
 ) -> Result<(), SearchError> {
-    let dir = data_dir(app).ok_or(SearchError::NoKey)?;
-    let stored = key::load(&dir).ok_or(SearchError::NoKey)?;
+    // No key is not an error since ADR-0021: it selects DuckDuckGo.
+    let stored = data_dir(app).and_then(|dir| key::load(&dir));
 
-    emit(
-        app,
-        id,
-        SearchEvent::Searching {
-            provider: super::PROVIDER_LABEL,
-        },
-    );
-    let hits = super::provider().search(query, &stored)?;
+    let answered = super::search(
+        super::keyed().as_ref(),
+        super::keyless().as_ref(),
+        query,
+        stored.as_deref(),
+        // Once per provider actually contacted, so a fallback repaints the
+        // outbound header rather than leaving it naming a service that did not
+        // answer. The Palette treats a second `searching` as a correction.
+        |provider| emit(app, id, SearchEvent::Searching { provider }),
+    )?;
+    let hits = answered.hits;
     if hits.is_empty() {
         return Err(SearchError::Failed(format!(
             "{} found nothing for that.",
-            super::PROVIDER_LABEL
+            answered.provider
         )));
     }
     if cancelled.load(Ordering::Relaxed) {

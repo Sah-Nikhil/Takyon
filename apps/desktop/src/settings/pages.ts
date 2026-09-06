@@ -227,14 +227,19 @@ export const PAGES: SettingsPage[] = [
     Component: WebSearch,
     controls: [
       {
-        id: "brave-key",
-        label: "Brave Search key",
-        keywords: ["brave", "api key", "token", "search", "!s", "web"],
+        id: "exa-key",
+        label: "Exa key",
+        keywords: ["exa", "api key", "token", "search", "!s", "web", "duckduckgo"],
       },
       {
-        id: "brave-key-clear",
+        id: "exa-key-clear",
         label: "Remove the key",
-        keywords: ["brave", "delete key", "revoke", "clear"],
+        keywords: ["exa", "delete key", "revoke", "clear"],
+      },
+      {
+        id: "web-fallback",
+        label: "DuckDuckGo answers when Exa cannot",
+        keywords: ["duckduckgo", "ddg", "fallback", "no key", "keyless"],
       },
       {
         id: "web-outbound",

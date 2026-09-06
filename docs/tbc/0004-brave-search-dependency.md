@@ -1,7 +1,17 @@
 ---
-status: watching
+status: resolved
 pairs-with: ADR-0005
+resolved-by: ADR-0021
 ---
+
+> **Resolved by [ADR-0021](../adr/0021-duckduckgo-keyless-with-exa-when-keyed.md).**
+> The first trigger below fired: Brave's free tier now requires a card on file.
+> `!s` moved to DuckDuckGo by default, with Exa when a key is stored, which is a
+> blend of two rows in the Alternatives table — "Exa / Tavily" for the keyed half
+> and something the table did not list for the keyless one. The verdict's own
+> advice held: the `SearchProvider` trait made it a two-file change, and the day
+> it cost was spent on an HTML parser rather than on plumbing.
+> Kept for the reasoning, and because the same exposure now applies to Exa.
 
 # TBC-0004 — Brave Search API as the `!s` retrieval layer
 

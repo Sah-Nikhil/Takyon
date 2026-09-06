@@ -25,6 +25,12 @@ export interface SearchState {
   answer: string;
   /** Which Agent is writing it, once one has been picked. */
   agent?: string;
+  /**
+   * The service the query is at. Corrected mid-search when `!s` falls back from
+   * the keyed provider to the keyless one (ADR-0021), so the outbound header
+   * never names a service that did not answer.
+   */
+  provider?: string;
   error?: string;
   /** The Turn carrying the answer, so it can be cancelled. */
   turnId?: number;
@@ -43,7 +49,9 @@ export const started = (): SearchState => ({
 export function reduceSearch(state: SearchState, message: SearchMessage): SearchState {
   switch (message.kind) {
     case "searching":
-      return { ...state, phase: "searching" };
+      // Sources are kept: a fallback repaints the header, it does not restart
+      // the search from the Palette's point of view.
+      return { ...state, phase: "searching", provider: message.provider };
     case "reading":
       return { ...state, phase: "reading", sources: message.sources };
     case "answering":

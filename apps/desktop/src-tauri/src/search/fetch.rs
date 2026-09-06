@@ -131,22 +131,43 @@ pub fn pages(urls: &[String]) -> Vec<Result<String, SearchError>> {
         .collect()
 }
 
+/// A POST over HTTPS with a body. Exa's API is POST-only (ADR-0021).
+pub fn post(
+    host: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> Result<Response, SearchError> {
+    let joined: String = headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect();
+    send(host, path, &joined, true, "POST", Some(body.as_bytes()))
+}
+
 fn plain(host: &str, path: &str) -> Result<Response, SearchError> {
-    send(host, path, "Accept: text/html\r\n", false)
+    send(host, path, "Accept: text/html\r\n", false, "GET", None)
 }
 
 fn request(host: &str, path: &str, headers: &str) -> Result<Response, SearchError> {
-    send(host, path, headers, true)
+    send(host, path, headers, true, "GET", None)
 }
 
 /// The WinHTTP call itself.
 ///
 /// Every handle is closed on every path, including the error ones: a leaked
 /// session holds a connection and a thread, and nothing reports it.
-fn send(host: &str, path: &str, headers: &str, secure: bool) -> Result<Response, SearchError> {
+fn send(
+    host: &str,
+    path: &str,
+    headers: &str,
+    secure: bool,
+    method: &str,
+    body: Option<&[u8]>,
+) -> Result<Response, SearchError> {
     let host_w = wide(host);
     let path_w = wide(path);
-    let verb = wide("GET");
+    let verb = wide(method);
     let agent = wide(AGENT);
     let headers_w: Vec<u16> = headers.encode_utf16().collect();
 
@@ -198,9 +219,9 @@ fn send(host: &str, path: &str, headers: &str, secure: bool) -> Result<Response,
             } else {
                 Some(&headers_w)
             },
-            None,
-            0,
-            0,
+            body.map(|b| b.as_ptr() as *const core::ffi::c_void),
+            body.map(|b| b.len() as u32).unwrap_or(0),
+            body.map(|b| b.len() as u32).unwrap_or(0),
             0,
         );
         sent.map_err(|e| SearchError::Failed(format!("{host} could not be reached: {e}")))?;

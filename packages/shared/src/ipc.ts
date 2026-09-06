@@ -323,12 +323,14 @@ export interface QueryResult {
 export interface Web {
   /** The question, trimmed. Empty means the Bang alone was typed. */
   query: string;
-  /** Which service answers. One today (ADR-0005), named so the row can say it. */
+  /** The keyed service, named so the row can say it. */
   provider: string;
   /**
-   * Whether a key is stored. False is a state with its own copy, not an error:
-   * the fix is Settings → Web search, and the row says so.
+   * The service that answers with no key (ADR-0021). A missing key selects this
+   * one rather than being a dead end, so the row names it instead of asking.
    */
+  keylessProvider: string;
+  /** Whether a key is stored. Read from a cached flag, never from disk. */
   hasKey: boolean;
 }
 
@@ -564,7 +566,13 @@ export type SearchMessage = SearchEvent & { searchId: number };
 
 /** What Settings shows for web search. The key itself never crosses IPC. */
 export interface WebSettings {
+  /** The keyed provider, used when a key is stored. */
   provider: string;
+  /**
+   * The provider that answers with no key at all, and whenever the keyed one
+   * fails (ADR-0021). `!s` is never a dead end, so this always has a value.
+   */
+  keylessProvider: string;
   hasKey: boolean;
   /** Last four characters of the stored key, so a wrong paste is visible. */
   hint?: string;

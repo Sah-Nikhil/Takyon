@@ -56,7 +56,7 @@ describe("reduceSearch", () => {
     const state = reduceSearch(started(), {
       searchId: 1,
       kind: "failed",
-      message: "No Brave Search key. Add one in Settings → Web search.",
+      message: "No Exa key. Add one in Settings → Web search.",
     });
     expect(state.phase).toBe("failed");
     expect(state.error).toContain("Settings");
@@ -99,4 +99,27 @@ describe("reduceTurn", () => {
     expect(state.phase).toBe("failed");
     expect(state.error).toBe("Claude Code ended without answering.");
   });
+});
+
+/**
+ * ADR-0021's cost. A search that falls back from the keyed provider to the
+ * keyless one sends `searching` twice, and the second names a different service.
+ * The header has to follow it, or it tells the user the question went somewhere
+ * it did not.
+ */
+it("a second searching event corrects the provider", () => {
+  let state = reduceSearch(started(), { searchId: 1, kind: "searching", provider: "Exa" });
+  expect(state.provider).toBe("Exa");
+
+  state = reduceSearch(state, { searchId: 1, kind: "searching", provider: "DuckDuckGo" });
+  expect(state.provider).toBe("DuckDuckGo");
+  expect(state.phase).toBe("searching");
+});
+
+/** Falling back mid-search must not throw away hits already on screen. */
+it("a fallback keeps sources already shown", () => {
+  const sources = [{ title: "t", url: "https://e.x/a", description: "d" }];
+  let state = reduceSearch(started(), { searchId: 1, kind: "reading", sources });
+  state = reduceSearch(state, { searchId: 1, kind: "searching", provider: "DuckDuckGo" });
+  expect(state.sources).toEqual(sources);
 });

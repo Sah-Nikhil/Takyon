@@ -34,11 +34,7 @@ pub fn legacy_data_dir() -> Option<PathBuf> {
     Some(PathBuf::from(local).join("v3sper").join("launcher"))
 }
 
-/// Move the pre-rename data directory across, once, on startup.
-///
-/// Same parent, so this is a rename and not a copy: atomic, and it cannot leave
-/// half a clipboard history behind. Only ever fires when the new directory is
-/// absent, so a user who has already migrated keeps what they have.
+/// Move the pre-rename data directory across, once, on startup (ADR-0020).
 ///
 /// Must run before anything opens a database or writes a log, which is why
 /// `run()` calls it above `crashlog::install`. Failure is not fatal: the app
@@ -52,18 +48,9 @@ pub fn migrate_legacy_data_dir() {
 
 /// The move itself, on explicit paths.
 ///
-/// Entry by entry rather than one directory rename, and **not** guarded on "the
-/// new directory is absent". Anything that resolves a path through `data_dir()`
-/// creates it — a crash log, a scratch directory, the test suite — and a guard
-/// that treats an empty stray directory as "already migrated" abandons the real
-/// data in place, silently, which is how this was found.
-///
-/// Whatever is already at the destination wins, so the migration is idempotent
-/// and can never overwrite live data with something staler.
-///
-/// Split out from [`migrate_legacy_data_dir`] so tests drive it on explicit paths:
-/// `LOCALAPPDATA` is process-global, and holding it across a filesystem operation
-/// raced every other test that resolves a path through it.
+/// Entry by entry, never guarded on "destination absent": anything resolving a
+/// path through `data_dir()` creates it, so that guard abandoned the real data.
+/// Destination always wins, so this is idempotent. Reasoning in ADR-0020.
 fn migrate_dir(old: &std::path::Path, new: &std::path::Path) {
     if !old.exists() {
         return;

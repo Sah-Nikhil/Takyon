@@ -10,7 +10,7 @@ character to the front of the line and the same box reaches further: `!s` answer
 a question from the live web with every source cited, and `!c` hands it to the AI
 CLI you are already signed in to.
 
-Windows only, built on Tauri 2. Current release is **0.9.3**.
+Windows only, built on Tauri 2. Current release is **0.9.4**.
 
 ---
 
@@ -21,7 +21,7 @@ Windows only, built on Tauri 2. Current release is **0.9.3**.
 - [Using it](#using-it)
 - [Bangs](#bangs)
 - [Connecting your AI](#connecting-your-ai)
-- [Connecting Brave Search](#connecting-brave-search)
+- [Connecting web search](#connecting-web-search)
 - [Settings](#settings)
 - [How it works](#how-it-works)
 - [Performance](#performance)
@@ -58,7 +58,7 @@ by type, pasted back into wherever you were.
 Palette. A follow up promotes the same window into a chat, without opening a
 second window.
 
-**Searches the web.** `!s` asks Brave, reads the pages it gets back, and gives
+**Searches the web.** `!s` asks DuckDuckGo, reads the pages it gets back, and gives
 you a headline plus a few labelled findings, each one ending in the sources
 behind it. Every citation is a chip that opens the real page.
 
@@ -70,7 +70,7 @@ Download `Takyon_{version}_x64-setup.exe` from the release you want and run it.
 Verify it first if you like: the SHA-256 sits beside it in `SHA256SUMS.txt`.
 
 ```powershell
-Get-FileHash .\Takyon_0.9.3_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Takyon_0.9.4_x64-setup.exe -Algorithm SHA256
 ```
 
 The installer is about 2.5 MB. Takyon starts with Windows by default, which you
@@ -114,7 +114,7 @@ for "note !v thing", not a clipboard query. Case does not matter, `!V` works.
 | `!e` | Your file index | No |
 | `!v` | Clipboard history | No |
 | `!c` | An AI agent CLI you already have | Yes, on Enter |
-| `!s` | Brave Search, then the pages it returns | Yes, on Enter |
+| `!s` | DuckDuckGo, or Exa with a key, then the pages returned | Yes, on Enter |
 
 Examples:
 
@@ -167,21 +167,29 @@ machine that only has Codex installed.
 
 ---
 
-## Connecting Brave Search
+## Connecting web search
 
-`!s` needs a Brave Search API key. The free tier covers personal use.
+**Nothing to connect.** `!s` searches with DuckDuckGo, which needs no key and no
+account. Type `!s` and a question, then Enter.
 
-1. Get a key from [brave.com/search/api](https://brave.com/search/api/). Settings,
+An Exa key is optional and gives better results. Exa is built for this kind of
+retrieval, and its free tier needs no card.
+
+1. Get a key from [dashboard.exa.ai](https://dashboard.exa.ai/api-keys). Settings,
    Web Search has a button that opens it.
 2. Paste it into Settings, Web Search and save.
-3. Type `!s` and a question, then Enter.
+3. `!s` now asks Exa first.
 
 The key is wrapped with Windows DPAPI for your account and stored in
 `%LOCALAPPDATA%\v3sper\takyon\creds\`, not in the settings database, and it is
 never handed back to the interface. Settings shows the last four characters so
 you can tell which key is stored. "Remove the key" deletes it.
 
-Without a key, `!s` explains what it needs instead of searching.
+**One thing worth knowing.** If Exa fails for any reason — a wrong key, a spent
+quota, an outage — `!s` quietly falls back to DuckDuckGo rather than showing an
+error. You always get an answer, but a broken key will not announce itself. The
+answer header names whichever service actually replied, so that is where to look
+if results seem worse than expected.
 
 ---
 
@@ -200,7 +208,7 @@ own search box.
 | Clipboard History | How long history is kept, the `!v` bang, excluded applications |
 | Calculator | Whether a plain expression answers in the list |
 | Agents | Ranked agents, one switch each, sign in state, model and effort |
-| Web Search | Your Brave key |
+| Web Search | Your optional Exa key, and the DuckDuckGo fallback |
 | Advanced | Crash logs, hotkey status, package identity and the data folder |
 | About | Version |
 
@@ -234,7 +242,7 @@ takyon/
 │       ├── index/            walker, watcher, memory mapped store
 │       ├── clips/            clipboard history and its encryption
 │       ├── agents/           the driver trait and three drivers
-│       ├── search/           Brave, WinHTTP fetch, extraction, synthesis
+│       ├── search/           providers, WinHTTP fetch, extraction, synthesis
 │       └── icons.rs          icon extraction into one mapped blob
 └── packages/shared/          TypeScript types mirroring the IPC contract
 ```
@@ -302,7 +310,8 @@ conversation.
 
 ### `!s`, end to end
 
-Enter sends the query to Brave. The hits come back, and their pages are fetched
+Enter sends the query to DuckDuckGo, or Exa if a key is stored. The hits come
+back, and their pages are fetched
 in parallel with a 12 second deadline, a 6 second per request timeout and a 512
 KB body cap. Each page is reduced to its prose, the lot is packed into a 24,000
 character prompt with every source numbered, and the agent `!c` would have asked

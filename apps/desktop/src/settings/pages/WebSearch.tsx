@@ -39,19 +39,20 @@ export function WebSearch() {
     }
   };
 
-  const provider = settings?.provider ?? "Brave Search";
+  const provider = settings?.provider ?? "Exa";
+  const keyless = settings?.keylessProvider ?? "DuckDuckGo";
 
   return (
     <div className="space-y-6">
       <Group title="Key">
         <Row
-          id="brave-key"
+          id="exa-key"
           label={`${provider} key`}
           description={
             <>
               {settings?.hasKey
                 ? `A key is stored (${settings.hint}). It is wrapped for this Windows account and never leaves it, except to ${provider}.`
-                : `Without a key, !s explains itself instead of searching. Free tier covers personal use.`}
+                : `Optional. Without one, !s searches with ${keyless}, which needs no key and no account.`}
             </>
           }
           error={error}
@@ -103,13 +104,13 @@ export function WebSearch() {
         )}
 
         <Row
-          id="brave-signup"
+          id="exa-signup"
           label="Where to get one"
           description={`${provider}'s own console issues the key. Takyon never sees the account it belongs to.`}
         >
           <button
             type="button"
-            onClick={() => void api.openUrl(settings?.signupUrl ?? "https://brave.com/search/api/")}
+            onClick={() => void api.openUrl(settings?.signupUrl ?? "https://dashboard.exa.ai/api-keys")}
             className="rounded-control px-2 py-1 text-[12.5px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg"
           >
             Open
@@ -117,11 +118,21 @@ export function WebSearch() {
         </Row>
       </Group>
 
+      <Group title="Fallback">
+        <Row
+          id="web-fallback"
+          label={`${keyless} answers when ${provider} cannot`}
+          description={`${keyless} needs no key, so !s always works. When a key is stored ${provider} is asked first, and anything that stops it — a wrong key, a spent quota, an outage — falls through to ${keyless} rather than failing. The answer header names whichever one replied.`}
+        >
+          <span className="text-[12.5px] text-fg/40">ADR-0021</span>
+        </Row>
+      </Group>
+
       <Group title="What leaves the machine">
         <Row
           id="web-outbound"
           label="Only the question, and only on Enter"
-          description={`Typing !s sends nothing. On Enter the question goes to ${provider}, the pages it names are read, and their text goes to whichever Agent is first in Settings → Agents. A line without a Bang never leaves this machine.`}
+          description={`Typing !s sends nothing. On Enter the question goes to ${provider} when a key is stored and ${keyless} otherwise, the pages it names are read, and their text goes to whichever Agent is first in Settings → Agents. A line without a Bang never leaves this machine.`}
         >
           <span className="text-[12.5px] text-fg/40">ADR-0002</span>
         </Row>

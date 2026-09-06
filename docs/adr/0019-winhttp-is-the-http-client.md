@@ -4,7 +4,7 @@ status: accepted
 
 # `!s` speaks HTTP through WinHTTP, not through a Rust client
 
-Web search needs two kinds of request: one keyed call to the Brave Search API, and
+Web search needs two kinds of request: one call to a search API (ADR-0021), and
 a parallel fan-out that reads the pages it names. Both go through **WinHTTP**, the
 HTTP stack Windows already ships, called through the `windows` crate that is
 already a direct dependency. TLS is Schannel, the certificate store is the user's
