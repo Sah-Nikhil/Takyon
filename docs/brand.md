@@ -89,7 +89,7 @@ Consequences worth knowing before touching any of it:
   the app's own UI font instead, and is the single place to change when a
   typeface is chosen.
 
-## Colour — deliberately not locked
+## Colour — settled at v0.10
 
 The mark is settled; the palette is not. The leading proposal, from Direction IV,
 is **one hue in two states** rather than two palettes: the accent runs flat and
@@ -102,13 +102,32 @@ contained, warm means it left** — a Bang wears its colour in the picker, the i
 chip and the result header, so the ADR-0002 guarantee becomes something a person
 can see rather than read.
 
-Neither is decided. Revisit before v0.6 (Settings), which is the first phase that
-needs a real theme.
+**Both were kept, and the section closed at v0.10** ([ADR-0023](adr/0023-themes-are-families-with-both-halves.md)).
+The answer to "which three hex values" turned out to be the wrong question: there
+are five palettes, each carrying a light and a dark half, and the two proposals
+above survive as *rules* rather than as values.
 
-Until then `brand/tokens.json` carries three placeholder values so the assets can
-exist at all: a near-white foreground, a near-black plate, and a Cherenkov cyan
-standing in for the accent. They are a stand-in, not a decision. Swapping in the
-real scheme is one edit to that file plus a rebuild — no asset is redrawn.
+- One hue in two states became the rule that **an accent darkens on paper and
+  lightens on the instrument**, applied per family. It is why every dark accent
+  sits at L≈0.78 and every light one at L≈0.53.
+- Cool means contained, warm means it left became **two Roles**,
+  `--color-outbound` and `--color-warning`, which every theme states separately.
+  Through v0.9 both were Tailwind's `amber-*` at eleven call sites, so a Bang's
+  outbound state and a refused registry write were the same colour and no theme
+  could move either.
+
+Halide is where the semantic had to bend: its plate is amber, so a cool accent
+made it read as Aurora under another name. The accent went gold and the outbound
+signal moved 56° to red-orange, because the rule governs Bang surfaces and an
+accent paints a selection ring. The reasoning is in ADR-0023.
+
+`brand/tokens.json` still carries a near-white foreground, a near-black plate and
+Cherenkov cyan, and now they are a **decision rather than a stand-in**: the
+generated assets — the installer icon, both tray polarities — stay Cherenkov,
+because those are identity and they are seen outside the app, where no theme is
+in force. Inside the app the mark follows the live theme, since `--mark-particle`
+resolves to `--color-accent`. Cherenkov also survives as one of the five
+families; what it stopped being at v0.10 is the default.
 
 **v0.6 slice 1 kept it open, deliberately, by making the surfaces derived.** The
 settings window needed a real surface hierarchy before the hue was settled, so it
@@ -126,12 +145,21 @@ Two rules carry it, and both are in `styles.css`:
 
 The consequence is what matters here: `--color-card`, `--color-sidebar`,
 `--color-hairline` and the rest are all `color-mix` over `--color-plate` and
-`--color-fg`. **Nothing in the settings window names a colour.** So resolving the
-question below is still one edit, on a window that already exists.
+`--color-fg`. **Nothing in the settings window names a colour.**
 
-What was *not* borrowed is the palette. t3code's canvas is `neutral-950`, a warm
-neutral black; Takyon's plate is `#0b0e12` and reads cool. Taking their hues
-would have closed this section by accident rather than by decision.
+That was half the job, and v0.10 did the other half. The *Palette* was never
+tokenised — `border-white/10`, `bg-white/10`, `bg-black/40`, `amber-*` — and
+white at 10% is a hairline on a near-black plate and nothing at all on a
+near-white one. Light mode therefore shipped from v0.6 to v0.9 with an invisible
+panel border and an invisible selection. Nothing under `apps/desktop/src` names a
+colour now, which is what made five themes possible at all.
+
+What was *not* borrowed at v0.6 was the palette. t3code's canvas is
+`neutral-950`, a warm neutral black; Takyon's plate was `#0b0e12` and read cool.
+Taking their hues then would have closed this section by accident rather than by
+decision. What v0.10 borrowed instead was their *model* — a theme is a family
+with both halves, previewed as a lit sphere — and wrote Takyon's own five
+families into it.
 
 **Slice 3 shipped a light theme, and it is derived rather than decided.** The
 question below is still open. Four values were needed to make light mode real,

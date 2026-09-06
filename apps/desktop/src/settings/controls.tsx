@@ -19,7 +19,7 @@ export function Group({ title, children }: { title?: string; children: ReactNode
   return (
     <section className="mb-6">
       {title && (
-        <h2 className="mb-2 px-1 text-[13px] font-medium text-fg/45">{title}</h2>
+        <h2 className="mb-2 px-1 text-[13px] font-medium text-fg/60">{title}</h2>
       )}
       <div className="divide-y divide-hairline overflow-hidden rounded-card border border-hairline bg-card">
         {children}
@@ -67,7 +67,7 @@ export function Row({
           )}
         </div>
         {description && (
-          <p className="mt-1 text-[12.5px] leading-snug text-fg/45">{description}</p>
+          <p className="mt-1 text-[12.5px] leading-snug text-fg/60">{description}</p>
         )}
         {/*
           Beside the control rather than in a toast: the message explains why this
@@ -75,7 +75,7 @@ export function Row({
           it (tbd v0.1 §3).
         */}
         {error && (
-          <p className="mt-1.5 text-[12.5px] leading-snug text-amber-300" role="alert">
+          <p className="mt-1.5 text-[12.5px] leading-snug text-warning" role="alert">
             {error}
           </p>
         )}
@@ -167,8 +167,8 @@ export function Chips<T extends string>({
             */
             className={`rounded-control px-2.5 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
               chosen
-                ? "bg-plate text-fg ring-1 ring-accent/45 shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
-                : "text-fg/55 hover:bg-row-hover hover:text-fg/85"
+                ? "bg-plate text-fg ring-1 ring-accent/45 shadow-[0_1px_3px_var(--color-scrim)]"
+                : "text-fg/68 hover:bg-row-hover hover:text-fg/90"
             }`}
           >
             {option.label}
@@ -203,23 +203,23 @@ export function Confirm({
     <div
       role="alertdialog"
       aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-plate/70 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6"
     >
       <div className="w-full max-w-md rounded-card border border-hairline bg-card p-5">
         <h3 className="text-[14px] font-medium text-fg">{title}</h3>
-        <p className="mt-2 text-[13px] leading-snug text-fg/60">{consequence}</p>
+        <p className="mt-2 text-[13px] leading-snug text-fg/72">{consequence}</p>
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-control px-3 py-1.5 text-[13px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg"
+            className="rounded-control px-3 py-1.5 text-[13px] text-fg/72 transition-colors hover:bg-row-hover hover:text-fg"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-control bg-amber-300/90 px-3 py-1.5 text-[13px] font-medium text-plate transition-colors hover:bg-amber-300"
+            className="rounded-control bg-warning/90 px-3 py-1.5 text-[13px] font-medium text-plate transition-colors hover:bg-warning"
           >
             {confirmLabel}
           </button>

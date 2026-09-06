@@ -556,8 +556,15 @@ let snapshot: SettingsSnapshot = {
   placement: "cursor",
   clipRetention: "1-month",
   clipBang: true,
-  theme: "system",
+  // `system`, matching Rust. Deterministic anyway: `playwright.config.ts` pins
+  // `colorScheme: "dark"`, so what "system" resolves to is fixed by the harness
+  // rather than by whatever the machine running the suite happens to be set to.
+  appearance: "system",
+  themeDark: "graphite",
+  themeLight: "graphite",
+  windowMode: "compact",
   uiSize: "default",
+  superHotkey: false,
   filesBangless: false,
   filesFallback: false,
   filesRoots: ["C:\\Users\\you\\Documents", "C:\\Programming"],
@@ -607,6 +614,22 @@ let appRows: AppAliasRow[] = [
  */
 export function setStoredPreference(patch: Partial<SettingsSnapshot>) {
   snapshot = { ...snapshot, ...patch };
+}
+
+/**
+ * What an empty line returns in Expanded mode (v0.10).
+ *
+ * No Frecency table here, so it is a fixed slice with **more than one Kind in
+ * it**: grouping is what the suite tests, and all-applications draws one heading
+ * and proves nothing. Empty in Compact, matching `query.rs`.
+ */
+function expandedSuggestions(): Entry[] {
+  if (snapshot.windowMode !== "expanded") return [];
+  return [
+    ...FIXTURES.filter((e) => e.kind === "app").slice(0, 4),
+    COMMAND_FIXTURE,
+    ...FIXTURES.filter((e) => e.kind === "system").slice(0, 2),
+  ];
 }
 
 /**
@@ -727,7 +750,11 @@ export const mock = {
             ...calcFixture(q),
             ...[...FIXTURES, COMMAND_FIXTURE].filter((e) => matches(e, q)),
           ]
-        : [],
+        : // Expanded's first view (v0.10). Rust answers the empty line with the
+          // top Frecency Entries in that mode only; here the same branch hands
+          // back a fixed slice, so the suggestions view has something to draw
+          // and something to group.
+          expandedSuggestions(),
       // The walk reserves no row since v0.9: it reports in Settings and the
       // tray, and `indexing` here only drives those.
       statusRow: false,
@@ -816,6 +843,19 @@ export const mock = {
   },
   setFilesRoots: async (roots: string[], excludes: string[]) => {
     snapshot = { ...snapshot, filesRoots: roots, filesExcludes: excludes };
+  },
+  // Fixed rather than probed: the browser build has no machine to probe, and a
+  // screenshot suite needs the same two roots back every time it resets.
+  resetFilesRoots: async () => {
+    const roots = ["C:\\Users\\you\\Documents", "C:\\Programming"];
+    snapshot = {
+      ...snapshot,
+      filesRoots: roots,
+      filesExcludes: ["node_modules", ".git", "target"],
+      filesBangless: false,
+      filesFallback: false,
+    };
+    return roots;
   },
   openedCount: async () => openedRows,
   clearOpened: async () => {
@@ -919,8 +959,24 @@ export const mock = {
         : [...aliasRows.filter((r) => r.alias !== name), { alias: name, target }];
     aliasRows.sort((a, b) => a.alias.localeCompare(b.alias));
   },
-  setTheme: async (value: SettingsSnapshot["theme"]) => {
-    snapshot = { ...snapshot, theme: value };
+  setAppearance: async (value: SettingsSnapshot["appearance"]) => {
+    snapshot = { ...snapshot, appearance: value };
+  },
+  setThemeFamily: async (appearance: "dark" | "light", id: string) => {
+    snapshot =
+      appearance === "dark"
+        ? { ...snapshot, themeDark: id }
+        : { ...snapshot, themeLight: id };
+  },
+  setWindowMode: async (value: SettingsSnapshot["windowMode"]) => {
+    snapshot = { ...snapshot, windowMode: value };
+  },
+  // Always true in the browser: there is no hook to install and no way to fail,
+  // so the switch settles where it was clicked. The Tauri path is the one that
+  // can disagree, which is why the command returns a boolean at all.
+  setSuperHotkey: async (on: boolean) => {
+    snapshot = { ...snapshot, superHotkey: on };
+    return on;
   },
   setUiSize: async (value: SettingsSnapshot["uiSize"]) => {
     snapshot = { ...snapshot, uiSize: value };

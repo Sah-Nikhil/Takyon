@@ -15,7 +15,7 @@ import { Mark } from "@/components/Mark";
 
 function Key({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] leading-none text-fg/50">
+    <kbd className="rounded border border-edge bg-key px-1.5 py-0.5 text-[10px] leading-none text-fg/64">
       {children}
     </kbd>
   );
@@ -48,12 +48,12 @@ export function Footer({
 
   return (
     <div
-      className="flex shrink-0 items-center justify-between border-t border-white/5 px-3"
+      className="flex shrink-0 items-center justify-between border-t border-seam px-3"
       style={{ height: FOOTER_HEIGHT }}
     >
       <Mark size={13} className="shrink-0 text-fg/25" />
 
-      <div className="flex items-center gap-2 text-[11px] text-fg/45">
+      <div className="flex items-center gap-2 text-[11px] text-fg/60">
         {label && (
           <>
             <span>{label}</span>

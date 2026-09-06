@@ -1,30 +1,81 @@
 @import "tailwindcss";
 
 /*
-  Colour is deliberately not locked until v0.6 (docs/brand.md). These values are
-  the same placeholders `brand/tokens.json` generates the icons from, so the UI
-  and the rasters agree; when the real scheme lands, both change together.
+  The token layer. Six roles come from the live theme (`theme/apply.ts` writes
+  them onto `<html>`), everything else is derived here.
+
+  Two rules carry the whole set and both predate the themes (v0.6, from t3code):
+  **surfaces are raised, never grey** — a card is the plate with the foreground
+  mixed into it — and **every separation is an alpha of the foreground**, so
+  dark ink at 8% on paper does the job white ink at 8% did on a near-black plate,
+  and light themes follow for free rather than being written twice.
+
+  The mixes are `in oklab`, not `in srgb`. Mixing a hue-tinted near-black toward
+  a near-white through sRGB desaturates in the middle, which is exactly the milky
+  failure those two rules exist to prevent.
+
+  The values below are Graphite's dark half, and they are only a fallback: they
+  are what a window paints in the frame before `theme/apply.ts` runs, and what
+  the visual suite gets if it never runs at all.
 */
 @theme {
-  --color-plate: #0b0e12;
-  --color-fg: #e6edf3;
-  --color-accent: #3fc8f5;
+  --color-plate: oklch(0.1905 0.0045 286);
+  --color-fg: oklch(0.966 0.0025 286);
+  /* The cool signal: selection ring, tick, "Applied", the mark's particle. */
+  --color-accent: oklch(0.762 0.118 251);
+  /*
+    The warm counterpoint (`docs/brand.md`: cool means contained, warm means it
+    left). Through v0.9 this was Tailwind's `amber-*` spelled at each of eleven
+    call sites, which no theme could move.
+  */
+  --color-outbound: oklch(0.805 0.138 72);
+  /*
+    A refused write, a dead hotkey, an alias whose application is gone. Warm too,
+    and the same value as `--color-outbound` in four of the five themes — but a
+    separate role, because nothing about a failed registry write left the
+    machine, and Halide is the theme where the two have to be told apart.
+  */
+  --color-warning: oklch(0.805 0.138 72);
+  /* Stated by the theme, not derived: the surface order inverts between halves. */
+  --color-card: oklch(0.225 0.0055 286);
+  --color-sidebar: oklch(0.2075 0.005 286);
+
+  --color-control: color-mix(in oklab, var(--color-fg) 8%, transparent);
+  --color-row-hover: color-mix(in oklab, var(--color-fg) 5%, transparent);
+  --color-row-selected: color-mix(in oklab, var(--color-fg) 10%, transparent);
+  --color-hairline: color-mix(in oklab, var(--color-fg) 8%, transparent);
 
   /*
-    Settings surfaces: t3code's construction, Raycast's layout, Takyon's hues.
-    Every one is derived from the two above, so swapping in the real scheme when
-    docs/brand.md closes is still one edit.
-
-    Raised, not grey. A card is the plate with 3% of the foreground mixed in and
-    every separation is an alpha, which is what keeps a near-black window from
-    going milky at the first border.
+    The Palette's *outer* border, and a separate role from `--color-hairline` on
+    purpose. The Settings window is opaque, so every separation in it is read
+    against the plate; the Palette is `transparent: true` over a backdrop blur,
+    so this one edge is read against an arbitrary wallpaper. Collapsing the two
+    costs the panel its silhouette on a light theme over a light desktop.
   */
-  --color-card: color-mix(in srgb, var(--color-fg) 3%, var(--color-plate));
-  --color-sidebar: color-mix(in srgb, var(--color-fg) 2%, var(--color-plate));
-  --color-control: color-mix(in srgb, var(--color-fg) 8%, transparent);
-  --color-row-hover: color-mix(in srgb, var(--color-fg) 5%, transparent);
-  --color-row-selected: color-mix(in srgb, var(--color-fg) 10%, transparent);
-  --color-hairline: color-mix(in srgb, var(--color-fg) 8%, transparent);
+  --color-edge: color-mix(in oklab, var(--color-fg) 12%, transparent);
+  /* Inner divisions: under the input row, above the footer, between panes. */
+  --color-seam: color-mix(in oklab, var(--color-fg) 6%, transparent);
+  /* Keycap fill. Lighter than a control, because a `kbd` is a label not a target. */
+  --color-key: color-mix(in oklab, var(--color-fg) 7%, transparent);
+
+  /*
+    The action menu's scrim, and the one role that must not be an alpha of the
+    foreground.
+
+    Every other separation inverts correctly because the foreground inverts. A
+    scrim does not: its job is to push the surface behind it back, and that is a
+    *darkening* in both appearances. Derived, it would put a white wash over a
+    light theme and brighten the thing it was meant to dim. Restated per
+    appearance below.
+  */
+  --color-scrim: rgb(0 0 0 / 0.45);
+
+  /*
+    The Palette's shadow, for the same reason: a near-black panel over a bright
+    desktop is already separated by its own value, while a near-white one has
+    nothing but this to sit on.
+  */
+  --shadow-panel: 0 18px 44px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.45);
 
   --radius-control: 0.5rem;
   --radius-card: 0.625rem;
@@ -35,48 +86,40 @@
     Mark.tsx paints the particle with this. It is its own token on purpose: in
     shadcn's vocabulary `--accent` is a hover *surface* sitting ~1.1:1 against the
     background, so a particle painted with it would vanish.
+
+    It follows the theme deliberately. The mark in the running app adopts the
+    live accent; everything `brand/` generates — the installer icon, both tray
+    polarities — stays locked at Cherenkov cyan, because those are identity.
   */
   --mark-particle: var(--color-accent);
 }
 
 /*
-  The light theme (v0.6 slice 3).
+  The two rules that branch on appearance rather than on the six roles.
 
-  Only four tokens are redefined. Every separation — hairlines, hover, selection,
-  controls — is an alpha of `--color-fg`, so dark ink at 8% on white does the same
-  job white ink at 8% did on near-black, and follows for free.
-
-  What does *not* follow is the surface order: on a dark canvas a card is lifted
-  by mixing the foreground in, on a light one it is lifted by being pure white
-  against a slightly grey ground. So those two are stated rather than derived.
+  `color-scheme` is not cosmetic here: it is what makes the text caret, the
+  selection highlight and every form control Windows draws for us take the right
+  polarity. It is set on `<html>` alone and never on `body`, which stays
+  transparent — the Palette's window is `transparent: true`, and giving the
+  canvas a colour puts a hard square behind the rounded panel.
 */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --color-plate: #f2f5f8;
-    --color-fg: #10151b;
-    /* Cherenkov cyan is a light source; on paper it has to darken to stay
-       readable. Same hue, enough contrast to sit on white. */
-    --color-accent: #0b7fa8;
-    --color-card: #ffffff;
-    --color-sidebar: #eaeef3;
-  }
+:root[data-appearance="dark"] {
+  color-scheme: dark;
 }
 
-/* After the media query, so an explicit choice beats the system either way. */
-:root[data-theme="light"] {
-  --color-plate: #f2f5f8;
-  --color-fg: #10151b;
-  --color-accent: #0b7fa8;
-  --color-card: #ffffff;
-  --color-sidebar: #eaeef3;
+:root[data-appearance="light"] {
+  color-scheme: light;
+  /* Lighter, because there is less to hide behind on paper and a 45% wash over
+     a white card reads as a bug rather than as depth. */
+  --color-scrim: rgb(0 0 0 / 0.28);
+  --shadow-panel:
+    0 16px 40px -14px rgb(0 0 0 / 0.28), 0 2px 8px -2px rgb(0 0 0 / 0.14);
 }
 
-:root[data-theme="dark"] {
-  --color-plate: #0b0e12;
-  --color-fg: #e6edf3;
-  --color-accent: #3fc8f5;
-  --color-card: color-mix(in srgb, var(--color-fg) 3%, var(--color-plate));
-  --color-sidebar: color-mix(in srgb, var(--color-fg) 2%, var(--color-plate));
+/* Text selection is chrome too, and the browser's default belongs to no theme. */
+::selection {
+  background-color: color-mix(in oklab, var(--color-accent) 32%, transparent);
+  color: var(--color-fg);
 }
 
 /*
@@ -147,14 +190,14 @@ input {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--color-fg) 14%, transparent);
+  background-color: color-mix(in oklab, var(--color-fg) 14%, transparent);
   background-clip: content-box;
   border: 1px solid transparent;
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--color-fg) 30%, transparent);
+  background-color: color-mix(in oklab, var(--color-fg) 30%, transparent);
 }
 
 /*

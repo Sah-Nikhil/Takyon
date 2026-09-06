@@ -449,6 +449,74 @@ it needs a key on this machine.*
 
 ---
 
+## v0.10 — Appearance
+
+**Goal:** it looks like a product someone chose, in either polarity.
+
+- [x] **The Palette is tokenised.** v0.6 converted the Settings window and stopped
+  there: everything under `palette/` still named raw colours — `border-white/10`
+  for the panel edge, `bg-white/10` for the selected row, `bg-black/40` for the
+  action-menu scrim, `amber-*` for the outbound state. White at 10% is a hairline
+  on a near-black plate and **nothing at all on a near-white one**, so light mode
+  shipped from v0.6 to v0.9 with an invisible panel border and an invisible
+  selection. Thirty-one occurrences across seven files, now zero: no file under
+  `apps/desktop/src` names a colour, bar Windows' own close-button red
+- [x] **Five themes, each carrying both halves** ([ADR-0023](./docs/adr/0023-themes-are-families-with-both-halves.md)):
+  Graphite (default), Vela, Cherenkov, Aurora, Halide. The model is
+  [t3code](https://github.com/pingdotgg/t3code)'s `themePalettes.ts` and so is the
+  picker — a grid of cards, each a lit sphere of that family's own colours,
+  because five near-black rectangles are five identical rectangles. **This closes
+  the colour question `docs/brand.md` left open**, and Cherenkov stops being the
+  default: a launcher opens over whatever wallpaper you have, and only a neutral
+  plate never argues with it
+- [x] **Seven roles per half, everything else derived.** v0.6's two rules survive
+  — surfaces raised rather than grey, every separation an alpha of the foreground
+  — so `--color-hairline`, `--color-edge`, `--color-seam`, `--color-key`,
+  `--color-control` and both row states are `color-mix` over two of the seven.
+  Authored in **oklch**, mixed **in oklab**: the discipline a five-family set
+  needs is equal lightness across families, which oklch states and hex hides
+- [x] **`--color-outbound` and `--color-warning` are separate roles.** Both were
+  Tailwind's `amber-*` through v0.9, so `docs/brand.md`'s "warm means it left"
+  looked identical to a refused registry write, and no theme could move either
+- [x] **Appearance is its own page**: Follow system appearance over a Dark theme
+  and a Light theme picker, then window mode, interface size and motion. Both
+  pickers stay usable whatever Windows is doing — choosing a dark theme in
+  daylight has to work
+- [x] **Compact and Expanded window modes, Compact by default.** Compact is
+  TBC-0006's content-sized window, unchanged. Expanded is a fixed 520px window
+  that never resizes on a keystroke, which is what buys **category headings** over
+  the Entry list and a **first view** of Frecency suggestions for the empty line.
+  A View still outranks both, or the Chat Surface opens 40px short
+- [x] **The Windows key opens the Palette, off by default**
+  ([ADR-0024](./docs/adr/0024-the-windows-key-is-a-hook-not-an-accelerator.md)).
+  It cannot be an accelerator — it is a modifier, and Start opens on its release —
+  so a `WH_KEYBOARD_LL` hook injects an undefined virtual key on the down-stroke
+  and the tap stops looking like a tap. **Nothing is ever swallowed**, which is
+  what keeps `Win+R` working and what stops the modifier sticking down. Off by
+  default because the callback is on every keystroke in the system, and because a
+  binding that dies in front of an elevated window is worse as a default than as
+  an opt-in. The chord became a dropdown when the switch landed above it
+- [x] **Contrast floor.** The foreground opacity ladder was lifted, order
+  preserved, so nothing text-bearing sits below `text-fg/46` — at v0.9's values,
+  descriptions and placeholders were under 3:1 on a light plate. The ladder is
+  still seventeen ad-hoc steps where four named tokens belong, which is
+  [`docs/tbd/v0.10.md`](./docs/tbd/v0.10.md) §2
+- [x] **File Search rebuilt** to the reference's shape: scopes as a list with an
+  add control, ignore patterns as rows, and a Reset to defaults that **removes**
+  the stored keys rather than writing today's answer back — the roots are probed
+  on every read (TBC-0005), so writing them would turn a reset into a pin
+- [ ] **Run the manual verification script** ([`docs/verify/v0.10.md`](./docs/verify/v0.10.md)).
+  Section E is the one that blocks: **the Windows-key hook has never been driven
+  by a person**, and none of it can be automated — Playwright cannot press a
+  modifier and `MockRuntime` has no message queue to install a hook on
+
+**Exit criteria:** light mode is usable on every theme, Expanded opens on a
+categorised list of suggestions, and tapping the Windows key opens the Palette
+without opening the Start menu. *Not yet claimed — E and the light-wallpaper
+half of A are unrun.*
+
+---
+
 ## v1.0 — Ship
 
 - [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing, `tauri-plugin-updater`

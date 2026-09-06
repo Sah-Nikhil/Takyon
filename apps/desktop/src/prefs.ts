@@ -12,6 +12,8 @@
 
 import type { CalcPolicy, SettingsSnapshot } from "@takyon/shared";
 import * as api from "@/api";
+import { applyTheme } from "@/theme/apply";
+import { DEFAULT_THEME } from "@/theme/themes";
 
 /**
  * The v0.1 `localStorage` keys. Read once by [`migrate`], then removed.
@@ -32,8 +34,12 @@ let current: SettingsSnapshot = {
   placement: "cursor",
   clipRetention: "1-month",
   clipBang: true,
-  theme: "system",
+  appearance: "system",
+  themeDark: DEFAULT_THEME,
+  themeLight: DEFAULT_THEME,
+  windowMode: "compact",
   uiSize: "default",
+  superHotkey: false,
   filesBangless: false,
   filesFallback: false,
   filesRoots: [],
@@ -178,23 +184,74 @@ export function applyMotionPreference(): void {
 /**
  * Push appearance and interface size onto `<html>`.
  *
- * `system` removes the attribute rather than setting it, so the stylesheet's
- * `prefers-color-scheme` query is what decides — an override that has been
- * turned off has to stop overriding, not pick a side.
+ * The theme is `theme/apply.ts`'s job: it writes the seven roles and owns the
+ * `system` question. This hands it the stored choice and sets the one attribute
+ * that is not a colour.
  */
 export function applyAppearance(): void {
-  const root = document.documentElement;
-  if (current.theme === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", current.theme);
+  applyTheme({
+    mode: current.appearance,
+    dark: current.themeDark,
+    light: current.themeLight,
+  });
 
+  const root = document.documentElement;
   if (current.uiSize === "default") root.removeAttribute("data-ui-size");
   else root.setAttribute("data-ui-size", current.uiSize);
 }
 
-export async function setTheme(value: SettingsSnapshot["theme"]): Promise<void> {
-  await api.setTheme(value);
-  current = { ...current, theme: value };
+export async function setAppearance(
+  value: SettingsSnapshot["appearance"],
+): Promise<void> {
+  await api.setAppearance(value);
+  current = { ...current, appearance: value };
   applyAppearance();
+}
+
+/**
+ * Choose the family for one half.
+ *
+ * Both halves are stored, always, even while only one is on screen: picking a
+ * dark theme while Windows is light has to be possible, or the control can only
+ * be used at the wrong time of day.
+ */
+export async function setThemeFamily(
+  appearance: "dark" | "light",
+  id: string,
+): Promise<void> {
+  await api.setThemeFamily(appearance, id);
+  current =
+    appearance === "dark"
+      ? { ...current, themeDark: id }
+      : { ...current, themeLight: id };
+  applyAppearance();
+}
+
+/**
+ * Compact or Expanded.
+ *
+ * Rust is the one that acts on it — the native window has to change height and
+ * nothing in the webview can do that — so this only updates the cache. The
+ * command resizes the Palette before it returns.
+ */
+export async function setWindowMode(
+  value: SettingsSnapshot["windowMode"],
+): Promise<void> {
+  await api.setWindowMode(value);
+  current = { ...current, windowMode: value };
+}
+
+/**
+ * Arm or release the Windows-key hook. Returns whether it is actually installed.
+ *
+ * The cache takes the *answer*, not the request: `SetWindowsHookExW` can refuse,
+ * and Rust only stores the preference when it agrees, so caching the click would
+ * leave this module the one place still claiming the hook is on.
+ */
+export async function setSuperHotkey(on: boolean): Promise<boolean> {
+  const live = await api.setSuperHotkey(on);
+  current = { ...current, superHotkey: live };
+  return live;
 }
 
 export async function setUiSize(value: SettingsSnapshot["uiSize"]): Promise<void> {

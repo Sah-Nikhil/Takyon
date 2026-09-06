@@ -51,7 +51,7 @@ export function Settings() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search settings"
           aria-label="Search settings"
-          className="mb-2 w-full rounded-control bg-control px-2.5 py-1.5 text-[13px] text-fg outline-none placeholder:text-fg/35"
+          className="mb-2 w-full rounded-control bg-control px-2.5 py-1.5 text-[13px] text-fg outline-none placeholder:text-fg/50"
         />
 
         {query.trim() ? (
@@ -116,7 +116,7 @@ function NavItem({
       className={`rounded-control px-2.5 py-1.5 text-left text-[13px] transition-colors ${
         active
           ? "bg-row-selected text-fg"
-          : "text-fg/60 hover:bg-row-hover hover:text-fg/85"
+          : "text-fg/72 hover:bg-row-hover hover:text-fg/90"
       }`}
     >
       {title}
@@ -138,7 +138,7 @@ function SearchResults({
   onPick: (pageId: string, controlId?: string) => void;
 }) {
   if (results.length === 0) {
-    return <p className="px-2.5 py-2 text-[12.5px] text-fg/40">Nothing matches.</p>;
+    return <p className="px-2.5 py-2 text-[12.5px] text-fg/56">Nothing matches.</p>;
   }
 
   return (
@@ -148,11 +148,11 @@ function SearchResults({
           key={`${hit.pageId}-${hit.controlId ?? "page"}`}
           type="button"
           onClick={() => onPick(hit.pageId, hit.controlId)}
-          className="rounded-control px-2.5 py-1.5 text-left text-[13px] text-fg/75 transition-colors hover:bg-row-hover hover:text-fg"
+          className="rounded-control px-2.5 py-1.5 text-left text-[13px] text-fg/84 transition-colors hover:bg-row-hover hover:text-fg"
         >
           <span className="block truncate">{hit.label}</span>
           {hit.controlId && (
-            <span className="block truncate text-[11.5px] text-fg/40">{hit.pageTitle}</span>
+            <span className="block truncate text-[11.5px] text-fg/56">{hit.pageTitle}</span>
           )}
         </button>
       ))}

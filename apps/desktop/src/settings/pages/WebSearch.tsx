@@ -75,12 +75,12 @@ export function WebSearch() {
               spellCheck={false}
               placeholder={settings?.hasKey ? "Replace the stored key" : "Paste your key"}
               aria-label={`${provider} key`}
-              className="w-64 rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg outline-none placeholder:text-fg/30"
+              className="w-64 rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg outline-none placeholder:text-fg/46"
             />
             <button
               type="submit"
               disabled={!draft.trim()}
-              className="rounded-control px-2 py-1 text-[12.5px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg disabled:opacity-30"
+              className="rounded-control px-2 py-1 text-[12.5px] text-fg/72 transition-colors hover:bg-row-hover hover:text-fg disabled:opacity-30"
             >
               Save
             </button>
@@ -96,7 +96,7 @@ export function WebSearch() {
             <button
               type="button"
               onClick={() => void save("")}
-              className="rounded-control px-2 py-1 text-[12.5px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg"
+              className="rounded-control px-2 py-1 text-[12.5px] text-fg/72 transition-colors hover:bg-row-hover hover:text-fg"
             >
               Remove
             </button>
@@ -111,7 +111,7 @@ export function WebSearch() {
           <button
             type="button"
             onClick={() => void api.openUrl(settings?.signupUrl ?? "https://dashboard.exa.ai/api-keys")}
-            className="rounded-control px-2 py-1 text-[12.5px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg"
+            className="rounded-control px-2 py-1 text-[12.5px] text-fg/72 transition-colors hover:bg-row-hover hover:text-fg"
           >
             Open
           </button>
@@ -124,7 +124,7 @@ export function WebSearch() {
           label={`${keyless} answers when ${provider} cannot`}
           description={`${keyless} needs no key, so !s always works. When a key is stored ${provider} is asked first, and anything that stops it — a wrong key, a spent quota, an outage — falls through to ${keyless} rather than failing. The answer header names whichever one replied.`}
         >
-          <span className="text-[12.5px] text-fg/40">ADR-0021</span>
+          <span className="text-[12.5px] text-fg/56">ADR-0021</span>
         </Row>
       </Group>
 
@@ -134,7 +134,7 @@ export function WebSearch() {
           label="Only the question, and only on Enter"
           description={`Typing !s sends nothing. On Enter the question goes to ${provider} when a key is stored and ${keyless} otherwise, the pages it names are read, and their text goes to whichever Agent is first in Settings → Agents. A line without a Bang never leaves this machine.`}
         >
-          <span className="text-[12.5px] text-fg/40">ADR-0002</span>
+          <span className="text-[12.5px] text-fg/56">ADR-0002</span>
         </Row>
       </Group>
     </div>

@@ -40,7 +40,7 @@ function Half({ value, label, tinted = false }: { value: string; label: string; 
       <div className="w-full truncate text-center text-[26px] font-semibold leading-none text-fg">
         {tinted ? tint(value) : value}
       </div>
-      <div className="rounded bg-fg/10 px-1.5 py-0.5 text-[10px] leading-none text-fg/45">
+      <div className="rounded bg-fg/10 px-1.5 py-0.5 text-[10px] leading-none text-fg/60">
         {label}
       </div>
     </div>
@@ -51,7 +51,7 @@ export function CalcCard({ entry, selected }: { entry: Entry; selected: boolean 
   return (
     <div className="px-2">
       <div
-        className="flex items-end text-[11px] leading-none text-fg/40"
+        className="flex items-end text-[11px] leading-none text-fg/56"
         style={{ height: CALC_CAPTION_HEIGHT, paddingBottom: 6 }}
       >
         Calculator
@@ -89,7 +89,7 @@ export function CalcCard({ entry, selected }: { entry: Entry; selected: boolean 
         />
         <div
           aria-hidden
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[17px] leading-none text-fg/65"
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[17px] leading-none text-fg/76"
         >
           →
         </div>

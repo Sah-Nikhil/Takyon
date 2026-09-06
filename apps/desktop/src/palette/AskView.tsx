@@ -88,7 +88,7 @@ export function AskView({
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-plate/95 shadow-2xl backdrop-blur-xl"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl"
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         // Stops here rather than dismissing the window: Escape means back one
@@ -98,13 +98,13 @@ export function AskView({
         onClose();
       }}
     >
-      <header className="flex items-center gap-2.5 border-b border-white/5 px-4 py-3">
+      <header className="flex items-center gap-2.5 border-b border-seam px-4 py-3">
         <span
           aria-hidden
           className={`size-2 shrink-0 rounded-full ${HEALTH_DOT[snapshot?.health ?? "warning"]}`}
         />
-        <span className="shrink-0 text-[13px] text-fg/70">{label}</span>
-        <span className="ms-auto shrink-0 text-[12px] text-fg/40" role="status">
+        <span className="shrink-0 text-[13px] text-fg/80">{label}</span>
+        <span className="ms-auto shrink-0 text-[12px] text-fg/56" role="status">
           {state.phase === "asking"
             ? "Thinking…"
             : state.phase === "answering"
@@ -125,13 +125,13 @@ export function AskView({
           text={state.answer || (state.phase === "failed" ? "" : `Asking ${label}…`)}
         />
         {state.phase === "failed" && (
-          <p className="text-[13px] text-amber-300" role="alert">
+          <p className="text-[13px] text-warning" role="alert">
             {state.error ?? `${label} stopped without answering.`}
           </p>
         )}
       </div>
 
-      <div className="flex items-center gap-3 border-t border-white/5 px-4 py-2.5">
+      <div className="flex items-center gap-3 border-t border-seam px-4 py-2.5">
         <input
           ref={inputRef}
           autoFocus
@@ -144,18 +144,18 @@ export function AskView({
             }
           }}
           placeholder={busy ? "Waiting for an answer…" : "Ask a follow-up"}
-          className="h-8 w-full bg-transparent text-[13px] text-fg outline-none placeholder:text-fg/35"
+          className="h-8 w-full bg-transparent text-[13px] text-fg outline-none placeholder:text-fg/50"
         />
         {busy ? (
           <button
             type="button"
             onClick={cancel}
-            className="shrink-0 rounded-md border border-white/10 px-2.5 py-1 text-[12px] text-fg/70 hover:text-fg"
+            className="shrink-0 rounded-md border border-edge px-2.5 py-1 text-[12px] text-fg/80 hover:text-fg"
           >
             Stop
           </button>
         ) : (
-          <span className="shrink-0 text-[12px] text-fg/35">Esc to go back</span>
+          <span className="shrink-0 text-[12px] text-fg/50">Esc to go back</span>
         )}
       </div>
     </div>
@@ -168,13 +168,13 @@ function Bubble({ role, text }: Message) {
   return (
     <div className={you ? "flex justify-end" : "flex justify-start"}>
       {you ? (
-        <div className="max-w-[80%] whitespace-pre-wrap rounded-xl bg-white/10 px-3 py-1.5 text-[13px] leading-relaxed">
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-xl bg-control px-3 py-1.5 text-[13px] leading-relaxed">
           {text}
         </div>
       ) : (
         // An Agent writes markdown whatever it is asked for, so the answer is
         // rendered rather than printed with its asterisks in it.
-        <Answer text={text} className="max-w-[85%] text-[13.5px] leading-relaxed text-fg/90" />
+        <Answer text={text} className="max-w-[85%] text-[13.5px] leading-relaxed text-fg/92" />
       )}
     </div>
   );

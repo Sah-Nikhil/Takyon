@@ -19,7 +19,7 @@ function Placeholder({ title }: { title: string }) {
   return (
     <div
       aria-hidden
-      className="grid size-6 shrink-0 place-items-center rounded-[5px] bg-fg/10 text-[11px] font-medium text-fg/50"
+      className="grid size-6 shrink-0 place-items-center rounded-[5px] bg-fg/10 text-[11px] font-medium text-fg/64"
     >
       {title.trim().charAt(0).toUpperCase() || "?"}
     </div>

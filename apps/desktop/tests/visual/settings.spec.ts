@@ -287,48 +287,71 @@ test("the alias list names a dead target rather than hiding it", async ({ page }
 /**
  * The Keyboard row at the window's minimum width.
  *
- * Six chips are wider than the content pane at *every* size, so the control has
- * to drop onto its own line. Before v0.6 it refused to shrink instead, squeezing
- * the label to one word per line and drawing the first chip over it.
+ * v0.10 replaced six chips with a dropdown, which is far easier on the layout,
+ * so this now guards the other direction: the control must not squeeze the label
+ * to one word per line, which is what the chips did before v0.6.
  */
 test.describe("at the minimum window width", () => {
   test.use({ viewport: { width: 680, height: 480 } });
 
-  test("the hotkey chips wrap instead of crushing the label", async ({ page }) => {
+  test("the hotkey row keeps a readable label beside its dropdown", async ({ page }) => {
     await page.goto("/?window=settings");
     await page.getByRole("button", { name: "Keyboard" }).click();
 
-    const label = page.getByText("Open Takyon with");
-    const chip = page.getByRole("radio", { name: "Alt + Space", exact: true });
+    const label = page.getByText("Open Takyon with", { exact: true });
+    const select = page.getByRole("combobox", { name: "Open Takyon with" });
     const labelBox = await label.boundingBox();
-    const chipBox = await chip.boundingBox();
-    if (!labelBox || !chipBox) throw new Error("the row did not render");
+    const selectBox = await select.boundingBox();
+    if (!labelBox || !selectBox) throw new Error("the row did not render");
 
-    // The label keeps a readable column rather than collapsing to one word.
     expect(labelBox.width).toBeGreaterThan(100);
-    // And the chips sit below it, not on top of it.
-    expect(chipBox.y).toBeGreaterThanOrEqual(labelBox.y + labelBox.height);
+    // Not drawn over each other, whichever way they ended up stacking.
+    expect(
+      selectBox.x >= labelBox.x + labelBox.width ||
+        selectBox.y >= labelBox.y + labelBox.height,
+    ).toBe(true);
 
     await expect(page).toHaveScreenshot("settings-keyboard-narrow.png");
   });
 });
 
-/** Pinned chords with a reset, never a raw capture field. */
+/** Pinned chords in a dropdown, with a reset. Never a raw capture field. */
 test("the hotkey is rebound from pinned choices", async ({ page }) => {
   await page.goto("/?window=settings");
   await page.getByRole("button", { name: "Keyboard" }).click();
 
-  const group = page.getByRole("radiogroup", { name: "Open Takyon with" });
-  await expect(group.getByRole("radio")).toHaveCount(6);
+  const select = page.getByRole("combobox", { name: "Open Takyon with" });
+  await select.click();
+  const list = page.getByRole("listbox", { name: "Open Takyon with" });
+  await expect(list.getByRole("option")).toHaveCount(6);
 
-  await page.getByRole("radio", { name: "Ctrl + Space", exact: true }).click();
-  await expect(page.getByRole("radio", { name: "Ctrl + Space", exact: true })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  await list.getByRole("option", { name: "Ctrl + Space", exact: true }).click();
+  await expect(select).toContainText("Ctrl + Space");
   await expect(page.getByRole("status")).toHaveText("Applied");
 
   await expect(page).toHaveScreenshot("settings-keyboard.png");
+});
+
+/**
+ * v0.10: the Windows key is a switch, not a chord, because it is a different
+ * mechanism (`superkey.rs`). Off by default, and turning it on must not disturb
+ * the accelerator — the two bindings are independent.
+ */
+test("the Windows key is a separate switch and starts off", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Keyboard" }).click();
+
+  const superKey = page.getByRole("switch", {
+    name: "Open Takyon with the Windows key",
+  });
+  await expect(superKey).toHaveAttribute("aria-checked", "false");
+
+  await superKey.click();
+  await expect(superKey).toHaveAttribute("aria-checked", "true");
+  // The chord is untouched by it.
+  await expect(page.getByRole("combobox", { name: "Open Takyon with" })).toContainText(
+    "Alt + Space",
+  );
 });
 
 /**
@@ -339,15 +362,22 @@ test("a refused chord keeps the previous binding and says so", async ({ page }) 
   await page.goto("/?window=settings");
   await page.getByRole("button", { name: "Keyboard" }).click();
 
-  await page.getByRole("radio", { name: "Ctrl + Space", exact: true }).click();
+  const select = page.getByRole("combobox", { name: "Open Takyon with" });
+  await select.click();
+  await page
+    .getByRole("listbox", { name: "Open Takyon with" })
+    .getByRole("option", { name: "Ctrl + Space", exact: true })
+    .click();
+
   // The mock refuses Alt+Space, standing in for PowerToys Run holding it.
-  await page.getByRole("radio", { name: "Alt + Space", exact: true }).click();
+  await select.click();
+  await page
+    .getByRole("listbox", { name: "Open Takyon with" })
+    .getByRole("option", { name: "Alt + Space", exact: true })
+    .click();
 
   await expect(page.getByRole("alert")).toContainText("already holding it");
-  await expect(page.getByRole("radio", { name: "Ctrl + Space", exact: true })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  await expect(select).toContainText("Ctrl + Space");
 });
 
 /** Hiding the tray with a dead hotkey would leave no way in, and no way out. */
@@ -363,31 +393,72 @@ test("the tray cannot be hidden while the hotkey is unregistered", async ({ page
 });
 
 /**
- * Slice 3: the override has to beat the system in **both** directions, which is
- * what separates an override from a hint. The suite runs `colorScheme: dark`, so
- * choosing Light here is the harder direction.
+ * v0.10: the override beats the system in **both** directions, which is what
+ * separates an override from a hint.
+ *
+ * `data-appearance`, not v0.9's `data-theme`, and always present: it names the
+ * half being painted, which is a fact even when Windows chose it.
  */
 test("the appearance override beats the system setting", async ({ page }) => {
   await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Appearance" }).click();
 
-  // Following the system, no attribute at all — the stylesheet decides.
-  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+  const follow = page.getByRole("switch", { name: "Follow system appearance" });
+  await expect(follow).toHaveAttribute("aria-checked", "true");
+  // While it follows, there is no third choice to make and no control offering one.
+  await expect(page.getByRole("radiogroup", { name: "Use" })).toHaveCount(0);
 
-  await page.getByRole("radio", { name: "Light" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await follow.click();
+  await page.getByRole("radio", { name: "Light", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "light");
   await expect(page).toHaveScreenshot("settings-light.png");
 
-  await page.getByRole("radio", { name: "Dark" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("radio", { name: "Dark", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "dark");
 
-  // And back to following, which must remove the attribute rather than pick a side.
-  await page.getByRole("radio", { name: "System" }).click();
-  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+  await follow.click();
+  await expect(follow).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("radiogroup", { name: "Use" })).toHaveCount(0);
+});
+
+/**
+ * v0.10: five families, each carrying both halves, and the two pickers are
+ * independent — choosing a dark theme must not touch the light one, or the
+ * control is only usable at the right time of day.
+ */
+test("a theme family is chosen per half", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Appearance" }).click();
+
+  const dark = page.getByRole("radiogroup", { name: "Dark theme" });
+  const light = page.getByRole("radiogroup", { name: "Light theme" });
+  await expect(dark.getByRole("radio")).toHaveCount(5);
+  await expect(light.getByRole("radio")).toHaveCount(5);
+
+  await dark.getByRole("radio", { name: "Vela" }).click();
+  await expect(dark.getByRole("radio", { name: "Vela" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(light.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+
+  // The window is painted from the family rather than from a stylesheet branch,
+  // so the property has to be on `<html>` itself.
+  const plate = await page.evaluate(() =>
+    document.documentElement.style.getPropertyValue("--color-plate").trim(),
+  );
+  expect(plate).not.toBe("");
+
+  await expect(page).toHaveScreenshot("settings-appearance.png");
 });
 
 /** Interface size is a root zoom, mirrored by Rust's window arithmetic. */
 test("interface size scales the whole window", async ({ page }) => {
   await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Appearance" }).click();
 
   await expect(page.locator("html")).not.toHaveAttribute("data-ui-size", /.*/);
   await page.getByRole("radio", { name: "Large" }).click();
@@ -412,16 +483,31 @@ test("the Palette honours a light override", async ({ page }) => {
     const m = (
       window as unknown as {
         __takyon_mock: {
-          setStoredPreference: (p: { theme: string }) => void;
+          setStoredPreference: (p: { appearance: string }) => void;
           emitShow: () => void;
         };
       }
     ).__takyon_mock;
-    m.setStoredPreference({ theme: "light" });
+    m.setStoredPreference({ appearance: "light" });
     m.emitShow();
   });
 
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "light");
+
+  /*
+    And the panel still has an edge, which light mode lacked through v0.9: every
+    border in `palette/` was `border-white/10`, invisible on a near-white plate.
+    Asserted as a computed colour, because a screenshot baseline accepts this
+    failure happily — it was the baseline for two releases.
+   */
+  const edge = await page.evaluate(() => {
+    const panel = document.querySelector("[cmdk-root]");
+    return panel ? getComputedStyle(panel).borderTopColor : "";
+  });
+  expect(edge).not.toBe("");
+  expect(edge).not.toBe("rgba(0, 0, 0, 0)");
+
+  await expect(page).toHaveScreenshot("palette-light.png");
 });
 
 /**
@@ -472,6 +558,8 @@ test("a query matching nothing says so rather than emptying the sidebar", async 
  */
 test("a switch applies on change and confirms", async ({ page }) => {
   await page.goto("/?window=settings");
+  // Appearance since v0.10: the motion switch left General with the rest of it.
+  await page.getByRole("button", { name: "Appearance" }).click();
   const motion = page.getByRole("switch", { name: "Turn off animations" });
 
   await expect(motion).toHaveAttribute("aria-checked", "false");
@@ -495,6 +583,7 @@ test("a switch applies on change and confirms", async ({ page }) => {
  */
 test("a refused preference write leaves the switch on what is stored", async ({ page }) => {
   await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Appearance" }).click();
   await page.evaluate(() => {
     (
       window as unknown as {

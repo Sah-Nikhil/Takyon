@@ -426,13 +426,18 @@ version number and two missing rows for two releases.
 
 ## Status and known limits
 
-Nine phases are built and shipped: the warm shell, applications, ranking,
-calculator, clipboard history, settings, file search, agents, web search.
+Ten phases are built and shipped: the warm shell, applications, ranking,
+calculator, clipboard history, settings, file search, agents, web search,
+appearance.
 
 - **The Palette will not appear over elevated windows.** That needs a signed
   UIAccess helper. The helper, its manifest and the protocol all exist and work
   against a self signed certificate. A real certificate is the remaining v1.0
-  blocker.
+  blocker. The Windows-key binding added at v0.10 has the same limitation and for
+  the same reason.
+- **The Windows-key binding has not been driven by hand.** It ships off by
+  default and every claim about it is reasoned rather than observed —
+  `docs/verify/v0.10.md` section E, which nothing can automate.
 - **No updater.** Releases carry no `latest.json` or signature yet.
 - **Windows only.** The workspace has macOS seams in place, but no macOS target.
 - **No telemetry**, and none planned before v1.

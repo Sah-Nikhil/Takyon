@@ -689,5 +689,6 @@ dismiss-on-focus-loss destroys the window every time you try to inspect it.
   that shapes it. The **permission UI** is what remains (`docs/tbd/v0.8.md` §1).
 - **The Bang registry beyond V1's four.** See `docs/plans/bang-registry.md`.
 - **A plugin API.** Designing one before three real plugins exist is guesswork.
-- **The colour palette.** The mark is locked; colour is not (`docs/brand.md`).
-  Needed by v0.6, not before.
+- ~~**The colour palette.**~~ **Settled at v0.10** (ADR-0023): five families, each
+  carrying both appearances, seven Roles per half and everything else derived.
+  What is still open is a *user-authored* theme — `docs/tbd/v0.10.md` §1.

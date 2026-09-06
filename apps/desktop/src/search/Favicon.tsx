@@ -28,7 +28,7 @@ export function Favicon({
       <span
         aria-hidden
         style={{ width: size, height: size, fontSize: size * 0.6 }}
-        className={`grid shrink-0 place-items-center rounded-[0.25rem] bg-control font-semibold uppercase text-fg/45 ${className}`}
+        className={`grid shrink-0 place-items-center rounded-[0.25rem] bg-control font-semibold uppercase text-fg/60 ${className}`}
       >
         {host.replace(/^www\./, "").charAt(0)}
       </span>

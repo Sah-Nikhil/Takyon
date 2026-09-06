@@ -32,6 +32,7 @@ pub mod rank;
 pub mod search;
 pub mod settings;
 pub mod sources;
+pub mod superkey;
 pub mod tray;
 pub mod uiaccess;
 pub mod version;
@@ -687,12 +688,16 @@ pub fn run() {
             settings::set_files_bangless,
             settings::set_files_fallback,
             settings::set_files_roots,
+            settings::reset_files_roots,
             settings::opened_count,
             settings::clear_opened,
             settings::set_recents,
             settings::set_tray,
             settings::set_placement,
-            settings::set_theme,
+            settings::set_appearance,
+            settings::set_theme_family,
+            settings::set_window_mode,
+            settings::set_super_hotkey,
             settings::set_ui_size,
             hotkey_choices,
             set_hotkey,
@@ -783,6 +788,10 @@ pub fn run() {
                     })
                     .expect("an in-memory database always opens"),
             );
+            // Before anything reads a preference. v0.10 renamed `ui.theme` to
+            // `ui.appearance`, and a rename without this is a silent reset of
+            // everyone's override back to "system".
+            settings::migrate(&prefs);
             app.manage(prefs.clone());
             app.manage(clip_store.clone());
 
@@ -850,8 +859,9 @@ pub fn run() {
             pipeline.set_web_key_present(
                 identity::data_dir().as_deref().map(search::key::present).unwrap_or(false),
             );
-            // Interface size and placement into atomics, before the first show:
-            // both sit on latency paths and must never reach SQLite there.
+            // Interface size, placement and window mode into atomics, before the
+            // first show: all three sit on latency paths and must never reach
+            // SQLite there.
             window::cache_layout_prefs(&prefs);
             app.manage(Arc::new(pipeline));
             // Empty at startup: a Turn only exists once someone asks for one.
@@ -863,6 +873,10 @@ pub fn run() {
             // Reads `settings.db` so a rebound hotkey survives a restart: one
             // indexed lookup on an open connection, which is what that costs.
             hotkey::register(&handle, hotkey::accelerator(&prefs));
+            // After the accelerator, never instead of it: the two are
+            // independent bindings and the Windows key is the optional one
+            // (v0.10). A hook that refuses must not cost anyone their Alt+Space.
+            superkey::restore(&handle, &prefs);
 
             let bench = app.state::<Bench>();
             bench.startup_ready();

@@ -36,8 +36,15 @@ pub struct Snapshot {
     pub placement: String,
     pub clip_retention: String,
     pub clip_bang: bool,
-    pub theme: String,
+    pub appearance: String,
+    /// The family painting each half (v0.10). Opaque ids; see [`prefs::THEME_DARK`].
+    pub theme_dark: String,
+    pub theme_light: String,
+    pub window_mode: String,
     pub ui_size: String,
+    /// Whether the Windows-key hook is *asked for*. Whether it is installed is
+    /// a different question, and `super_hotkey::armed` is the one that answers it.
+    pub super_hotkey: bool,
     /// Whether file Entries join Bangless results. Default off (v0.7 task 11).
     pub files_bangless: bool,
     /// Whether Windows Search answers outside the roots. Default off (task 9).
@@ -49,11 +56,42 @@ pub struct Snapshot {
 }
 
 /// Appearance, as stored. Anything unrecognised follows the system.
-pub fn theme(prefs: &Prefs) -> String {
-    match prefs.get(prefs::THEME).as_deref() {
+pub fn appearance(prefs: &Prefs) -> String {
+    match prefs.get(prefs::APPEARANCE).as_deref() {
         Some("light") => "light".into(),
         Some("dark") => "dark".into(),
         _ => "system".into(),
+    }
+}
+
+/// The family painting one half, or the default.
+///
+/// **Not validated against a list.** The registry is `theme/themes.ts`; a copy
+/// here would be a second source of truth for a set that grows with every theme,
+/// and the renderer already falls back per id (ADR-0023).
+pub fn theme_family(prefs: &Prefs, key: &str) -> String {
+    prefs
+        .get(key)
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| prefs::DEFAULT_THEME.to_string())
+}
+
+/// The Palette's shape. Anything unrecognised is Compact, which is v0.9's shape.
+pub fn window_mode(prefs: &Prefs) -> String {
+    match prefs.get(prefs::WINDOW_MODE).as_deref() {
+        Some("expanded") => "expanded".into(),
+        _ => "compact".into(),
+    }
+}
+
+/// Carry pre-v0.10 keys onto their current names.
+///
+/// Called once at startup, before anything reads a preference. `set_if_absent`
+/// on the destination, so a value written since the rename is never clobbered by
+/// a legacy one nobody has cleared.
+pub fn migrate(prefs: &Prefs) {
+    if let Some(legacy) = prefs.get(prefs::LEGACY_THEME) {
+        let _ = prefs.set_if_absent(prefs::APPEARANCE, &legacy);
     }
 }
 
@@ -94,8 +132,12 @@ impl Snapshot {
                     crate::clips::Retention::parse(&v).as_str().to_string()
                 }),
             clip_bang: prefs::flag(prefs, prefs::CLIPS_BANG, true),
-            theme: theme(prefs),
+            appearance: appearance(prefs),
+            theme_dark: theme_family(prefs, prefs::THEME_DARK),
+            theme_light: theme_family(prefs, prefs::THEME_LIGHT),
+            window_mode: window_mode(prefs),
             ui_size: ui_size(prefs),
+            super_hotkey: prefs::flag(prefs, prefs::SUPER_HOTKEY, false),
             files_bangless: prefs::flag(prefs, prefs::FILES_BANGLESS, false),
             files_fallback: prefs::flag(prefs, prefs::FILES_FALLBACK, false),
             files_roots: stored_roots(prefs)
@@ -237,6 +279,45 @@ pub fn set_files_roots(
     Ok(())
 }
 
+/// Forget the stored scopes and exclusions, back to the probed defaults (v0.10).
+///
+/// **Deletes the rows rather than writing today's defaults into them.** They are
+/// probed on every read (TBC-0005), so writing them back turns a reset into a
+/// pin. Returns the roots as they now stand, since the page cannot guess them.
+#[tauri::command]
+pub fn reset_files_roots(
+    prefs: tauri::State<'_, Arc<Prefs>>,
+    index: tauri::State<'_, Arc<crate::index::live::WalkIndex>>,
+) -> Result<Vec<String>, String> {
+    for key in [
+        prefs::FILES_ROOTS,
+        prefs::FILES_EXCLUDES,
+        prefs::FILES_BANGLESS,
+        prefs::FILES_FALLBACK,
+    ] {
+        prefs.remove(key).map_err(|e| e.to_string())?;
+    }
+
+    let roots = crate::index::roots::defaults();
+    let listed = roots
+        .include
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    index.set_roots(roots);
+    let rebuilding = index.inner().clone();
+    std::thread::spawn(move || {
+        rebuilding.set_status(crate::index::IndexStatus::Building { pct: 0 });
+        if let Err(e) = rebuilding.rebuild() {
+            eprintln!("[takyon] the index could not be rebuilt: {e}");
+        }
+        // Watchers are bound to the paths they started on, exactly as in
+        // `set_files_roots` — a new root would be walked once and never updated.
+        rebuilding.watch();
+    });
+    Ok(listed)
+}
+
 /// How many rows the Takyon-owned recents list holds (TBC-0010).
 ///
 /// Asked before the confirmation so it names a real number, exactly as the
@@ -286,14 +367,82 @@ pub fn set_placement(value: String, prefs: tauri::State<'_, Arc<Prefs>>) -> Resu
     Ok(())
 }
 
-/// Follow the system, or override it (v0.6 Appearance).
+/// Follow the system, or override it (v0.6 Appearance, renamed at v0.10).
 #[tauri::command]
-pub fn set_theme(value: String, prefs: tauri::State<'_, Arc<Prefs>>) -> Result<(), String> {
+pub fn set_appearance(value: String, prefs: tauri::State<'_, Arc<Prefs>>) -> Result<(), String> {
     let value = match value.as_str() {
         "system" | "light" | "dark" => value,
         other => return Err(format!("{other} is not an appearance")),
     };
-    prefs.set(prefs::THEME, &value).map_err(|e| e.to_string())
+    prefs
+        .set(prefs::APPEARANCE, &value)
+        .map_err(|e| e.to_string())
+}
+
+/// Choose the family for one half (v0.10).
+///
+/// The id is stored unexamined — see [`theme_family`] for why Rust holds no copy
+/// of the registry. What *is* checked is the half, because that selects the key
+/// and a typo there would write a preference nothing ever reads.
+#[tauri::command]
+pub fn set_theme_family(
+    appearance: String,
+    id: String,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+) -> Result<(), String> {
+    let key = match appearance.as_str() {
+        "dark" => prefs::THEME_DARK,
+        "light" => prefs::THEME_LIGHT,
+        other => return Err(format!("{other} is not an appearance")),
+    };
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("a theme needs an id".into());
+    }
+    prefs.set(key, id).map_err(|e| e.to_string())
+}
+
+/// Compact or Expanded (v0.10). Resizes the Palette immediately.
+///
+/// Same shape as [`set_ui_size`] and for the same reason: the window is sized in
+/// Rust, so a mode change that only wrote a row would not be visible until the
+/// next keystroke reshaped it.
+#[tauri::command]
+pub fn set_window_mode(
+    app: AppHandle,
+    value: String,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+) -> Result<(), String> {
+    let value = match value.as_str() {
+        "compact" | "expanded" => value,
+        other => return Err(format!("{other} is not a window mode")),
+    };
+    prefs
+        .set(prefs::WINDOW_MODE, &value)
+        .map_err(|e| e.to_string())?;
+    crate::window::cache_layout_prefs(&prefs);
+    crate::window::rescale(&app);
+    Ok(())
+}
+
+/// Arm or release the Windows-key hook (v0.10).
+///
+/// **Returns what is true, not what was asked.** `SetWindowsHookExW` can refuse,
+/// and a switch reading on against a hook that is not installed is worse than
+/// either honest state. The preference is only written when the hook agrees.
+#[tauri::command]
+pub fn set_super_hotkey(
+    app: AppHandle,
+    on: bool,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+) -> Result<bool, String> {
+    let live = crate::superkey::arm(&app, on);
+    if live == on {
+        prefs
+            .set(prefs::SUPER_HOTKEY, if on { "1" } else { "0" })
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(live)
 }
 
 /// Interface size. Resizes the Palette immediately, not on the next summon.
@@ -399,6 +548,7 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "appearance",
                 "calcPolicy",
                 "clipBang",
                 "clipRetention",
@@ -409,9 +559,12 @@ mod tests {
                 "placement",
                 "recents",
                 "reduceMotion",
-                "theme",
+                "superHotkey",
+                "themeDark",
+                "themeLight",
                 "tray",
-                "uiSize"
+                "uiSize",
+                "windowMode"
             ],
             "SettingsSnapshot drifted from ipc.ts"
         );

@@ -179,6 +179,8 @@ const storePreference = (page: import("@playwright/test").Page, reduceMotion: bo
  */
 test("the Settings window drives the motion preference", async ({ page }) => {
   await page.goto("/?window=settings");
+  // Appearance since v0.10: the motion switch left General with the rest of it.
+  await page.getByRole("button", { name: "Appearance" }).click();
   const motion = page.getByRole("switch", { name: "Turn off animations" });
 
   await expect(motion).toHaveAttribute("aria-checked", "false");

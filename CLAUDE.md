@@ -5,14 +5,22 @@ on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
 anything leaves the machine.
 
-**Status: v0.1 through v0.9 are built.** The Palette is warm, the hotkey works,
+**Status: v0.1 through v0.10 are built.** The Palette is warm, the hotkey works,
 and it finds and launches applications, files, clipboard history and
 calculations, with Frecency, settings and a `Ctrl+K` action menu. v0.8 adds
 **Agents**: `!c` drives Claude Code, Codex or opencode as a subprocess, answers
 inline with tools off, and promotes into a Chat Surface on a follow-up. v0.9 adds
 **web search**: `!s` retrieves through DuckDuckGo, or Exa when a key is stored,
 reads the pages over WinHTTP and has an Agent answer from them, streaming, with
-numbered sources. There is no CI.
+numbered sources. v0.10 is **appearance**: five theme families each carrying a
+light and a dark half, Compact and Expanded window modes, and the Windows key as
+an optional second binding. There is no CI.
+
+**Two verification scripts are unrun, and they are the two newest.**
+`docs/verify/v0.10.md` section E has never been executed by anyone — the
+Windows-key hook is entirely reasoned, and nothing can automate a low-level
+keyboard hook. Section A's light-wallpaper steps are also unrun, which matters
+because that is the exact case light mode was broken in from v0.6 to v0.9.
 
 **Retrieval is proven, the script is not.** ADR-0021 moved `!s` off Brave, whose
 free tier now wants a card, so a real keyless search runs here and the live test
@@ -89,6 +97,19 @@ under `docs/`.
   Two families split by role, never adjacent at the same size (**ADR-0022**).
   Both permissive, which matters while GPL is ruled out. Everything else stays
   hand-authored SVG: `Mark.tsx`, `Select.tsx`, `TitleBar.tsx`.
+- Themes: **five families, each carrying a light and a dark half** (**ADR-0023**,
+  closing the colour question `docs/brand.md` left open). The registry is
+  `src/theme/themes.ts` and is TypeScript only — Rust stores the id without
+  interpreting it. **A half states seven roles and nothing else**; every other
+  token is a `color-mix(in oklab, …)` over `plate` and `fg` in `styles.css`, so
+  adding a theme is seven numbers per half and touches no component.
+  **No file under `apps/desktop/src` may name a colour** — the one exception is
+  Windows' close-button red in `TitleBar.tsx`, and it is commented as such. That
+  rule is not style: white-at-10% borders in `palette/` were invisible on a light
+  plate and shipped that way for four phases.
+  Values are authored in **oklch** so equal lightness across families is stated
+  rather than hoped for. `--color-scrim` is the one role that is neither derived
+  nor theme-owned: it must darken in *both* appearances.
 - Storage: **SQLite** per concern (settings, clipboard, frecency), WAL mode, in
   `%LOCALAPPDATA%\v3sper\takyon\`; DB key protected by **Windows DPAPI** in
   `creds\`. This mirrors how Raycast for Windows lays out its own data directory.
@@ -284,7 +305,8 @@ the next.
   pipeline, SQLite schemas, the index format, the IPC contract. Amend it; never
   contradict it silently.
 - `docs/brand.md` — the locked mark (with path data) and the colour question,
-  which is deliberately still open until v0.6.
+  settled at v0.10 by ADR-0023: five theme families, each carrying a light and a
+  dark half.
 
 ## Gotchas
 - **Never build the release binary with bare `cargo build --release`. Always
