@@ -7,6 +7,81 @@ survives.
 Phase numbers in `ROADMAP.md` and release versions are the same number. The one
 exception is recorded under v0.8 below.
 
+## v0.10 — Appearance
+
+Takyon gets a look you choose, and a second shape. The light theme in particular
+is new in the only sense that matters: it did not work before.
+
+### Themes
+
+- **Five themes, and each one is a pair.** Graphite, Vela, Cherenkov, Aurora and
+  Halide. A theme carries a light half *and* a dark half, so Dark theme and Light
+  theme are two independent choices over the same list and Follow system
+  appearance decides which is live. Pick a dark theme at noon; it is there at
+  midnight.
+- **Light mode was broken and now is not.** The Settings window was built from
+  tokens at v0.6; the Palette never was. Its panel edge, its selected row and its
+  keycaps were all white at 10% opacity — a hairline on a near-black plate and
+  *nothing at all* on a near-white one. Light mode has shipped since v0.6 with an
+  invisible border and an invisible selection. No file in the interface names a
+  colour any more.
+- **The colour question is closed** (ADR-0023). `docs/brand.md` deliberately left
+  it open "until v0.6" and it stayed open two phases longer. A theme is seven
+  values per half and everything else is derived from two of them, so adding one
+  touches no component.
+- **Cherenkov is no longer the default.** It is still there, and it is still the
+  mark's own hue, but a launcher opens over whatever wallpaper you have and only
+  a neutral plate never argues with it.
+- **Warnings and outbound states are different colours now.** Both were the same
+  amber through v0.9, so "this left your machine" and "that write was refused"
+  looked identical and no theme could move either.
+- **Secondary text got readable.** Descriptions, subtitles and placeholders were
+  under 3:1 contrast on a light plate. Nothing text-bearing sits below 46% now.
+
+### Two window modes
+
+- **Compact** is what you already had: one line that grows a row at a time.
+- **Expanded** opens at a fixed height and stays there — no resizing as you type.
+  It has room for two things Compact cannot afford: **results grouped by kind**
+  under headings, and a **first view** of what you open most, so an empty Palette
+  is a starting point rather than a blank.
+- Chosen from a pair of drawn previews in Settings, in your live theme. Compact
+  remains the default.
+
+### The Windows key
+
+- **Tap the Windows key to open Takyon**, if you want it — off by default. It
+  cannot be a normal shortcut: the Windows key is a modifier, and the Start menu
+  opens when you *release* it. Takyon slips an unused key in behind your press so
+  the tap stops looking like a tap.
+- **Holding it is untouched.** `Win+R`, `Win+E`, `Win+L` and the rest all work,
+  because the press is never swallowed — only the meaning of a bare tap changes.
+- Off by default for three honest reasons, in ADR-0024. The short one: it needs a
+  hook on every keystroke in the system, and replacing the Start menu is a large
+  thing to do to a machine without being asked.
+- The shortcut list became a dropdown when the switch landed above it.
+
+### File Search
+
+- Rebuilt to read as a list: search scopes and ignore patterns each get rows you
+  can remove, an add field, and an empty state that names the consequence rather
+  than the absence.
+- **Reset to defaults** forgets your choices instead of writing today's answer
+  back — so a machine that gains a code directory next month still picks it up.
+
+### Faster than v0.9, not slower
+
+Re-reading preferences on every summon repainted the whole document in the colour
+it was already painted. Fixed, and the result is better than before the phase
+started: **hotkey to first pixel 25.9 ms** at p95 (from 30.4 at v0.7), first Entry
+19.3 ms, login to responsive 260 ms. All four budgets pass in both window modes.
+
+**Not verified by hand:** the Windows-key binding. Every claim about it is
+reasoned rather than observed — a low-level keyboard hook cannot be driven by a
+test — so it ships off by default and `docs/verify/v0.10.md` section E is still
+open. It also cannot reach a window running as administrator, the same limitation
+the ordinary shortcut has, for the same unsigned-helper reason.
+
 ## v0.9 — Web search
 
 `!s` answers a question in the Palette instead of opening a browser tab. It is
