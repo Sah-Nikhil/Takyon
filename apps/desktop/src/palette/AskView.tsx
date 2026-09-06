@@ -88,7 +88,7 @@ export function AskView({
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate shadow-panel"
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         // Stops here rather than dismissing the window: Escape means back one

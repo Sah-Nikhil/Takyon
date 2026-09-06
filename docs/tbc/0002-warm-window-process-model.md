@@ -286,6 +286,32 @@ The Compact column is post-guard; the Expanded column is not. See the third note
 
 `--alt-hotkey` again: Raycast holds `Alt+Space` on this machine.
 
+## Measured — v0.10.1, 2026-09-06
+
+Same machine, same session, n=100 Compact. Re-run because v0.10.1 dropped
+`backdrop-blur-xl` from the Palette panel — the blur could never have worked
+(the window is `transparent: true`, so there is no backdrop to sample) but it
+still forced a backdrop-filter compositing pass on every paint.
+
+| Metric | Budget | v0.10 (n=100) | v0.10.1 (n=100) | Verdict |
+|---|---|---|---|---|
+| Hotkey to first pixel | < 50 ms | p95 **25.9** | min 19.5 · p50 22.1 · p95 **25.6** · max 26.8 | PASS |
+| Keystroke to first Entry | < 30 ms | p95 **19.3** | min 4.1 · p50 7.8 · p95 **12.0** · max 69.4 | PASS |
+| Process start to hotkey | < 500 ms | 260.3 | **257.7** | PASS |
+| Idle RSS | < 150 MB | 62.6 | **59.8** (249.1 committed) | PASS |
+
+- **First-Entry p95 fell 19.3 → 12.0 ms, and p50 halved: 14.0 → 7.8.** That is
+  the backdrop-filter, and the size of it is the surprise. First pixel barely
+  moved, because the panel paints once there; typing repaints the list *under*
+  the filtered surface on every keystroke, which is where the pass was being
+  paid for. 24% of a budget recovered by deleting a declaration that did nothing.
+- **`max` is the only untidy number** — 69.4 ms against a 12.0 p95, up from 38.3.
+  One outlier in 302 keystrokes while the p95 more than halved, so this reads as
+  a scheduling stall rather than a slow path. Worth a second look only if p95
+  starts drifting toward it.
+- **The Expanded column is still stale**, and still pre-guard. Unchanged from the
+  note above: `docs/tbd/v0.10.md` §9.
+
 ## Alternatives
 
 | Option | Improvement if we switch | Added complexity | Switching cost |

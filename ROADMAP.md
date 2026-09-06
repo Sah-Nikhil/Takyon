@@ -517,6 +517,42 @@ half of A are unrun.*
 
 ---
 
+## v0.10.1 — What driving the release found
+
+Four defects, all found by running the installed 0.10.0 build rather than by the
+suite. Three of the four are outside what the visual layer can see at all, which
+is the honest reason it stayed green through them.
+
+- [x] **The panel ghosted whatever was behind it.** `bg-plate/95` with a
+  `backdrop-blur-xl` that does nothing: the window is `transparent: true`, so
+  there is no backdrop to blur, and 5% of the window underneath read straight
+  through as legible text. Measured on a real capture — plate 32,30,42 dropping
+  to 20,18,30 wherever a glyph sat behind it. Opaque now, blur dropped
+- [x] **A second rectangle around the Palette.** `"shadow": false` in
+  `tauri.conf.json`: on an undecorated window Tauri's shadow is drawn by DWM,
+  which brings a 1px border with it, and that border sat 8px outside the panel
+  because of the root's `p-2`. The CSS `shadow-panel` was already doing the job
+- [x] **The hotkey dropdown was clipped and silently lost options.** `Group`
+  rounds its rows with `overflow-hidden`, and the popup was `absolute` inside
+  it. Portalled to `<body>` and positioned `fixed`. The suite missed it because
+  every existing test picked the *second* row; the new one picks the last
+- [x] **Favicons never arrived.** Sources are drawn before `cache_all` has
+  fetched anything, so the first request misses on every host new to the cache
+  and `<img>` never asks again. A `SearchEvent::Icons` after the fetch now bumps
+  an epoch the rows key off, and the 404 carries `Cache-Control: no-store` so a
+  miss cannot outlive the fetch that fixes it
+- [x] **CI and release workflows** ([`.github/workflows/`](./.github/workflows/)).
+  Same shape as tesseract's. Written and parsing; **never executed**, because
+  there is no GitHub remote yet
+- [ ] **Launch at startup** — verified already on, not a defect. The `Run` value
+  `com.v3sper.takyon` is present and General reads it as on. Left unticked only
+  because it was checked rather than changed
+
+**Exit criteria:** none of its own. This is v0.10's exit criteria, minus the
+four things that made the release unusable before anyone could evaluate them.
+
+---
+
 ## v1.0 — Ship
 
 - [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing, `tauri-plugin-updater`
@@ -543,4 +579,9 @@ These block nothing today but should be settled before they become expensive:
 - **Open source vs proprietary.** Constrains dependency licensing; already ruled
   out one option (ADR-0005).
 - **Portable / no-installer mode** — in scope or not.
-- **macOS**, deliberately post-V1 (`docs/plans/post-v1.md`).
+- **macOS**, deliberately post-V1 (`docs/plans/post-v1.md`). Sized at v0.10.1
+  rather than left as a gesture: 7,410 lines across 20 files name the `windows`
+  crate, nothing carries `cfg(target_os = "macos")`, and two of the five seams
+  CLAUDE.md claims were never written as traits. `docs/plans/macos.md` has the
+  table, the three decisions it needs first, and the CI switch that is already
+  wired for the day it compiles.

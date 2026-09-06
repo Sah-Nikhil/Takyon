@@ -599,6 +599,13 @@ export type SearchEvent =
   | { kind: "searching"; provider: string }
   | { kind: "reading"; sources: SearchHit[] }
   | { kind: "answering"; turnId: number; agent: string }
+  /**
+   * Favicons for this search's hosts are on disk now.
+   *
+   * Sources go on screen before their icons exist, so every host new to the
+   * cache draws a letter tile first. This is what lets those rows ask again.
+   */
+  | { kind: "icons" }
   | { kind: "failed"; message: string };
 
 /** A `SearchEvent` with the search it belongs to. Rust flattens the two. */

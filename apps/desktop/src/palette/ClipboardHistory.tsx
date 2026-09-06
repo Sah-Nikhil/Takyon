@@ -139,7 +139,7 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate shadow-panel"
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           // Back one step, not out: Escape here returns to the search that

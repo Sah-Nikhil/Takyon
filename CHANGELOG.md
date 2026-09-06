@@ -7,6 +7,35 @@ survives.
 Phase numbers in `ROADMAP.md` and release versions are the same number. The one
 exception is recorded under v0.8 below.
 
+## v0.10.1 — What driving the release found
+
+Four defects in v0.10.0, every one of them found by using the installed build
+rather than by the test suite. Three were outside what the visual layer can see:
+it runs the interface in an ordinary browser tab, and none of a transparent
+window, a native window border, or an HTTP cache header exists there.
+
+- **The Palette no longer ghosts the window behind it.** The panel was 95%
+  opaque with a backdrop blur that could never work — the window is transparent,
+  so there is no backdrop to blur — and the remaining 5% let whatever was
+  underneath read through as legible text. Opaque now.
+- **The stray rectangle around the Palette is gone.** Windows was drawing its own
+  shadow and border on a window that already draws both itself, and because the
+  panel insets 8px for its shadow, that border landed as a second outline with a
+  gap. Takyon's own shadow was doing the work all along.
+- **The hotkey dropdown stopped hiding its last options.** The list was drawn
+  inside a card that clips its contents, so anything past the card's edge was cut
+  off with nothing to say so. It now escapes the card entirely.
+- **Favicons appear.** Sources go on screen before their icons have been fetched,
+  and a row that asked too early never asked again — so the letter tile was
+  permanent for any site you had not already visited. The rows are now told when
+  the icons land, and a miss is no longer cached for a day.
+
+Also: **CI and release workflows** for GitHub, in the same shape as tesseract's.
+Typecheck, lint and all four test layers on every push; a tag builds the
+installer and publishes it with its SHA-256. Neither has ever run — this repo has
+no remote yet. A macOS job is wired in and switched off, because there is no
+macOS build to make: `docs/plans/macos.md` says what that would take.
+
 ## v0.10 — Appearance
 
 Takyon gets a look you choose, and a second shape. The light theme in particular

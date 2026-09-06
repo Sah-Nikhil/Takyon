@@ -14,16 +14,28 @@ import { faviconUrl } from "@/api";
 export function Favicon({
   host,
   size = 16,
+  epoch = 0,
   className = "",
 }: {
   host: string;
   size?: number;
+  /**
+   * Bumped when a search finishes caching icons.
+   *
+   * A row is drawn before its host's icon has been fetched, so the first ask
+   * misses and `failed` sticks. This clears it and changes the URL, which is
+   * what makes WebView2 ask again rather than reuse the miss.
+   */
+  epoch?: number;
   className?: string;
 }) {
-  const [failed, setFailed] = useState(false);
-  const url = faviconUrl(host);
+  // The URL that missed, not a flag: a new epoch is a new URL, so the miss
+  // stops applying on its own and no effect has to reset anything.
+  const [missed, setMissed] = useState("");
+  const base = faviconUrl(host);
+  const url = base && epoch > 0 ? `${base}?v=${epoch}` : base;
 
-  if (!url || failed) {
+  if (!url || url === missed) {
     return (
       <span
         aria-hidden
@@ -42,7 +54,7 @@ export function Favicon({
       width={size}
       height={size}
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => setMissed(url)}
       style={{ width: size, height: size }}
       className={`shrink-0 rounded-[0.25rem] object-contain ${className}`}
     />

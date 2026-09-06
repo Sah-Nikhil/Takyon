@@ -624,7 +624,12 @@ export function Palette() {
           is exactly as tall as its content, so nothing has any slack to
           distribute and a flex context would only be a way to get it wrong.
          */
-        className={`overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl ${
+        /*
+          Plate opaque, no `backdrop-blur`. Window is `transparent: true`, so
+          there is no backdrop to blur: v0.10.0 shipped `bg-plate/95` with a blur
+          doing nothing, and 5% of whatever sat behind read through as ghost text.
+         */
+        className={`overflow-hidden rounded-xl border border-edge bg-plate shadow-panel ${
           expanded ? "flex h-full flex-col" : ""
         }`}
         onKeyDown={(e) => {

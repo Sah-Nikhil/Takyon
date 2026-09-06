@@ -34,15 +34,24 @@ export interface SearchState {
   error?: string;
   /** The Turn carrying the answer, so it can be cancelled. */
   turnId?: number;
+  /**
+   * Bumped when favicons land, and passed to every source row.
+   *
+   * A row asks for its icon as soon as it is drawn, which is before the fetch
+   * that fills the cache has finished — so the first ask misses, and without a
+   * number that changes, nothing would make it ask a second time.
+   */
+  icons: number;
 }
 
-export const IDLE: SearchState = { phase: "idle", sources: [], answer: "" };
+export const IDLE: SearchState = { phase: "idle", sources: [], answer: "", icons: 0 };
 
 /** The state a fresh search starts in. */
 export const started = (): SearchState => ({
   phase: "searching",
   sources: [],
   answer: "",
+  icons: 0,
 });
 
 /** Fold one progress event in. */
@@ -61,6 +70,9 @@ export function reduceSearch(state: SearchState, message: SearchMessage): Search
         agent: message.agent,
         turnId: message.turnId,
       };
+    case "icons":
+      // Phase untouched: icons arrive mid-answer and say nothing about it.
+      return { ...state, icons: state.icons + 1 };
     case "failed":
       return { ...state, phase: "failed", error: message.message };
   }

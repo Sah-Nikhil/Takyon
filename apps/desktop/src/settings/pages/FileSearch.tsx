@@ -116,38 +116,6 @@ export function FileSearch() {
         )}
       </Group>
 
-      <Group title="Ignore patterns">
-        <Row
-          id="index-excludes"
-          label="Folder names to skip"
-          description="Matched against one whole folder name, anywhere under a scope — not a path and not a glob. Skipped during the walk, so nothing inside is ever read."
-        >
-          <AddField
-            placeholder="node_modules"
-            label="Folder name to skip"
-            width="w-44"
-            onAdd={(value) => void save(roots, [...excludes, value])}
-          />
-        </Row>
-
-        {excludes.length === 0 ? (
-          <Empty>
-            Nothing is skipped. A scope containing <code>node_modules</code> or a
-            build directory will index every file inside it.
-          </Empty>
-        ) : (
-          excludes.map((name) => (
-            <ListRow
-              key={name}
-              label={name}
-              mono
-              onRemove={() => void save(roots, excludes.filter((e) => e !== name))}
-              removeLabel={`Stop skipping ${name}`}
-            />
-          ))
-        )}
-      </Group>
-
       <Group title="How to reach it">
         <Row
           id="files-bangless"
@@ -194,6 +162,38 @@ export function FileSearch() {
         >
           <Action onClick={() => setPendingReset(true)}>Reset</Action>
         </Row>
+      </Group>
+
+      <Group title="Ignore patterns">
+        <Row
+          id="index-excludes"
+          label="Folder names to skip"
+          description="Matched against one whole folder name, anywhere under a scope — not a path and not a glob. Skipped during the walk, so nothing inside is ever read."
+        >
+          <AddField
+            placeholder="node_modules"
+            label="Folder name to skip"
+            width="w-44"
+            onAdd={(value) => void save(roots, [...excludes, value])}
+          />
+        </Row>
+
+        {excludes.length === 0 ? (
+          <Empty>
+            Nothing is skipped. A scope containing <code>node_modules</code> or a
+            build directory will index every file inside it.
+          </Empty>
+        ) : (
+          excludes.map((name) => (
+            <ListRow
+              key={name}
+              label={name}
+              mono
+              onRemove={() => void save(roots, excludes.filter((e) => e !== name))}
+              removeLabel={`Stop skipping ${name}`}
+            />
+          ))
+        )}
       </Group>
 
       {pendingClear !== null && (
