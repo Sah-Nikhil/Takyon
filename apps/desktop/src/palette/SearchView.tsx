@@ -11,7 +11,7 @@
  * "cool means contained, warm means it left" (`docs/brand.md`) made literal.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SearchHit } from "@takyon/shared";
 
 import { openUrl } from "@/api";
@@ -32,6 +32,12 @@ export function SearchView({
 }) {
   const { state, search, cancel } = useSearch();
   const bodyRef = useRef<HTMLDivElement>(null);
+  /*
+    Which citation the pointer is on, so its row in the source list lifts. The
+    numbers are the only thread between a claim and its evidence, and a number
+    that highlights nothing is a footnote you have to hunt for.
+   */
+  const [litSource, setLitSource] = useState<number | null>(null);
 
   /*
     Once, for the query that opened this view. Guarded by a ref rather than an
@@ -76,8 +82,17 @@ export function SearchView({
       }}
     >
       <header className="flex items-center gap-2.5 border-b border-white/5 px-4 py-3">
-        {/* Warm, and only here: this is the one surface where data left. */}
-        <span aria-hidden className="size-2 shrink-0 rounded-full bg-amber-400" />
+        {/*
+          Warm, and only here: this is the one surface where data left. It
+          breathes while the request is out and holds still once it lands — the
+          mark's own rule, that motion means working and a spinner that never
+          stops is a lie about state.
+         */}
+        <span
+          aria-hidden
+          data-outbound-pulse={busy ? "true" : undefined}
+          className="size-2 shrink-0 rounded-full bg-amber-400"
+        />
         <span className="shrink-0 text-[13px] text-amber-200/90" data-testid="outbound">
           Left this machine · {state.provider ?? provider}
         </span>
@@ -95,33 +110,48 @@ export function SearchView({
       </header>
 
       <div ref={bodyRef} className="flex-1 overflow-y-auto px-4 py-3">
-        <p className="text-[13px] text-fg/60">{query}</p>
+        {/* The question is what this surface is about, so it is the largest
+            thing on it. It used to be set smaller than the answer it produced. */}
+        <p className="text-[15px] font-medium leading-snug text-fg/90">{query}</p>
 
         {reading && state.sources.length > 0 && <Reading sources={state.sources} />}
 
         {answered && (
-          <div className="mt-4 space-y-3" data-testid="findings">
+          <div className="mt-5 space-y-4" data-testid="findings">
             {parsed.headline && (
-              <h2 className="text-[16px] font-semibold leading-snug text-fg">{parsed.headline}</h2>
+              <h2 className="text-[17px] font-semibold leading-snug tracking-[-0.01em] text-fg">
+                {parsed.headline}
+              </h2>
             )}
             {parsed.findings.map((finding, i) => (
-              <div key={i} className="flex gap-2.5">
-                <span aria-hidden className="mt-[7px] size-1 shrink-0 rounded-full bg-accent/70" />
-                <p className="min-w-0 text-[13.5px] leading-relaxed text-fg/85">
+              <div key={i} className="grid grid-cols-[0.75rem_1fr] gap-x-3">
+                {/* A rule, not a dot: at this size a 4px dot is invisible. Two
+                    pixels, not one — a hairline at a fractional offset
+                    antialiases to grey on some rows and cyan on others. */}
+                <span aria-hidden className="mt-[9px] h-0.5 w-3 rounded-full bg-accent/60" />
+                <div className="min-w-0">
                   {finding.label && (
-                    <span className="font-semibold text-fg">{finding.label} — </span>
+                    <p className="text-[13.5px] font-semibold leading-snug text-fg">
+                      {finding.label}
+                    </p>
                   )}
-                  {finding.detail}
-                  {finding.cites.map((n) => (
-                    <Cite key={n} n={n} source={state.sources[n - 1]} />
-                  ))}
-                </p>
+                  <p
+                    className={`min-w-0 text-[13.5px] leading-relaxed text-fg/70 ${
+                      finding.label ? "mt-0.5" : ""
+                    }`}
+                  >
+                    {finding.detail}
+                    {finding.cites.map((n) => (
+                      <Cite key={n} n={n} source={state.sources[n - 1]} onHover={setLitSource} />
+                    ))}
+                  </p>
+                </div>
               </div>
             ))}
             {parsed.rest.length > 0 && (
               <Answer
                 text={parsed.rest.join("\n\n")}
-                className="text-[13.5px] leading-relaxed text-fg/85"
+                className="text-[13.5px] leading-relaxed text-fg/70"
               />
             )}
           </div>
@@ -133,7 +163,9 @@ export function SearchView({
           </p>
         )}
 
-        {!reading && state.sources.length > 0 && <Sources sources={state.sources} />}
+        {!reading && state.sources.length > 0 && (
+          <Sources sources={state.sources} lit={litSource} onHover={setLitSource} />
+        )}
       </div>
 
       <div className="flex items-center gap-3 border-t border-white/5 px-4 py-2.5">
@@ -160,12 +192,17 @@ export function SearchView({
  */
 function Reading({ sources }: { sources: SearchHit[] }) {
   return (
-    <div className="mt-4" data-testid="reading">
-      <p className="text-[13.5px] text-accent">Reading {sources.length} web pages</p>
-      <ul className="mt-1.5 space-y-0.5">
-        {sources.map((source) => (
-          <li key={source.url} className="truncate text-[13px] text-fg/45">
-            {hostOf(source.url)}
+    <div className="mt-5" data-testid="reading">
+      <p className="text-[13.5px] font-medium text-accent">Reading {sources.length} web pages</p>
+      {/* Numbered here as well as in the source list, so the two screens are one
+          list at two moments rather than two unrelated columns of hosts. */}
+      <ul className="mt-2 space-y-px">
+        {sources.map((source, i) => (
+          <li key={source.url} className="flex items-baseline gap-2.5 px-1.5 py-0.5">
+            <span className="w-4 shrink-0 rounded-[0.25rem] bg-control text-center text-[11px] tabular-nums text-fg/40">
+              {i + 1}
+            </span>
+            <span className="truncate text-[12.5px] text-fg/45">{hostOf(source.url)}</span>
           </li>
         ))}
       </ul>
@@ -173,41 +210,87 @@ function Reading({ sources }: { sources: SearchHit[] }) {
   );
 }
 
-/** One `[n]` inside a finding: the number, and the source it opens. */
-function Cite({ n, source }: { n: number; source?: SearchHit }) {
+/**
+ * One `[n]` inside a finding: the number, and the source it opens.
+ *
+ * Drawn identically to the number in the source list, because they are the same
+ * object seen twice. Hovering either lights the other.
+ */
+function Cite({
+  n,
+  source,
+  onHover,
+}: {
+  n: number;
+  source?: SearchHit;
+  onHover: (n: number | null) => void;
+}) {
   if (!source) return null;
   return (
     <button
       type="button"
       onClick={() => void openUrl(source.url)}
+      onMouseEnter={() => onHover(n)}
+      onMouseLeave={() => onHover(null)}
+      onFocus={() => onHover(n)}
+      onBlur={() => onHover(null)}
       title={source.title}
       aria-label={`Source ${n}: ${source.title}`}
-      className="ms-1 rounded-[0.25rem] bg-control px-1 align-baseline text-[11px] tabular-nums text-fg/50 hover:bg-row-selected hover:text-fg"
+      className="ms-1 rounded-[0.25rem] bg-control px-1 align-baseline text-[11px] tabular-nums text-fg/50 transition-colors hover:bg-accent/20 hover:text-accent focus-visible:bg-accent/20 focus-visible:text-accent"
     >
       {n}
     </button>
   );
 }
 
-/** The numbered list the findings cite, at the bottom, as Arc puts it. */
-function Sources({ sources }: { sources: SearchHit[] }) {
+/**
+ * The numbered list the findings cite, at the bottom, as Arc puts it.
+ *
+ * Reference weight, deliberately. Ten rows at the answer's own weight outweigh
+ * the answer, which is what made this surface read as a list of links with a
+ * note above it rather than as an answer with its workings shown.
+ */
+function Sources({
+  sources,
+  lit,
+  onHover,
+}: {
+  sources: SearchHit[];
+  lit: number | null;
+  onHover: (n: number | null) => void;
+}) {
   return (
-    <div className="mt-5 space-y-1.5 border-t border-white/5 pt-3" data-testid="sources">
+    <div className="mt-7 border-t border-hairline pt-3.5" data-testid="sources">
       <p className="text-[11px] uppercase tracking-wide text-fg/35">Sources</p>
-      {sources.map((source, i) => (
-        <button
-          key={source.url}
-          type="button"
-          onClick={() => void openUrl(source.url)}
-          className="flex w-full items-baseline gap-2 rounded-md px-1 py-0.5 text-left hover:bg-white/5"
-        >
-          <span className="shrink-0 text-[12px] tabular-nums text-fg/40">[{i + 1}]</span>
-          <span className="truncate text-[13px] text-fg/85">{source.title}</span>
-          <span className="ms-auto shrink-0 truncate text-[11px] text-fg/35">
-            {hostOf(source.url)}
-          </span>
-        </button>
-      ))}
+      <div className="mt-1.5 space-y-px">
+        {sources.map((source, i) => {
+          const n = i + 1;
+          return (
+            <button
+              key={source.url}
+              type="button"
+              onClick={() => void openUrl(source.url)}
+              onMouseEnter={() => onHover(n)}
+              onMouseLeave={() => onHover(null)}
+              className={`flex w-full items-baseline gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors ${
+                lit === n ? "bg-row-selected" : "hover:bg-row-hover"
+              }`}
+            >
+              <span
+                className={`w-4 shrink-0 rounded-[0.25rem] text-center text-[11px] tabular-nums transition-colors ${
+                  lit === n ? "bg-accent/20 text-accent" : "bg-control text-fg/50"
+                }`}
+              >
+                {n}
+              </span>
+              <span className="truncate text-[12.5px] text-fg/65">{source.title}</span>
+              <span className="ms-auto shrink-0 truncate text-[11px] text-fg/45">
+                {hostOf(source.url)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

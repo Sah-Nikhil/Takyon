@@ -251,6 +251,34 @@ input {
 }
 
 /*
+  The outbound dot, while a `!s` request is out.
+
+  Same rule as the mark: motion says a surface is working, and it stops the
+  moment it is not. Borrows the mark's easing and alternation so the two read as
+  one hand; the amplitude is smaller because this dot sits beside text it must
+  not pull focus from. Held at full opacity on its first frame, which is what a
+  disabled animation and a Playwright screenshot both show.
+*/
+@keyframes takyon-outbound-breathe {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.4;
+  }
+}
+
+[data-outbound-pulse="true"] {
+  animation: takyon-outbound-breathe 1.15s cubic-bezier(0.4, 0, 0.6, 1) infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-outbound-pulse="true"] {
+    animation: none;
+  }
+}
+
+/*
   Reduced motion means no motion, not slower motion. The mark is decorative here —
   the Palette's state is already legible from the caret and the placeholder — so
   the honest fallback is to hold both shapes at their resting frame.
