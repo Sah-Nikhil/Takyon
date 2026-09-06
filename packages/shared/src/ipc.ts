@@ -14,11 +14,11 @@
  */
 
 /**
- * The product name, for UI copy only (ADR-0011).
+ * The product name, for UI copy only (ADR-0020).
  *
- * **Never key anything off this.** Windows keys off the fixed slug
- * `com.v3sper.launcher`; renaming the product must stay a copy change. A Rust
- * test asserts this string matches `identity::DISPLAY_NAME`.
+ * **Never key anything off this.** Windows keys off the slug `com.v3sper.takyon`,
+ * which reads alike but is a separate literal. A Rust test asserts this string
+ * matches `identity::DISPLAY_NAME`.
  */
 export const DISPLAY_NAME = "Takyon";
 

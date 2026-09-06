@@ -74,7 +74,7 @@ The main app is not manifested for `uiAccess`, deliberately:
 
 ### The protocol, and its threat model
 
-The helper listens on `\\.\pipe\com.v3sper.launcher.uiaccess` and accepts eight
+The helper listens on `\\.\pipe\com.v3sper.takyon.uiaccess` and accepts eight
 bytes: a window handle. It calls `SetForegroundWindow` on it and nothing else.
 
 The pipe's default DACL admits other processes running as the same user.
@@ -190,8 +190,12 @@ against a trial before committing.
 - **Validity is capped at 460 days from 1 March 2026**, down from 39 months. This
   is a recurring renewal, not a buy-once.
 - **SmartScreen reputation accrues per signed binary**, so it restarts if the
-  executable is renamed. ADR-0011's separation of identity from display name is
-  what keeps a future rename from costing that.
+  executable is renamed. ADR-0020 settled the name before any reputation exists,
+  which is why the rename was done now rather than after signing.
+- **Defender's behavioural classifier is the nearer problem.** An unsigned
+  Takyon is quarantined as `Trojan:Win32/Bearfoos.A!ml` on a stock Windows 11
+  machine — a false positive, but a fatal one: the binary is deleted after
+  install. See `docs/tbd/v0.9.md` §Defender.
 - The signing step belongs in the release pipeline, reading the certificate from a
   gitignored `signing.secrets.ps1`. The `.gitignore` already excludes `*.pfx`,
   `*.p12` and that filename.

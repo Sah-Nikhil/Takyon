@@ -14,8 +14,11 @@ import type { CalcPolicy, SettingsSnapshot } from "@takyon/shared";
 import * as api from "@/api";
 
 /**
- * The v0.1 keys, namespaced with the identity slug rather than the display name
- * (ADR-0011). Read once by [`migrate`], then removed.
+ * The v0.1 `localStorage` keys. Read once by [`migrate`], then removed.
+ *
+ * Still spelled `launcher` deliberately: these name entries already written to
+ * disk under the pre-ADR-0020 slug. Renaming them here would not rename them in
+ * anyone's browser profile, it would just stop finding them.
  */
 const LEGACY_MOTION = "com.v3sper.launcher.reduce-motion";
 const LEGACY_CALC = "com.v3sper.launcher.calc-policy";

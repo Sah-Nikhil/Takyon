@@ -553,6 +553,11 @@ pub fn run() {
     // whole process and not just the part after the runtime was ready.
     let started = Instant::now();
 
+    // Above crashlog, which writes into the data directory: migrating it out from
+    // under an open log file is how the move half-completes (ADR-0020). Same
+    // parent, so it is a rename and costs microseconds, not the login budget.
+    identity::migrate_legacy_data_dir();
+
     // Before anything that could panic. A release build has no console, so
     // without this a panic is completely silent (ADR-0010 — written, never sent).
     crashlog::install();

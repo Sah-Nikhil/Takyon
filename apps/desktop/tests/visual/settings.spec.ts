@@ -436,7 +436,7 @@ test("About names the version and the identity slug", async ({ page }) => {
 
   await expect(page.getByText(`Version ${APP_VERSION}`)).toBeVisible();
   // ADR-0011: what Windows keys off is the slug, never the display name.
-  await expect(page.getByText("com.v3sper.launcher")).toBeVisible();
+  await expect(page.getByText("com.v3sper.takyon")).toBeVisible();
 
   await expect(page).toHaveScreenshot("settings-about.png");
 });

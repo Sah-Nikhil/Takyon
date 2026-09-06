@@ -27,7 +27,7 @@ use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, INVALID_HANDLE_VALUE
 
 /// Must match `PIPE_NAME` in `../../src/uiaccess.rs`. There is a test on that side
 /// that reads this file to check they agree, since the two crates share no types.
-const PIPE_NAME: &str = r"\\.\pipe\com.v3sper.launcher.uiaccess";
+const PIPE_NAME: &str = r"\\.\pipe\com.v3sper.takyon.uiaccess";
 
 fn main() {
     let Some(parent) = parent_pid() else {

@@ -66,38 +66,102 @@ behind it, with a line of its own wherever the sources disagree.
 
 # 3-minute pitch script
 
-Rules for this cut. The demo is the pitch, so keep talking to a minimum. No line
-is longer than fifteen words. Nothing is explained twice, once on screen and once
-out loud. Total spoken is about 130 words, which is well under a minute, and the
-rest of the three minutes is the app doing things.
+Two things to keep straight while recording. What you say is below, in order.
+What is on screen while you say it is the beat table after it.
 
-Where a beat says nothing, say nothing. Silence over a working demo reads as
-confidence.
+About 400 spoken words across three minutes. That is slow, with gaps. Every
+sentence is short on purpose, so read them as written and let the demo fill the
+space between them.
 
-| Time | On screen | Say |
-| --- | --- | --- |
-| 0:00 | Empty desktop. Press the hotkey. Palette appears. | "One keystroke. Watch what fits behind it." |
-| 0:10 | Type `chrome`, Enter. Chrome opens. | "Apps." |
-| 0:18 | Hotkey, `2+2*3`, answer in the row. | "Math." |
-| 0:26 | Hotkey, `report`, Enter, the file opens. | "Files." |
-| 0:34 | Hotkey, `bluetooth`, Enter, the Windows page opens. | "Windows settings, without digging through menus." |
-| 0:42 | Type one letter. The app you use is already first. | "It learns what you open. One letter is usually enough." |
-| 0:52 | `Ctrl+K` on a result, then reveal in Explorer. | "Enter opens it. Ctrl+K does everything else." |
-| 1:04 | `!v`, filter the clipboard list, Enter to paste. | "Bang v is everything you've copied." |
-| 1:20 | `!s who won the last f1 race`, Enter. Let it run. | "Bang s searches the web." |
-| 1:30 | Hosts appear, then headline, then findings. **Say nothing.** | (silence) |
-| 1:50 | Click a citation. The real page opens. | "Every line cites its source. Click it, there's the page." |
-| 2:05 | `!c when is the next total solar eclipse`, answer streams. | "Bang c asks an AI agent." |
-| 2:20 | Settings, Agents. The ranked list and switches. | "No account, no API key. It runs the CLI you already pay for." |
-| 2:35 | The four numbers, then the installer size in Explorer. | "Opens in 22 milliseconds. The installer is 2.5 megabytes." |
-| 2:50 | The mark, `Alt+Space`, the repo URL. | "Takyon. One key, everything behind it." |
+## What to say
+
+**0:00, the problem.** Two sentences, over an empty desktop.
+
+> Everything on your computer lives somewhere different. Start menu for apps,
+> Explorer for files, a browser tab for a question, a terminal for the AI you pay
+> for.
+>
+> I wanted one key for all of it.
+
+**0:15, the demo.** Press the hotkey and start typing. Narrate lightly, one line
+per thing, and let each one land before the next.
+
+> This is Takyon. One shortcut, from anywhere in Windows.
+>
+> Apps. Math. Files. Windows settings pages, which normally take three clicks
+> each.
+>
+> It ranks by what you actually open, so after a few days one letter is usually
+> enough. Enter opens it, Ctrl+K does everything else. Reveal it, copy the path,
+> run it as administrator.
+>
+> Bang v is everything you have copied, searchable.
+
+**1:20, the part that is not a launcher.**
+
+> Now the part I care about. Bang s searches the web.
+>
+> It asks Brave, then reads the actual pages, and comes back with a headline and
+> four lines. Every line cites where it came from, and the citation opens the
+> page. If the sources disagree, it says so instead of quietly picking one.
+>
+> That is a live search. Nothing is cached for this video.
+
+**2:00, the differentiator.** This is the bit judges will ask about, so slow
+down.
+
+> Bang c asks an AI agent directly, and a follow up keeps going in the same
+> window.
+>
+> Here is what is different. Takyon has no AI account and no API key of its own.
+> It drives the CLI you already installed and signed in to. Claude Code, Codex,
+> opencode. You rank them, and the first one switched on answers.
+>
+> So there is nothing new to subscribe to, and the same ranking is what writes
+> the web search answer.
+
+**2:35, why it is real.**
+
+> It opens in 22 milliseconds and sits at 107 megabytes. The installer is two and
+> a half.
+>
+> Web search needed HTTPS, and a Rust client would have doubled that installer,
+> so it calls the HTTP stack Windows already ships. It did not grow at all.
+>
+> Nine versions built, four layers of tests.
+
+**2:50, close.**
+
+> Takyon. One key, everything behind it.
+
+## What is on screen while you say it
+
+| Time | On screen |
+| --- | --- |
+| 0:00 | Empty desktop. Press the hotkey. Palette appears on "one key for all of it" |
+| 0:15 | Type `chrome`, Enter. Chrome opens |
+| 0:25 | Hotkey, `2+2*3`, the answer in the row |
+| 0:32 | Hotkey, `report`, Enter, the file opens |
+| 0:40 | Hotkey, `bluetooth`, Enter, the Windows page opens |
+| 0:52 | One letter, and the app you use is already first |
+| 1:00 | `Ctrl+K`, then reveal in Explorer |
+| 1:10 | `!v`, filter the list, Enter to paste |
+| 1:20 | `!s who won the last f1 race`, Enter |
+| 1:30 | Hosts being read, then headline, then findings. Let this run |
+| 1:50 | Click a citation, the real page opens |
+| 2:00 | `!c when is the next total solar eclipse`, the answer streams in |
+| 2:10 | A follow up, in the same window |
+| 2:20 | Settings, Agents: the ranked list, the switches, the locked model |
+| 2:35 | The four numbers on a card |
+| 2:45 | The installer in Explorer with its size visible |
+| 2:50 | The mark, `Alt+Space`, the repo URL |
 
 ## The three lines that have to survive
 
 If you fluff everything else, land these:
 
-1. "One keystroke. Watch what fits behind it."
-2. "No account, no API key. It runs the CLI you already pay for."
+1. "I wanted one key for all of it."
+2. "No AI account, no API key. It drives the CLI you already pay for."
 3. "Takyon. One key, everything behind it."
 
 ## Recording notes
@@ -109,10 +173,10 @@ If you fluff everything else, land these:
   video shows the wrong window opening.
 - Record `!s` and `!c` live, with a real Brave key and a signed in agent. If a
   judge asks you to run it again, you want it to work.
-- Put the query you typed as a caption when it flies past too fast to read.
+- Caption the query when it goes past too fast to read.
 - Keep every clip under twelve seconds.
 
 ## If you run long
 
-Cut in this order: the `Ctrl+K` beat, the `!v` beat, then the numbers beat. Never
-cut the four in a row at 0:10 to 0:42, or the `!s` citations.
+Cut in this order: the `Ctrl+K` line, the `!v` line, then the WinHTTP sentence at
+2:35. Never cut the no-account paragraph at 2:00, or the `!s` citations.

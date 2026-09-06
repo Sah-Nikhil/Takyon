@@ -33,10 +33,10 @@ remember.**
 
 | | Owner | Read by | Written by |
 |---|---|---|---|
-| Start at login | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\com.v3sper.launcher`, plus the `Explorer\StartupApproved\Run` flag beside it | `@tauri-apps/plugin-autostart`'s `isEnabled()`, on every mount of Settings | that plugin's `enable()`/`disable()`, and anything else on the machine |
+| Start at login | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\com.v3sper.takyon`, plus the `Explorer\StartupApproved\Run` flag beside it | `@tauri-apps/plugin-autostart`'s `isEnabled()`, on every mount of Settings | that plugin's `enable()`/`disable()`, and anything else on the machine |
 | "Turn off animations" | `localStorage` today, `settings.db` from v0.6 | `src/prefs.ts` | the Settings switch |
 | Hotkey accelerator (v0.6) | `settings.db` | the registration at startup | the Settings control |
-| Whether the question has been asked | the `first-run-complete` marker file in the ADR-0011 data directory | `firstrun::already_asked` | `firstrun::mark_asked` |
+| Whether the question has been asked | the `first-run-complete` marker file in the ADR-0020 data directory | `firstrun::already_asked` | `firstrun::mark_asked` |
 
 There is deliberately **no autostart field anywhere**: not in `settings.db`, not in
 `api.ts` as cached state, not as a Tauri command of our own. `api.ts` re-exports

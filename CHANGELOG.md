@@ -40,6 +40,46 @@ after you press Enter.
   account, stored beside the clipboard key rather than in `settings.db`, and
   never sent back to the interface — Settings shows its last four characters.
 
+### 0.9.3
+
+The identity rename, under a version number that means one thing.
+
+0.9.2 was built twice. The first build carried a data migration that refused to
+run whenever the destination directory already existed, and an empty one always
+does — anything that resolves a path through `data_dir()` creates it. On a real
+upgrade that abandoned the clipboard history in place and started the app on a
+fresh directory, with no error anywhere. It was caught by driving the installed
+build rather than by the suite, which is the reason the manual pass exists.
+
+The fix moves the directory entry by entry, keeps whatever is already at the
+destination, and removes the old directory only once it has emptied. Everything
+else in this release is the 0.9.2 entry below, which describes the same code.
+
+### 0.9.2
+
+The app's Windows identity now matches its name, and Defender's opinion of the
+installed binary is written down.
+
+- **The identity slug is `com.v3sper.takyon`** (ADR-0020, superseding ADR-0011).
+  Data moves from `%LOCALAPPDATA%3sper\launcher\` to `...3sper	akyon\`,
+  the `Run` value and the UIAccess pipe are renamed with it, and the registry and
+  the data directory now name the app you are looking at. ADR-0011 chose a neutral
+  slug as insurance against a third rename after "Taskmaster" and "Praxis" were
+  dropped; the name has settled, and the cheapest moment to fold it into the
+  identity is before anything is signed or distributed.
+- **Your clipboard history survives the move.** The directory is renamed in place
+  on first start, and the DPAPI-wrapped clipboard key is unwrapped under the old
+  entropy and rewrapped under the new one as it is read. The installer also
+  deletes the pre-rename `Run` value on upgrade, so no orphan is left pointing at
+  a binary that has moved.
+- **Defender quarantines Takyon on a stock Windows 11 machine**, as
+  `Trojan:Win32/Bearfoos.A!ml`. It is a false positive and it is not fixed here.
+  It reads as an installer failure: the install completes and the binary is
+  deleted seconds afterwards. Both installers and the binary scan clean on
+  demand, so what fired is the behaviour monitor watching the process run, not a
+  signature match. `docs/tbd/v0.9.md` §11 has the detection record, the
+  comparison with tesseract, and the workaround.
+
 ### 0.9.1
 
 Fixes found by driving the installed 0.9.0 build.

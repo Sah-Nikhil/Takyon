@@ -1,8 +1,16 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0020
 ---
 
 # The app's identity is a fixed neutral slug, independent of its display name
+
+> **Superseded by [ADR-0020](0020-identity-matches-the-settled-name.md).** The slug
+> is now `com.v3sper.takyon`. This ADR's reasoning was insurance against a third
+> rename; the name settled, so the premium stopped being worth paying. The migration
+> costs listed below are the checklist ADR-0020 worked through — kept because they
+> are still what a future rename would owe. Everything after this note describes the
+> decision as it stood, not as it stands.
 
 Everything Windows keys off — the MSIX package identity, `%LOCALAPPDATA%\<slug>\`,
 the registry `Run` value, the single-instance mutex, the updater feed — uses a

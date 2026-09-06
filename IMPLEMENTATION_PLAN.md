@@ -310,8 +310,8 @@ location and Copy path do not, because those are things people do while looking
 
 ## 4. Storage
 
-All under `%LOCALAPPDATA%\v3sper\launcher\` (ADR-0011 — the slug is fixed and
-independent of the display name). One SQLite database per concern, WAL mode.
+All under `%LOCALAPPDATA%\v3sper\takyon\` (ADR-0020 — the slug matches the
+settled name; `identity::migrate_legacy_data_dir` carries the old path across). One SQLite database per concern, WAL mode.
 
 ```sql
 -- settings.db
@@ -495,7 +495,7 @@ a cycle. It runs on a background thread so hide stays instant.
   a trusted location, which the main unelevated process asks to bring the Palette
   to the foreground. Without it the Palette will not appear over an elevated
   terminal. Dev builds run without it and accept that limitation.
-  The protocol is one named pipe, `\\.\pipe\com.v3sper.launcher.uiaccess`,
+  The protocol is one named pipe, `\\.\pipe\com.v3sper.takyon.uiaccess`,
   carrying eight bytes: an `HWND`. The helper acts on it **only if that window
   belongs to the process that launched the helper** — that ownership check is the
   whole authorisation model, and it caps the damage from the pipe's permissive
@@ -504,10 +504,11 @@ a cycle. It runs on a background thread so hide stays instant.
   a background thread and only after a cheap `GetForegroundWindow` check shows the
   ordinary path failed, so a normal show never touches the pipe. Full reasoning
   and the signing requirements: `docs/plans/uiaccess-signing.md`.
-- **The `Run` value is named `com.v3sper.launcher`**, via
+- **The `Run` value is named `com.v3sper.takyon`**, via
   `tauri-plugin-autostart`'s `Builder::app_name()`. Without that override the
-  plugin keys it off `productName`, i.e. "Takyon" — which is exactly the coupling
-  ADR-0011 exists to prevent.
+  plugin keys it off `productName`, i.e. "Takyon". The two read alike since
+  ADR-0020 and are still separate literals: the `Run` value must not follow UI
+  copy the next time the copy changes.
 
 Deferred init: the hotkey is live within ~50 ms of launch; index, icons and
 databases open afterward.

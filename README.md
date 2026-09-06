@@ -10,7 +10,7 @@ character to the front of the line and the same box reaches further: `!s` answer
 a question from the live web with every source cited, and `!c` hands it to the AI
 CLI you are already signed in to.
 
-Windows only, built on Tauri 2. Current release is **0.9.1**.
+Windows only, built on Tauri 2. Current release is **0.9.3**.
 
 ---
 
@@ -70,7 +70,7 @@ Download `Takyon_{version}_x64-setup.exe` from the release you want and run it.
 Verify it first if you like: the SHA-256 sits beside it in `SHA256SUMS.txt`.
 
 ```powershell
-Get-FileHash .\Takyon_0.9.1_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Takyon_0.9.3_x64-setup.exe -Algorithm SHA256
 ```
 
 The installer is about 2.5 MB. Takyon starts with Windows by default, which you
@@ -177,7 +177,7 @@ machine that only has Codex installed.
 3. Type `!s` and a question, then Enter.
 
 The key is wrapped with Windows DPAPI for your account and stored in
-`%LOCALAPPDATA%\v3sper\launcher\creds\`, not in the settings database, and it is
+`%LOCALAPPDATA%\v3sper\takyon\creds\`, not in the settings database, and it is
 never handed back to the interface. Settings shows the last four characters so
 you can tell which key is stored. "Remove the key" deletes it.
 
@@ -276,7 +276,7 @@ happen behind an already usable Palette.
 
 ### Where things live
 
-`%LOCALAPPDATA%\v3sper\launcher\`
+`%LOCALAPPDATA%\v3sper\takyon\`
 
 | Path | Holds |
 | --- | --- |
@@ -288,8 +288,8 @@ happen behind an already usable Palette.
 | `creds/` | DPAPI wrapped keys, one per concern |
 
 The directory, the registry `Run` value, the single instance mutex and the
-package identity all key off the fixed slug `com.v3sper.launcher`, never the
-display name, so renaming the product stays a copy change.
+package identity all key off the slug `com.v3sper.takyon`. It is a literal, not
+the display name lowercased, so a change to UI copy never reaches the registry.
 
 ### `!c`, end to end
 

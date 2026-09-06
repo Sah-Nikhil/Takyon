@@ -366,7 +366,7 @@ const CLIP_FIXTURES: Entry[] = [
   },
   {
     id: "clip:29",
-    title: "com.v3sper.launcher",
+    title: "com.v3sper.takyon",
     kind: "clip",
     score: 0,
     actions: ["paste", "copy_clip", "delete_clip"],
@@ -413,7 +413,7 @@ const CLIP_ROWS: ClipRow[] = [
     kind: "text",
     sourceExe: "C:\\Program Files\\Microsoft VS Code\\Code.exe",
     len: 19,
-    preview: "com.v3sper.launcher",
+    preview: "com.v3sper.takyon",
   },
 ];
 
@@ -944,7 +944,7 @@ export const mock = {
     order: [...askOrder],
     enabled: { ...askEnabled },
     cwd: askCwd,
-    scratch: String.raw`C:\Users\you\AppData\Local\v3sper\launcher\scratch`,
+    scratch: String.raw`C:\Users\you\AppData\Local\v3sper\takyon\scratch`,
     models: { ...askModels },
     efforts: { ...askEfforts },
   }),

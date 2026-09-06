@@ -360,11 +360,11 @@ Get-Process takyon -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -ne $underTest } |
     ForEach-Object { Write-Output "stopping imposter pid $($_.Id) $($_.Path)"; Stop-Process -Id $_.Id -Force }
 
-# The isolation. `identity::data_dir()` is LOCALAPPDATA + v3sper\launcher, so
+# The isolation. `identity::data_dir()` is LOCALAPPDATA + v3sper\takyon, so
 # redirecting the variable for the child moves the whole data tree - history, key
 # and settings alike - into the temp directory this run owns.
 $Sandbox = Join-Path $OutDir "appdata"
-$DataDir = Join-Path $Sandbox "v3sper\launcher"
+$DataDir = Join-Path $Sandbox "v3sper\takyon"
 Remove-Item $Sandbox -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 

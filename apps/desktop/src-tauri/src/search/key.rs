@@ -23,7 +23,12 @@ const HINT_LEN: usize = 4;
 /// Two secrets with different lifetimes: a blob wrapped for one must not unwrap
 /// in the other's code path. Frozen — changing it orphans a stored key, which
 /// reads as `!s` forgetting a key it never lost.
-const ENTROPY: &[u8] = b"com.v3sper.launcher/brave.key/v1";
+const ENTROPY: &[u8] = b"com.v3sper.takyon/brave.key/v1";
+
+/// The pre-ADR-0020 entropy. [`load`] rewraps a key found under it, same as the
+/// clipboard key does — no machine is known to hold one, but a key silently
+/// dropped reads as `!s` forgetting a key it never lost.
+const LEGACY_ENTROPY: &[u8] = b"com.v3sper.launcher/brave.key/v1";
 
 /// Whether a key is safe to send as a header value.
 ///
@@ -65,7 +70,18 @@ pub fn store(dir: &Path, key: &str) -> std::io::Result<()> {
 /// was copied from another account, and the fix is pasting the key again.
 pub fn load(dir: &Path) -> Option<String> {
     let wrapped = std::fs::read(key_file(dir)).ok()?;
-    let plain = crate::clips::key::unprotect_with(&wrapped, ENTROPY).ok()?;
+    let plain = match crate::clips::key::unprotect_with(&wrapped, ENTROPY) {
+        Ok(plain) => plain,
+        Err(_) => {
+            // ADR-0020 rotation. Rewrapped on the way past, so this costs one
+            // failed DPAPI call once rather than on every read.
+            let plain = crate::clips::key::unprotect_with(&wrapped, LEGACY_ENTROPY).ok()?;
+            if let Ok(rewrapped) = crate::clips::key::protect_with(&plain, ENTROPY) {
+                let _ = std::fs::write(key_file(dir), rewrapped);
+            }
+            plain
+        }
+    };
     let key = String::from_utf8(plain).ok()?;
     let key = key.trim().to_string();
     // Checked on the way out as well as in: a file written by hand, or by an

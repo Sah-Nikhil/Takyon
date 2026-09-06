@@ -82,13 +82,18 @@ under `docs/`.
   desktop setup. No shadcn CLI scaffolding — hand-build the few components needed.
   The reasoning, and what would make us switch, is in `docs/tbc/0001`.
 - Storage: **SQLite** per concern (settings, clipboard, frecency), WAL mode, in
-  `%LOCALAPPDATA%\v3sper\launcher\`; DB key protected by **Windows DPAPI** in
+  `%LOCALAPPDATA%\v3sper\takyon\`; DB key protected by **Windows DPAPI** in
   `creds\`. This mirrors how Raycast for Windows lays out its own data directory.
-- **Identity vs display name (ADR-0011).** "Takyon" is the display name and lives
-  only in UI copy and the installer. Everything Windows keys off uses the fixed
-  slug **`com.v3sper.launcher`** — package identity, data directory,
-  registry `Run` value, single-instance mutex, updater feed. Never derive any of
-  those from the display name; renaming the product must stay a copy change.
+- **Identity vs display name (ADR-0020, superseding ADR-0011).** Everything
+  Windows keys off uses the slug **`com.v3sper.takyon`** — package identity, data
+  directory (`%LOCALAPPDATA%\v3sper\takyon\`), registry `Run` value,
+  single-instance mutex, UIAccess pipe, updater feed. "Takyon" is the display name
+  and lives in UI copy and the installer. The two read alike and are still
+  **separate literals**: never derive one from the other, or the next copy change
+  silently rewrites the registry. Three things stay spelled `launcher` on purpose
+  — both `LEGACY_ENTROPY` constants (DPAPI entropy is an input to decryption, so
+  rotating it without the fallback destroys stored clips), `prefs.ts`'s
+  `LEGACY_*` localStorage keys, and the NSIS hooks' cleanup deletes.
 - File index: **unelevated scoped directory walk + `ReadDirectoryChangesW`
   watchers** into a memory-mapped inverted index (ADR-0007, superseding ADR-0004).
   No service, no elevation, no raw volume access. Behind a `FileIndex` trait, with

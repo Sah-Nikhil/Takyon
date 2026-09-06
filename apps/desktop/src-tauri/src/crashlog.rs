@@ -11,7 +11,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-/// Where crash logs live, under the data directory (ADR-0011).
+/// Where crash logs live, under the data directory (ADR-0020).
 pub fn dir() -> Option<PathBuf> {
     crate::identity::data_dir().map(|d| d.join("logs"))
 }
@@ -68,7 +68,7 @@ mod tests {
     #[test]
     fn v0_6_logs_live_under_the_data_directory() {
         let Some(d) = dir() else { return };
-        assert!(d.ends_with(r"launcher\logs"), "got {}", d.display());
+        assert!(d.ends_with(r"takyon\logs"), "got {}", d.display());
     }
 
     /// The cap is what stops a login-every-day process growing a file forever.

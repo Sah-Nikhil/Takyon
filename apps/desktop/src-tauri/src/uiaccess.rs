@@ -29,7 +29,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 
 /// The helper's rendezvous point. Named after the ADR-0011 slug like everything
 /// else the OS keys off, so a rename of the product does not orphan it.
-pub const PIPE_NAME: &str = r"\\.\pipe\com.v3sper.launcher.uiaccess";
+pub const PIPE_NAME: &str = r"\\.\pipe\com.v3sper.takyon.uiaccess";
 
 /// Point this at a helper binary to use one that is not beside the executable.
 /// Exists so a self-signed helper can be tested during development without
@@ -164,17 +164,13 @@ fn send(hwnd: u64) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    /// ADR-0011 again: the pipe is something the OS namespace keys off, so it uses
-    /// the slug. A pipe named after the display name would break on a rename and
-    /// would collide with nothing helpfully.
+    /// The pipe is an OS-namespace name, so it tracks the slug and not UI copy.
+    /// Since ADR-0020 the two read alike; the assertion is that it is built from
+    /// `IDENTITY`, which is what keeps a future rename from splitting the pair.
     #[test]
     fn v0_1_the_pipe_is_named_after_the_slug() {
         assert!(PIPE_NAME.contains(crate::identity::IDENTITY));
-        assert!(
-            !PIPE_NAME
-                .to_lowercase()
-                .contains(&crate::identity::DISPLAY_NAME.to_lowercase())
-        );
+        assert!(!PIPE_NAME.contains(crate::identity::LEGACY_IDENTITY));
     }
 
     /// Both sides have to agree on the name, and they are separate crates with no

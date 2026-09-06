@@ -14,7 +14,7 @@ import type { HotkeyStatus } from "@takyon/shared";
 import { Group, Row } from "../controls";
 
 /** ADR-0011: the slug is what Windows keys off, and it is not the display name. */
-const IDENTITY = "com.v3sper.launcher";
+const IDENTITY = "com.v3sper.takyon";
 
 export function About() {
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);

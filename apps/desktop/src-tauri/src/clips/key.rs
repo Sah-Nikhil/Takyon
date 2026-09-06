@@ -25,7 +25,12 @@ pub const KEY_LEN: usize = 32;
 
 /// Entropy mixed into every wrap. Frozen — changing it orphans every stored clip,
 /// which reads to the user as history that silently emptied itself.
-const ENTROPY: &[u8] = b"com.v3sper.launcher/clip.key/v1";
+const ENTROPY: &[u8] = b"com.v3sper.takyon/clip.key/v1";
+
+/// The pre-ADR-0020 entropy. A key wrapped under it is rewrapped in place by
+/// [`load_or_create`]; delete this and every clip stored before the rename
+/// becomes undecryptable.
+const LEGACY_ENTROPY: &[u8] = b"com.v3sper.launcher/clip.key/v1";
 
 /// 32 bytes of key material, zeroed when dropped.
 ///
@@ -70,7 +75,19 @@ pub fn load_or_create(dir: &Path) -> std::io::Result<ClipKey> {
     let path = key_file(dir);
     if path.exists() {
         let wrapped = std::fs::read(&path)?;
-        return into_key(unprotect(&wrapped)?);
+        // Current entropy first, so the migration costs one failed DPAPI call
+        // exactly once and nothing thereafter.
+        if let Ok(plain) = unprotect(&wrapped) {
+            return into_key(plain);
+        }
+        let plain = unprotect_with(&wrapped, LEGACY_ENTROPY)?;
+        let key = into_key(plain)?;
+        // Rewrap in place. A write that fails is not fatal: the key still loaded,
+        // and the next start pays the same one failed call again.
+        if let Ok(rewrapped) = protect(key.bytes()) {
+            let _ = std::fs::write(&path, rewrapped);
+        }
+        return Ok(key);
     }
 
     let key = ClipKey::generate();
@@ -236,6 +253,30 @@ mod tests {
         let mut out = CRYPT_INTEGER_BLOB::default();
         let called = unsafe { CryptUnprotectData(&blob, None, None, None, None, 0, &mut out) };
         assert!(called.is_err(), "DPAPI unwrapped the blob without entropy");
+    }
+
+    /// The ADR-0020 rename rotated this entropy. Without the rewrap every clip
+    /// stored before the rename is lost, and lost silently — the history just
+    /// looks empty. Asserts the key survives *and* that the file stops being
+    /// legacy-wrapped, so the fallback can be deleted one day.
+    #[test]
+    fn v0_10_a_legacy_wrapped_key_is_rewrapped_in_place() {
+        let dir = std::env::temp_dir().join("takyon-clipkey-rewrap");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("creds")).unwrap();
+
+        let original = ClipKey::generate();
+        let legacy = protect_with(original.bytes(), LEGACY_ENTROPY).expect("protect");
+        std::fs::write(key_file(&dir), &legacy).unwrap();
+
+        let loaded = load_or_create(&dir).expect("a legacy key must still load");
+        assert_eq!(loaded.bytes(), original.bytes());
+
+        let on_disk = std::fs::read(key_file(&dir)).unwrap();
+        assert_eq!(&unprotect(&on_disk).expect("rewrapped"), original.bytes());
+        assert!(unprotect_with(&on_disk, LEGACY_ENTROPY).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -52,7 +52,7 @@ test("!v with a query filters the history", async ({ page }) => {
  */
 test("a Bangless query never returns a clip", async ({ page }) => {
   const input = await open(page);
-  await input.fill("com.v3sper.launcher");
+  await input.fill("com.v3sper.takyon");
   await expect(page.getByRole("option")).toHaveCount(0);
 });
 

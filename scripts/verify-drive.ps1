@@ -181,7 +181,7 @@ Send-Key $VK.Esc 400
 Save-Shot "F5-esc-hides-palette"
 
 Write-Output "--- icons.bin ---"
-$blob = "$env:LOCALAPPDATA\v3sper\launcher\icons.bin"
+$blob = "$env:LOCALAPPDATA\v3sper\takyon\icons.bin"
 if (Test-Path $blob) { Get-Item $blob | Select-Object Length, LastWriteTime | Format-List }
 
 Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
