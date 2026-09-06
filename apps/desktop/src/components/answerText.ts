@@ -10,13 +10,22 @@
  * precedence, and nothing else.
  */
 
-export type SpanKind = "text" | "bold" | "italic" | "code";
+export type SpanKind = "text" | "bold" | "italic" | "code" | "link";
 
 export interface Span {
   kind: SpanKind;
   /** The content, with its marks already removed. */
   text: string;
+  /**
+   * For `link`, the source number it opens (ADR-0022). Always an index into the
+   * list Rust already checked — a target that is not a number is left as literal
+   * text, so a model that invents a URL here cannot put one on screen.
+   */
+  target?: number;
 }
+
+/** `[text](3)`, where the target is a source number and never a URL. */
+const LINK = /^\[([^\]\n]{1,120})\]\((\d{1,3})\)/;
 
 /** Openers, longest first: `**` has to beat `*` or bold renders as italic. */
 const MARKS: ReadonlyArray<{ open: string; kind: SpanKind }> = [
@@ -37,6 +46,21 @@ export function parseInline(text: string): Span[] {
   };
 
   while (at < text.length) {
+    if (text[at] === "[") {
+      const link = LINK.exec(text.slice(at));
+      if (link?.[1] && link[2]) {
+        flush();
+        spans.push({ kind: "link", text: link[1], target: Number(link[2]) });
+        at += link[0].length;
+        continue;
+      }
+      // Not a link: a bare `[2]` citation, a half-arrived one mid-stream, or a
+      // target that is not a source number. All of them are literal text.
+      plain += "[";
+      at += 1;
+      continue;
+    }
+
     const mark = MARKS.find((m) => text.startsWith(m.open, at));
     if (!mark) {
       plain += text[at];

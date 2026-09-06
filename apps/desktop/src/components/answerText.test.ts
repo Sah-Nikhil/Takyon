@@ -71,3 +71,41 @@ describe("parseInline", () => {
     expect(texts(parseInline("**x**"))).toEqual(["x"]);
   });
 });
+
+/**
+ * v0.10 (ADR-0022): a name in a finding can open the source it came from, so
+ * `[Name](3)` is a span with a target rather than four literal punctuation
+ * marks in the middle of a sentence.
+ */
+describe("v0.10 source links", () => {
+  it("reads a link as a span carrying its source number", () => {
+    const spans = parseInline("Pole went to [Pierre Gasly](3) at Monza.");
+    expect(spans).toEqual([
+      { kind: "text", text: "Pole went to " },
+      { kind: "link", text: "Pierre Gasly", target: 3 },
+      { kind: "text", text: " at Monza." },
+    ]);
+  });
+
+  /** A trailing citation is not a link, and must survive as written. */
+  it("leaves a bare citation alone", () => {
+    expect(parseInline("Kansas City 17. [2]")).toEqual([
+      { kind: "text", text: "Kansas City 17. [2]" },
+    ]);
+  });
+
+  /** Every prefix of a stream is rendered, so half a link is literal text. */
+  it("renders an unclosed link as the characters that arrived", () => {
+    expect(parseInline("Pole went to [Pierre Gas")).toEqual([
+      { kind: "text", text: "Pole went to [Pierre Gas" },
+    ]);
+  });
+
+  /** A URL target is refused: these numbers index a list Rust already checked,
+   *  and a model that writes a URL here has invented it. */
+  it("refuses a link whose target is not a source number", () => {
+    expect(parseInline("See [the page](https://evil.example/x).")).toEqual([
+      { kind: "text", text: "See [the page](https://evil.example/x)." },
+    ]);
+  });
+});

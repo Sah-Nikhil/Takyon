@@ -441,6 +441,8 @@ is the price one window charges: a conversation dies when the Palette does.*
 - [ ] **Run the manual verification script** ([`docs/verify/v0.9.md`](./docs/verify/v0.9.md)). No longer blocked on a key: `v0_10_a_real_keyless_search_returns_coherent_hits` runs one real DuckDuckGo search and passes, so retrieval is proven end to end. What is still unrun by hand is the script itself, and section 7b in particular — the fallback repainting the outbound header is the one place ADR-0021's silent failure is observable
 - [x] **0.9.3: the identity slug is `com.v3sper.takyon`** (ADR-0020, superseding ADR-0011). Data directory, `Run` value, single-instance mutex and UIAccess pipe move with it; `identity::migrate_legacy_data_dir` renames the old directory in place on first start and both DPAPI keys are rewrapped as they are read, so clipboard history survives. The migration moves entry by entry and keeps whatever is already at the destination: guarding on "the new directory is absent" abandoned the real data, because an empty one always exists by the time anything checks
 
+- [x] **0.9.5: the answer surface is Arc-shaped** (ADR-0022). Accent headline, `##` sections, a duotone icon per finding from a closed vocabulary, labels and inline `[Name](n)` links that open their source, a horizontal source-card strip, and real favicons fetched from each host and cached by host — never from a favicon service, which would hand one company every host you read
+
 **Exit criteria:** a question like "Ferrari in F1" returns a readable synthesised
 answer with working source links, without opening a browser. *Not yet claimed —
 it needs a key on this machine.*

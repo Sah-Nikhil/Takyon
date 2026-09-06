@@ -379,6 +379,18 @@ export const iconUrl = (key: string | undefined): string => {
 };
 
 /**
+ * The URL for a source host's favicon (ADR-0022).
+ *
+ * Keyed by host, not by page: hosts repeat across searches and pages never do,
+ * which is what makes the disk cache worth having. Outside Tauri it yields "",
+ * and the row draws its letter tile.
+ */
+export const faviconUrl = (host: string | undefined): string => {
+  if (!host) return "";
+  return inTauri ? convertFileSrc(host, "takyon-favicon") : mock.faviconUrl(host);
+};
+
+/**
  * Tell Rust this show's frame has been presented.
  *
  * Rust holds both timestamps, so the two clocks never have to be reconciled —

@@ -14,6 +14,7 @@ pub mod browser;
 pub mod ddg;
 pub mod exa;
 pub mod extract;
+pub mod favicon;
 pub mod fetch;
 pub mod ipc;
 pub mod key;

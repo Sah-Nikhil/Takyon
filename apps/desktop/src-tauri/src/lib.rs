@@ -619,6 +619,46 @@ pub fn run() {
                 }
             });
         })
+        /*
+          Favicons for `!s` sources (ADR-0022). Its own scheme rather than a
+          second key space inside `takyon-icon`: that store is keyed by an
+          application's path and mtime, this one by host, and one cache with two
+          key shapes is a cache nobody can reason about.
+
+          Asynchronous for the same reason as icons — a disk read must not run on
+          the thread WebView2 renders with.
+         */
+        .register_asynchronous_uri_scheme_protocol(
+            search::favicon::SCHEME,
+            |_ctx, request, responder| {
+                let host = request
+                    .uri()
+                    .path()
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or_default()
+                    .to_string();
+
+                std::thread::spawn(move || {
+                    let bytes = identity::data_dir()
+                        .and_then(|dir| search::favicon::cached(&dir, &host));
+                    let response = match bytes {
+                        // The bytes may be .ico, .png or .svg. No Content-Type is
+                        // sent on purpose: the sniffing WebView2 does is right
+                        // more often than the extension a site declares.
+                        Some(bytes) => tauri::http::Response::builder()
+                            .status(200)
+                            .header("Cache-Control", "public, max-age=86400")
+                            .body(bytes),
+                        // A miss is cosmetic: the row draws its letter tile.
+                        None => tauri::http::Response::builder().status(404).body(Vec::new()),
+                    };
+                    if let Ok(response) = response {
+                        responder.respond(response);
+                    }
+                });
+            },
+        )
         .invoke_handler(tauri::generate_handler![
             dismiss,
             open_settings,

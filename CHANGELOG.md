@@ -40,6 +40,30 @@ after you press Enter.
   account, stored beside the clipboard key rather than in `settings.db`, and
   never sent back to the interface — Settings shows its last four characters.
 
+### 0.9.5
+
+`!s` answers the way Arc Search does.
+
+- **An answer looks like an answer.** An accent headline, findings that each
+  carry an icon naming their kind and a label that opens the source it came from,
+  optional `##` sections, and a strip of source cards under the first group. The
+  numbered list is still at the bottom, at reference weight rather than
+  outweighing the answer above it.
+- **Names in the prose open their source.** `[Lando Norris](1)` is a link, not
+  punctuation. The target is always a source number and never a URL, so a model
+  that invents an address cannot put one on screen.
+- **Real favicons**, fetched from the hosts themselves — the icon a page declares,
+  falling back to `/favicon.ico`. One extra request per host, only to hosts the
+  search already contacted, cached on disk by host. **Not** a favicon service:
+  that would hand one company the list of every host you read. Sites that serve
+  nothing get a letter tile.
+- **The view no longer follows the stream.** The headline is the answer's title,
+  and following the tail scrolled it off the top before it could be read.
+
+Two icon sets arrive with this: Phosphor at duotone weight for the finding
+gutter, Iconoir for larger chrome. Both MIT. ADR-0022 has the reasoning,
+including why `og:image` thumbnails were considered and left out.
+
 ### 0.9.4
 
 `!s` no longer needs anyone to sign up for anything.

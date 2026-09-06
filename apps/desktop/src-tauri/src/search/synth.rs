@@ -51,16 +51,27 @@ pub fn prompt(question: &str, citations: &[Citation]) -> String {
          Reply in exactly this shape and nothing else:\n\
          HEADLINE: six to ten words naming the answer, not the topic.\n\
          Then three to six lines, each one:\n\
-         - **Label** — one sentence of detail. [n]\n\n\
+         - {icon} **Label** — one sentence of detail. [n]\n\n\
          The label is two or three words naming what the line is about (Final \
          score, Who directed it, Cost). The detail is one sentence, specific, \
          with the number or name in it. Every line ends with the source numbers \
          it came from, like [2] or [1][4]. The numbers go at the end of the line \
          and nowhere else in it.\n\n\
-         Where the sources disagree, say so in a line of its own and name each \
-         reading with the source behind it. Where they do not answer the question, say \
-         that in a line of its own rather than filling it in from memory. No \
-         preamble, no closing line, no heading other than HEADLINE.\n\n",
+         {icon} is one word from this list, in braces, naming what the line is \
+         about. Pick the closest; use {unknown} if none fit:\n\
+         score money time date place person group car chart up down warning \
+         check cross question quote list star globe book tool fire shield \
+         disagree unknown egg food health code music\n\n\
+         Where a name in the detail is what one of the sources is about, write \
+         it as [Name](n) so it opens that source. At most two per line, and \
+         never around the whole sentence. n is a source number, never a URL.\n\n\
+         When the answer has more than one part, group the lines under headings \
+         written as `## Two or three words`. Use at most three headings, and \
+         none at all when the answer is one group.\n\n\
+         Where the sources disagree, say so in a line of its own with {disagree} \
+         and name each reading with the source behind it. Where they do not \
+         answer the question, say that in a line of its own with {unknown} \
+         rather than filling it in from memory. No preamble, no closing line.\n\n",
     );
     out.push_str("Question: ");
     out.push_str(question.trim());

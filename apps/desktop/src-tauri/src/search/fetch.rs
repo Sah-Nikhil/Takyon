@@ -40,10 +40,14 @@ pub const MAX_BODY: usize = 512 * 1024;
 const _: () = assert!(MAX_BODY > super::extract::MAX_CHARS * 4);
 
 /// One HTTP response, already decoded.
+///
+/// Both forms of the same read: `body` for pages, `bytes` for an icon, which is
+/// not text and would be replacement characters all the way down.
 #[derive(Debug)]
 pub struct Response {
     pub status: u16,
     pub body: String,
+    pub bytes: Vec<u8>,
 }
 
 /// A GET over HTTPS. `path` includes the query string.
@@ -142,15 +146,34 @@ pub fn post(
         .iter()
         .map(|(name, value)| format!("{name}: {value}\r\n"))
         .collect();
-    send(host, path, &joined, true, "POST", Some(body.as_bytes()))
+    send(host, path, &joined, true, "POST", Some(body.as_bytes()), MAX_BODY)
+}
+
+/// Most bytes read from one favicon. A site serving a megabyte PNG as its icon
+/// is not going to be drawn at 14px any better for it.
+pub const MAX_ICON: usize = 128 * 1024;
+
+/// A GET whose body is bytes, capped at [`MAX_ICON`]. For favicons (ADR-0022).
+pub fn get_icon(url: &str) -> Result<Response, SearchError> {
+    let (host, path, secure) = parse_url(url)
+        .ok_or_else(|| SearchError::Failed(format!("{url} is not a URL Takyon can read.")))?;
+    send(
+        &host,
+        &path,
+        "Accept: image/*\r\n",
+        secure,
+        "GET",
+        None,
+        MAX_ICON,
+    )
 }
 
 fn plain(host: &str, path: &str) -> Result<Response, SearchError> {
-    send(host, path, "Accept: text/html\r\n", false, "GET", None)
+    send(host, path, "Accept: text/html\r\n", false, "GET", None, MAX_BODY)
 }
 
 fn request(host: &str, path: &str, headers: &str) -> Result<Response, SearchError> {
-    send(host, path, headers, true, "GET", None)
+    send(host, path, headers, true, "GET", None, MAX_BODY)
 }
 
 /// The WinHTTP call itself.
@@ -164,6 +187,7 @@ fn send(
     secure: bool,
     method: &str,
     body: Option<&[u8]>,
+    cap: usize,
 ) -> Result<Response, SearchError> {
     let host_w = wide(host);
     let path_w = wide(path);
@@ -240,25 +264,27 @@ fn send(
         )
         .map_err(|e| SearchError::Failed(format!("{host} sent no status: {e}")))?;
 
+        let bytes = read_bytes(request, cap)?;
         Ok(Response {
             status: status as u16,
-            body: read_body(request)?,
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+            bytes,
         })
     }
 }
 
-/// Read the body, stopping at [`MAX_BODY`].
-///
-/// Lossy UTF-8: a page in another encoding yields replacement characters rather
-/// than an error, and extraction still finds the prose around them.
-unsafe fn read_body(request: *mut core::ffi::c_void) -> Result<String, SearchError> {
+/// Read the body, stopping at `cap`.
+unsafe fn read_bytes(
+    request: *mut core::ffi::c_void,
+    cap: usize,
+) -> Result<Vec<u8>, SearchError> {
     let mut body: Vec<u8> = Vec::new();
     loop {
         let mut available: u32 = 0;
         if WinHttpQueryDataAvailable(request, &mut available).is_err() || available == 0 {
             break;
         }
-        let want = available.min((MAX_BODY - body.len()) as u32);
+        let want = available.min((cap - body.len()) as u32);
         let mut chunk = vec![0u8; want as usize];
         let mut read: u32 = 0;
         if WinHttpReadData(request, chunk.as_mut_ptr() as *mut _, want, &mut read).is_err() {
@@ -269,11 +295,11 @@ unsafe fn read_body(request: *mut core::ffi::c_void) -> Result<String, SearchErr
         }
         chunk.truncate(read as usize);
         body.extend_from_slice(&chunk);
-        if body.len() >= MAX_BODY {
+        if body.len() >= cap {
             break;
         }
     }
-    Ok(String::from_utf8_lossy(&body).into_owned())
+    Ok(body)
 }
 
 /// A WinHTTP handle that closes itself. The one mistake this API punishes

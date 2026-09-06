@@ -83,6 +83,12 @@ under `docs/`.
   **cmdk** for the Palette list, **Radix** primitives. Mirrors tesseract's proven
   desktop setup. No shadcn CLI scaffolding — hand-build the few components needed.
   The reasoning, and what would make us switch, is in `docs/tbc/0001`.
+- Icons: **Phosphor** (`@phosphor-icons/react`, MIT) for small semantic icons,
+  always at **`duotone`** weight and never `fill` — a bare stroke antialiases to
+  mud at 15px on the plate. **Iconoir** (`iconoir-react`, MIT) for larger chrome.
+  Two families split by role, never adjacent at the same size (**ADR-0022**).
+  Both permissive, which matters while GPL is ruled out. Everything else stays
+  hand-authored SVG: `Mark.tsx`, `Select.tsx`, `TitleBar.tsx`.
 - Storage: **SQLite** per concern (settings, clipboard, frecency), WAL mode, in
   `%LOCALAPPDATA%\v3sper\takyon\`; DB key protected by **Windows DPAPI** in
   `creds\`. This mirrors how Raycast for Windows lays out its own data directory.

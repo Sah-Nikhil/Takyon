@@ -134,7 +134,9 @@ test("the answer is a headline and labelled findings, with its sources", async (
   await expect(page.getByTestId("outbound")).toHaveText("Left this machine · Exa");
 
   const findings = page.getByTestId("findings");
-  await expect(findings.getByRole("heading")).toHaveText(
+  // Level 2 specifically: since v0.10 an answer also carries `##` section
+  // headings, and a bare heading role matches those too.
+  await expect(findings.getByRole("heading", { level: 2 })).toHaveText(
     "Chiefs beat the Ravens to reach the Super Bowl",
   );
   await expect(findings).toContainText("Final score");
@@ -149,7 +151,13 @@ test("the answer is a headline and labelled findings, with its sources", async (
   // The reading list has given way to the answer, and the sources sit below it.
   await expect(page.getByTestId("reading")).toHaveCount(0);
   await expect(page.getByTestId("sources")).toBeVisible();
+  // The card strip Arc puts under the first group (ADR-0022).
+  await expect(page.getByTestId("source-cards")).toBeVisible();
 
+  // Wait for the terminal state before the shot. Without this the screenshot is
+  // taken part-way through the stream, and which part varies per run — the flake
+  // that made this the one test nobody trusted.
+  await expect(page.getByRole("status")).toHaveText("Answered");
   await expect(page).toHaveScreenshot("palette-web-answered.png");
 });
 

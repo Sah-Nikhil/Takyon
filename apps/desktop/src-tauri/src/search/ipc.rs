@@ -218,7 +218,17 @@ fn run(
         },
     );
     let urls: Vec<String> = hits.iter().map(|hit| hit.url.clone()).collect();
-    let citations = synth::citations(hits, super::fetch::pages(&urls));
+    let pages = super::fetch::pages(&urls);
+    /*
+      Icons, from the pages just read and the hosts already contacted (ADR-0022).
+      Before the Turn rather than after: the Agent takes seconds, so this costs
+      nothing visible, and the source list is drawn with its icons already there
+      instead of swapping them in under the reader.
+     */
+    if let Some(dir) = data_dir(app) {
+        super::favicon::cache_all(&dir, &urls, &pages);
+    }
+    let citations = synth::citations(hits, pages);
     if cancelled.load(Ordering::Relaxed) {
         return Ok(());
     }

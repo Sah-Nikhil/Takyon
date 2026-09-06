@@ -150,11 +150,12 @@ const SEARCH_HITS: SearchHit[] = [
  */
 const MOCK_SYNTHESIS = [
   "HEADLINE: Chiefs beat the Ravens to reach the Super Bowl\n",
-  "- **Final score** — Kansas City 17, Baltimore 10, at Baltimore. [1][3]\n",
-  "- **Key play** — An interception in the fourth quarter ended the last drive. [2]\n",
-  "- **Standout** — Travis Kelce caught eleven passes for 116 yards. [4]\n",
-  "- **What is next** — Kansas City reach their fourth Super Bowl in five seasons. [5]\n",
-  "- **Sources disagree** — [2] calls the fumble a muffed catch; [3] scores it a fumble. [2][3]\n",
+  "- {score} **Final score** — Kansas City 17, Baltimore 10, at Baltimore. [1][3]\n",
+  "- {star} **Standout** — [Travis Kelce](4) caught eleven passes for 116 yards. [4]\n",
+  "- {warning} **Key play** — An interception in the fourth quarter ended it. [2]\n",
+  "## What it means\n",
+  "- {up} **Next up** — Kansas City reach their fourth Super Bowl in five seasons. [5]\n",
+  "- {disagree} **Sources disagree** — [2] calls it a muffed catch; [3] scores a fumble. [2][3]\n",
 ];
 
 /** What the mock was asked to open, so a test can assert on it. */
@@ -800,6 +801,9 @@ export const mock = {
    * machine regardless of what is installed on it.
    */
   iconUrl: (_key: string) => "",
+  // No favicons in the mock: the visual suite must draw the letter tiles, which
+  // is the state every source is in until Rust has fetched one.
+  faviconUrl: (_host: string) => "",
   /**
    * Ready with a plausible count. The visual suite never walks a disk, so a
    * Building state here would be permanent rather than transient.

@@ -1,9 +1,11 @@
 /**
- * The `!s` answer, inside the Palette (v0.9 tasks 5 and 7).
+ * The `!s` answer, inside the Palette (v0.9 tasks 5 and 7, reshaped v0.10).
  *
  * Arc Search's shape in Takyon's clothes: while it works it names the pages it
- * is reading, then answers with a headline and labelled findings, each carrying
- * the sources behind it. The chrome is `AskView`'s, so `!c` and `!s` read as one
+ * is reading, then answers with an accent headline, optional sections, and
+ * findings that each carry an icon, a linked label and the sources behind them.
+ * A card strip sits under the first group, as Arc puts it, and the numbered list
+ * is at the bottom. The chrome is `AskView`'s, so `!c` and `!s` read as one
  * product.
  *
  * One window, exactly as `!c`: Escape goes back a step rather than dismissing.
@@ -11,13 +13,20 @@
  * "cool means contained, warm means it left" (`docs/brand.md`) made literal.
  */
 
+import { OpenNewWindow } from "iconoir-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SearchHit } from "@takyon/shared";
 
 import { openUrl } from "@/api";
 import { Answer } from "@/components/Answer";
+import { InlineText } from "@/components/Answer";
+import { Favicon } from "@/search/Favicon";
+import { FindingIcon } from "@/search/FindingIcon";
 import { parseAnswer } from "@/search/findings";
 import { useSearch } from "@/search/useSearch";
+
+/** Cards in the strip. Six is two screens of horizontal scroll, not a carousel. */
+const CARDS = 6;
 
 export function SearchView({
   query,
@@ -52,13 +61,16 @@ export function SearchView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Follows only while the answer is being written. Once it is done the view
-  // stays where the reader is, rather than yanking the headline off the top.
-  useEffect(() => {
-    if (state.phase !== "answering") return;
-    const el = bodyRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [state.answer, state.phase]);
+  /*
+    Deliberately not following the stream. Since v0.10 the headline is the
+    answer's title, and following the tail scrolls it off the top before it has
+    been read — the reader ends up at the bottom of something they never saw the
+    start of. Arc does the same: text arrives below the fold and you stay put.
+
+    It also removes a real source of flake: where the view settled depended on
+    how fast tokens arrived, so the screenshot of a finished answer was never
+    the same twice.
+   */
 
   const parsed = useMemo(
     () => parseAnswer(state.answer, state.sources.length),
@@ -69,7 +81,14 @@ export function SearchView({
   // The reading list stands until the first token lands, which is where Arc
   // swaps its middle screen for the answer.
   const reading = state.phase === "reading" || (state.phase === "answering" && !state.answer);
-  const answered = Boolean(parsed.headline || parsed.findings.length || parsed.rest.length);
+  const answered = Boolean(
+    parsed.headline || parsed.sections.some((s) => s.findings.length || s.rest.length),
+  );
+
+  const open = (n: number) => {
+    const source = state.sources[n - 1];
+    if (source) void openUrl(source.url);
+  };
 
   return (
     <div
@@ -110,50 +129,74 @@ export function SearchView({
       </header>
 
       <div ref={bodyRef} className="flex-1 overflow-y-auto px-4 py-3">
-        {/* The question is what this surface is about, so it is the largest
-            thing on it. It used to be set smaller than the answer it produced. */}
-        <p className="text-[15px] font-medium leading-snug text-fg/90">{query}</p>
+        {/* The question, set as the thing that was asked rather than as a
+            caption. Arc keeps it in the search field; there is no field here. */}
+        <p className="text-[13px] text-fg/45">{query}</p>
 
         {reading && state.sources.length > 0 && <Reading sources={state.sources} />}
 
         {answered && (
-          <div className="mt-5 space-y-4" data-testid="findings">
+          <div data-testid="findings">
             {parsed.headline && (
-              <h2 className="text-[17px] font-semibold leading-snug tracking-[-0.01em] text-fg">
+              <h2 className="mt-2 text-[21px] font-bold leading-[1.15] tracking-[-0.02em] text-accent">
                 {parsed.headline}
               </h2>
             )}
-            {parsed.findings.map((finding, i) => (
-              <div key={i} className="grid grid-cols-[0.75rem_1fr] gap-x-3">
-                {/* A rule, not a dot: at this size a 4px dot is invisible. Two
-                    pixels, not one — a hairline at a fractional offset
-                    antialiases to grey on some rows and cyan on others. */}
-                <span aria-hidden className="mt-[9px] h-0.5 w-3 rounded-full bg-accent/60" />
-                <div className="min-w-0">
-                  {finding.label && (
-                    <p className="text-[13.5px] font-semibold leading-snug text-fg">
-                      {finding.label}
-                    </p>
+
+            {parsed.sections.map((section, s) => (
+              <div key={s}>
+                {section.heading && (
+                  <h3 className="mt-6 text-[16px] font-semibold leading-snug text-fg">
+                    {section.heading}
+                  </h3>
+                )}
+                <div className={section.heading ? "mt-2.5 space-y-3" : "mt-4 space-y-3"}>
+                  {section.findings.map((finding, i) => (
+                    <div key={i} className="grid grid-cols-[1.15rem_1fr] gap-x-2.5">
+                      <FindingIcon
+                        name={finding.icon}
+                        className="mt-[3px] size-[15px] shrink-0 text-accent/75"
+                      />
+                      <p className="min-w-0 text-[13.5px] leading-relaxed text-fg/80">
+                        {finding.label &&
+                          (finding.cites[0] ? (
+                            // The label opens the source it came from, which is
+                            // what makes Arc's labels links rather than headings.
+                            <button
+                              type="button"
+                              onClick={() => open(finding.cites[0]!)}
+                              onMouseEnter={() => setLitSource(finding.cites[0] ?? null)}
+                              onMouseLeave={() => setLitSource(null)}
+                              className="font-semibold text-accent underline decoration-accent/35 underline-offset-2 hover:decoration-accent"
+                            >
+                              {finding.label}
+                            </button>
+                          ) : (
+                            <span className="font-semibold text-fg">{finding.label}</span>
+                          ))}
+                        {finding.label && <span className="text-fg/40"> — </span>}
+                        <InlineText text={finding.detail} onOpenSource={open} />
+                        {finding.cites.map((n) => (
+                          <Cite key={n} n={n} source={state.sources[n - 1]} onHover={setLitSource} />
+                        ))}
+                      </p>
+                    </div>
+                  ))}
+                  {section.rest.length > 0 && (
+                    <Answer
+                      text={section.rest.join("\n\n")}
+                      onOpenSource={open}
+                      className="text-[13.5px] leading-relaxed text-fg/80"
+                    />
                   )}
-                  <p
-                    className={`min-w-0 text-[13.5px] leading-relaxed text-fg/70 ${
-                      finding.label ? "mt-0.5" : ""
-                    }`}
-                  >
-                    {finding.detail}
-                    {finding.cites.map((n) => (
-                      <Cite key={n} n={n} source={state.sources[n - 1]} onHover={setLitSource} />
-                    ))}
-                  </p>
                 </div>
+
+                {/* Arc drops a card strip under the first group, before the
+                    answer carries on. One strip only: a second reads as an ad
+                    break rather than as evidence. */}
+                {s === 0 && state.sources.length > 0 && <Cards sources={state.sources} />}
               </div>
             ))}
-            {parsed.rest.length > 0 && (
-              <Answer
-                text={parsed.rest.join("\n\n")}
-                className="text-[13.5px] leading-relaxed text-fg/70"
-              />
-            )}
           </div>
         )}
 
@@ -192,20 +235,55 @@ export function SearchView({
  */
 function Reading({ sources }: { sources: SearchHit[] }) {
   return (
-    <div className="mt-5" data-testid="reading">
-      <p className="text-[13.5px] font-medium text-accent">Reading {sources.length} web pages</p>
-      {/* Numbered here as well as in the source list, so the two screens are one
-          list at two moments rather than two unrelated columns of hosts. */}
-      <ul className="mt-2 space-y-px">
-        {sources.map((source, i) => (
-          <li key={source.url} className="flex items-baseline gap-2.5 px-1.5 py-0.5">
-            <span className="w-4 shrink-0 rounded-[0.25rem] bg-control text-center text-[11px] tabular-nums text-fg/40">
-              {i + 1}
-            </span>
-            <span className="truncate text-[12.5px] text-fg/45">{hostOf(source.url)}</span>
+    <div className="mt-4" data-testid="reading">
+      <p className="text-[15px] font-semibold text-accent">Reading {sources.length} web pages</p>
+      <ul className="mt-2 space-y-1">
+        {sources.map((source) => (
+          <li key={source.url} className="flex items-center gap-2.5">
+            <Favicon host={hostOf(source.url)} size={15} />
+            <span className="truncate text-[13px] text-fg/45">{hostOf(source.url)}</span>
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * The card strip Arc puts inside the answer.
+ *
+ * Horizontal rather than wrapped: a strip that wraps is a grid, and a grid of
+ * six sources competes with the answer instead of sitting under it.
+ */
+function Cards({ sources }: { sources: SearchHit[] }) {
+  return (
+    <div className="mt-4 -mx-4 overflow-x-auto px-4 pb-1" data-testid="source-cards">
+      <div className="flex w-max gap-2">
+        {sources.slice(0, CARDS).map((source) => {
+          const host = hostOf(source.url);
+          return (
+            <button
+              key={source.url}
+              type="button"
+              onClick={() => void openUrl(source.url)}
+              title={source.title}
+              className="group flex h-[92px] w-[178px] shrink-0 flex-col justify-between rounded-card border border-hairline bg-card p-2.5 text-left transition-colors hover:border-accent/30"
+            >
+              <span className="line-clamp-3 text-[12px] leading-snug text-fg/80">
+                {source.title}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Favicon host={host} size={13} />
+                <span className="truncate text-[11px] text-fg/45">{host}</span>
+                <OpenNewWindow
+                  aria-hidden
+                  className="ms-auto size-3 shrink-0 text-fg/0 transition-colors group-hover:text-fg/40"
+                />
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -272,7 +350,7 @@ function Sources({
               onClick={() => void openUrl(source.url)}
               onMouseEnter={() => onHover(n)}
               onMouseLeave={() => onHover(null)}
-              className={`flex w-full items-baseline gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors ${
+              className={`flex w-full items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors ${
                 lit === n ? "bg-row-selected" : "hover:bg-row-hover"
               }`}
             >
@@ -283,6 +361,7 @@ function Sources({
               >
                 {n}
               </span>
+              <Favicon host={hostOf(source.url)} size={14} />
               <span className="truncate text-[12.5px] text-fg/65">{source.title}</span>
               <span className="ms-auto shrink-0 truncate text-[11px] text-fg/45">
                 {hostOf(source.url)}
