@@ -110,7 +110,7 @@ fn call(webview: &tauri::WebviewWindow<MockRuntime>, cmd: &str, body: Value) -> 
 }
 
 /// `interface SettingsSnapshot` in `packages/shared/src/ipc.ts`.
-const SNAPSHOT_KEYS: [&str; 13] = [
+const SNAPSHOT_KEYS: [&str; 17] = [
     "reduceMotion",
     "calcPolicy",
     "recents",
@@ -118,8 +118,12 @@ const SNAPSHOT_KEYS: [&str; 13] = [
     "placement",
     "clipRetention",
     "clipBang",
-    "theme",
+    "appearance",
+    "themeDark",
+    "themeLight",
+    "windowMode",
     "uiSize",
+    "superHotkey",
     "filesBangless",
     "filesFallback",
     "filesRoots",

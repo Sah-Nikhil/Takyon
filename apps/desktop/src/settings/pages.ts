@@ -15,6 +15,7 @@
 import { About } from "./pages/About";
 import { Advanced } from "./pages/Advanced";
 import { Agents } from "./pages/Agents";
+import { Appearance } from "./pages/Appearance";
 import { Applications } from "./pages/Applications";
 import { Calculator } from "./pages/Calculator";
 import { ClipboardHistory } from "./pages/ClipboardHistory";
@@ -37,10 +38,33 @@ export const PAGES: SettingsPage[] = [
         label: "Start Takyon when I log in",
         keywords: ["autostart", "startup", "login", "boot"],
       },
+    ],
+  },
+  {
+    id: "appearance",
+    title: "Appearance",
+    tier: "app",
+    Component: Appearance,
+    controls: [
       {
-        id: "theme",
-        label: "Appearance",
-        keywords: ["theme", "dark", "light", "colour", "color"],
+        id: "appearance",
+        label: "Follow system appearance",
+        keywords: ["theme", "dark", "light", "colour", "color", "system", "follow"],
+      },
+      {
+        id: "theme-dark",
+        label: "Dark theme",
+        keywords: ["theme", "dark", "graphite", "vela", "cherenkov", "aurora", "halide"],
+      },
+      {
+        id: "theme-light",
+        label: "Light theme",
+        keywords: ["theme", "light", "graphite", "vela", "cherenkov", "aurora", "halide"],
+      },
+      {
+        id: "window-mode",
+        label: "Window mode",
+        keywords: ["compact", "expanded", "size", "shape", "tall", "categories"],
       },
       {
         id: "ui-size",
@@ -83,6 +107,11 @@ export const PAGES: SettingsPage[] = [
         id: "hotkey",
         label: "Open Takyon with",
         keywords: ["hotkey", "shortcut", "alt space", "rebind", "chord"],
+      },
+      {
+        id: "super-hotkey",
+        label: "Open Takyon with the Windows key",
+        keywords: ["windows key", "super", "win", "start menu", "meta", "hook"],
       },
     ],
   },
@@ -149,13 +178,18 @@ export const PAGES: SettingsPage[] = [
     controls: [
       {
         id: "index-roots",
-        label: "Indexed folders",
-        keywords: ["roots", "folders", "index", "where", "scope", "add folder"],
+        label: "Folders to index",
+        keywords: ["roots", "folders", "index", "where", "scope", "scopes", "add folder"],
       },
       {
         id: "index-excludes",
-        label: "Skipped folder names",
-        keywords: ["exclude", "skip", "node_modules", "ignore", "target"],
+        label: "Folder names to skip",
+        keywords: ["exclude", "skip", "node_modules", "ignore", "target", "pattern"],
+      },
+      {
+        id: "files-reset",
+        label: "Reset to defaults",
+        keywords: ["reset", "defaults", "start over", "restore"],
       },
       {
         id: "files-bangless",

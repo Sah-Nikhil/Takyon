@@ -114,6 +114,12 @@ struct StabilityLock {
     first_seen_ms: u64,
 }
 
+/// How many suggestions Expanded's first view asks for (v0.10).
+///
+/// Asked for *before* the filter: an id whose Source has forgotten it is
+/// dropped, so this caps the read rather than what is drawn.
+const SUGGESTION_LIMIT: usize = MAX_ENTRIES;
+
 /// The registry of Sources, and everything a query needs.
 pub struct Pipeline {
     /// Held concretely as well as in `sources`, because launching and the action
@@ -319,7 +325,14 @@ impl Pipeline {
             }
             return QueryResult {
                 seq,
-                entries: Vec::new(),
+                // Compact shows nothing for an empty query and that is right for
+                // a 68px bar (ADR-0001). A 520px Expanded window showing nothing
+                // is a hole, so it gets the suggestions instead.
+                entries: if crate::window::expanded() {
+                    self.suggestions(SUGGESTION_LIMIT)
+                } else {
+                    Vec::new()
+                },
                 // Nothing is shown for an empty query, so nothing needs explaining.
                 // Reporting the walk here would put a status row under a Palette
                 // that has been deliberately left blank (ADR-0001).
@@ -534,6 +547,75 @@ impl Pipeline {
             })
             .filter(|e| self.recents_enabled() || e.kind != crate::entry::EntryKind::Recent)
             .collect()
+    }
+
+    /// Expanded's first view: the Entries this user reaches for most (v0.10).
+    ///
+    /// Frecency's table, resolved through the Sources that own the ids. **Not a
+    /// Source and not a query**: it answers the empty line, in Expanded only, so
+    /// it is off the keystroke path. Ids a Source has forgotten are dropped.
+    fn suggestions(&self, limit: usize) -> Vec<Entry> {
+        self.frecency
+            .top(limit)
+            .into_iter()
+            .filter_map(|(id, kind)| self.suggestion(&id, kind))
+            .collect()
+    }
+
+    /// One suggestion, resolved through whichever Source owns its Kind.
+    ///
+    /// `score` is zero on every row. The list is already in Frecency order and
+    /// the frontend does not re-rank; giving them scores would invite a later
+    /// sort that quietly disagrees with the order they arrived in.
+    fn suggestion(&self, id: &EntryId, kind: crate::entry::EntryKind) -> Option<Entry> {
+        use crate::entry::EntryKind as K;
+        match kind {
+            K::App => self.apps.find(id).map(|app| Entry {
+                // Before the moves below: `has_path` borrows, and the fields it
+                // reads are about to be given away.
+                actions: crate::actions::for_app(app.has_path()),
+                id: app.id,
+                title: app.title,
+                subtitle: app.subtitle,
+                kind: K::App,
+                icon: app.icon,
+                score: 0.0,
+                version: app.version,
+            }),
+            K::System | K::SystemTask => self.system.find(id).map(|item| Entry {
+                id: item.id,
+                title: item.title,
+                subtitle: None,
+                kind: item.kind,
+                icon: None,
+                score: 0.0,
+                actions: crate::actions::for_system(),
+                version: None,
+            }),
+            K::Command => self.commands.find(id).map(|command| Entry {
+                id: command.id.clone(),
+                title: command.title.to_string(),
+                subtitle: Some(command.subtitle.to_string()),
+                kind: K::Command,
+                icon: None,
+                score: 0.0,
+                actions: crate::actions::for_command(),
+                version: None,
+            }),
+            K::File | K::Folder | K::Recent => self.recents.find(id).map(|recent| Entry {
+                id: recent.id,
+                title: recent.title,
+                subtitle: recent.subtitle,
+                kind: recent.kind,
+                icon: None,
+                score: 0.0,
+                actions: crate::actions::for_file(),
+                version: None,
+            }),
+            // A clipboard item and a calculation are both things you *did*, not
+            // things you would open again from an empty line.
+            K::Clip | K::Calc => None,
+        }
     }
 
     /// What an Entry launches, and what kind it is.

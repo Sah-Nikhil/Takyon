@@ -1,5 +1,5 @@
 ---
-status: watching
+status: resolved
 ---
 
 # TBC-0006 — The Palette sizes itself to its content
@@ -40,3 +40,32 @@ If the trigger is jank, fix the animation before adding a mode — a fixed maxim
 height with internal scrolling removes most of it for a day of work. Only add
 Compact/Expanded if users actually ask for a *choice*, rather than us assuming
 they want one because Raycast offers it.
+
+## Resolved at v0.10 — we switched
+
+The trigger this file named was the right one and it fired exactly as written:
+**a user asked for the choice.** Not because of jank — the snap-don't-tween rule
+held and nobody complained about resizing — but because Raycast's two modes are
+an interaction people already know, and being asked for them by name is the
+evidence this file said to wait for.
+
+What shipped is the middle row of the table, at roughly its estimate:
+
+- **Compact is unchanged and is still the default.** Everything this file bet on
+  is still what a fresh install gets: content-sized, snapping, capped at eight
+  rows. The bet was not wrong, it was incomplete.
+- **Expanded is the first row of the table** — fixed height, scroll inside —
+  reached through the second row's settings UI. That combination is why it cost
+  days rather than a week: the two options were not alternatives after all, one
+  is the implementation of the other.
+- The reconciliation this file worried about ("a user-chosen fixed size would
+  immediately conflict with content-driven resizing") turned out to have a clean
+  answer: **a View outranks the mode.** `!c` and `!s` still open at
+  `VIEW_HEIGHT`, in both modes, because a reading surface earns its own height.
+  A Rust test asserts the precedence, since getting it backwards leaves the Chat
+  Surface 40px short and only for people who use both features.
+
+The one thing the table under-priced: Expanded is not "Compact but taller". A
+fixed window answering an empty line with nothing is a hole, so it needed a first
+view (Frecency suggestions) and category headings to have something to be tall
+*for*. That is where most of the work went, and none of it was in the estimate.

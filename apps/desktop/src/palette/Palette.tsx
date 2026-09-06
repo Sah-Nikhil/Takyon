@@ -22,7 +22,7 @@ import {
 } from "@takyon/shared";
 import { InputMark } from "@/components/Mark";
 import * as api from "@/api";
-import { refresh } from "@/prefs";
+import { preferences, refresh } from "@/prefs";
 import type {
   Ask,
   Web as WebMode,
@@ -39,6 +39,7 @@ import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
 import { Footer } from "./Footer";
 import { EntryRow } from "./EntryRow";
+import { groupEntries } from "./groups";
 import { ActionMenu } from "./ActionMenu";
 
 /**
@@ -52,6 +53,15 @@ const PRIMARY_ACTION: Partial<Record<EntryKind, string>> = {
   clip: "paste",
   command: "open_command",
 };
+
+/**
+ * A category heading in Expanded mode (v0.10).
+ *
+ * Not in `@takyon/shared` with the rest of the geometry, and that is the point:
+ * every constant there exists because Rust sizes the window from it, and this
+ * one reaches no window arithmetic at all.
+ */
+const GROUP_HEADING_HEIGHT = 28;
 
 export function Palette() {
   const [value, setValue] = useState("");
@@ -80,6 +90,12 @@ export function Palette() {
     It exists to stop the idle pulse animating against a hidden window.
    */
   const [shown, setShown] = useState(!api.inTauri);
+  /*
+    Compact or Expanded (v0.10). Seeded from the cache and re-read on every show,
+    which is the same sync point every other preference uses — Rust has already
+    resized the window by then, so the two can never disagree on screen.
+   */
+  const [mode, setWindowMode] = useState(() => preferences().windowMode);
   /*
     The `!c` Mode's state for this keystroke, or null. Rust decides, because
     `bang.rs` owns the grammar and which Agent answers is a stored preference.
@@ -216,7 +232,16 @@ export function Palette() {
       // hidden. Re-reading here is what makes the two windows agree without any
       // cross-window plumbing (see prefs.ts). The calculator's Mode is no longer
       // pushed back: since v0.6 Rust stores it and read it at startup.
-      void refresh();
+      void refresh().then((next) => {
+        setWindowMode(next.windowMode);
+        /*
+          Expanded has to ask again, and only Expanded. The query effect rides
+          `value`, which was already empty, so clearing it re-runs nothing. In
+          Compact that is right; in Expanded the empty line *is* the first view,
+          so the same code left a 520px window with nothing in it.
+         */
+        if (next.windowMode === "expanded") runQuery("");
+      });
       inputRef.current?.focus();
 
       // Two frames, not one. The first rAF callback runs *before* the browser
@@ -233,7 +258,8 @@ export function Palette() {
         });
       });
     });
-  }, []);
+    // `runQuery` is stable, so this listener is still registered once per mount.
+  }, [runQuery]);
 
   useEffect(() => {
     return api.onHide(() => {
@@ -504,8 +530,49 @@ export function Palette() {
       ? `Search the web with ${searchWith} — press Enter`
       : `${searchWith} · your question leaves this machine`;
 
+  /*
+    Expanded mode (v0.10). Read once per show rather than per keystroke: Rust
+    sizes the window from the same preference, so anything that changes it has
+    already resized before the next summon.
+   */
+  const expanded = mode === "expanded";
+  const groups = expanded ? groupEntries(entries) : [];
+
+  /*
+    Compact's list appears only when there is something in it. Expanded's is the
+    window — it is always there, because a fixed-height panel with the list
+    branch switched off is a tall empty box with a hairline across the top.
+   */
   const showList =
-    entries.length > 0 || webNote !== null || fileIndexNote !== null || askNote !== null;
+    expanded ||
+    entries.length > 0 ||
+    webNote !== null ||
+    fileIndexNote !== null ||
+    askNote !== null;
+
+  /** One row or one card, the same in both modes. */
+  const renderEntry = (entry: Entry) => (
+    <Command.Item
+      key={entry.id}
+      value={entry.id}
+      // Not a hardcoded "open": a calculation has nothing to open, and Rust
+      // refuses that action, so a click would silently do nothing.
+      onSelect={() => run(entry.id, PRIMARY_ACTION[entry.kind] ?? "open")}
+      // A calculation carries its own selected state, on the card rather than on
+      // this wrapper, which also holds the caption.
+      className={
+        entry.kind === "calc"
+          ? "cursor-default"
+          : "cursor-default rounded-md data-[selected=true]:bg-row-selected"
+      }
+    >
+      {entry.kind === "calc" ? (
+        <CalcCard entry={entry} selected={entry.id === selected} />
+      ) : (
+        <EntryRow entry={entry} selected={entry.id === selected} />
+      )}
+    </Command.Item>
+  );
 
   /*
     Replaces the root rather than overlaying it: Rust has already resized to
@@ -551,7 +618,15 @@ export function Palette() {
         shouldFilter={false}
         value={selected}
         onValueChange={setSelected}
-        className="overflow-hidden rounded-xl border border-white/10 bg-plate/95 shadow-2xl backdrop-blur-xl"
+        /*
+          A flex column in Expanded, so the list can take the space between the
+          input row and the footer. Compact is left as it was: there the window
+          is exactly as tall as its content, so nothing has any slack to
+          distribute and a flex context would only be a way to get it wrong.
+         */
+        className={`overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl ${
+          expanded ? "flex h-full flex-col" : ""
+        }`}
         onKeyDown={(e) => {
           if (menu) return;
           if (e.key === "k" && e.ctrlKey) {
@@ -597,14 +672,23 @@ export function Palette() {
             nothing anyone can see, and pulsing while the user types would read
             as "working" when the shell is in fact idle.
           */}
-          <InputMark pulse={shown && value === ""} className="shrink-0 text-fg/45" />
+          {/*
+            `entries.length === 0` as well as an empty query, which matters only
+            in Expanded: its first view *is* an empty query, with eleven
+            suggestions under it. A mark breathing over a full list reads as
+            "working" while the shell is in fact idle and waiting.
+          */}
+          <InputMark
+            pulse={shown && value === "" && entries.length === 0}
+            className="shrink-0 text-fg/60"
+          />
           <Command.Input
             ref={inputRef}
             value={value}
             onValueChange={setValue}
             autoFocus
             placeholder="Search"
-            className="h-12 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/35"
+            className="h-12 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/50"
           />
 
         </div>
@@ -619,15 +703,26 @@ export function Palette() {
         */}
         {showList && (
           <Command.List
-            style={{ height: entries.length > 0 ? listHeight : ROW_HEIGHT + LIST_CHROME }}
+            /*
+              Compact reserves exactly the height Rust grew the window by, so the
+              two agree to the pixel (TBC-0006). Expanded has no such number to
+              agree with — the window is fixed — so the list takes whatever is
+              left between the input row and the footer.
+             */
+            style={
+              expanded
+                ? undefined
+                : { height: entries.length > 0 ? listHeight : ROW_HEIGHT + LIST_CHROME }
+            }
             /*
               `px-2` so a selected row's rounded background insets from the panel
-              edge. Without it the highlight ran full width, its corners were
-              never visible, and it collided with the border. The 8px here plus
-              the row's own 8px is the input row's `px-4`, which is what puts an
-              icon directly under the mark.
+              edge; without it the highlight ran full width into the border. The
+              8px here plus the row's own 8px is the input row's `px-4`, which
+              puts an icon directly under the mark.
              */
-            className="overflow-y-auto border-t border-white/5 px-2 py-1"
+            className={`overflow-y-auto border-t border-seam px-2 py-1 ${
+              expanded ? "min-h-0 flex-1" : ""
+            }`}
           >
             {/*
               Above the results, not below: Stale means the list may be missing
@@ -635,7 +730,7 @@ export function Palette() {
              */}
             {fileIndexNote && (
               <div
-                className="flex items-center px-2 text-[13px] text-fg/40"
+                className="flex items-center px-2 text-[13px] text-fg/56"
                 style={{ height: ROW_HEIGHT }}
               >
                 {fileIndexNote}
@@ -651,7 +746,7 @@ export function Palette() {
              */}
             {webNote && (
               <div
-                className="flex items-center px-2 text-[13px] text-amber-200/90"
+                className="flex items-center px-2 text-[13px] text-outbound/90"
                 style={{ height: ROW_HEIGHT }}
                 data-testid="web-note"
               >
@@ -661,7 +756,7 @@ export function Palette() {
             {askNote && (
               <div
                 className={`flex items-center px-2 text-[13px] ${
-                  askBlocked ? "text-amber-300" : "text-fg/70"
+                  askBlocked ? "text-warning" : "text-fg/80"
                 }`}
                 style={{ height: ROW_HEIGHT }}
                 role={askBlocked ? "alert" : undefined}
@@ -669,30 +764,31 @@ export function Palette() {
                 {askNote}
               </div>
             )}
-            {entries.map((entry) => (
-              <Command.Item
-                key={entry.id}
-                value={entry.id}
-                // Not a hardcoded "open": a calculation has nothing to open, and
-                // Rust refuses that action, so a click would silently do nothing.
-                onSelect={() =>
-                  run(entry.id, PRIMARY_ACTION[entry.kind] ?? "open")
-                }
-                // A calculation carries its own selected state, on the card
-                // rather than on this wrapper, which also holds the caption.
-                className={
-                  entry.kind === "calc"
-                    ? "cursor-default"
-                    : "cursor-default rounded-md data-[selected=true]:bg-white/10"
-                }
-              >
-                {entry.kind === "calc" ? (
-                  <CalcCard entry={entry} selected={entry.id === selected} />
-                ) : (
-                  <EntryRow entry={entry} selected={entry.id === selected} />
-                )}
-              </Command.Item>
-            ))}
+            {/*
+              Compact draws one flat list; Expanded groups it and labels each
+              section. Only Expanded, because a heading in a 68px window that
+              grows a row at a time costs a whole row to say "Applications" over
+              one application.
+             */}
+            {expanded
+              ? groups.map((group) => (
+                  <div key={group.kind}>
+                    {group.label && (
+                      <div
+                        // A heading and an `EntryRow`'s Kind label can carry the
+                        // same word — a Settings section over rows each labelled
+                        // Settings — so the two need telling apart from outside.
+                        data-group-heading={group.kind}
+                        className="flex items-end px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.06em] text-fg/50"
+                        style={{ height: GROUP_HEADING_HEIGHT }}
+                      >
+                        {group.label}
+                      </div>
+                    )}
+                    {group.entries.map(renderEntry)}
+                  </div>
+                ))
+              : entries.map(renderEntry)}
           </Command.List>
         )}
 
@@ -744,7 +840,7 @@ export function Palette() {
         <div
           ref={bannerRef}
           role="alert"
-          className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-[13px] text-amber-200"
+          className="mt-2 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2 text-[13px] text-warning"
         >
           <span className="font-medium">{hotkey.accelerator} could not be registered.</span>{" "}
           {hotkey.error ?? "Another application is holding it."} Takyon can still be opened

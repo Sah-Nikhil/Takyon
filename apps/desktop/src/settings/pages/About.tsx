@@ -27,7 +27,7 @@ export function About() {
     <>
       <div className="mb-8 flex flex-col items-center gap-3 pt-4">
         <Lockup size={30} />
-        <p className="text-[12.5px] text-fg/45">Version {__APP_VERSION__}</p>
+        <p className="text-[12.5px] text-fg/60">Version {__APP_VERSION__}</p>
       </div>
 
       <Group title="Diagnostics">
@@ -42,7 +42,7 @@ export function About() {
         >
           <span
             className={`font-mono text-[12.5px] ${
-              hotkey && !hotkey.registered ? "text-amber-300" : "text-fg/70"
+              hotkey && !hotkey.registered ? "text-warning" : "text-fg/80"
             }`}
           >
             {hotkey?.accelerator ?? "…"}
@@ -53,7 +53,7 @@ export function About() {
           label="Package identity"
           description="What the startup entry, the single-instance lock and the data folder are named after. Independent of the display name (ADR-0011)."
         >
-          <span className="font-mono text-[12.5px] text-fg/70">{IDENTITY}</span>
+          <span className="font-mono text-[12.5px] text-fg/80">{IDENTITY}</span>
         </Row>
       </Group>
     </>

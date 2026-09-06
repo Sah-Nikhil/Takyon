@@ -120,12 +120,12 @@ export function ClipboardHistory() {
               onChange={(e) => setDraft(e.target.value)}
               placeholder="keepass.exe"
               aria-label="Executable to exclude"
-              className="w-40 rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg outline-none placeholder:text-fg/30"
+              className="w-40 rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg outline-none placeholder:text-fg/46"
             />
             <button
               type="submit"
               disabled={!draft.trim()}
-              className="rounded-control px-2 py-1 text-[12.5px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg disabled:opacity-30"
+              className="rounded-control px-2 py-1 text-[12.5px] text-fg/72 transition-colors hover:bg-row-hover hover:text-fg disabled:opacity-30"
             >
               Add
             </button>
@@ -134,11 +134,11 @@ export function ClipboardHistory() {
 
         {blocked.map((exe) => (
           <div key={exe} className="flex items-center justify-between gap-4 px-3.5 py-2.5">
-            <span className="font-mono text-[13px] text-fg/80">{exe}</span>
+            <span className="font-mono text-[13px] text-fg/86">{exe}</span>
             <button
               type="button"
               onClick={() => void block(exe, false)}
-              className="rounded-control px-2 py-1 text-[12.5px] text-fg/50 transition-colors hover:bg-row-hover hover:text-fg"
+              className="rounded-control px-2 py-1 text-[12.5px] text-fg/64 transition-colors hover:bg-row-hover hover:text-fg"
             >
               Remove
             </button>

@@ -120,8 +120,21 @@ export interface SettingsSnapshot {
   placement: Placement;
   clipRetention: ClipRetention;
   clipBang: boolean;
-  theme: Theme;
+  appearance: AppearanceMode;
+  /**
+   * Which family paints each half (v0.10): two independent choices over one
+   * list. Plain strings, not a union — the registry lives in TypeScript, so an
+   * id Rust does not recognise falls back in the renderer, not at the seam.
+   */
+  themeDark: string;
+  themeLight: string;
+  windowMode: WindowMode;
   uiSize: UiSize;
+  /**
+   * Whether tapping the Windows key opens the Palette (v0.10). Off by default:
+   * it is a keyboard hook, not an accelerator (ADR-0024).
+   */
+  superHotkey: boolean;
   /**
    * Whether file Entries join Bangless results (v0.7 task 11). Default off —
    * `!e` is the door, this is the setting, and when on they sort below apps.
@@ -139,10 +152,31 @@ export interface SettingsSnapshot {
 }
 
 /**
- * Appearance (v0.6). `system` follows Windows; the other two override it in
- * both directions, which is what makes it an override rather than a hint.
+ * Appearance (v0.6, renamed at v0.10). `system` follows Windows; the other two
+ * override it in both directions, which is what makes it an override.
+ *
+ * Was `Theme` over `ui.theme`. "Theme" means a palette family since ADR-0023,
+ * so the values are unchanged and the migration is a key rename.
  */
-export type Theme = "system" | "light" | "dark";
+export type AppearanceMode = "system" | "light" | "dark";
+
+/**
+ * The Palette's two shapes (v0.10).
+ *
+ * `compact` is TBC-0006's content-sized window: 68px empty, growing to eight
+ * rows. `expanded` is a fixed [`EXPANDED_HEIGHT`] window that never resizes on
+ * a keystroke, which is what buys headings and a first view.
+ */
+export type WindowMode = "compact" | "expanded";
+
+/**
+ * How tall the Expanded Palette is, logical pixels. Mirrors `EXPANDED_HEIGHT`
+ * in `window.rs`; a Rust test asserts they agree.
+ *
+ * Shorter than [`VIEW_HEIGHT`]: a View is a reading surface and earns its
+ * height, Expanded is still a launcher.
+ */
+export const EXPANDED_HEIGHT = 520;
 
 /**
  * Interface size (v0.6). Applied as a root `zoom`, and **mirrored in Rust**,
@@ -430,6 +464,7 @@ export function paletteHeight(
   menuActions: number | null = null,
   bannerHeight = 0,
   calcCard = false,
+  expanded = false,
 ): number {
   // The card replaces a row rather than joining it, and the cap applies to what
   // is left: eight rows *plus* a card is taller than the shape TBC-0006 chose.
@@ -438,8 +473,13 @@ export function paletteHeight(
     rows === 0 && indexing
       ? 1
       : Math.min(Math.max(rows - (calcCard ? 1 : 0), 0), MAX_VISIBLE_ROWS);
-  const content =
-    card === 0 && listRows === 0
+  // Expanded is a fixed window: the list scrolls inside it rather than the
+  // window growing, so none of the row arithmetic above applies. The menu still
+  // does, because a menu taller than the window is cut off in either mode — but
+  // at this height it never is.
+  const content = expanded
+    ? EXPANDED_HEIGHT
+    : card === 0 && listRows === 0
       ? EMPTY_HEIGHT
       : EMPTY_HEIGHT + card + listRows * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT;
   // `max`, never a sum: the menu sits on top of the list rather than below it, so

@@ -31,7 +31,8 @@ import {
   type AliasRow,
   type AppAliasRow,
   type Placement,
-  type Theme,
+  type AppearanceMode,
+  type WindowMode,
   type UiSize,
   type CalcPolicy,
   type ClipRetention,
@@ -72,6 +73,16 @@ export const setFilesRoots = (roots: string[], excludes: string[]) =>
   inTauri
     ? invoke<void>("set_files_roots", { roots, excludes })
     : mock.setFilesRoots(roots, excludes);
+
+/**
+ * Forget every File Search preference, back to the probed defaults (v0.10).
+ *
+ * Returns the roots as they now stand rather than nothing: the defaults are
+ * *computed* on each read (TBC-0005), so the page cannot know what a reset
+ * produced without being told.
+ */
+export const resetFilesRoots = () =>
+  inTauri ? invoke<string[]>("reset_files_roots") : mock.resetFilesRoots();
 
 /** How many rows the owned recents list holds, for the confirmation. */
 export const openedCount = () =>
@@ -212,9 +223,34 @@ export const setAliasesFor = (target: string, aliases: string[]) =>
 export const setAlias = (alias: string, target: string | null) =>
   inTauri ? invoke<void>("set_alias", { alias, target }) : mock.setAlias(alias, target);
 
-/** Follow the system appearance, or override it (v0.6). */
-export const setTheme = (value: Theme) =>
-  inTauri ? invoke<void>("set_theme", { value }) : mock.setTheme(value);
+/** Follow the system appearance, or override it (v0.6, renamed v0.10). */
+export const setAppearance = (value: AppearanceMode) =>
+  inTauri ? invoke<void>("set_appearance", { value }) : mock.setAppearance(value);
+
+/**
+ * Which family paints one half (v0.10).
+ *
+ * Rust stores the id without knowing what it means — the registry is in
+ * TypeScript — so this is deliberately a string on both sides of the seam.
+ */
+export const setThemeFamily = (appearance: "dark" | "light", id: string) =>
+  inTauri
+    ? invoke<void>("set_theme_family", { appearance, id })
+    : mock.setThemeFamily(appearance, id);
+
+/** Compact or Expanded. Rust resizes the Palette before it returns (v0.10). */
+export const setWindowMode = (value: WindowMode) =>
+  inTauri ? invoke<void>("set_window_mode", { value }) : mock.setWindowMode(value);
+
+/**
+ * Arm or release the Windows-key hook (v0.10).
+ *
+ * Returns whether the hook is actually installed, not whether the preference was
+ * stored: `SetWindowsHookExW` can refuse, and a switch that reads on against a
+ * hook that is not there is the worst of the three possible states.
+ */
+export const setSuperHotkey = (on: boolean) =>
+  inTauri ? invoke<boolean>("set_super_hotkey", { on }) : mock.setSuperHotkey(on);
 
 /** Interface size. Rust resizes the Palette to match the CSS zoom. */
 export const setUiSize = (value: UiSize) =>

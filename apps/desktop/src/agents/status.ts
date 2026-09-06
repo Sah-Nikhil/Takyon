@@ -19,7 +19,7 @@ import type { AgentHealth, AgentKind, AgentSnapshot } from "@takyon/shared";
  */
 export const HEALTH_DOT: Record<AgentHealth, string> = {
   ready: "bg-emerald-400",
-  warning: "bg-amber-400",
+  warning: "bg-warning",
   error: "bg-red-400",
 };
 

@@ -27,6 +27,53 @@ never promoted. It is also where tools turn on: the reflex answer has none, and
 asking again is an explicit act (ADR-0017).
 _Avoid_: expanding, opening a thread, escalating
 
+**Window mode**:
+Which of the Palette's two shapes is in use. **Compact** is one line that grows a
+row at a time as Entries arrive; **Expanded** is a fixed-height window that never
+resizes on a keystroke, scrolls its own list, and has room for Group headings and
+a first view. A property of the window, not of the query — the Mode a Bang
+selects is a different thing entirely and keeps that name.
+_Avoid_: layout, view mode, size, compact mode / expanded mode as nouns
+
+**Group**:
+One labelled section of the Entry list in Expanded mode, holding every Entry of
+one Kind. A Group sits where its best Entry sat, so the ranking still decides and
+the Group only labels.
+_Avoid_: category, section, bucket, cluster
+
+**Suggestions**:
+What Expanded answers an empty line with: the Entries this user reaches for most,
+read from Frecency. Not remembered state — the Palette still opens empty
+(ADR-0001) — but a Source's answer to the empty query, ranked like any other.
+_Avoid_: recents, favourites, top hits, home
+
+### Appearance
+
+**Theme**:
+One named palette **family**, carrying both a light and a dark half — Graphite,
+Vela, Cherenkov, Aurora, Halide. A family with only one half is not a Theme
+(ADR-0023). Which family paints each half is two independent preferences.
+_Avoid_: colour scheme, skin, palette (a palette is one half of a Theme)
+
+**Appearance**:
+Which half is painted: `light`, `dark`, or `system` to let Windows decide. Was
+called "theme" through v0.9, and gave the name up when Theme came to mean a
+family.
+_Avoid_: mode, colour mode, dark mode as a noun
+
+**Role**:
+One of the seven colours a Theme half states — plate, foreground, accent,
+outbound, warning, card, sidebar. Everything else in the stylesheet is derived
+from two of them, which is why a Theme is seven numbers rather than fifty.
+_Avoid_: token (a token is the CSS variable, derived or otherwise), variable, slot
+
+**Outbound**:
+The warm signal, and only the network one: the `!s` row, the answer header, the
+reading dot. Warm means it left the machine (`docs/brand.md`). A refused write or
+a dead hotkey is a **warning**, which is a separate Role — through v0.9 both were
+spelled `amber-*` and the distinction had nowhere to live.
+_Avoid_: alert, warning (that is the other Role), network state
+
 ### Input
 
 **Bang**:

@@ -32,7 +32,7 @@ export function Advanced() {
         <button
           type="button"
           onClick={() => void open()}
-          className="rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg/80 transition-colors hover:text-fg"
+          className="rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg/86 transition-colors hover:text-fg"
         >
           Open folder
         </button>

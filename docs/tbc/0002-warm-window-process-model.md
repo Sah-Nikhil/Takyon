@@ -239,6 +239,53 @@ is there. It reports "timed out waiting for the Palette to report a painted
 frame", which reads exactly like a rendering regression. Always `bun run build`
 immediately before benching.
 
+## Measured — v0.10, 2026-09-06
+
+Same machine. Release build, `bun run bench --alt-hotkey` (n=30). **Twice**: once
+in Compact against the real profile, and once in Expanded against a scratch
+`LOCALAPPDATA` seeded with `ui.window-mode=expanded`, which is the first time
+anyone has measured the second mode at all (`docs/tbd/v0.10.md` §9, now closed).
+
+| Metric | Budget | v0.2 (n=100) | v0.7 (n=30) | v0.10 (n=100) | v0.10 Expanded (n=30) | Verdict |
+|---|---|---|---|---|---|---|
+| Hotkey to first pixel | < 50 ms | p95 **25.0** | p95 **30.4** | min 19.8 · p50 22.2 · p95 **25.9** · max 31.5 | min 23.5 · p50 27.9 · p95 **34.8** · max 39.3 | PASS |
+| Keystroke to first Entry | < 30 ms | p95 **17.7** | p95 **20.7** | min 11.0 · p50 14.0 · p95 **19.3** · max 38.3 | min 6.9 · p50 8.9 · p95 **14.0** · max 34.6 | PASS |
+| Process start to hotkey responsive | < 500 ms | **254.4 ms** | **308.4 ms** | **260.3 ms** | **341.3 ms** | PASS |
+| Idle RSS, warm and trimmed | < 150 MB | 37.1 MB | **28.4 MB** | **32.7 MB** / 251.7 committed, 7 procs | **27.6 MB** / 242.8 committed, 7 procs | PASS |
+
+The Compact column is post-guard; the Expanded column is not. See the third note.
+
+- **The phase shipped a first-pixel regression and then removed it, and the
+  removal is worth more than the regression cost.** `prefs.refresh()` runs on
+  every show — that is what keeps the two windows in step without cross-window
+  plumbing — and it now reaches `applyTheme`, which wrote seven custom properties
+  onto `<html>` plus a synchronous `localStorage` write. Seven custom properties
+  on the root invalidate computed style for the whole document, every summon,
+  almost always to repaint the colour already painted. Measured at n=100:
+
+  | | pre-guard | post-guard |
+  |---|---|---|
+  | first pixel p95 | 35.7 ms | **25.9 ms** |
+  | first Entry p95 | 22.4 ms | **19.3 ms** |
+  | start to hotkey | 405.4 ms | **260.3 ms** |
+
+  `applyTheme` now returns early when the painted half *and* the stored choice
+  are both unchanged. That is the whole fix, and it leaves every budget better
+  than v0.7 measured them — first-pixel is back under v0.2's 25.0 to within a
+  millisecond after eight phases of features.
+- **n=30 lied about first-Entry.** A first n=30 Compact run read p95 **29.2 ms**,
+  97% of budget, which looked like a regression this phase had caused. At n=100
+  it is 19.3. v0.7 asked for n=100 before v1.0 and was right to; treat any n=30
+  first-Entry reading as indicative only.
+- **Expanded is not measurably slower where it counts, but its column is stale.**
+  34.8 ms first-pixel p95, taken on the pre-guard build against a scratch
+  `LOCALAPPDATA` with no Frecency and no clipboard history — so its first-Entry
+  figure measures a lighter machine and **is not comparable** on that row. The
+  honest reading is that painting 520px instead of 68px cost roughly nothing
+  detectable; re-measure post-guard before quoting it. `docs/tbd/v0.10.md` §9.
+
+`--alt-hotkey` again: Raycast holds `Alt+Space` on this machine.
+
 ## Alternatives
 
 | Option | Improvement if we switch | Added complexity | Switching cost |

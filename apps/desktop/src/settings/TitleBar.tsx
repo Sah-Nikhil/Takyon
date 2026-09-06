@@ -44,7 +44,7 @@ export function TitleBar({ title }: { title: string }) {
     >
       <span data-tauri-drag-region className="flex items-center gap-2">
         <Mark size={13} />
-        <span className="text-[12px] text-fg/55">{title}</span>
+        <span className="text-[12px] text-fg/68">{title}</span>
       </span>
 
       <span className="flex h-full items-stretch">
@@ -93,7 +93,13 @@ function Control({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`flex w-[46px] items-center justify-center text-fg/60 transition-colors ${
+      /*
+        `#c42b1c` is Windows' own close-button red and the one literal colour
+        left here on purpose: it belongs to the platform, and a close button that
+        changed hue per theme would stop reading as one. White over it because
+        the red is dark in every appearance.
+       */
+      className={`flex w-[46px] items-center justify-center text-fg/72 transition-colors ${
         danger ? "hover:bg-[#c42b1c] hover:text-white" : "hover:bg-row-hover hover:text-fg"
       }`}
     >

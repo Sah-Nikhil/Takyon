@@ -51,7 +51,7 @@ export function ActionMenu({
         underneath. Without the second half, dismissing the menu also activates
         whichever row happened to be under the pointer.
        */
-      className="absolute inset-0 z-10 flex items-end justify-end bg-black/40 p-2"
+      className="absolute inset-0 z-10 flex items-end justify-end bg-scrim p-2"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -59,7 +59,7 @@ export function ActionMenu({
       <Command
         value={value}
         onValueChange={setValue}
-        className="w-64 overflow-hidden rounded-lg border border-white/10 bg-plate shadow-2xl"
+        className="w-64 overflow-hidden rounded-lg border border-edge bg-plate shadow-panel"
         onKeyDown={(e) => {
           // Escape closes the menu rather than the Palette. The Palette's own
           // Escape handler is bound to the document, so without stopping
@@ -72,15 +72,15 @@ export function ActionMenu({
           }
         }}
       >
-        <div className="border-b border-white/10 px-3 py-2">
+        <div className="border-b border-edge px-3 py-2">
           <Command.Input
             ref={inputRef}
             placeholder="Search actions"
-            className="w-full bg-transparent text-[13px] text-fg outline-none placeholder:text-fg/35"
+            className="w-full bg-transparent text-[13px] text-fg outline-none placeholder:text-fg/50"
           />
         </div>
         <Command.List className="max-h-64 overflow-y-auto p-1">
-          <Command.Empty className="px-2 py-3 text-[12px] text-fg/40">
+          <Command.Empty className="px-2 py-3 text-[12px] text-fg/56">
             No matching action.
           </Command.Empty>
           {actions.map((action) => (
@@ -91,11 +91,11 @@ export function ActionMenu({
               // match nothing. `keywords` is what makes the label searchable.
               keywords={[action.label]}
               onSelect={() => onRun(action.id)}
-              className="flex cursor-default items-center justify-between gap-3 rounded px-2 py-1.5 text-[13px] text-fg/80 data-[selected=true]:bg-white/10 data-[selected=true]:text-fg"
+              className="flex cursor-default items-center justify-between gap-3 rounded px-2 py-1.5 text-[13px] text-fg/86 data-[selected=true]:bg-row-selected data-[selected=true]:text-fg"
             >
               <span className="truncate">{action.label}</span>
               {action.accelerator && (
-                <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-fg/40">
+                <kbd className="shrink-0 rounded border border-edge px-1.5 py-0.5 text-[10px] text-fg/56">
                   {action.accelerator}
                 </kbd>
               )}

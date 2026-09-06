@@ -239,6 +239,51 @@ impl Frecency {
     pub fn weight(&self, id: &EntryId) -> f64 {
         self.weight_at(id, unix_now())
     }
+
+    /// The most-used Entry ids, heaviest first (v0.10).
+    ///
+    /// **Decayed on read**, never sorted by the stored score: `score` is only
+    /// current as of `decayed_at`, so the column ranks fifty launches last year
+    /// over five this week. Reading every row to sort a handful is deliberate.
+    pub fn top_at(&self, limit: usize, now: i64) -> Vec<(EntryId, EntryKind)> {
+        let Ok(conn) = self.conn.lock() else {
+            return Vec::new();
+        };
+        let Ok(mut stmt) = conn.prepare("SELECT entry_id, kind, score, decayed_at FROM usage")
+        else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                EntryId(row.get(0)?),
+                row.get::<_, String>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        });
+        let Ok(rows) = rows else {
+            return Vec::new();
+        };
+        let mut scored: Vec<(EntryId, EntryKind, f64)> = rows
+            .flatten()
+            .filter_map(|(id, kind, score, decayed_at)| {
+                kind_of(&kind).map(|kind| (id, kind, decay(score, days_between(decayed_at, now))))
+            })
+            .collect();
+        // `total_cmp`, not `partial_cmp().unwrap()`: a NaN from a corrupt row
+        // would panic on the path that draws the Palette's first view.
+        scored.sort_by(|a, b| b.2.total_cmp(&a.2));
+        scored
+            .into_iter()
+            .take(limit)
+            .map(|(id, kind, _)| (id, kind))
+            .collect()
+    }
+
+    /// The same, now.
+    pub fn top(&self, limit: usize) -> Vec<(EntryId, EntryKind)> {
+        self.top_at(limit, unix_now())
+    }
 }
 
 fn days_between(from: i64, to: i64) -> f64 {
@@ -267,6 +312,26 @@ fn kind_name(kind: EntryKind) -> &'static str {
         EntryKind::SystemTask => "system-task",
         EntryKind::Command => "command",
     }
+}
+
+/// [`kind_name`] backwards, for reading a stored row (v0.10).
+///
+/// `None` rather than a default: an unrecognised name is a row written by a
+/// build that knew a Kind this one does not, and guessing `App` for it would put
+/// a wrong icon and a wrong action on the suggestion it produced.
+fn kind_of(name: &str) -> Option<EntryKind> {
+    Some(match name {
+        "app" => EntryKind::App,
+        "file" => EntryKind::File,
+        "folder" => EntryKind::Folder,
+        "clip" => EntryKind::Clip,
+        "calc" => EntryKind::Calc,
+        "recent" => EntryKind::Recent,
+        "system" => EntryKind::System,
+        "system-task" => EntryKind::SystemTask,
+        "command" => EntryKind::Command,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

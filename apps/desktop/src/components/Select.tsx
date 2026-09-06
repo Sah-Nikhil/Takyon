@@ -188,11 +188,11 @@ export function Select<T extends string>({
         }}
         className={`flex h-8 w-full items-center gap-2 rounded-control border border-hairline bg-control px-2.5 text-[13px] transition-colors ${
           disabled
-            ? "cursor-default text-fg/30"
+            ? "cursor-default text-fg/46"
             : "text-fg hover:border-fg/20 focus-visible:border-accent/60 focus-visible:outline-none"
         }`}
       >
-        <span className={`min-w-0 flex-1 truncate text-start ${current ? "" : "text-fg/45"}`}>
+        <span className={`min-w-0 flex-1 truncate text-start ${current ? "" : "text-fg/60"}`}>
           {shown}
         </span>
         <Chevron open={open} />
@@ -207,7 +207,7 @@ export function Select<T extends string>({
           aria-activedescendant={`${id}-row-${active}`}
           tabIndex={-1}
           onKeyDown={onListKeyDown}
-          className={`absolute z-50 max-h-60 w-full overflow-y-auto rounded-control border border-hairline bg-card p-1 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.75)] outline-none ${
+          className={`absolute z-50 max-h-60 w-full overflow-y-auto rounded-control border border-hairline bg-card p-1 shadow-panel outline-none ${
             above ? "bottom-full mb-1.5" : "top-full mt-1.5"
           }`}
         >
@@ -224,7 +224,7 @@ export function Select<T extends string>({
                 onClick={() => choose(i)}
                 className={`flex cursor-default items-center gap-2 rounded-[0.375rem] px-2 py-1 text-[13px] ${
                   i === active ? "bg-row-selected" : ""
-                } ${chosen ? "text-fg" : "text-fg/70"} ${row.value === "" ? "text-fg/45" : ""}`}
+                } ${chosen ? "text-fg" : "text-fg/80"} ${row.value === "" ? "text-fg/60" : ""}`}
               >
                 <span className="min-w-0 flex-1 truncate">{row.label}</span>
                 {/* The chosen row is marked, not merely highlighted: the
@@ -245,7 +245,7 @@ function Chevron({ open }: { open: boolean }) {
     <svg
       aria-hidden
       viewBox="0 0 12 12"
-      className={`size-3 shrink-0 text-fg/40 transition-transform ${open ? "rotate-180" : ""}`}
+      className={`size-3 shrink-0 text-fg/56 transition-transform ${open ? "rotate-180" : ""}`}
       fill="none"
       stroke="currentColor"
       strokeWidth="1.5"

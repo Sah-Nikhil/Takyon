@@ -70,7 +70,7 @@ export function Agents() {
         <div className="flex items-start justify-between px-3.5 py-3">
           <div className="min-w-0 flex-1 basis-64">
             <span className="text-[14px] text-fg">Ask !c with</span>
-            <p className="mt-1 text-[12.5px] leading-snug text-fg/45">
+            <p className="mt-1 text-[12.5px] leading-snug text-fg/60">
               Takyon runs the agent you already installed and signed in to. It never holds an
               account or a key of its own. `!c` asks the first agent switched on here and works
               down the list.
@@ -79,7 +79,7 @@ export function Agents() {
           <button
             type="button"
             onClick={probe}
-            className="ms-4 shrink-0 rounded-md border border-white/10 px-2.5 py-1 text-[12px] text-fg/70 hover:text-fg"
+            className="ms-4 shrink-0 rounded-md border border-edge px-2.5 py-1 text-[12px] text-fg/80 hover:text-fg"
           >
             {snapshots === null ? "Checking…" : "Check again"}
           </button>
@@ -117,7 +117,7 @@ export function Agents() {
             spellCheck={false}
             placeholder={settings?.scratch ?? ""}
             aria-label="Run agents in"
-            className="h-8 w-80 max-w-full rounded-md border border-white/10 bg-black/20 px-2.5 text-[13px] text-fg outline-none placeholder:text-fg/30"
+            className="h-8 w-80 max-w-full rounded-md border border-edge bg-control px-2.5 text-[13px] text-fg outline-none placeholder:text-fg/46"
           />
         </Row>
       </Group>
@@ -185,13 +185,13 @@ function AgentRow({
         switch into the middle of the card.
       */}
       <div className="flex items-start gap-3">
-        <span className="w-4 shrink-0 pt-0.5 text-end text-[12px] tabular-nums text-fg/30">
+        <span className="w-4 shrink-0 pt-0.5 text-end text-[12px] tabular-nums text-fg/46">
           {rank}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className={`text-[14px] ${enabled ? "text-fg" : "text-fg/40"}`}>{label}</span>
-            {version && <span className="text-[11.5px] text-fg/30">{version}</span>}
+            <span className={`text-[14px] ${enabled ? "text-fg" : "text-fg/56"}`}>{label}</span>
+            {version && <span className="text-[11.5px] text-fg/46">{version}</span>}
           </div>
           <div className="mt-1 flex items-start gap-2">
             <span
@@ -203,11 +203,11 @@ function AgentRow({
             {/* Siblings, not nested: the headline has to stay its own exact
                 string, or nothing can assert on it. */}
             <div className="min-w-0">
-              <p className="text-[12.5px] leading-snug text-fg/45">
+              <p className="text-[12.5px] leading-snug text-fg/60">
                 {enabled ? summary.headline : "Off"}
               </p>
               {enabled && summary.detail && (
-                <p className="text-[12.5px] leading-snug text-fg/35">{summary.detail}</p>
+                <p className="text-[12.5px] leading-snug text-fg/50">{summary.detail}</p>
               )}
             </div>
           </div>
@@ -261,7 +261,7 @@ function AgentRow({
         </div>
       ) : (
         enabled && (
-          <p className="mt-2 ps-7 text-[12.5px] text-fg/35">Sign in to choose a model</p>
+          <p className="mt-2 ps-7 text-[12.5px] text-fg/50">Sign in to choose a model</p>
         )
       )}
     </div>
@@ -286,7 +286,7 @@ function Move({
       aria-label={label}
       disabled={!on}
       onClick={onClick}
-      className="size-6 shrink-0 rounded-md border border-white/10 text-[12px] text-fg/70 hover:text-fg disabled:border-white/5 disabled:text-fg/20"
+      className="size-6 shrink-0 rounded-md border border-edge text-[12px] text-fg/80 hover:text-fg disabled:border-seam disabled:text-fg/20"
     >
       {glyph}
     </button>

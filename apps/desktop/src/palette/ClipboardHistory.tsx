@@ -69,13 +69,13 @@ function Information({ clip }: { clip: ClipRow }) {
   ];
   return (
     <div className="mt-4">
-      <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-fg/35">
+      <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-fg/50">
         Information
       </div>
       <dl className="space-y-1.5">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-4">
-            <dt className="shrink-0 text-[12px] text-fg/45">{label}</dt>
+            <dt className="shrink-0 text-[12px] text-fg/60">{label}</dt>
             <dd className="truncate text-right text-[12px] text-fg">{value}</dd>
           </div>
         ))}
@@ -139,7 +139,7 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-plate/95 shadow-2xl backdrop-blur-xl"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl"
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           // Back one step, not out: Escape here returns to the search that
@@ -164,12 +164,12 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
         }
       }}
     >
-      <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2">
+      <div className="flex items-center gap-3 border-b border-seam px-3 py-2">
         <button
           type="button"
           onClick={onClose}
           aria-label="Back"
-          className="grid size-7 shrink-0 place-items-center rounded-md text-fg/50 hover:bg-white/10 hover:text-fg"
+          className="grid size-7 shrink-0 place-items-center rounded-md text-fg/64 hover:bg-row-selected hover:text-fg"
         >
           ←
         </button>
@@ -178,7 +178,7 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Type to filter entries..."
-          className="h-9 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/35"
+          className="h-9 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/50"
         />
         <Select
           label="Type"
@@ -198,16 +198,16 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
         <div
           role="listbox"
           aria-label="Clipboard history"
-          className="w-[46%] shrink-0 overflow-y-auto border-r border-white/5 px-2 py-2"
+          className="w-[46%] shrink-0 overflow-y-auto border-r border-seam px-2 py-2"
         >
           {clips.length === 0 && (
-            <div className="px-2 py-3 text-[13px] text-fg/40">
+            <div className="px-2 py-3 text-[13px] text-fg/56">
               {query ? "No matching clips." : "Nothing copied yet."}
             </div>
           )}
           {groups.map((group) => (
             <div key={group.day}>
-              <div className="px-2 py-1 text-[11px] text-fg/35">{group.day}</div>
+              <div className="px-2 py-1 text-[11px] text-fg/50">{group.day}</div>
               {group.clips.map((clip) => (
                 <button
                   key={clip.id}
@@ -217,7 +217,7 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
                   data-selected={clip.id === selected || undefined}
                   onClick={() => setSelected(clip.id)}
                   onDoubleClick={() => run("paste")}
-                  className="flex w-full items-center rounded-md px-2 py-2 text-left data-[selected=true]:bg-white/10"
+                  className="flex w-full items-center rounded-md px-2 py-2 text-left data-[selected=true]:bg-row-selected"
                 >
                   <span className="truncate text-[13px] text-fg">{clip.preview}</span>
                 </button>
@@ -234,32 +234,32 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
                 part of it. Wrapped rather than scrolled sideways, because a long
                 line read left to right is the common case.
                */}
-              <pre className="max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-white/5 bg-black/20 p-3 font-mono text-[12px] leading-relaxed text-fg/90">
+              <pre className="max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-seam bg-control p-3 font-mono text-[12px] leading-relaxed text-fg/92">
                 {current.preview}
               </pre>
               <Information clip={current} />
             </>
           ) : (
-            <div className="text-[13px] text-fg/40">Select a clip to see it here.</div>
+            <div className="text-[13px] text-fg/56">Select a clip to see it here.</div>
           )}
         </div>
       </div>
 
       <div
-        className="flex shrink-0 items-center justify-between border-t border-white/5 px-3"
+        className="flex shrink-0 items-center justify-between border-t border-seam px-3"
         style={{ height: FOOTER_HEIGHT }}
       >
-        <span className="text-[11px] text-fg/45">Clipboard History</span>
-        <div className="flex items-center gap-2 text-[11px] text-fg/45">
+        <span className="text-[11px] text-fg/60">Clipboard History</span>
+        <div className="flex items-center gap-2 text-[11px] text-fg/60">
           <span>Paste</span>
-          <kbd className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] leading-none text-fg/50">
+          <kbd className="rounded border border-edge bg-key px-1.5 py-0.5 text-[10px] leading-none text-fg/64">
             ↵
           </kbd>
           <span aria-hidden className="text-fg/15">
             |
           </span>
           <span>Actions</span>
-          <kbd className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] leading-none text-fg/50">
+          <kbd className="rounded border border-edge bg-key px-1.5 py-0.5 text-[10px] leading-none text-fg/64">
             Ctrl K
           </kbd>
         </div>

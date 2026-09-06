@@ -82,7 +82,12 @@ pub struct App {
 }
 
 impl App {
-    fn has_path(&self) -> bool {
+    /// Whether there is a file behind this application.
+    ///
+    /// A packaged app has none, so it is offered Open alone — no reveal, no copy
+    /// path, no run-as-administrator. Public since v0.10, when
+    /// `query::suggestion` began building Entries outside this module.
+    pub fn has_path(&self) -> bool {
         matches!(self.target, LaunchTarget::Exe { .. })
     }
 }

@@ -133,7 +133,7 @@ export function Applications() {
         <div className="min-w-0">
           <div className="truncate text-[13px] text-fg">{row.title}</div>
           {row.subtitle && (
-            <div className="truncate text-[11.5px] text-fg/35">{row.subtitle}</div>
+            <div className="truncate text-[11.5px] text-fg/50">{row.subtitle}</div>
           )}
         </div>
       </div>
@@ -152,7 +152,7 @@ export function Applications() {
           }}
           aria-label={`Alias for ${row.title}`}
           placeholder="ps, photo"
-          className="w-36 shrink-0 rounded-control bg-control px-2.5 py-1 text-right font-mono text-[12.5px] text-fg outline-none placeholder:text-fg/30"
+          className="w-36 shrink-0 rounded-control bg-control px-2.5 py-1 text-right font-mono text-[12.5px] text-fg outline-none placeholder:text-fg/46"
         />
       ) : (
         <button
@@ -161,8 +161,8 @@ export function Applications() {
           aria-label={`Alias for ${row.title}`}
           className={`w-36 shrink-0 rounded-control px-2.5 py-1 text-right transition-colors hover:bg-row-hover ${
             row.aliases.length > 0
-              ? "font-mono text-[12.5px] text-fg/80"
-              : "text-[12.5px] text-fg/35"
+              ? "font-mono text-[12.5px] text-fg/86"
+              : "text-[12.5px] text-fg/50"
           }`}
         >
           {row.aliases.length > 0 ? row.aliases.join(", ") : "Add alias"}
@@ -188,20 +188,20 @@ export function Applications() {
           }}
           placeholder="Filter applications"
           aria-label="Filter applications"
-          className="w-44 rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg outline-none placeholder:text-fg/30"
+          className="w-44 rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg outline-none placeholder:text-fg/46"
         />
       </Row>
 
       {/* Asked rather than inferred: an empty list is also what a finished walk
           that found nothing looks like, and those are different sentences. */}
       {rows.length === 0 && (
-        <div className="px-3.5 py-2.5 text-[12.5px] text-fg/40">
+        <div className="px-3.5 py-2.5 text-[12.5px] text-fg/56">
           {indexing ? "Still finding applications…" : "No applications found."}
         </div>
       )}
 
       {rows.length > 0 && matches.length === 0 && (
-        <div className="px-3.5 py-2.5 text-[12.5px] text-fg/40">
+        <div className="px-3.5 py-2.5 text-[12.5px] text-fg/56">
           No application matches “{filter}”.
         </div>
       )}
@@ -225,7 +225,7 @@ export function Applications() {
               }
               aria-expanded={open}
               aria-label={`${group.title} applications`}
-              className="rounded-control px-2 py-1 text-[12.5px] text-fg/50 transition-colors hover:bg-row-hover hover:text-fg"
+              className="rounded-control px-2 py-1 text-[12.5px] text-fg/64 transition-colors hover:bg-row-hover hover:text-fg"
             >
               {open ? "Hide" : `Show ${group.rows.length}`}
             </button>
@@ -239,7 +239,7 @@ export function Applications() {
               onClick={() =>
                 setShown((n) => ({ ...n, [group.origin]: limit + PAGE }))
               }
-              className="w-full px-3.5 py-2.5 text-left text-[12.5px] text-fg/50 transition-colors hover:bg-row-hover hover:text-fg"
+              className="w-full px-3.5 py-2.5 text-left text-[12.5px] text-fg/64 transition-colors hover:bg-row-hover hover:text-fg"
             >
               Show more ({group.rows.length - limit} left)
             </button>
@@ -255,7 +255,7 @@ export function Applications() {
           label="These point at something that is gone"
           description="An uninstall or a rename leaves the rule behind. Listed rather than hidden, because a rule nobody can see is a rule nobody can delete."
         >
-          <span className="text-[12.5px] text-fg/40">{orphans.length}</span>
+          <span className="text-[12.5px] text-fg/56">{orphans.length}</span>
         </Row>
 
         {orphans.map((row) => (
@@ -265,13 +265,13 @@ export function Applications() {
           >
             <div className="min-w-0">
               <span className="font-mono text-[13px] text-fg">{row.alias}</span>
-              <span className="mx-2 text-fg/30">→</span>
-              <span className="text-[13px] text-amber-300">no longer installed</span>
+              <span className="mx-2 text-fg/46">→</span>
+              <span className="text-[13px] text-warning">no longer installed</span>
             </div>
             <button
               type="button"
               onClick={() => void forget(row.alias)}
-              className="shrink-0 rounded-control px-2 py-1 text-[12.5px] text-fg/50 transition-colors hover:bg-row-hover hover:text-fg"
+              className="shrink-0 rounded-control px-2 py-1 text-[12.5px] text-fg/64 transition-colors hover:bg-row-hover hover:text-fg"
             >
               Remove
             </button>

@@ -111,7 +111,39 @@ pub fn ask_effort_key(kind: crate::agents::AgentKind) -> String {
 pub const PLACEMENT: &str = "launcher.placement";
 
 /// Appearance: `"system"` (default), `"light"` or `"dark"`.
-pub const THEME: &str = "ui.theme";
+///
+/// Was `ui.theme` through v0.9; "theme" means a palette family since ADR-0023,
+/// so this key took the name it always described. [`LEGACY_THEME`] is carried
+/// across once, and the values are unchanged.
+pub const APPEARANCE: &str = "ui.appearance";
+
+/// The pre-v0.10 spelling of [`APPEARANCE`]. Read once by `settings::migrate`.
+///
+/// A rename without this is not a rename, it is a silent reset: every existing
+/// install would find no value under the new key and fall back to `system`,
+/// undoing an override the user chose deliberately.
+pub const LEGACY_THEME: &str = "ui.theme";
+
+/// Which palette family paints each half (v0.10). Ids from `theme/themes.ts`.
+///
+/// Both stored regardless of which is live: picking a dark theme in daylight has
+/// to work. Rust never interprets the value — the registry is TypeScript's, and
+/// an unknown id falls back in the renderer.
+pub const THEME_DARK: &str = "ui.theme.dark";
+pub const THEME_LIGHT: &str = "ui.theme.light";
+
+/// The family a fresh install gets. Must match `DEFAULT_THEME` in `themes.ts`.
+pub const DEFAULT_THEME: &str = "graphite";
+
+/// The Palette's shape: `"compact"` (default) or `"expanded"`.
+pub const WINDOW_MODE: &str = "ui.window-mode";
+
+/// Whether tapping the Windows key opens the Palette (v0.10). Default off.
+///
+/// Not an accelerator: the Windows key is a modifier, so this arms a
+/// `WH_KEYBOARD_LL` hook instead (`superkey.rs`). Stored rather than derived
+/// because the hook has to be re-armed at every start.
+pub const SUPER_HOTKEY: &str = "hotkey.super";
 
 /// Interface size: `"small"`, `"default"` or `"large"`.
 ///
@@ -192,6 +224,17 @@ impl Prefs {
              ON CONFLICT(key) DO UPDATE SET value = ?2",
             params![key, value],
         )?;
+        Ok(())
+    }
+
+    /// Forget a preference, so whatever reads it falls back to its default.
+    ///
+    /// **Not the same as writing the default in** (v0.10): the index roots are
+    /// probed on every read (TBC-0005), so writing today's answer back turns a
+    /// reset into a pin. Removing a key that was never set is not an error.
+    pub fn remove(&self, key: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("prefs mutex");
+        conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
         Ok(())
     }
 }

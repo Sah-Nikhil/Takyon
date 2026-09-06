@@ -92,7 +92,7 @@ export function SearchView({
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-plate/95 shadow-2xl backdrop-blur-xl"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate/95 shadow-panel backdrop-blur-xl"
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         e.stopPropagation();
@@ -100,7 +100,7 @@ export function SearchView({
         onClose();
       }}
     >
-      <header className="flex items-center gap-2.5 border-b border-white/5 px-4 py-3">
+      <header className="flex items-center gap-2.5 border-b border-seam px-4 py-3">
         {/*
           Warm, and only here: this is the one surface where data left. It
           breathes while the request is out and holds still once it lands — the
@@ -110,12 +110,12 @@ export function SearchView({
         <span
           aria-hidden
           data-outbound-pulse={busy ? "true" : undefined}
-          className="size-2 shrink-0 rounded-full bg-amber-400"
+          className="size-2 shrink-0 rounded-full bg-outbound"
         />
-        <span className="shrink-0 text-[13px] text-amber-200/90" data-testid="outbound">
+        <span className="shrink-0 text-[13px] text-outbound/90" data-testid="outbound">
           Left this machine · {state.provider ?? provider}
         </span>
-        <span className="ms-auto shrink-0 text-[12px] text-fg/40" role="status">
+        <span className="ms-auto shrink-0 text-[12px] text-fg/56" role="status">
           {state.phase === "searching"
             ? "Searching…"
             : state.phase === "reading"
@@ -131,7 +131,7 @@ export function SearchView({
       <div ref={bodyRef} className="flex-1 overflow-y-auto px-4 py-3">
         {/* The question, set as the thing that was asked rather than as a
             caption. Arc keeps it in the search field; there is no field here. */}
-        <p className="text-[13px] text-fg/45">{query}</p>
+        <p className="text-[13px] text-fg/60">{query}</p>
 
         {reading && state.sources.length > 0 && <Reading sources={state.sources} />}
 
@@ -157,7 +157,7 @@ export function SearchView({
                         name={finding.icon}
                         className="mt-[3px] size-[15px] shrink-0 text-accent/75"
                       />
-                      <p className="min-w-0 text-[13.5px] leading-relaxed text-fg/80">
+                      <p className="min-w-0 text-[13.5px] leading-relaxed text-fg/86">
                         {finding.label &&
                           (finding.cites[0] ? (
                             // The label opens the source it came from, which is
@@ -174,7 +174,7 @@ export function SearchView({
                           ) : (
                             <span className="font-semibold text-fg">{finding.label}</span>
                           ))}
-                        {finding.label && <span className="text-fg/40"> — </span>}
+                        {finding.label && <span className="text-fg/56"> — </span>}
                         <InlineText text={finding.detail} onOpenSource={open} />
                         {finding.cites.map((n) => (
                           <Cite key={n} n={n} source={state.sources[n - 1]} onHover={setLitSource} />
@@ -186,7 +186,7 @@ export function SearchView({
                     <Answer
                       text={section.rest.join("\n\n")}
                       onOpenSource={open}
-                      className="text-[13.5px] leading-relaxed text-fg/80"
+                      className="text-[13.5px] leading-relaxed text-fg/86"
                     />
                   )}
                 </div>
@@ -201,7 +201,7 @@ export function SearchView({
         )}
 
         {state.phase === "failed" && (
-          <p className="mt-4 text-[13px] text-amber-300" role="alert">
+          <p className="mt-4 text-[13px] text-warning" role="alert">
             {state.error ?? "The search stopped without an answer."}
           </p>
         )}
@@ -211,13 +211,13 @@ export function SearchView({
         )}
       </div>
 
-      <div className="flex items-center gap-3 border-t border-white/5 px-4 py-2.5">
-        <span className="text-[12px] text-fg/35">Esc to go back</span>
+      <div className="flex items-center gap-3 border-t border-seam px-4 py-2.5">
+        <span className="text-[12px] text-fg/50">Esc to go back</span>
         {busy && (
           <button
             type="button"
             onClick={cancel}
-            className="ms-auto shrink-0 rounded-md border border-white/10 px-2.5 py-1 text-[12px] text-fg/70 hover:text-fg"
+            className="ms-auto shrink-0 rounded-md border border-edge px-2.5 py-1 text-[12px] text-fg/80 hover:text-fg"
           >
             Stop
           </button>
@@ -241,7 +241,7 @@ function Reading({ sources }: { sources: SearchHit[] }) {
         {sources.map((source) => (
           <li key={source.url} className="flex items-center gap-2.5">
             <Favicon host={hostOf(source.url)} size={15} />
-            <span className="truncate text-[13px] text-fg/45">{hostOf(source.url)}</span>
+            <span className="truncate text-[13px] text-fg/60">{hostOf(source.url)}</span>
           </li>
         ))}
       </ul>
@@ -269,15 +269,15 @@ function Cards({ sources }: { sources: SearchHit[] }) {
               title={source.title}
               className="group flex h-[92px] w-[178px] shrink-0 flex-col justify-between rounded-card border border-hairline bg-card p-2.5 text-left transition-colors hover:border-accent/30"
             >
-              <span className="line-clamp-3 text-[12px] leading-snug text-fg/80">
+              <span className="line-clamp-3 text-[12px] leading-snug text-fg/86">
                 {source.title}
               </span>
               <span className="flex items-center gap-1.5">
                 <Favicon host={host} size={13} />
-                <span className="truncate text-[11px] text-fg/45">{host}</span>
+                <span className="truncate text-[11px] text-fg/60">{host}</span>
                 <OpenNewWindow
                   aria-hidden
-                  className="ms-auto size-3 shrink-0 text-fg/0 transition-colors group-hover:text-fg/40"
+                  className="ms-auto size-3 shrink-0 text-fg/0 transition-colors group-hover:text-fg/56"
                 />
               </span>
             </button>
@@ -314,7 +314,7 @@ function Cite({
       onBlur={() => onHover(null)}
       title={source.title}
       aria-label={`Source ${n}: ${source.title}`}
-      className="ms-1 rounded-[0.25rem] bg-control px-1 align-baseline text-[11px] tabular-nums text-fg/50 transition-colors hover:bg-accent/20 hover:text-accent focus-visible:bg-accent/20 focus-visible:text-accent"
+      className="ms-1 rounded-[0.25rem] bg-control px-1 align-baseline text-[11px] tabular-nums text-fg/64 transition-colors hover:bg-accent/20 hover:text-accent focus-visible:bg-accent/20 focus-visible:text-accent"
     >
       {n}
     </button>
@@ -339,7 +339,7 @@ function Sources({
 }) {
   return (
     <div className="mt-7 border-t border-hairline pt-3.5" data-testid="sources">
-      <p className="text-[11px] uppercase tracking-wide text-fg/35">Sources</p>
+      <p className="text-[11px] uppercase tracking-wide text-fg/50">Sources</p>
       <div className="mt-1.5 space-y-px">
         {sources.map((source, i) => {
           const n = i + 1;
@@ -356,14 +356,14 @@ function Sources({
             >
               <span
                 className={`w-4 shrink-0 rounded-[0.25rem] text-center text-[11px] tabular-nums transition-colors ${
-                  lit === n ? "bg-accent/20 text-accent" : "bg-control text-fg/50"
+                  lit === n ? "bg-accent/20 text-accent" : "bg-control text-fg/64"
                 }`}
               >
                 {n}
               </span>
               <Favicon host={hostOf(source.url)} size={14} />
-              <span className="truncate text-[12.5px] text-fg/65">{source.title}</span>
-              <span className="ms-auto shrink-0 truncate text-[11px] text-fg/45">
+              <span className="truncate text-[12.5px] text-fg/76">{source.title}</span>
+              <span className="ms-auto shrink-0 truncate text-[11px] text-fg/60">
                 {hostOf(source.url)}
               </span>
             </button>

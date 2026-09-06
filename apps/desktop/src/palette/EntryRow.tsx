@@ -49,7 +49,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
               installs. `shrink-0` because the title truncates first: losing the
               version turns two identical rows back into two identical rows.
              */
-            <span className="shrink-0 text-[11px] leading-tight tabular-nums text-fg/40">
+            <span className="shrink-0 text-[11px] leading-tight tabular-nums text-fg/56">
               {entry.version}
             </span>
           )}
@@ -63,7 +63,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
            */
           <div
             dir="rtl"
-            className="truncate text-left text-[11px] leading-tight text-fg/40"
+            className="truncate text-left text-[11px] leading-tight text-fg/56"
           >
             {entry.subtitle}
           </div>
@@ -76,7 +76,7 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
         harder to read than one that is simply there.
        */}
       {KIND_LABEL[entry.kind] && (
-        <span className="shrink-0 text-[11px] leading-tight text-fg/30">
+        <span className="shrink-0 text-[11px] leading-tight text-fg/46">
           {KIND_LABEL[entry.kind]}
         </span>
       )}

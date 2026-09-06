@@ -97,6 +97,13 @@ pub enum View {
 /// match `VIEW_HEIGHT` in `packages/shared/src/ipc.ts`.
 pub const VIEW_HEIGHT: u32 = 560;
 
+/// How tall the Expanded Palette is, logical pixels (v0.10).
+///
+/// Fixed, which is the point: no resize per keystroke, so there is room for
+/// headings and a first view. Shorter than [`VIEW_HEIGHT`] — a View is a reading
+/// surface, this is a launcher. Mirrors `EXPANDED_HEIGHT` in `ipc.ts`.
+pub const EXPANDED_HEIGHT: u32 = 520;
+
 /// What the Palette has to accommodate.
 ///
 /// Held here because its parts arrive separately: rows with each query, the menu
@@ -119,6 +126,12 @@ pub struct Shape {
     /// `Some` while a full-window View is open, which overrides every row-based
     /// measurement below it.
     pub view: Option<View>,
+    /// Expanded mode (v0.10): a fixed-height window that does not track rows.
+    ///
+    /// Not stored in `SHAPE` — it is a preference rather than something a query
+    /// produces, so [`apply`] stamps it in from [`EXPANDED`] on the way past.
+    /// Keeping it on `Shape` is what leaves [`content_height`] pure.
+    pub expanded: bool,
 }
 
 static SHAPE: Mutex<Shape> = Mutex::new(Shape {
@@ -128,6 +141,7 @@ static SHAPE: Mutex<Shape> = Mutex::new(Shape {
     menu_actions: None,
     banner_height: 0,
     view: None,
+    expanded: false,
 });
 
 /// How tall the Palette should be for a given shape.
@@ -158,7 +172,13 @@ pub fn content_height(shape: Shape) -> u32 {
             .saturating_sub(u32::from(shape.calc_card))
             .min(MAX_VISIBLE_ROWS)
     };
-    let content = if card == 0 && list_rows == 0 {
+    // Expanded is a fixed window: the list scrolls inside it rather than the
+    // window growing, so none of the row arithmetic above applies to it. The
+    // menu below still does — a menu taller than its window is cut off in either
+    // mode — though at this height it never is.
+    let content = if shape.expanded {
+        EXPANDED_HEIGHT
+    } else if card == 0 && list_rows == 0 {
         EMPTY_HEIGHT
     } else {
         EMPTY_HEIGHT + card + list_rows * ROW_HEIGHT + LIST_CHROME + FOOTER_HEIGHT
@@ -276,8 +296,10 @@ pub fn reset_shape(app: &AppHandle) {
 /// question that changes about once a year. Written at startup and on change.
 static UI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
 static ON_PRIMARY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Expanded mode, for the same reason and on the same path (v0.10).
+static EXPANDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Load both from storage. Called at startup and whenever either changes.
+/// Load all three from storage. Called at startup and whenever one changes.
 pub fn cache_layout_prefs(prefs: &crate::prefs::Prefs) {
     use std::sync::atomic::Ordering::Relaxed;
     UI_SCALE.store(
@@ -285,6 +307,16 @@ pub fn cache_layout_prefs(prefs: &crate::prefs::Prefs) {
         Relaxed,
     );
     ON_PRIMARY.store(crate::settings::placement(prefs) == "primary", Relaxed);
+    EXPANDED.store(crate::settings::window_mode(prefs) == "expanded", Relaxed);
+}
+
+/// Whether the Palette is in Expanded mode right now.
+///
+/// Read by `query.rs`, which serves the Frecency suggestions only in this mode:
+/// an empty query in Compact shows nothing (ADR-0001) and there is no reason to
+/// compute a list nobody will see.
+pub fn expanded() -> bool {
+    EXPANDED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Apply the stored interface size to a logical height.
@@ -310,6 +342,13 @@ pub fn rescale(app: &AppHandle) {
 /// only — re-centring per keystroke would look like drift.
 fn apply(app: &AppHandle, shape: Shape) {
     let Some(win) = palette(app) else { return };
+    // Stamped in here rather than written into `SHAPE` by every mutator: the mode
+    // is a preference, not something a query produced, and this is the one place
+    // every path already funnels through.
+    let shape = Shape {
+        expanded: expanded(),
+        ..shape
+    };
     let height = scaled(content_height(shape));
 
     let Ok(size) = win.inner_size() else { return };
@@ -724,6 +763,15 @@ mod tests {
             menu_actions: menu,
             banner_height: 0,
             view: None,
+            expanded: false,
+        }
+    }
+
+    /// The same shape in Expanded mode (v0.10).
+    fn expanded_shape(rows: usize) -> Shape {
+        Shape {
+            expanded: true,
+            ..shape(rows, false, None)
         }
     }
 
@@ -899,6 +947,44 @@ mod tests {
         assert!(content_height(shape) > VIEW_HEIGHT);
     }
 
+    /// v0.10: Expanded is a fixed window, so no row count can move it.
+    ///
+    /// Stated as "the same height for zero rows and for eight" rather than as an
+    /// equality against the constant, because that is the property the mode is
+    /// *for*: the window stops jumping while you type.
+    #[test]
+    fn v0_10_expanded_does_not_track_the_row_count() {
+        assert_eq!(content_height(expanded_shape(0)), EXPANDED_HEIGHT);
+        assert_eq!(content_height(expanded_shape(8)), EXPANDED_HEIGHT);
+        let mut card = expanded_shape(3);
+        card.calc_card = true;
+        assert_eq!(content_height(card), EXPANDED_HEIGHT);
+        // And Compact still does, or the two modes would be the same thing.
+        assert_ne!(content_height(shape(0, false, None)), content_height(shape(8, false, None)));
+    }
+
+    /// v0.10: a View outranks Expanded, in that order and not the other one.
+    ///
+    /// The easy mistake is to branch on Expanded first, which leaves the Chat
+    /// Surface 520px tall instead of 560 — visible only as a slightly short
+    /// conversation, and only for people who use both features.
+    #[test]
+    fn v0_10_a_view_still_wins_over_expanded() {
+        let mut shape = expanded_shape(8);
+        assert_eq!(content_height(shape), EXPANDED_HEIGHT);
+        shape.view = Some(View::Ask);
+        assert_eq!(content_height(shape), VIEW_HEIGHT);
+        assert_ne!(VIEW_HEIGHT, EXPANDED_HEIGHT, "the test would prove nothing");
+    }
+
+    /// v0.10: the banner is still the exception, in Expanded as everywhere else.
+    #[test]
+    fn v0_10_expanded_still_leaves_room_for_the_hotkey_banner() {
+        let mut shape = expanded_shape(0);
+        shape.banner_height = 40;
+        assert_eq!(content_height(shape), EXPANDED_HEIGHT + 40 + BANNER_MARGIN);
+    }
+
     #[test]
     fn v0_2_row_geometry_agrees_with_the_typescript_contract() {
         let ipc = std::fs::read_to_string(
@@ -919,6 +1005,7 @@ mod tests {
             ("CALC_CAPTION_HEIGHT", CALC_CAPTION_HEIGHT),
             ("CALC_CARD_HEIGHT", CALC_CARD_HEIGHT),
             ("FOOTER_HEIGHT", FOOTER_HEIGHT),
+            ("EXPANDED_HEIGHT", EXPANDED_HEIGHT),
         ] {
             assert!(
                 ipc.contains(&format!("{name} = {value}")),
