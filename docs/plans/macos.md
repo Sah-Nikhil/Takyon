@@ -185,27 +185,50 @@ whose owner believes they removed the app.
 
 ## Build order
 
-The rows are independent — each has a stub that compiles and refuses — so this is
-a recommended order, not a dependency graph.
+The rows are independent — each has a stub that compiles and refuses — so from
+step 3 onward this is a recommended order rather than a dependency graph. The
+first three are not optional and are in this order for a reason.
 
-0. **`bun run bench` on the Mac.** Before anything. ADR-0028 removes ADR-0003's
-   working-set trim on macOS, so the 150 MB idle-RSS figure is *unverified* and
-   must not be quoted as if it held. Whatever the harness reports is written into
-   ADR-0003 as an amendment. The three latency budgets port unchanged.
-1. **`tauri.macos.conf.json`** — `minimumSystemVersion: "13.0"`, bundle
+**Start here.**
+
+0. **Get it onto the Mac and run it.** `git clone`, `bun install`,
+   `bun run dev`. Nothing in this repository has ever executed on macOS, so this
+   is the first real information anyone has: does it launch, does the hotkey
+   register, does the Palette paint, does the `.app` walk find applications.
+   Expect a Dock icon and an ordinary window — `LSUIElement` and the panel are
+   step 2. Half an hour, and it can only be done once.
+
+   `bun run build` for a release bundle is worth trying in the same sitting, and
+   is a different risk: it links, which `check:macos` never does.
+
+1. **The benchmark harness, ported to Rust.** `bun run bench` is four PowerShell
+   scripts and cannot run here. Until it does, nothing about performance on macOS
+   is knowable, and ADR-0028 removed ADR-0003's working-set trim, so the **150 MB
+   idle-RSS figure is unverified and must not be quoted as if it held.** Whatever
+   the harness reports is written into ADR-0003 as an amendment. The three
+   latency budgets port unchanged and are not up for renegotiation. See
+   *Testing* for why Rust rather than shell or Swift.
+
+2. **`tauri.macos.conf.json`** — `minimumSystemVersion: "13.0"`, bundle
    identifier and product name from ADR-0020's two literals, `LSUIElement`.
-2. **Row 8, the window.** Everything else is judged by eye through it, and a
+**Then the rows.**
+
+3. **Row 8, the window.** Everything else is judged by eye through it, and a
    Palette that cannot appear over a full-screen app is not testable.
-3. **Row 7, launch through `NSWorkspace`.** Replaces the stopgap and restores
+4. **Row 7, launch through `NSWorkspace`.** Replaces the stopgap and restores
    Frecency identity.
-4. **Row 3, icons.** The list looks broken without them, which makes every later
+5. **Row 3, icons.** The list looks broken without them, which makes every later
    row harder to evaluate.
-5. **Row 2's remainder** — `NSBundle` display names, exec-bit `PATH` scan (which
+6. **Row 2's remainder** — `NSBundle` display names, exec-bit `PATH` scan (which
    consumes `path-hydration.md`'s work).
-6. **Row 4, Spotlight.**
-7. **Row 5, `URLSession`** — unblocks `!s` and favicons together.
-8. **Row 6, the clipboard** — poll, markers, Keychain, paste chord.
-9. **Rows 10, 11, 12** — small, and pleasant to finish on.
+7. **Row 4, Spotlight.**
+8. **Row 5, `URLSession`** — unblocks `!s` and favicons together.
+9. **Row 6, the clipboard** — poll, markers, Keychain, paste chord.
+10. **Rows 10, 11, 12** — small, and pleasant to finish on.
+
+The Cmd+Space onboarding is not in this list on purpose: it is the last thing
+built, because until the Palette is worth summoning there is nothing to take
+Spotlight's shortcut *for*.
 
 `steam_path()` is a one-function change to
 `~/Library/Application Support/Steam` and can be done at any point.
