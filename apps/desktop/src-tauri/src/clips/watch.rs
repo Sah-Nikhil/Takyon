@@ -258,7 +258,7 @@ fn owner_exe() -> Option<String> {
 /// Opening can fail while another process holds the clipboard, which is normal
 /// right after a copy, so it is retried briefly rather than treated as an error.
 #[cfg(windows)]
-fn read_text() -> Option<String> {
+pub fn read_text() -> Option<String> {
     use windows::Win32::Foundation::HGLOBAL;
     use windows::Win32::System::DataExchange::{
         CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
@@ -267,6 +267,10 @@ fn read_text() -> Option<String> {
     use windows::Win32::System::Ole::CF_UNICODETEXT;
 
     let format = CF_UNICODETEXT.0 as u32;
+    // Held for the whole open/close span, and taken before the availability
+    // check so a write cannot land between the two. See [`super::os::lock`].
+    let _clipboard = super::os::lock();
+
     unsafe {
         if IsClipboardFormatAvailable(format).is_err() {
             return None;

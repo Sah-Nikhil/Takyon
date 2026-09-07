@@ -544,6 +544,14 @@ is the honest reason it stayed green through them.
 - [x] **CI and release workflows** ([`.github/workflows/`](./.github/workflows/)).
   Same shape as tesseract's. Written and parsing; **never executed**, because
   there is no GitHub remote yet
+- [x] **Two threads of Takyon could hold the clipboard at once.** `OpenClipboard`
+  refuses another *process* and admits a second *thread* of this one, so the
+  watcher reading while a command wrote put both inside `EmptyClipboard` —
+  freeing handles the other was still reading. The retry loop in `launch.rs` was
+  written for the cross-process case and cannot see this one. A process-wide
+  `clips::os::lock` now spans every open/close. Found by the round-trip test
+  added with ADR-0025's seams: the suite died with `STATUS_HEAP_CORRUPTION`
+  under the default thread count and passed with `--test-threads=1`
 - [ ] **Launch at startup** — verified already on, not a defect. The `Run` value
   `com.v3sper.takyon` is present and General reads it as on. Left unticked only
   because it was checked rather than changed
@@ -581,7 +589,9 @@ These block nothing today but should be settled before they become expensive:
 - **Portable / no-installer mode** — in scope or not.
 - **macOS**, deliberately post-V1 (`docs/plans/post-v1.md`). Sized at v0.10.1
   rather than left as a gesture: 7,410 lines across 20 files name the `windows`
-  crate, nothing carries `cfg(target_os = "macos")`, and two of the five seams
-  CLAUDE.md claims were never written as traits. `docs/plans/macos.md` has the
-  table, the three decisions it needs first, and the CI switch that is already
+  crate. The three decisions it needed first are now made — `ClipboardStore` and
+  `Hotkey` are real traits (ADR-0025), the HTTP client is TBC-0013 and signing is
+  TBC-0014 — and `identity.rs` has its macOS arm. Everything that touches the OS
+  is still unwritten, and no `cfg(target_os = "macos")` arm has ever been
+  compiled. `docs/plans/macos.md` has the table and the CI switch that is already
   wired for the day it compiles.

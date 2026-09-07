@@ -878,11 +878,15 @@ pub fn run() {
             // The first thing that makes the app useful, and it stays first.
             // Reads `settings.db` so a rebound hotkey survives a restart: one
             // indexed lookup on an open connection, which is what that costs.
-            hotkey::register(&handle, hotkey::accelerator(&prefs));
+            let hotkey = hotkey::host();
+            hotkey.register(&handle, hotkey::accelerator(&prefs));
             // After the accelerator, never instead of it: the two are
-            // independent bindings and the Windows key is the optional one
-            // (v0.10). A hook that refuses must not cost anyone their Alt+Space.
-            superkey::restore(&handle, &prefs);
+            // independent bindings and the second one is optional (v0.10). A
+            // hook that refuses must not cost anyone their Alt+Space, and a
+            // target with no second binding at all is the same non-event.
+            if let Some(second) = hotkey.second_binding() {
+                second.restore(&handle, &prefs);
+            }
 
             let bench = app.state::<Bench>();
             bench.startup_ready();
@@ -937,7 +941,7 @@ pub fn run() {
                     // The same `Arc` the settings window edits, so an added
                     // executable is excluded from the next capture, not the next
                     // launch.
-                    clips::watch::spawn(store, blocklist);
+                    clips::os::host().spawn_watcher(store, blocklist);
                 }
                 _ => eprintln!("[takyon] clipboard capture is off"),
             }

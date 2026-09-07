@@ -8,7 +8,11 @@
 //! Format is not preserved at v0.5 because nothing but text is captured yet. When
 //! images and file lists arrive they are stored with their format and restored to
 //! the same one; the seam is [`Paste::kind`], not a second function.
+//!
+//! Both entry points go through [`crate::clips::os::host`]. This file owns the
+//! shape of a paste and the settle delay; the OS calls live behind the trait.
 
+use crate::clips::os::host;
 use crate::clips::store::ClipKind;
 
 /// How long the target window gets to take focus back before the keystroke.
@@ -31,9 +35,7 @@ pub struct Paste<'a> {
 
 /// Put the clip on the clipboard. Always run, keystroke or not.
 pub fn to_clipboard(paste: &Paste<'_>) -> Result<(), String> {
-    match paste.kind {
-        ClipKind::Text => crate::launch::copy_to_clipboard(paste.text),
-    }
+    host().write(paste)
 }
 
 /// Copy, wait for focus to land, then press `Ctrl+V` in whatever now has it.
@@ -42,9 +44,7 @@ pub fn to_clipboard(paste: &Paste<'_>) -> Result<(), String> {
 /// about windows, and pasting into our own input box is the bug that shape
 /// prevents.
 pub fn paste_back(paste: &Paste<'_>) -> Result<(), String> {
-    to_clipboard(paste)?;
-    std::thread::sleep(std::time::Duration::from_millis(FOCUS_SETTLE_MS));
-    send_ctrl_v()
+    host().paste_back(paste)
 }
 
 /// Synthesise `Ctrl+V`.
@@ -88,10 +88,6 @@ pub fn send_ctrl_v() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(windows))]
-pub fn send_ctrl_v() -> Result<(), String> {
-    Err("paste-back is only implemented on Windows".into())
-}
 
 #[cfg(test)]
 mod tests {

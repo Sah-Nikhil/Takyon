@@ -436,7 +436,12 @@ pub fn set_super_hotkey(
     on: bool,
     prefs: tauri::State<'_, Arc<Prefs>>,
 ) -> Result<bool, String> {
-    let live = crate::superkey::arm(&app, on);
+    // `None` where the target has no second binding at all: the switch settles
+    // off, which is the same honest answer a refused hook gives.
+    let live = match crate::hotkey::host().second_binding() {
+        Some(second) => second.arm(&app, on),
+        None => false,
+    };
     if live == on {
         prefs
             .set(prefs::SUPER_HOTKEY, if on { "1" } else { "0" })

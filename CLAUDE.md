@@ -46,10 +46,14 @@ Steam steps are blocked because this machine's library holds no game.
 
 **Windows only, and further from macOS than the workspace layout suggests.**
 `apps/` and `packages/shared` were split ahead of need so the seams would exist,
-and the frontend genuinely is portable — but 7,410 lines across 20 Rust files
-name the `windows` crate, there is no `cfg(target_os = "macos")` anywhere, and
-two of the five seams CLAUDE.md claims (`ClipboardStore`, `Hotkey`) were never
-actually written as traits. `docs/plans/macos.md` states the whole picture.
+and the frontend genuinely is portable — but roughly 7,400 lines across 20 Rust
+files name the `windows` crate. `ClipboardStore` and `Hotkey` are now real traits
+(ADR-0025) and `identity.rs` knows the macOS data directory, which is the whole
+of what exists: no implementation of anything that touches the OS, and no way to
+check the `cfg(target_os = "macos")` arms from here, because `cargo check
+--target aarch64-apple-darwin` dies in `libsqlite3-sys` for want of a cross `cc`.
+The two open questions are settled in `docs/tbc/0013` (the HTTP client) and
+`docs/tbc/0014` (signing). `docs/plans/macos.md` states the whole picture.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

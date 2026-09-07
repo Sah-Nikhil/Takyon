@@ -236,6 +236,29 @@ pub fn arm(_app: &AppHandle, _on: bool) -> bool {
     false
 }
 
+/// The Windows key as Takyon's [`crate::hotkey::SecondBinding`] (ADR-0025).
+///
+/// A unit struct over the free functions above: state lives in this module's
+/// statics, because the hook procedure is an `extern "system"` function with no
+/// room for a payload.
+#[cfg(windows)]
+pub struct WindowsKeyTap;
+
+#[cfg(windows)]
+impl crate::hotkey::SecondBinding for WindowsKeyTap {
+    fn armed(&self) -> bool {
+        armed()
+    }
+
+    fn arm(&self, app: &AppHandle, on: bool) -> bool {
+        arm(app, on)
+    }
+
+    fn restore(&self, app: &AppHandle, prefs: &crate::prefs::Prefs) {
+        restore(app, prefs);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

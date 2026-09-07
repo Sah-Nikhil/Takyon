@@ -8,14 +8,20 @@
 //! can unwrap the blob by handing it back to DPAPI; with it, a reader also has to
 //! know the string below. Obfuscation rather than a boundary — DPAPI's real one
 //! is the account — but it costs nothing and removes the trivial case.
+//!
+//! Everything above [`dpapi`] is portable; [`dpapi`] is not. macOS wants a
+//! Keychain item instead — third seam, no trait yet. ADR-0025 says why not.
 
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
 use windows::core::PCWSTR;
+#[cfg(windows)]
+use windows::Win32::Foundation::{LocalFree, HLOCAL};
+#[cfg(windows)]
 use windows::Win32::Security::Cryptography::{
     CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB,
 };
-use windows::Win32::Foundation::{LocalFree, HLOCAL};
 
 /// The key file, relative to the data directory.
 pub const KEY_PATH: &[&str] = &["creds", "clip.key.dpapi"];
@@ -147,6 +153,7 @@ pub fn unprotect_with(wrapped: &[u8], entropy: &[u8]) -> std::io::Result<Vec<u8>
 ///
 /// Both hand back a `LocalAlloc`ed buffer that has to be freed here — the one
 /// mistake in this API that leaks silently rather than failing.
+#[cfg(windows)]
 fn dpapi(input: &[u8], entropy: &[u8], encrypt: bool) -> std::io::Result<Vec<u8>> {
     let mut entropy = entropy.to_vec();
     let mut input = input.to_vec();
@@ -190,6 +197,19 @@ fn dpapi(input: &[u8], entropy: &[u8], encrypt: bool) -> std::io::Result<Vec<u8>
         let _ = LocalFree(Some(HLOCAL(out.pbData as *mut _)));
     }
     Ok(bytes)
+}
+
+/// No key wrapping off Windows yet, so nothing is written that cannot be read.
+///
+/// Refusing is the safe half: [`load_or_create`] turns this into an error, and
+/// `lib.rs` reports clipboard capture as off. Returning the plaintext would put
+/// an unwrapped AES key on disk, which is worse than the feature being absent.
+#[cfg(not(windows))]
+fn dpapi(_input: &[u8], _entropy: &[u8], _encrypt: bool) -> std::io::Result<Vec<u8>> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "the clipboard key is only wrapped on Windows; macOS needs the Keychain",
+    ))
 }
 
 #[cfg(test)]

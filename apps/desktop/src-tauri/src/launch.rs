@@ -294,12 +294,6 @@ pub fn explain_shell_error(code: isize) -> String {
     }
 }
 
-/// Put text on the clipboard.
-///
-/// Done with the Win32 calls rather than `tauri-plugin-clipboard-manager`, which
-/// would mean a plugin, a capability entry and a second route from the webview to
-/// the OS for the sake of one menu item.
-#[cfg(windows)]
 /// How many times to ask for the clipboard, and how long to wait between.
 ///
 /// The clipboard is one global lock and `OpenClipboard` fails outright while
@@ -332,6 +326,12 @@ unsafe fn open_clipboard_retrying() -> Result<(), String> {
     Err(format!("could not open the clipboard: {last}"))
 }
 
+/// Put text on the clipboard.
+///
+/// Done with the Win32 calls rather than `tauri-plugin-clipboard-manager`, which
+/// would mean a plugin, a capability entry and a second route from the webview to
+/// the OS. Reached through [`crate::clips::os::ClipboardStore`], never directly.
+#[cfg(windows)]
 pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     use windows::Win32::Foundation::{HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
@@ -343,6 +343,10 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let mut wide: Vec<u16> = text.encode_utf16().collect();
     wide.push(0);
     let bytes = wide.len() * 2;
+
+    // Held for the whole open/close span. `crate::clips::os::lock` says why the
+    // Win32 lock is not enough on its own.
+    let _clipboard = crate::clips::os::lock();
 
     unsafe {
         open_clipboard_retrying()?;
@@ -374,10 +378,6 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     }
 }
 
-#[cfg(not(windows))]
-pub fn copy_to_clipboard(_text: &str) -> Result<(), String> {
-    Err("the clipboard is only implemented on Windows".into())
-}
 
 #[cfg(test)]
 mod tests {

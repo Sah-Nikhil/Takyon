@@ -738,7 +738,7 @@ impl Pipeline {
             if action != crate::actions::COPY_ANSWER.as_str() {
                 return Err(format!("A calculation cannot be {action}ed."));
             }
-            return crate::launch::copy_to_clipboard(answer);
+            return crate::clips::os::host().write_text(answer);
             // No `record_activation`: see `records_usage`.
         }
 
@@ -770,7 +770,7 @@ impl Pipeline {
             a if a == crate::actions::COPY_PATH.as_str() => {
                 let path = crate::launch::path_of(&target)
                     .ok_or_else(|| "That Entry has no path to copy.".to_string())?;
-                crate::launch::copy_to_clipboard(&path).map(|_| None)
+                crate::clips::os::host().write_text(&path).map(|_| None)
             }
             other => Err(format!("Unknown action: {other}")),
         }?;

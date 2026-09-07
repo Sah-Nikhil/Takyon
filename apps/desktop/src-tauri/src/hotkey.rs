@@ -8,6 +8,9 @@
 //!
 //! Rebinding is v0.6 work (it needs a settings UI). What v0.1 owes is that the
 //! failure is *visible* and that the tray still opens the Palette.
+//!
+//! [`Hotkey`] is the seam (ADR-0025). Accelerator half already portable, so only
+//! [`SecondBinding`] is platform-owned: `superkey.rs` here, nothing on macOS.
 
 use serde::Serialize;
 use std::sync::Mutex;
@@ -225,6 +228,77 @@ fn report(app: &AppHandle, status: &HotkeyStatus) {
             .kind(MessageDialogKind::Warning)
             .blocking_show();
     });
+}
+
+/// Registering, rebinding, and whichever extra key the platform allows.
+///
+/// One implementor. The trait exists so a macOS target has a named thing to
+/// implement, and so `superkey.rs` is reached through a capability question
+/// rather than a `cfg` at every call site.
+pub trait Hotkey: Send + Sync {
+    /// Register the accelerator and record what happened. Called once, early.
+    fn register(&self, app: &AppHandle, accelerator: String);
+
+    /// Rebind, keeping the old accelerator when the new one is refused.
+    fn rebind(&self, app: &AppHandle, accelerator: &str, prefs: &crate::prefs::Prefs)
+        -> HotkeyStatus;
+
+    /// The extra key this platform can bind, or `None` where there is none.
+    ///
+    /// `None` is a real answer, not a stub: macOS has no `WH_KEYBOARD_LL` and no
+    /// wanted analogue (`docs/plans/macos.md`). Settings draws the switch only
+    /// when this is `Some`.
+    fn second_binding(&self) -> Option<&'static dyn SecondBinding>;
+}
+
+/// A key that cannot be expressed as an accelerator.
+///
+/// Windows key today. Every method answers what is *true* rather than what was
+/// asked: installing the hook can be refused, and a switch reading on against a
+/// hook that is not installed is worse than either honest state.
+pub trait SecondBinding: Send + Sync {
+    /// Whether the binding is live right now.
+    fn armed(&self) -> bool;
+
+    /// Turn it on or off. Returns what is actually true afterwards.
+    fn arm(&self, app: &AppHandle, on: bool) -> bool;
+
+    /// Arm at startup if the stored preference asks for it. Quiet on failure.
+    fn restore(&self, app: &AppHandle, prefs: &crate::prefs::Prefs);
+}
+
+/// The hotkey for this target. A `cfg` choice resolved at compile time.
+pub fn host() -> &'static dyn Hotkey {
+    &PluginHotkey
+}
+
+/// `tauri-plugin-global-shortcut` for the accelerator, plus whatever second
+/// binding the target has. Portable except for [`Hotkey::second_binding`].
+pub struct PluginHotkey;
+
+impl Hotkey for PluginHotkey {
+    fn register(&self, app: &AppHandle, accelerator: String) {
+        register(app, accelerator);
+    }
+
+    fn rebind(
+        &self,
+        app: &AppHandle,
+        accelerator: &str,
+        prefs: &crate::prefs::Prefs,
+    ) -> HotkeyStatus {
+        rebind(app, accelerator, prefs)
+    }
+
+    #[cfg(windows)]
+    fn second_binding(&self) -> Option<&'static dyn SecondBinding> {
+        Some(&crate::superkey::WindowsKeyTap)
+    }
+
+    #[cfg(not(windows))]
+    fn second_binding(&self) -> Option<&'static dyn SecondBinding> {
+        None
+    }
 }
 
 #[cfg(test)]

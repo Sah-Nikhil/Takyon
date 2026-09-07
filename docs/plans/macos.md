@@ -1,12 +1,19 @@
 # macOS — what a port actually needs
 
-**Status: nothing exists.** There is no `tauri.macos.conf.json`, no
-`cfg(target_os = "macos")` anywhere under `src-tauri/src`, and no macOS
-implementation behind any trait. The crate does not compile for
-`aarch64-apple-darwin` today and would not get past the first module that
-reaches for the `windows` crate — which is declared under
+**Status: the seams exist, the implementations do not.** There is still no
+`tauri.macos.conf.json` and no macOS implementation of anything that touches the
+OS. What changed is that the three decisions below have been made and the two
+missing traits have been written (ADR-0025), so the port is now a matter of
+implementing named things rather than deciding what they are.
+
+The crate does not compile for `aarch64-apple-darwin` and would not get past the
+first module that reaches for the `windows` crate — which is declared under
 `[target.'cfg(windows)'.dependencies]`, so on any other target the import
-resolves to nothing at all.
+resolves to nothing at all. **Nor can that be checked from here**: `cargo check
+--target aarch64-apple-darwin` fails before it reaches our code, because
+`libsqlite3-sys`'s build script wants a cross `cc` and the development machine
+has none. Every `cfg(target_os = "macos")` arm in the tree is therefore reasoned,
+never compiled — the same state `docs/verify/v0.10.md` section E is in.
 
 This document exists because the question "is there a macOS setup?" deserves a
 number rather than a shrug. The number is **7,410 lines across 20 files** that
@@ -40,7 +47,7 @@ implementations.
 
 | # | Subsystem | Windows today | macOS |
 |---|---|---|---|
-| 1 | `identity.rs` | `%LOCALAPPDATA%\v3sper\takyon` | `~/Library/Application Support/com.v3sper.takyon` |
+| 1 | ~~`identity.rs`~~ | `%LOCALAPPDATA%\v3sper\takyon` | **written**: `~/Library/Application Support/com.v3sper.takyon`, the slug rather than `<vendor>/<app>` |
 | 2 | `sources/apps` (1,350 lines) | Start Menu COM walk, `.lnk` parsing, AppsFolder | bundle walk of `/Applications`, `~/Applications`, `/System/Applications`; `Info.plist` for the display name |
 | 3 | `icons.rs` (785) | `IShellItemImageFactory` | `NSWorkspace.iconForFile`, same `icons.bin` on the other side |
 | 4 | `index/` (1,110) | `ReadDirectoryChangesW`, Windows Search fallback | FSEvents; Spotlight (`NSMetadataQuery`) as the fallback |
@@ -53,35 +60,57 @@ implementations.
 | 11 | `tray.rs` (297) | mostly Tauri, some Win32 | menu bar item |
 | 12 | `version.rs` (142) | file version info | `Info.plist` |
 
+Row 6 has a fourth part the table did not list: `clips/key.rs` (287), the DPAPI
+wrap, which is now `#[cfg(windows)]` and needs a Keychain item on the other side.
+
 **Dropped rather than ported:** `uiaccess.rs` (189) and `superkey.rs` (250).
 UIAccess has no macOS analogue — the equivalent problem, showing over another
 app, is the Accessibility permission, which is a prompt rather than a signed
-manifest. `com.rs` (47) goes with them.
+manifest. `com.rs` (47) goes with them. `superkey.rs` being dropped is what
+`Hotkey::second_binding()` returning `None` states in code.
 
-## Three decisions to make before writing any of it
+## Three decisions, now made
 
-**ADR-0019 has to be revisited, not assumed.** It chose WinHTTP over a Rust HTTP
+**ADR-0019 is revisited in `docs/tbc/0013`.** It chose WinHTTP over a Rust HTTP
 client for OS TLS, the user's own proxy, and nothing added to the installer.
 Every one of those arguments holds on macOS with `URLSession` and none of them
 holds with `reqwest`. But `URLSession` from Rust means objc bindings for the one
-subsystem that is otherwise trivially portable. This is a real tradeoff and it
-belongs in a TBC before the port, not in a commit message during it.
+subsystem that is otherwise trivially portable. TBC-0013 records the bet, the
+line at which it fails (roughly 400 lines of objc FFI, which is what `fetch.rs`
+costs in WinHTTP today), and the one option to refuse outright: a per-platform
+split, where `!s` redirects and validates certificates differently depending on
+which machine it runs on.
 
-**Two traits CLAUDE.md names do not exist.** It lists `FileIndex`, `AppSource`,
-`ClipboardStore`, `Hotkey` and `SearchProvider` as the seams that matter.
-`FileIndex`, `SearchProvider`, `Source`, `AgentDriver` and `GameLibrary` are
-real. `ClipboardStore` and `Hotkey` were never written, so the clipboard and
-hotkey paths are direct calls with no seam to implement against. Introducing
-those two traits against the Windows implementation, while it is the only one,
-is the first commit of this port and the only one that is worth doing whether or
-not the port ever finishes.
+**The two traits CLAUDE.md named now exist (ADR-0025).** It listed `FileIndex`,
+`AppSource`, `ClipboardStore`, `Hotkey` and `SearchProvider` as the seams that
+matter; `ClipboardStore` and `Hotkey` had never been written. Both now are, with
+the Windows implementation as the only implementor:
 
-**Distribution is still open.** A `.dmg` that is not signed by a $99/yr Apple
-Developer account is ad-hoc signed at best, and Gatekeeper makes the first
-launch a right-click → Open. That is the same posture the Windows build is in
-with its unsigned UIAccess helper, so it is consistent — but it should be a
-decision, not a discovery, and it interacts with the open source vs proprietary
-question (ADR-0005).
+- **`clips::os::ClipboardStore`** gathers the four OS calls that were spread
+  across three files — the read in `watch.rs`, the write in `launch.rs`, the
+  chord in `paste.rs`, the watcher in `watch.rs`. `WindowsClipboard` implements
+  it; `UnsupportedClipboard` refuses in words. Both clipboard writes in
+  `query.rs` were routed through it, so there is no longer a second path to the
+  OS clipboard.
+- **`hotkey::Hotkey`** turns out to be almost entirely portable already:
+  `tauri-plugin-global-shortcut` binds the accelerator on every target. The
+  platform-owned part is `hotkey::SecondBinding`, which is
+  `Some(&superkey::WindowsKeyTap)` on Windows and `None` elsewhere — and `None`
+  is a real answer, since macOS has no wanted analogue of the Windows-key tap.
+
+**A third seam was found and deliberately left without a trait.** `clips::key`'s
+`dpapi` is now `#[cfg(windows)]` with a refusing stub. The macOS answer is a
+Keychain item whose access control replaces both the account binding and the
+entropy argument, so a `SecretStore` trait shaped against DPAPI today would shape
+the Keychain implementation around the wrong idea.
+
+**Distribution is decided in `docs/tbc/0014`: ad-hoc signed, un-notarised, first
+launch is right-click → Open.** That is the same posture the Windows build is in
+with its unsigned UIAccess helper and its Defender false positive, and the
+consistency is the whole argument. TBC-0014 records what would end it — Gatekeeper
+narrowing the escape hatch, the updater landing, or the Windows certificate being
+bought — and the verdict: buy the Apple membership in the same decision as the
+Windows certificate, never before it.
 
 ## CI is already wired for it
 
@@ -94,8 +123,15 @@ edit to the workflow.
 
 ## Which phase owns this
 
-Unassigned. It is comfortably a phase of its own and probably more than one, and
-it competes with the two things ROADMAP already calls v1.0 blockers: the
-code-signing certificate and the updater. Sequencing it is a decision for
-whoever opens v0.11, and the honest reading of the table above is that this is
-the largest single piece of work left in the project.
+Still unassigned. It is comfortably a phase of its own and probably more than
+one, and it competes with the two things ROADMAP already calls v1.0 blockers: the
+code-signing certificate and the updater. Sequencing it is a decision for whoever
+opens v0.11, and the honest reading of the table above is that this is the
+largest single piece of work left in the project.
+
+What has been done is the part that is worth doing whether or not the port ever
+finishes: the seams are named, the two open questions are recorded as TBC notes,
+and `identity.rs` knows where a macOS install would keep its data. None of it
+moves the crate closer to compiling for `aarch64-apple-darwin` — 19 files still
+reach for the `windows` crate unguarded — and none of it has been executed on a
+Mac.

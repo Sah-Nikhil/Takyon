@@ -23,15 +23,49 @@ pub const DISPLAY_NAME: &str = "Takyon";
 /// `%LOCALAPPDATA%\com.v3sper.takyon\` — correct in spirit, wrong on disk. The
 /// layout is `<vendor>\<app>\`, matching how Raycast for Windows lays its own data
 /// out and how a second `com.v3sper.*` product would sit beside this one.
+#[cfg(windows)]
 pub fn data_dir() -> Option<PathBuf> {
     let local = std::env::var_os("LOCALAPPDATA")?;
     Some(PathBuf::from(local).join("v3sper").join("takyon"))
 }
 
+/// `~/Library/Application Support/com.v3sper.takyon/`.
+///
+/// The slug rather than `<vendor>/<app>`: macOS keys application support off the
+/// bundle identifier, and a `v3sper/takyon/` pair there would read as a folder
+/// someone made by hand. Same string as `tauri.conf.json`'s `identifier`.
+#[cfg(target_os = "macos")]
+pub fn data_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join(IDENTITY),
+    )
+}
+
+/// No third target. Windows and macOS are the two with a layout decided; anything
+/// else gets the "nowhere to put application data" error rather than a guessed
+/// path that is wrong in a way nobody notices until uninstall.
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn data_dir() -> Option<PathBuf> {
+    None
+}
+
 /// Pre-ADR-0020 data directory, `%LOCALAPPDATA%\v3sper\launcher\`.
+///
+/// Windows only, and permanently: the rename happened before any other target
+/// existed, so there is nothing on macOS for [`migrate_legacy_data_dir`] to find.
+#[cfg(windows)]
 pub fn legacy_data_dir() -> Option<PathBuf> {
     let local = std::env::var_os("LOCALAPPDATA")?;
     Some(PathBuf::from(local).join("v3sper").join("launcher"))
+}
+
+#[cfg(not(windows))]
+pub fn legacy_data_dir() -> Option<PathBuf> {
+    None
 }
 
 /// Move the pre-rename data directory across, once, on startup (ADR-0020).
@@ -115,6 +149,7 @@ mod tests {
     /// The data directory is `<vendor>\<app>`, not a single dotted folder. Getting
     /// this wrong is invisible until someone goes looking for their clipboard
     /// history, or until a migration is needed to move it.
+    #[cfg(windows)]
     #[test]
     fn v0_1_data_dir_is_vendor_then_app() {
         // Set rather than read, so the test does not depend on the machine.
@@ -126,6 +161,22 @@ mod tests {
         });
     }
 
+    /// macOS keys application support off the bundle identifier, so the path is
+    /// the slug and not the `<vendor>/<app>` pair Windows uses. Unrun on this
+    /// machine — it compiles only for `aarch64-apple-darwin`.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn v0_11_data_dir_is_application_support_over_the_slug() {
+        let dir = data_dir().expect("HOME was set");
+        assert!(
+            dir.ends_with(format!("Library/Application Support/{IDENTITY}")),
+            "got {}",
+            dir.display()
+        );
+        assert!(legacy_data_dir().is_none(), "the rename never reached macOS");
+    }
+
+    #[cfg(windows)]
     #[test]
     fn v0_1_data_dir_is_absent_without_localappdata() {
         temp_env_unset_localappdata(|| assert!(data_dir().is_none()));
@@ -290,8 +341,10 @@ mod tests {
     // Environment variables are process-global, so these helpers exist to keep the
     // mutation obviously scoped. Rust runs tests in threads within one process;
     // only these two tests touch LOCALAPPDATA, and they are serialised by the lock.
+    #[cfg(windows)]
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    #[cfg(windows)]
     fn temp_env_localappdata(value: &str, f: impl FnOnce()) {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let old = std::env::var_os("LOCALAPPDATA");
@@ -303,6 +356,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     fn temp_env_unset_localappdata(f: impl FnOnce()) {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let old = std::env::var_os("LOCALAPPDATA");
