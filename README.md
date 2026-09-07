@@ -12,7 +12,7 @@ CLI you are already signed in to.
 
 Windows only, built on Tauri 2. Current release is **0.10.0**.
 
-![The Palette answering a query, with applications, a settings page and a recent file in one list](apps/desktop/tests/visual/__screenshots__/settings-about.png)
+![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png)
 
 ---
 
@@ -232,7 +232,7 @@ own search box.
 
 ![Settings, Appearance: five theme families, each with a light and a dark half](apps/desktop/tests/visual/__screenshots__/settings-appearance.png)
 
-![The Palette on a light theme](apps/desktop/tests/visual/__screenshots__/palette-light.png)
+![Set your own aliases to navigate even quicker](apps/desktop/tests/visual/__screenshots__/settings-aliases.png)
 
 An alias makes a name reach an app it would not otherwise match, and it applies
 without waiting for the next walk.
