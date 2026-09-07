@@ -6,7 +6,7 @@
 # libc and Objective-C headers, so no Apple SDK is involved.
 #
 # This checks and lints only. Linking a real .app still needs a Mac (or the
-# Apple SDK), and no test runs here — see docs/plans/macos.md.
+# Apple SDK), and no test runs here — see docs/plans/v0.12-macos.md.
 #
 #   bun run check:macos
 #

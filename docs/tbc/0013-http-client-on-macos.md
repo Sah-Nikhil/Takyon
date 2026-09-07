@@ -46,7 +46,7 @@ The argument is about cost, so the trigger is a cost that turns out to be wrong:
 
 The last row is the one to be careful of, because it is the cheapest and it is how
 this decision gets made by accident during the port. That is precisely what
-`docs/plans/macos.md` warned against: this belongs in a TBC before the port, not
+`docs/plans/v0.12-macos.md` warned against: this belongs in a TBC before the port, not
 in a commit message during it.
 
 ## Verdict if triggered

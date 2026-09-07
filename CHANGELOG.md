@@ -34,7 +34,7 @@ Also: **CI and release workflows** for GitHub, in the same shape as tesseract's.
 Typecheck, lint and all four test layers on every push; a tag builds the
 installer and publishes it with its SHA-256. Neither has ever run — this repo has
 no remote yet. A macOS job is wired in and switched off, because there is no
-macOS build to make: `docs/plans/macos.md` says what that would take.
+macOS build to make: `docs/plans/v0.12-macos.md` says what that would take.
 
 ## v0.10 — Appearance
 

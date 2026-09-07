@@ -106,7 +106,7 @@ jobs:
 
   # There is no macOS build yet, and this job cannot succeed until there is:
   # `search::fetch` is WinHTTP (ADR-0019), the clipboard key is DPAPI, the file
-  # index is `ReadDirectoryChangesW` and the app source is COM. docs/plans/macos.md
+  # index is `ReadDirectoryChangesW` and the app source is COM. docs/plans/v0.12-macos.md
   # states what the port needs and in what order.
   #
   # Wired up anyway, and off by default: set the repository variable

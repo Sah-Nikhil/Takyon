@@ -40,7 +40,7 @@ It is reachable through `core-foundation` (already in `Cargo.lock` at 0.10.1) wi
 ## Considered Options
 
 - **Port ADR-0007 literally**: walk plus FSEvents, Spotlight as a fallback. This
-  is what `docs/plans/macos.md` originally listed, at roughly 1,110 lines. It also
+  is what `docs/plans/v0.12-macos.md` originally listed, at roughly 1,110 lines. It also
   requires an FSEvents dependency the tree does not have.
 - **`NSMetadataQuery` as primary**: right index, wrong shape — see above.
 - **`MDQuery` synchronous as primary, no walk and no watcher.** Chosen. Roughly
@@ -77,10 +77,10 @@ obtained for free.
 disabled Spotlight entirely, gets no file Entries. This is the one honest
 regression against a walk we control. It is also rare — far rarer than Windows
 Search being off, which is why the Windows inversion is a toggle rather than a
-default (`docs/plans/os-index.md`).
+default (`docs/plans/v0.13-os-index.md`).
 
 **Windows gets the same option, later and behind a setting.** `index/wsearch.rs`
 already queries Windows Search through OLE DB as an off-by-default fallback.
 Promoting it to a peer of the walk is a second implementor of the seam this ADR
 forces into existence — cheaper after the port than before it. That work is
-`docs/plans/os-index.md` and is deliberately not part of this decision.
+`docs/plans/v0.13-os-index.md` and is deliberately not part of this decision.

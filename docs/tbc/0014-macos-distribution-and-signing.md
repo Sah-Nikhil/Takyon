@@ -72,5 +72,5 @@ rather than the most distant.
 One thing this note does not cover and should not be read as covering: the visual
 test suite does **not** run on `macos-latest`. `macos-latest` runners bill at ten
 times the Linux rate, and the Playwright layer is a local check on the development
-Mac (`docs/plans/macos.md`). CI's `macos` job is a compile gate plus Rust tests.
+Mac (`docs/plans/v0.12-macos.md`). CI's `macos` job is a compile gate plus Rust tests.
 That is a cost decision about CI, not about distribution.

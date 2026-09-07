@@ -5,7 +5,7 @@ status: accepted
 # Two traits for the port, `cfg` arms for the rest
 
 The macOS port is the largest piece of work left in the project
-(`docs/plans/macos.md`), and the honest reading of it is that most of it will not
+(`docs/plans/v0.12-macos.md`), and the honest reading of it is that most of it will not
 be started for a long time. That makes the shape of the *preparation* a decision
 worth recording, because preparation that is wrong is worse than none: it costs
 indirection now and gets thrown away later.

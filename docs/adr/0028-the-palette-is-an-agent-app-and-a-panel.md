@@ -36,7 +36,7 @@ neither.
 ## Consequences
 
 **Dismiss-on-focus-loss has to be rebuilt.** This is the largest single
-consequence and `docs/plans/macos.md`'s "mostly Tauri already" for `window.rs`
+consequence and `docs/plans/v0.12-macos.md`'s "mostly Tauri already" for `window.rs`
 was wrong because of it. A non-activating panel **never becomes the key window**,
 so Tauri's `Focused(false)` does not fire for it and
 `window::should_hide_on_focus_loss` has nothing to hang on. The macOS replacement

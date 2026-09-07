@@ -10,7 +10,7 @@ Every macOS subsystem the port needs — `NSWorkspace`, `NSPasteboard`, `NSPanel
 `[target.'cfg(target_os = "macos")'.dependencies]`**. Nothing is reached through
 hand-rolled `objc_msgSend`.
 
-`docs/plans/macos.md` treated this as a stack change requiring an ADR because it
+`docs/plans/v0.12-macos.md` treated this as a stack change requiring an ADR because it
 looked like adding a dependency tree. It is not. Reading `Cargo.lock`:
 
 | crate | version | already pulled in by |

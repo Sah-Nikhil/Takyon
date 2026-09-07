@@ -88,7 +88,7 @@ duplicate item — are exactly the ones nobody tests.
 
 **ADR-0008's deletion rule still applies and gets harder.** `PRAGMA secure_delete`
 plus `wal_checkpoint(TRUNCATE)` only covers what is inside SQLite. When image and
-file clips arrive (`docs/plans/clipboard-kinds.md`), blob files must be
+file clips arrive (`docs/plans/v0.14-clipboard-kinds.md`), blob files must be
 overwritten before unlinking — "the row is deleted" and "the secret is gone" are
 different claims, and a file the OS never zeroes makes the gap wider.
 

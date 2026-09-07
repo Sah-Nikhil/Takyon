@@ -10,7 +10,7 @@
 //! within it because the tests inside still share one process.
 
 // Windows-only: it writes `.lnk` files through `IShellLinkW`, and the Recents
-// Source it drives has no macOS shape yet (`docs/plans/macos.md`).
+// Source it drives has no macOS shape yet (`docs/plans/v0.12-macos.md`).
 #![cfg(windows)]
 
 mod common;

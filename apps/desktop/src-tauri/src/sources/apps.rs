@@ -464,7 +464,7 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
 ///
 /// The other four have no counterpart — no `AppsFolder`, no `.lnk`, no Desktop
 /// convention — and `PATH` executables need an exec-bit check `path.rs`'s
-/// extension list cannot give them. `docs/plans/macos.md` row 2 owns that.
+/// extension list cannot give them. `docs/plans/v0.12-macos.md` row 2 owns that.
 #[cfg(target_os = "macos")]
 fn discover_all(icons: &IconStore) -> Vec<App> {
     let mut apps: Vec<App> = Vec::new();

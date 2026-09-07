@@ -1,4 +1,4 @@
-//! `.app` bundles, macOS's answer to the Start Menu walk (`docs/plans/macos.md`).
+//! `.app` bundles, macOS's answer to the Start Menu walk (`docs/plans/v0.12-macos.md`).
 //!
 //! An application on macOS is a directory whose name ends `.app`, in one of a
 //! few known places. No COM, no shortcut parsing, no shell namespace — a bounded
@@ -29,7 +29,7 @@ pub struct Bundle {
     ///
     /// Not `CFBundleDisplayName`: reading it means parsing an `Info.plist` that
     /// is usually a *binary* plist, so it costs a dependency. The stem is right
-    /// for almost everything and wrong quietly rather than badly — `docs/plans/macos.md`.
+    /// for almost everything and wrong quietly rather than badly — `docs/plans/v0.12-macos.md`.
     pub name: String,
     pub path: PathBuf,
 }

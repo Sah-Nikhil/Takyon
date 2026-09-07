@@ -246,7 +246,7 @@ pub trait Hotkey: Send + Sync {
     /// The extra key this platform can bind, or `None` where there is none.
     ///
     /// `None` is a real answer, not a stub: macOS has no `WH_KEYBOARD_LL` and no
-    /// wanted analogue (`docs/plans/macos.md`). Settings draws the switch only
+    /// wanted analogue (`docs/plans/v0.12-macos.md`). Settings draws the switch only
     /// when this is `Some`.
     fn second_binding(&self) -> Option<&'static dyn SecondBinding>;
 }

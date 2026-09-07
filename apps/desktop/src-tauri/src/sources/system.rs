@@ -77,7 +77,7 @@ const SETTINGS_SCHEME: &str = "x-apple.systempreferences:";
 /// The macOS catalog: `(title, pane bundle id, keywords)`.
 ///
 /// **Unverified against a real Mac.** Apple renamed most panes at Ventura and
-/// there is no enumeration API to check these against (`docs/plans/macos.md`
+/// there is no enumeration API to check these against (`docs/plans/v0.12-macos.md`
 /// row 9). A wrong id opens System Settings at its front page, not an error.
 #[cfg(target_os = "macos")]
 const SETTINGS: &[(&str, &str, &[&str])] = &[

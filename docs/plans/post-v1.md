@@ -78,8 +78,8 @@ they hold.
 **No longer a sketch.** The seams held, the crate compiles for
 `aarch64-apple-darwin`, and every architectural decision the port needs is made —
 ADR-0026 through ADR-0030, plus TBC-0013 and TBC-0014.
-[`docs/plans/macos.md`](./macos.md) is the build plan, with the row table, the
+[`docs/plans/v0.12-macos.md`](./v0.12-macos.md) is the build plan, with the row table, the
 build order and the traps. Two of its consequences are their own phases:
-[`os-index.md`](./os-index.md) and [`clipboard-kinds.md`](./clipboard-kinds.md).
-[`path-hydration.md`](./path-hydration.md) is needed by both platforms and can
+[`v0.13-os-index.md`](./v0.13-os-index.md) and [`v0.14-clipboard-kinds.md`](./v0.14-clipboard-kinds.md).
+[`v0.11-path-hydration.md`](./v0.11-path-hydration.md) is needed by both platforms and can
 land first.

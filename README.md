@@ -441,7 +441,7 @@ appearance.
 - **No updater.** Releases carry no `latest.json` or signature yet.
 - **Windows only.** The frontend is portable and the workspace was split for a
   second target, but 7,410 lines of the Rust core call Win32 and nothing carries
-  a macOS arm. `docs/plans/macos.md` sizes the port.
+  a macOS arm. `docs/plans/v0.12-macos.md` sizes the port.
 - **No telemetry**, and none planned before v1.
 
 ---

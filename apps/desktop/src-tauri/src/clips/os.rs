@@ -1,4 +1,4 @@
-//! The OS clipboard, behind a trait (`docs/plans/macos.md`, ADR-0025).
+//! The OS clipboard, behind a trait (`docs/plans/v0.12-macos.md`, ADR-0025).
 //!
 //! `store.rs` owns `clips.db` and is portable. Everything that touches the
 //! *system* clipboard is not: reading and writing `CF_UNICODETEXT`, the
@@ -186,7 +186,7 @@ impl ClipboardStore for MacClipboard {
         // `NSPasteboard` has no change notification — the documented way is to
         // poll `changeCount`, which contradicts ADR-0003's idle-and-warm premise
         // as directly as `GetClipboardSequenceNumber` did on Windows. Left unbuilt
-        // rather than built badly; `docs/plans/macos.md` row 6 owns it.
+        // rather than built badly; `docs/plans/v0.12-macos.md` row 6 owns it.
     }
 }
 

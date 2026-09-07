@@ -7,7 +7,7 @@ name: CI
 #
 #   - `rust` because the product is Windows. Twenty files reach for the
 #     `windows` crate and it is declared under `[target.'cfg(windows)']`, so a
-#     Linux runner would not compile the product at all. See docs/plans/macos.md.
+#     Linux runner would not compile the product at all. See docs/plans/v0.12-macos.md.
 #   - `visual` because the screenshot baselines were rasterised by Windows. Same
 #     Chromium on Linux puts every glyph in a slightly different place, and the
 #     150px budget is deliberately tight enough to notice.
