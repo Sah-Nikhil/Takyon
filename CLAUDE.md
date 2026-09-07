@@ -16,12 +16,11 @@ numbered sources. v0.10 is **appearance**: five theme families each carrying a
 light and a dark half, Compact and Expanded window modes, and the Windows key as
 an optional second binding.
 
-**CI exists but has never run.** `.github/workflows/ci.yml` (typecheck, lint,
-every test layer) and `release.yml` (tag → Windows installer → GitHub Release)
-are written and their YAML parses, and that is all that can be said: this repo
-has no GitHub remote yet, so neither workflow has executed once. Two of the
-three CI jobs are on `windows-latest` deliberately — the crate is Windows-only,
-and the screenshot baselines were rasterised by Windows.
+**CI runs.** The remote is `github.com/Sah-Nikhil/Takyon`, and `ci.yml`
+(typecheck, lint, every test layer) has executed — v0.10.1 merged through a pull
+request. Two jobs are on `windows-latest` deliberately: the product is Windows,
+and the screenshot baselines were rasterised by Windows. A third, `macos`, is a
+compile gate only.
 
 **Two verification scripts are unrun, and they are the two newest.**
 `docs/verify/v0.10.md` section E has never been executed by anyone — the
@@ -44,12 +43,24 @@ Two things are outstanding rather than done: a real code-signing certificate for
 the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
 Steam steps are blocked because this machine's library holds no game.
 
-**Windows only, and further from macOS than the workspace layout suggests.**
-`apps/` and `packages/shared` were split ahead of need so the seams would exist,
-and the frontend genuinely is portable — but 7,410 lines across 20 Rust files
-name the `windows` crate, there is no `cfg(target_os = "macos")` anywhere, and
-two of the five seams CLAUDE.md claims (`ClipboardStore`, `Hotkey`) were never
-actually written as traits. `docs/plans/macos.md` states the whole picture.
+**macOS compiles, has never run, and is fully specified.** `bun run check:macos`
+is clean for `aarch64-apple-darwin` — library, unit tests, integration tests,
+`-D warnings`. Four rows are written: identity, the `.app` bundle walk, launch
+and reveal, and the System Settings panes; the clipboard reads and writes. Icons,
+the file index, clipboard history, `!s` retrieval and paste-back refuse in words.
+
+Every architectural decision is now made and none of them is open: **ADR-0026**
+(`objc2` direct, zero new crates — they are already in `Cargo.lock` via Tauri),
+**ADR-0027** (Spotlight through `MDQuery`, superseding ADR-0007 on macOS),
+**ADR-0028** (agent app + non-activating `NSPanel`), **ADR-0029** (`URLSession`,
+amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
+ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
+
+**Four phases are planned and written up, sitting between v0.10.1 and v1.0.**
+`v0.11` PATH hydration (needs no Mac, fixes a live Windows hole, start here),
+`v0.12` macOS, `v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc
+with a task checklist, and `v0.12-macos.md` carries a § Hand-off table breaking
+the port into 15 agent-sized units with the files each one needs.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
@@ -174,6 +185,10 @@ under `docs/`.
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
   as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
   already owns `Alt+Space`, which is most machines.
+- macOS compile gate: `bun run check:macos` — cross-compiles and lints for
+  `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
+  build unpacked locally, which not every machine has. Run it after touching
+  anything with a `cfg(windows)` arm.
 - release: `bun run release` — preflight (typecheck, lint, test), `tauri build`,
   then the installer into `releases/v{version}/` with its SHA-256. Same layout as
   tesseract's `releases/`, and `releases/` is gitignored. No `latest.json` or
@@ -342,6 +357,12 @@ the next.
   window had probably never rendered in a real build. Nothing caught it because the
   visual suite reaches that route through Vite, never through Tauri —
   `scripts/verify-drive-v0.6.ps1` now samples pixels for exactly this.
+- **A bare `cargo check --target aarch64-apple-darwin` fails before it reaches
+  our code.** `libsqlite3-sys` and `objc2-exception-helper` build native C and
+  Objective-C, so cargo wants a compiler that can target macOS. `bun run
+  check:macos` supplies zig as that compiler — it ships the macOS libc and
+  Objective-C headers, so no Apple SDK is involved. The error names `cc` and
+  reads like a missing toolchain, which it is; it is not a Rust problem.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding

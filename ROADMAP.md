@@ -544,12 +544,125 @@ is the honest reason it stayed green through them.
 - [x] **CI and release workflows** ([`.github/workflows/`](./.github/workflows/)).
   Same shape as tesseract's. Written and parsing; **never executed**, because
   there is no GitHub remote yet
+- [x] **Two threads of Takyon could hold the clipboard at once.** `OpenClipboard`
+  refuses another *process* and admits a second *thread* of this one, so the
+  watcher reading while a command wrote put both inside `EmptyClipboard` —
+  freeing handles the other was still reading. The retry loop in `launch.rs` was
+  written for the cross-process case and cannot see this one. A process-wide
+  `clips::os::lock` now spans every open/close. Found by the round-trip test
+  added with ADR-0025's seams: the suite died with `STATUS_HEAP_CORRUPTION`
+  under the default thread count and passed with `--test-threads=1`
 - [ ] **Launch at startup** — verified already on, not a defect. The `Run` value
   `com.v3sper.takyon` is present and General reads it as on. Left unticked only
   because it was checked rather than changed
 
 **Exit criteria:** none of its own. This is v0.10's exit criteria, minus the
 four things that made the release unusable before anyone could evaluate them.
+
+---
+
+## v0.11 — PATH hydration
+
+**Goal:** `!c` finds an Agent CLI that was installed after login, on either
+platform. Plan: [`docs/plans/v0.11-path-hydration.md`](./docs/plans/v0.11-path-hydration.md).
+
+The one phase here that needs no Mac, fixes a live Windows hole, and is a
+prerequisite for v0.12's row 2. It can start immediately.
+
+- [ ] `agents/shellenv.rs`, pure parts first — `merge_path_entries`, sentinel extraction, login-shell candidates. All testable with no process spawn
+- [ ] **The Unix probe** — `$SHELL -ilc` with a sentinel-delimited `printenv PATH`, then `launchctl getenv PATH` as the macOS fallback. `-i` is load-bearing: nvm, asdf and mise live in rc files a non-interactive shell never sources
+- [ ] **The Windows probe** — `HKCU\Environment` and the machine `Path`, `ExpandEnvironmentStringsW`, merged user-then-machine-then-inherited. **Not** the PowerShell profile: it can be slow, can prompt, and can print
+- [ ] Cache with explicit `invalidate()`, hydrated on the **deferred-init thread** — the login-shell probe's 5 s timeout cannot sit inside the 500 ms login budget
+- [ ] `probe::resolve` rewritten to hydrated → inherited → `extra_dirs()`, the hardcoded list demoted to last resort rather than deleted
+- [ ] Re-probe on failure, so an Agent installed mid-session is found without a restart
+- [ ] Settings → Agents reports which shell answered and how many entries were recovered. Without it, "`!c` says Claude isn't installed" is indistinguishable from a probe bug
+- [ ] `sources/apps/path.rs` gains a macOS arm that checks the exec bit rather than an extension list *(needs v0.12)*
+
+**Exit criteria:** on a Mac with `claude` installed through Homebrew or
+`bun add -g`, launching Takyon from Finder and typing `!c` finds it. On Windows,
+`bun add -g opencode` followed by a re-probe finds it without a reboot.
+
+---
+
+## v0.12 — macOS
+
+**Goal:** 1:1 with Windows on Apple Silicon. Plan:
+[`docs/plans/v0.12-macos.md`](./docs/plans/v0.12-macos.md), which carries the row
+table, the build order and a § Hand-off breaking it into 15 agent units.
+
+The largest single piece of work left in the project. Every architectural
+decision is made — **ADR-0026** (`objc2` direct, zero new crates), **ADR-0027**
+(Spotlight through `MDQuery`, superseding ADR-0007 on macOS), **ADR-0028** (agent
+app + non-activating `NSPanel`), **ADR-0029** (`URLSession`, amending ADR-0019),
+**ADR-0030** (the macOS clipboard, amending ADR-0006 and ADR-0008) — plus
+TBC-0013 and TBC-0014. **macOS 13 Ventura, Apple Silicon only.**
+
+- [x] The crate compiles for `aarch64-apple-darwin` — `bun run check:macos` clean with `-D warnings` across the library and every test, cross-compiled from Windows through zig
+- [x] Row 1, `identity.rs` — `~/Library/Application Support/com.v3sper.takyon`, the slug rather than `<vendor>/<app>`
+- [x] Row 9, `sources/system.rs` — 28 `x-apple.systempreferences:` panes. **Ids unverified**: Apple renamed most at Ventura and there is no enumeration API, so a wrong one opens System Settings at its front page rather than erroring
+- [x] Row 2 part one — `apps/bundles.rs` walks the three `.app` roots, depth-capped so `Xcode.app`'s helpers stay out
+- [ ] **First run on a Mac.** Nothing here has ever executed on macOS. `bun run dev`, then `bun run build`, which links — something `check:macos` never does
+- [ ] **`bun run bench` on the Mac**, which needs the harness ported to Rust first. ADR-0028 removes ADR-0003's working-set trim on macOS, so the **150 MB idle-RSS budget is unverified** and must not be quoted as if it held. The three latency budgets port unchanged
+- [ ] `tauri.macos.conf.json` — `minimumSystemVersion: "13.0"`, `LSUIElement`, ADR-0020's two literals
+- [ ] Row 8, the window — agent app, non-activating panel over all Spaces, and dismiss-on-click-away rebuilt on `NSEvent.addGlobalMonitorForEvents` because a non-activating panel never becomes key
+- [ ] Row 7, launch — `NSWorkspace.openApplication` with its completion handler, which **keeps launched-image identity** and gives Frecency a `bundleIdentifier` that survives an app being moved or updated. Replaces the `/usr/bin/open` stopgap
+- [ ] Row 3, icons — `NSWorkspace.icon(forFile:)` into the same `icons.bin`, with `ICON_PX` raised 64 → 128 on **both** platforms
+- [ ] Row 2 remainder — `NSBundle` display names, exec-bit `PATH` scan
+- [ ] Row 4, files — `MDQuery` + `kMDQuerySynchronous` behind `FileIndex`, roots as Spotlight scopes
+- [ ] Row 5, `URLSession` — unblocks `!s` retrieval and favicons together
+- [ ] Row 6, clipboard — `NSPasteboard`, 500 ms poll suspended while locked, nspasteboard.org markers, Keychain key, `CGEventPost` paste
+- [ ] Rows 10, 11, 12 — default browser, `NSStatusItem`, `NSBundle` versions
+- [ ] `steam_path()` → `~/Library/Application Support/Steam`. One function; the VDF parser and `steam://` URLs are already portable
+- [ ] **Cmd+Space onboarding**, last — Raycast-shaped, blocking, advancing by polling the registration rather than asking the user to confirm
+- [ ] Uninstall — a "Remove all Takyon data" button, since dragging to the Trash runs nothing and leaves a Keychain item and an encrypted clipboard database behind
+- [ ] `docs/verify/macos.md`, written as rows land rather than batched at the end
+- [ ] Visual suite: a **`webkit`** Playwright project with its own baselines, run **locally on the Mac only** — never CI, where `macos-latest` bills at ten times the Linux rate
+
+**Exit criteria:** someone summons Takyon with Cmd+Space over a full-screen app,
+launches something, searches a file, copies from history and gets an `!s` answer —
+on a Mac, without reading any of this.
+
+---
+
+## v0.13 — The OS index
+
+**Goal:** Windows Search becomes a selectable `FileIndex` backend, mirroring what
+ADR-0027 does with Spotlight. Plan:
+[`docs/plans/v0.13-os-index.md`](./docs/plans/v0.13-os-index.md).
+
+After v0.12, deliberately: the port builds `SpotlightIndex` behind `FileIndex`
+anyway, so the Windows twin is a second implementor of a seam that already exists
+and is already proven.
+
+- [ ] Extract `FileIndex` properly — it exists, but `WalkedIndex` is the only implementor and some call sites reach past it
+- [ ] `WindowsSearchIndex` — promote `wsearch.rs` from hidden fallback to backend, add scope-clause support for `files_roots` and an `IndexStatus`
+- [ ] `files_backend` setting, default per platform (walk on Windows, Spotlight on macOS), applied without a restart
+- [ ] Settings → Files rework — a status row naming which index answers, live entry counts hidden under an OS index, deep links to Indexing Options or System Settings
+- [ ] Retire `files_fallback`, migrating a stored `true`. **A settings migration that silently drops a user's choice is a bug nobody reports**, so it gets its own test
+
+**Exit criteria:** switching the backend changes which index answers with no
+restart, and the Files page says plainly when the service is off.
+
+---
+
+## v0.14 — Clipboard kinds
+
+**Goal:** images and file references alongside text, links classified rather than
+stored separately. Plan:
+[`docs/plans/v0.14-clipboard-kinds.md`](./docs/plans/v0.14-clipboard-kinds.md).
+
+Both platforms in one phase. Neither today captures anything but text.
+
+- [ ] `ClipKind` grows `Image` and `Files`, with the schema migration. **`Files` stores paths, never contents** — a copied 40 GB folder is a couple of hundred bytes
+- [ ] `clips/blobs.rs` — encrypted blob files, capped at 32 MB, with **overwrite-then-unlink** and a startup orphan sweep. Every path that destroys clipboard data goes through it, so it lands with its own tests first
+- [ ] Capture on both platforms — `CF_DIB`/`CF_HDROP`, `public.png`/`public.file-url` — behind `ClipboardStore`
+- [ ] Paste-back for both kinds, and link classification on `Text` with a favicon and an Open action
+- [ ] Palette rows, `!v` preview, and a Settings → Clipboard figure for what the history occupies on disk
+- [ ] **ADR-0008 amendment, written with the schema and not after it.** "An attacker learns you copied 31 characters from Bitwarden" becomes "…and every screenshot you took is in there"
+
+**Exit criteria:** copy a screenshot, summon `!v`, paste it into another
+application and get the image. Set retention to one day and confirm both the row
+and its blob are gone. Copy a password and confirm nothing is recorded.
 
 ---
 
@@ -579,9 +692,7 @@ These block nothing today but should be settled before they become expensive:
 - **Open source vs proprietary.** Constrains dependency licensing; already ruled
   out one option (ADR-0005).
 - **Portable / no-installer mode** — in scope or not.
-- **macOS**, deliberately post-V1 (`docs/plans/post-v1.md`). Sized at v0.10.1
-  rather than left as a gesture: 7,410 lines across 20 files name the `windows`
-  crate, nothing carries `cfg(target_os = "macos")`, and two of the five seams
-  CLAUDE.md claims were never written as traits. `docs/plans/macos.md` has the
-  table, the three decisions it needs first, and the CI switch that is already
-  wired for the day it compiles.
+- ~~**macOS.**~~ **Settled and scheduled** — it is v0.12, with ADR-0026 to
+  ADR-0030 behind it. What is still open there is *sequencing*: v0.11 to v0.14
+  sit before v1.0 in this file, and whether they genuinely ship before the
+  code-signing certificate and the updater is a call nobody has made.

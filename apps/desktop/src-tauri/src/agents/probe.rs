@@ -161,6 +161,8 @@ pub fn run(exe: &Path, args: &[&str], timeout: Duration) -> std::io::Result<Outp
 
 /// A `Command` with the window suppressed. The only place a child is built.
 pub fn command(exe: &Path) -> Command {
+    // Only the Windows arm below mutates it.
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = Command::new(exe);
     #[cfg(windows)]
     {

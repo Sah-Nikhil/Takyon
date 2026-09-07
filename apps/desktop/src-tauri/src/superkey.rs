@@ -10,14 +10,18 @@
 //! `docs/plans/v0.10-appearance.md` §6 and `docs/tbd/v0.10.md`.
 
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+#[cfg(windows)]
 use std::sync::mpsc::{self, Sender};
+#[cfg(windows)]
 use std::sync::{Mutex, OnceLock};
 
 use tauri::AppHandle;
 
 /// Whether the Windows key is currently held, as this hook has seen it.
+#[cfg(windows)]
 static WIN_DOWN: AtomicBool = AtomicBool::new(false);
 /// Whether any other key was pressed while it was held. A chord, not a tap.
+#[cfg(windows)]
 static CHORDED: AtomicBool = AtomicBool::new(false);
 /// Whether a hook is installed right now. The switch in Settings reads this.
 static ARMED: AtomicBool = AtomicBool::new(false);
@@ -26,9 +30,11 @@ static ARMED: AtomicBool = AtomicBool::new(false);
 ///
 /// The callback may not: showing a window touches the event loop, far beyond
 /// this hook's budget. A send is a few instructions and blocks on nothing.
+#[cfg(windows)]
 static TOGGLE: OnceLock<Sender<()>> = OnceLock::new();
 
 /// The hook thread's id, so it can be told to quit. `None` when nothing is armed.
+#[cfg(windows)]
 static THREAD: Mutex<Option<u32>> = Mutex::new(None);
 
 /// Whether the hook is installed. Not the same question as whether it was asked
@@ -234,6 +240,29 @@ pub fn arm(_app: &AppHandle, _on: bool) -> bool {
     // key entirely (`docs/plans/post-v1.md`). Reporting false is honest: the
     // switch settles off and says the hook is not installed.
     false
+}
+
+/// The Windows key as Takyon's [`crate::hotkey::SecondBinding`] (ADR-0025).
+///
+/// A unit struct over the free functions above: state lives in this module's
+/// statics, because the hook procedure is an `extern "system"` function with no
+/// room for a payload.
+#[cfg(windows)]
+pub struct WindowsKeyTap;
+
+#[cfg(windows)]
+impl crate::hotkey::SecondBinding for WindowsKeyTap {
+    fn armed(&self) -> bool {
+        armed()
+    }
+
+    fn arm(&self, app: &AppHandle, on: bool) -> bool {
+        arm(app, on)
+    }
+
+    fn restore(&self, app: &AppHandle, prefs: &crate::prefs::Prefs) {
+        restore(app, prefs);
+    }
 }
 
 #[cfg(test)]
