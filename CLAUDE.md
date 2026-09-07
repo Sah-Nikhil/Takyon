@@ -5,7 +5,8 @@ on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
 anything leaves the machine.
 
-**Status: v0.1 through v0.10 are built.** The Palette is warm, the hotkey works,
+**Status: v0.1 through v0.11 are built, and v0.12 is written but unrun.** The
+Palette is warm, the hotkey works,
 and it finds and launches applications, files, clipboard history and
 calculations, with Frecency, settings and a `Ctrl+K` action menu. v0.8 adds
 **Agents**: `!c` drives Claude Code, Codex or opencode as a subprocess, answers
@@ -43,29 +44,46 @@ Two things are outstanding rather than done: a real code-signing certificate for
 the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
 Steam steps are blocked because this machine's library holds no game.
 
-**macOS compiles, has never run, and is fully specified.** `bun run check:macos`
-is clean for `aarch64-apple-darwin` — library, unit tests, integration tests,
-`-D warnings`. Four rows are written: identity, the `.app` bundle walk, launch
-and reveal, and the System Settings panes; the clipboard reads and writes. Icons,
-the file index, clipboard history, `!s` retrieval and paste-back refuse in words.
+**macOS is written and has never run.** `bun run check:macos` is clean for
+`aarch64-apple-darwin` — library, unit tests, integration tests, `-D warnings` —
+and every one of v0.12's twelve rows now has a real implementation rather than a
+stub: icons, Spotlight, `URLSession`, the clipboard and paste-back included.
+**"Written" means it compiles and nothing more.** Not one line has executed on a
+Mac, so treat every macOS claim in this file as reasoning until
+`docs/verify/macos.md` has been run.
 
-Every architectural decision is now made and none of them is open: **ADR-0026**
-(`objc2` direct, zero new crates — they are already in `Cargo.lock` via Tauri),
-**ADR-0027** (Spotlight through `MDQuery`, superseding ADR-0007 on macOS),
-**ADR-0028** (agent app + non-activating `NSPanel`), **ADR-0029** (`URLSession`,
-amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
-ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
+Two things are deliberately unwritten and both are recorded rather than skipped:
+the `NSPanel` class swap (`docs/tbd/v0.12.md` §9 — four checks on hardware decide
+whether it is needed at all, and doing it wrong is undefined behaviour), and the
+blocking first-run screen for the Cmd+Space takeover, whose mechanism is built
+and whose surface is not (§15). `docs/tbd/v0.12.md` carries sixteen entries and
+is the first thing to read before touching the port.
 
-**Four phases sit between v0.10.1 and v1.0, and the first of them is built.**
+Every architectural decision is made and none is open: **ADR-0026** (`objc2`
+direct, zero new crates — `security-framework` is the one sanctioned exception,
+named by ADR-0030), **ADR-0027** (Spotlight through `MDQuery`, superseding
+ADR-0007 on macOS), **ADR-0028** (agent app + non-activating `NSPanel`),
+**ADR-0029** (`URLSession`, amending ADR-0019), **ADR-0030** (the macOS
+clipboard, amending ADR-0006 and ADR-0008). Target is **macOS 13 Ventura, Apple
+Silicon only**.
+
+**Four phases sit between v0.10.1 and v1.0. Two are built.**
+
 **v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
 (unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
 caches it off the startup path, and hands it to `probe::resolve`, to every
 spawned Agent, and to Row 2's `PATH` walk. **The Windows half is measured; the
 unix half compiles and has never run** — `docs/verify/v0.11.md` §B is unexecuted,
-and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
-`v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc with a task
-checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port into
-15 agent-sized units with the files each one needs.
+and `docs/tbd/v0.11.md` §1 says what that costs.
+
+**v0.12 macOS is written**, per the section above — every row, plus the bench
+harness ported to Rust as `takyon-bench` (which replaced three PowerShell
+scripts and now drives `bun run bench` on both platforms), uninstall, and the
+Cmd+Space takeover mechanism. Its § Hand-off table carries a state column saying
+which of the 15 units are open.
+
+Still ahead: `v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc
+with a task checklist.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

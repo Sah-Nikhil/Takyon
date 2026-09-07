@@ -310,10 +310,14 @@ all.
    asterisk, **not** everything — the wildcard is escaped.
 5. Compare against Spotlight itself (Cmd+Space, once you have it) for the same
    needle. Takyon's list should be a plausible subset, not empty and not wild.
-6. **Known gap**: the roots set in Settings → Files do **not** reach the query
-   yet, so this searches everywhere Spotlight indexes —
-   [`docs/tbd/v0.12.md`](../tbd/v0.12.md) §12. Confirm the behaviour, do not
-   file it.
+6. **The roots scope it.** Settings -> Files, remove a root, search for
+   something that only lives under it: it stops being found, with no rebuild and
+   no wait — scope is a query predicate on macOS, not a walk boundary.
+7. Add an exclusion (`node_modules`) and confirm files under a directory of that
+   name stop appearing anywhere in the tree, not just at its top level.
+8. The Files page shows **no entry count** — it reads "Searching through
+   Spotlight". Spotlight reports no count and ADR-0027 accepts that rather than
+   faking one.
 
 ## I. Web search (row 5)
 
@@ -439,9 +443,7 @@ set up again.
 Every row now has a section above. What is left is work that is not yet written
 at all:
 
-- Unit 12, the Cmd+Space takeover — the blocking onboarding step and its polling.
-- Unit 13, uninstall — that "Remove all Takyon data" leaves no Keychain item and
-  no data directory behind.
-- Row 4's remainder — that the roots chosen in Settings → Files actually scope
-  the Spotlight query ([`docs/tbd/v0.12.md`](../tbd/v0.12.md) §12).
+- The **blocking first-run screen** for the Cmd+Space takeover. §L covers the
+  mechanism that exists; the screen that refuses to finish onboarding until the
+  chord registers is unbuilt ([`docs/tbd/v0.12.md`](../tbd/v0.12.md) §15).
 - The `webkit` Playwright baselines, which have to be generated on this machine.

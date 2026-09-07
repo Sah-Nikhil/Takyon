@@ -601,8 +601,15 @@ has ever been spawned by it.
 [`docs/plans/v0.12-macos.md`](./docs/plans/v0.12-macos.md), which carries the row
 table, the build order and a § Hand-off breaking it into 15 agent units.
 
-The largest single piece of work left in the project. Every architectural
-decision is made — **ADR-0026** (`objc2` direct, zero new crates), **ADR-0027**
+**Every row is written and nothing has run.** The code compiles for
+`aarch64-apple-darwin` under `-D warnings`; not one line has executed on a Mac,
+so every claim below is reasoning until `docs/verify/macos.md` is run. What is
+left needing no Mac: the blocking first-run screen for the Cmd+Space takeover,
+and the `NSPanel` swap — which should not be written until §E.1 of that script
+says whether it is needed at all.
+
+Every architectural decision is made — **ADR-0026** (`objc2` direct, zero new
+crates, with `security-framework` the one exception ADR-0030 names), **ADR-0027**
 (Spotlight through `MDQuery`, superseding ADR-0007 on macOS), **ADR-0028** (agent
 app + non-activating `NSPanel`), **ADR-0029** (`URLSession`, amending ADR-0019),
 **ADR-0030** (the macOS clipboard, amending ADR-0006 and ADR-0008) — plus
@@ -632,7 +639,8 @@ TBC-0013 and TBC-0014. **macOS 13 Ventura, Apple Silicon only.**
 
 **Exit criteria:** someone summons Takyon with Cmd+Space over a full-screen app,
 launches something, searches a file, copies from history and gets an `!s` answer —
-on a Mac, without reading any of this.
+on a Mac, without reading any of this. *Not claimable from a compiler: every
+piece of that sentence is written and none of it has run.*
 
 ---
 
