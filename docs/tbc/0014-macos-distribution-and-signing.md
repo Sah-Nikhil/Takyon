@@ -56,3 +56,21 @@ the three options.
 
 Until then the `MACOS_BUILD` repository variable stays unset, which is what
 `.github/workflows/release.yml` already assumes.
+
+
+---
+
+## Amendment — the bet is unchanged, one of its assumptions moved
+
+The note above assumed the `MACOS_BUILD` switch was far off. It is not: the crate
+compiles for `aarch64-apple-darwin` and CI has a `macos` job, so the day the port
+is usable the switch publishes a `.dmg` with no further edit to `release.yml`.
+Nothing about the *decision* changes — ad-hoc signed, un-notarised, right-click →
+Open on first launch — but the trigger "the updater lands" is now the nearest one
+rather than the most distant.
+
+One thing this note does not cover and should not be read as covering: the visual
+test suite does **not** run on `macos-latest`. `macos-latest` runners bill at ten
+times the Linux rate, and the Playwright layer is a local check on the development
+Mac (`docs/plans/macos.md`). CI's `macos` job is a compile gate plus Rust tests.
+That is a cost decision about CI, not about distribution.

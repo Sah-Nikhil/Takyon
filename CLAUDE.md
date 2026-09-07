@@ -43,15 +43,22 @@ Two things are outstanding rather than done: a real code-signing certificate for
 the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
 Steam steps are blocked because this machine's library holds no game.
 
-**macOS compiles, and has never run.** `bun run check:macos` is clean for
-`aarch64-apple-darwin` — library, unit tests, integration tests, `-D warnings`.
-Four rows are written: identity, the `.app` bundle walk, launch and reveal
-through `/usr/bin/open`, and the System Settings panes; the clipboard reads and
-writes through `pbpaste`/`pbcopy`. Icons, the file index, clipboard history,
-`!s` retrieval and paste-back all refuse in words, and the next rows need
-`objc2` in the locked stack — an ADR, not a `bun add`. `ClipboardStore` and
-`Hotkey` are traits (ADR-0025); the two open questions are `docs/tbc/0013` (HTTP
-client) and `docs/tbc/0014` (signing). `docs/plans/macos.md` has the table.
+**macOS compiles, has never run, and is fully specified.** `bun run check:macos`
+is clean for `aarch64-apple-darwin` — library, unit tests, integration tests,
+`-D warnings`. Four rows are written: identity, the `.app` bundle walk, launch
+and reveal, and the System Settings panes; the clipboard reads and writes. Icons,
+the file index, clipboard history, `!s` retrieval and paste-back refuse in words.
+
+Every architectural decision is now made and none of them is open: **ADR-0026**
+(`objc2` direct, zero new crates — they are already in `Cargo.lock` via Tauri),
+**ADR-0027** (Spotlight through `MDQuery`, superseding ADR-0007 on macOS),
+**ADR-0028** (agent app + non-activating `NSPanel`), **ADR-0029** (`URLSession`,
+amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
+ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
+`docs/plans/macos.md` is the build plan and carries the build order; the two
+follow-on phases are `docs/plans/os-index.md` and
+`docs/plans/clipboard-kinds.md`, and `docs/plans/path-hydration.md` is needed on
+both platforms.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

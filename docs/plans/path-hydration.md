@@ -1,0 +1,233 @@
+# PATH hydration — finding the Agent CLIs on a machine that hides them
+
+**Driver: `!c`.** `agents/probe.rs::resolve` looks for `claude`, `codex` and
+`opencode`, and on macOS it will find none of them. That is the whole reason this
+plan exists. Everything else it fixes — `PATH` executables in the app Source, a
+`bun add -g` that stays invisible until reboot on Windows — is the same mechanism
+paying for itself twice.
+
+Not a macOS-only problem. Windows has the same hole in a smaller shape and the
+same fix closes both.
+
+## Read first
+
+`agents/probe.rs`, in full — it is 250 lines and this plan rewrites one function
+of it. [ADR-0017](../adr/0017-agents-are-driven-never-authenticated.md) for why
+Takyon never runs an Agent's login, which is what makes *finding* the binary the
+whole of the integration. [ADR-0026](../adr/0026-objc2-is-the-macos-binding.md)
+is not needed here: none of this touches Cocoa.
+
+Reference implementation, named by the user:
+**[t3code](https://github.com/pingdotgg/t3code)** —
+[`apps/server/src/os-jank.ts`](https://github.com/pingdotgg/t3code/blob/main/apps/server/src/os-jank.ts)
+and
+[`packages/shared/src/shell.ts`](https://github.com/pingdotgg/t3code/blob/main/packages/shared/src/shell.ts).
+t3code was already the source of v0.8's Agent surface and v0.10's theme model, so
+this is the same borrowing continued.
+
+## The problem, precisely
+
+A GUI application on macOS is started by `launchd`, not by a shell. It inherits:
+
+```
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+```
+
+That is the whole of it. Every place these CLIs actually install to is missing:
+
+| installer | where the binary lands |
+|---|---|
+| Homebrew (Apple Silicon) | `/opt/homebrew/bin` |
+| Homebrew (Intel) | `/usr/local/bin` |
+| `bun add -g` | `~/.bun/bin` |
+| `npm i -g` (default prefix) | `/usr/local/bin` or `$(npm prefix -g)/bin` |
+| `npm i -g` under **nvm** | `~/.nvm/versions/node/v22.x/bin` — moves with every Node upgrade |
+| **asdf** / **mise** shims | `~/.asdf/shims`, `~/.local/share/mise/shims` |
+| `cargo install` | `~/.cargo/bin` |
+
+`probe.rs::extra_dirs()` returns `Vec::new()` on every non-Windows target today,
+so `resolve` sees only the launchd `PATH`. `!c` reports every Agent as not
+installed, on a machine where all three are.
+
+Windows is the same bug with a softer edge. `extra_dirs()` there is a hardcoded
+list of five directories, and its own doc-comment admits the hole: "`PATH` in a
+GUI process is the `PATH` that existed at login: a `bun add -g` afterwards is
+invisible until a re-probe." A hardcoded list cannot cover nvm-for-Windows, scoop,
+or a `PATH` the user edited an hour ago.
+
+## What t3code does, read from the source
+
+Four steps, in `hydratePosixPath`:
+
+1. **Candidate shells, in order.** `$SHELL`, then the login shell from the user's
+   account record, then a hard fallback — `/bin/zsh` on darwin, `/bin/bash` on
+   linux. First one that answers wins.
+2. **Run it as an interactive login shell.**
+   `execFileSync(shell, ["-ilc", script], { timeout: 5000 })`. The `-i` is
+   load-bearing: `nvm`, `asdf` and `mise` install themselves into `.zshrc` /
+   `.bashrc`, which a non-interactive `-lc` never sources.
+3. **Sentinel-delimited capture.** The script prints
+   `__T3CODE_ENV_PATH_START__`, then `printenv PATH`, then the end marker, and
+   the value is read from between them. This is not decoration — an interactive
+   login shell prints motd, oh-my-zsh banners, `direnv` chatter and escape codes,
+   so reading stdout whole gives garbage.
+4. **macOS fallback if every shell failed**: `launchctl getenv PATH`, 2 s timeout.
+   Then `mergePathEntries` unions the discovered `PATH` with the inherited one,
+   preferring the discovered, de-duplicated, order preserved.
+
+It also hydrates `HOME` when empty, and has a **separate Windows path**
+(`resolveWindowsEnvironment`) that reads the user environment rather than trusting
+the inherited block — confirming that this is a two-platform problem, not a macOS
+one.
+
+## Design
+
+A new module, `agents/shellenv.rs`. It owns discovery and caching; `probe.rs`
+keeps `resolve`, `in_dir` and the spawn machinery.
+
+```rust
+/// The PATH to search, hydrated from the user's own environment.
+///
+/// `None` until `hydrate` has run. Never blocks: callers that arrive first use
+/// the inherited PATH and are re-probed once this fills.
+pub fn hydrated_path() -> Option<OsString>;
+
+/// Discover and cache. Runs on the deferred-init thread, never on startup.
+pub fn hydrate();
+
+/// Discard the cache so the next `hydrate` re-runs. Called when a probe that
+/// previously succeeded starts failing — an Agent uninstalled, or a Node
+/// version switched under nvm.
+pub fn invalidate();
+```
+
+`probe::resolve` then searches, in order:
+
+1. the hydrated `PATH`, when present;
+2. the inherited `PATH`;
+3. `extra_dirs()` — **kept, demoted to last resort.** It costs nothing, it covers
+   the case where the shell probe times out on a broken `.zshrc`, and deleting it
+   would trade one failure mode for another.
+
+### Timing, and why it is off the startup path
+
+t3code's own timeouts are 5 s for the login shell and 2 s for `launchctl`. The
+"login → hotkey responsive < 500 ms" budget cannot absorb either. So:
+
+- `hydrate()` runs on the **deferred-init thread**, alongside
+  `tray::self_heal_autostart` and `uiaccess::start` — the thread `lib.rs` already
+  spawns for work that can block.
+- Nothing on the keystroke path waits on it. `!c`'s probe is already a
+  20-second-deadline operation on its own thread (`PROBE_TIMEOUT`), so a first
+  `!c` that arrives before hydration finishes simply uses the inherited `PATH`
+  and, on failure, triggers `invalidate()` + re-probe.
+- The result is cached for the process lifetime. Re-hydration happens on failure,
+  not on a timer.
+
+### macOS and Linux
+
+```rust
+fn login_shell_candidates() -> Vec<PathBuf>   // $SHELL, account shell, /bin/zsh
+fn path_from_login_shell(shell: &Path) -> Option<OsString>
+fn path_from_launchctl() -> Option<OsString>  // macOS only
+```
+
+`path_from_login_shell` spawns `shell -ilc <script>` where the script is exactly:
+
+```sh
+printf '%s\n' '__TAKYON_ENV_PATH_START__'
+printenv PATH || true
+printf '%s\n' '__TAKYON_ENV_PATH_END__'
+```
+
+`|| true` so a shell with `set -e` in its rc does not abort before the end marker.
+The extractor takes the lines strictly between the two markers, trims ANSI escape
+sequences, and takes the first non-empty one.
+
+The account-record shell comes from `getpwuid_r` via `libc`, not from parsing
+`/etc/passwd` and not by shelling to `dscl`.
+
+### Windows
+
+No shell probe. `resolveWindowsEnvironment`'s equivalent is a registry read, which
+is faster, cannot hang, and cannot prompt:
+
+- `HKCU\Environment` → `Path` (user)
+- `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment` → `Path`
+  (machine)
+
+Both are `REG_EXPAND_SZ`, so `%SystemRoot%`-style references need
+`ExpandEnvironmentStringsW`. Merge order is user, then machine, then inherited —
+matching how Windows itself composes the variable.
+
+**Do not load the PowerShell profile.** t3code has a `loadProfile` option for it;
+Takyon should not use it. A profile can be slow, can prompt, and can print, and
+the registry already carries every `PATH` edit an installer makes.
+
+## Traps
+
+- **A shell rc that reads from stdin hangs forever.** Give the child
+  `Stdio::null()` for stdin and a hard timeout, then kill the process group. A
+  timed-out probe returns `None` and falls through, it does not retry.
+- **`-i` without a tty.** Some rc files gate on `[[ -t 0 ]]` and behave
+  differently; that is fine and expected. What is not fine is an rc that emits
+  escape codes unconditionally — hence the sentinel parse rather than a whole-
+  stdout parse.
+- **Do not inherit our own `PATH` into the child.** Pass the environment through
+  untouched otherwise: the point is to observe what the user's shell computes, and
+  seeding it biases the answer.
+- **This runs the user's own shell configuration.** It is the same code that runs
+  at every terminal launch, so it is not a new trust boundary — but it is a reason
+  never to run it from an elevated context, and Takyon never is (ADR-0007).
+- **`launchctl getenv PATH` is usually empty.** It only answers if something has
+  called `launchctl setenv`. It is the fallback, not the mechanism.
+- **Windows `Path` can contain quoted entries and trailing semicolons.** Strip
+  wrapping quotes and empty segments before merging, as t3code's
+  `stripWrappingQuotes` does.
+
+## Tasks
+
+1. **`agents/shellenv.rs` with the pure parts first** — `merge_path_entries`,
+   `extract_between_sentinels`, `login_shell_candidates` (taking `$SHELL` and the
+   account shell as arguments). All testable with no process spawn. Use `/tdd`.
+2. **The Unix probe** — `path_from_login_shell`, `path_from_launchctl`, behind
+   `#[cfg(unix)]`, with the timeout-and-kill path.
+3. **The Windows probe** — registry read plus `ExpandEnvironmentStringsW`, behind
+   `#[cfg(windows)]`.
+4. **Cache and invalidation** — `OnceLock`-style storage with an explicit
+   `invalidate`, `hydrate()` wired into `lib.rs`'s deferred-init thread.
+5. **`probe::resolve` rewritten** to the three-tier search, `extra_dirs()`
+   demoted with a comment saying why it is kept.
+6. **Re-probe on failure** — `agents/mod.rs` calls `invalidate()` + `hydrate()`
+   the first time a previously-resolved Agent stops resolving, then retries once.
+7. **Surface it.** Settings → Agents shows which shell answered and how many
+   `PATH` entries were recovered. Not decoration: when someone reports "`!c` says
+   Claude isn't installed", this is the first thing worth knowing, and without it
+   the failure is indistinguishable from a probe bug.
+8. **Row 2's `PATH` executables consume the same hydrated value** —
+   `sources/apps/path.rs` gains a macOS arm that checks the exec bit
+   (`st_mode & 0o111`) instead of `LAUNCHABLE` extensions, reading from
+   `shellenv::hydrated_path()`.
+
+## Tests
+
+**Unit, pure.** Sentinel extraction against realistic noise — an oh-my-zsh banner,
+an ANSI-coloured prompt, a `direnv` line, a shell that printed nothing between the
+markers. `merge_path_entries` for order, dedupe, empty inputs and a delimiter
+per platform. `login_shell_candidates` for the ordering and the dedupe when
+`$SHELL` equals the account shell.
+
+**Integration, `#[ignore]`d.** One test that actually spawns the platform's shell
+and asserts the recovered `PATH` is non-empty and a superset of the inherited one.
+Ignored for the same reason `web_search`'s live tests are: it depends on the
+machine, and a machine-shaped failure is not a broken commit.
+
+**Not tested:** that a specific Agent is found. That is machine-dependent by
+definition — `tests/agents_cli.rs` already asserts shape and never which CLIs are
+installed.
+
+## Exit criteria
+
+On a Mac with `claude` installed through Homebrew or `bun add -g`, launching
+Takyon from Finder and typing `!c` finds it. On Windows, `bun add -g opencode`
+followed by a re-probe finds it without a reboot.

@@ -1,0 +1,137 @@
+# The OS index as a peer of the walk, on both platforms
+
+macOS forces this question and Windows inherits the answer. ADR-0027 makes
+**Spotlight** the file index on macOS, replacing the walk entirely. Windows has
+the same facility — Windows Search — and `index/wsearch.rs` already queries it.
+This plan promotes it from a hidden fallback to a first-class `FileIndex`
+implementor, selectable in Settings.
+
+**Sequenced after the macOS port, deliberately.** The port has to build
+`SpotlightIndex` behind `FileIndex` anyway, so the Windows twin is a second
+implementor of a seam that will already exist and already be proven. Doing
+Windows first would shape the seam around Windows and then need reshaping.
+
+## Read first
+
+[ADR-0007](../adr/0007-userspace-walk-no-elevation-no-service.md) — the decision
+this amends, and its evidence, which is still the best argument in the repo for
+why completeness was never the requirement.
+[ADR-0027](../adr/0027-spotlight-is-the-file-index-on-macos.md) for the macOS
+half. `index/wsearch.rs` and `index/mod.rs` for the `FileIndex` trait as it
+stands.
+
+## What exists today
+
+| | Windows | macOS (after ADR-0027) |
+|---|---|---|
+| primary | scoped walk + `ReadDirectoryChangesW` into a memory-mapped inverted index | `MDQuery` with `kMDQuerySynchronous` |
+| fallback | `wsearch.rs`, OLE DB over `Search.CollatorDSO`, **off by default** (`files_fallback`) | — |
+| roots UI | `files_roots` / `files_excludes`, live entry counts | roots map to `MDQuery` search scopes; no counts |
+
+`wsearch.rs` is 205 lines and works. It is off by default because ADR-0007 chose
+the walk, not because the query is bad.
+
+## The shape
+
+One trait, three implementors, one setting.
+
+```rust
+pub trait FileIndex {
+    fn query(&self, needle: &str, deadline: Duration) -> Vec<FileHit>;
+    fn status(&self) -> IndexStatus;   // ready / building / unavailable + a reason
+}
+```
+
+- `WalkedIndex` — today's walk plus watcher. Windows only.
+- `SpotlightIndex` — `MDQuery`, macOS only (ADR-0027).
+- `WindowsSearchIndex` — `wsearch.rs`, promoted.
+
+The setting is **Settings → Files → Search using**, with two options whose
+defaults differ by platform:
+
+| | default | alternative |
+|---|---|---|
+| Windows | Takyon's own index | Windows Search |
+| macOS | Spotlight | *(none — see below)* |
+
+The per-platform default is deliberate: neither is an accident of which was built
+first. Windows keeps the behaviour it shipped with; macOS gets the mechanism that
+is obviously right there.
+
+**macOS has no second option and should not get one.** Building a walked index on
+a Mac to sit beside Spotlight would be a large amount of code whose only purpose
+is redundancy against a system service that is essentially always running. If
+Spotlight is off, the honest answer is a status row saying so and a link to
+System Settings, not a shadow index.
+
+## Why this is not simply "use the OS index everywhere"
+
+Two real costs, and they are the reason this is a toggle rather than a
+replacement on Windows.
+
+**Latency.** Takyon's inverted index answers in well under a millisecond because
+it is a memory-mapped structure in-process. An OS index is a query API with its
+own cost — an OLE DB round trip, or an `MDQuery` gather phase. Both are bounded by
+the deadline `query.rs` already passes, so neither can blow the budget, but a
+deadline that expires returns *fewer* Entries rather than none, and that is a
+quality regression the user can feel.
+
+This matters less than it sounds because **file Entries are off the Bangless path
+by default** (`files_bangless`, default off since v0.7). The 30 ms first-Entry
+budget is measured against applications, the calculator and system entries, none
+of which touch this.
+
+**Availability.** Windows Search is disabled far more often than Spotlight — by
+users chasing performance, by group policy on managed machines, by the service
+simply failing. `IndexStatus::Unavailable` has to be a first-class state that the
+Files settings page reports plainly, and the toggle has to be reversible without
+a restart.
+
+## What the settings page becomes
+
+The page currently shows roots and exclusions with live entry counts. Under an OS
+index:
+
+- **Roots stay and keep meaning.** `MDQuery` takes search scopes natively;
+  Windows Search takes a `SCOPE` clause. Both accept the existing `files_roots`
+  list directly.
+- **Exclusions stay, as a post-filter.** Cheap at these result counts, and it
+  keeps `files_excludes` meaning the same thing on every path.
+- **Live entry counts go away** when an OS index is selected. Neither backend
+  reports "how many entries came from this root", and issuing a count query per
+  root to synthesise the number is work for a figure nobody acts on. The rows show
+  without counts, and the page says why in one line.
+- **A status row appears**: which index is answering, and if it is unavailable,
+  what to do about it — a link to Windows' Indexing Options, or to System
+  Settings → Spotlight.
+
+## Tasks
+
+1. **Extract `FileIndex` properly.** It exists but `WalkedIndex` is the only
+   implementor and some call sites reach past it. Make the trait the only door.
+2. **`SpotlightIndex`** — delivered by the macOS port, not by this plan. Listed
+   here because it is what proves the seam.
+3. **`WindowsSearchIndex`** — promote `wsearch.rs`, add scope-clause support for
+   `files_roots`, add `IndexStatus`.
+4. **The setting** — `files_backend`, stored in `settings.db`, default per
+   platform, applied without a restart.
+5. **Settings → Files rework** — the status row, the count columns hidden when an
+   OS index is selected, the deep links.
+6. **Retire `files_fallback`.** Once Windows Search is a selectable backend, a
+   separate "use Windows Search for locations outside the roots" toggle is a
+   second answer to the same question. Migrate a `true` value to the new setting.
+
+## Exit criteria
+
+On Windows, switching the backend in Settings changes which index answers, with
+no restart, and the Files page reports honestly when the service is off. On
+macOS, the page shows Spotlight, the roots the user chose, and nothing that
+implies a second index exists.
+
+## What this plan deliberately does not do
+
+It does not revisit ADR-0007's *reasoning*. The walk is still the right default on
+Windows for the reasons that ADR gives — it is ours, it is fast, it cannot be
+turned off by someone else. This adds a second answer for people whose machine
+already has one, and makes macOS's forced answer sit in the same frame rather than
+looking like an exception.

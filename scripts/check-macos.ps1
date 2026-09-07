@@ -53,10 +53,25 @@ Write-Host "zig:    $zigDir"
 Write-Host "target: $target"
 Write-Host ""
 
+$manifest = Join-Path $repo "apps\desktop\src-tauri\Cargo.toml"
+
+# ADR-0026: Takyon names objc2 crates that Tauri already resolves. A Tauri
+# upgrade that moves to a new objc2 major would resolve two copies, and
+# Objective-C types stop being interchangeable across the boundary. Caught here
+# rather than by a type error in the middle of a feature.
+$duplicates = & cargo tree --manifest-path $manifest --target $target --duplicates 2>&1
+$objcDupes = $duplicates | Select-String -Pattern "^(objc2|block2|dispatch2)"
+if ($objcDupes) {
+    Write-Host "Duplicate objc2 crates in the tree (ADR-0026):" -ForegroundColor Red
+    $objcDupes | ForEach-Object { Write-Host "  $_" }
+    Write-Host "Pin Takyon's objc2 versions to whatever Tauri now resolves."
+    exit 1
+}
+
 # `-p takyon`, never `--workspace`: the uiaccess helper is Windows-only by
 # definition and has no macOS half to check.
 & cargo clippy `
-    --manifest-path (Join-Path $repo "apps\desktop\src-tauri\Cargo.toml") `
+    --manifest-path $manifest `
     --target $target -p takyon --all-targets -- -D warnings
 
 exit $LASTEXITCODE

@@ -1,6 +1,7 @@
 ---
-status: watching
+status: resolved
 pairs-with: ADR-0019
+resolved-by: ADR-0029
 ---
 
 # TBC-0013 — The HTTP client on a second platform
@@ -57,3 +58,37 @@ client with one behaviour is worth 2 MB.
 
 Do **not** take the per-platform split. If `URLSession` proves too expensive, that
 is evidence for one Rust client everywhere, not for two native ones.
+
+
+---
+
+## Amendment — resolved, and the bet was priced from a wrong fact
+
+**Resolved by ADR-0029: `URLSession` on macOS, WinHTTP on Windows.**
+
+The note above priced `URLSession` as "objc bindings for the one subsystem that is
+otherwise trivially portable" and set a trip-wire at roughly 400 lines of FFI. That
+pricing was wrong before it was written. `objc2-foundation` is already in
+`Cargo.lock`, pulled in by `tauri` itself — so `NSURLSession` costs **no
+dependency at all**, and the implementation with `block2` for the completion
+handler lands well under the trip-wire. ADR-0026 has the full table.
+
+The alternatives table above is still correct on every row *except* the added
+complexity of the first: "Objective-C FFI in the one subsystem that is otherwise
+pure logic" stands, but "a second `unsafe` surface to review" is smaller than
+written, and "3–5 dev-days" is generous.
+
+**The refused option deserved a real answer, not a dodge.** This note said to
+refuse a per-platform split outright. ADR-0029 takes one anyway, and the reasoning
+is that the split this note feared is a different split: one where **one side is a
+Rust client with its own TLS stack, certificate store and redirect policy**, so
+`!s` behaves differently per platform for reasons the user cannot discover. Two OS
+stacks, each honouring the machine it runs on, is the same policy expressed twice —
+the user's proxy, the user's CA store, the user's TLS settings, on both platforms.
+That is less divergence from what the user configured, not more.
+
+**The trigger that would undo this is now a third platform.** If Linux ever
+appears there is no third OS stack worth binding, and the honest answer becomes one
+Rust client everywhere — at which point ADR-0019, ADR-0029 and this note retire
+together. That is the only remaining live trigger; the cost and licence triggers
+above are dead.
