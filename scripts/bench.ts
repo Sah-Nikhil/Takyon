@@ -27,6 +27,7 @@
  *   bun run bench --idle 35        # one show after 35 minutes idle
  *   bun run bench --dev            # measure the debug build (slower; not a budget)
  *   bun run bench --alt-hotkey     # bind Ctrl+Alt+F9 instead of Alt+Space
+ *   bun run bench --kill-running   # end an already-running Takyon first
  *
  * `--alt-hotkey` exists because Alt+Space is contested: PowerToys Run and Raycast
  * both claim it by default, and on a machine running either, every span here
@@ -49,12 +50,18 @@ const BUDGETS = {
   idle_rss_mb: { mb: 150, label: "Idle RSS (warm, trimmed)" },
 } as const;
 
-type Args = { runs: number; idle: number; dev: boolean; altHotkey: boolean };
+type Args = {
+  runs: number;
+  idle: number;
+  dev: boolean;
+  altHotkey: boolean;
+  killRunning: boolean;
+};
 
 /**
- * The chord used with `--alt-hotkey`, and the key name `bench-input.ps1` sends
- * for it. They have to describe the same combination, and a Rust test checks the
- * accelerator string still parses.
+ * The chord used with `--alt-hotkey`, and the key name `takyon-bench input`
+ * sends for it. They have to describe the same combination, and a Rust test
+ * checks the accelerator string still parses.
  */
 const ALT_HOTKEY = { accelerator: "Ctrl+Alt+F9", inputKey: "CtrlAltF9" } as const;
 
@@ -71,22 +78,55 @@ function parseArgs(argv: string[]): Args {
     idle: get("idle", 0),
     dev: argv.includes("--dev"),
     altHotkey: argv.includes("--alt-hotkey"),
+    killRunning: argv.includes("--kill-running"),
   };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function powershell(script: string, args: string[] = []): Promise<string> {
+/**
+ * The Rust helper that injects keystrokes and sums the process tree.
+ *
+ * Rust rather than shell because the input half feeds a 50 ms budget — see the
+ * crate's own module doc. Built on demand: it is a workspace member, so a plain
+ * `cargo build -p takyon-bench` is enough and needs no separate step.
+ */
+const HELPER = join(
+  ROOT,
+  "apps",
+  "desktop",
+  "src-tauri",
+  "target",
+  "release",
+  process.platform === "win32" ? "takyon-bench.exe" : "takyon-bench",
+);
+
+async function buildHelper() {
+  if (existsSync(HELPER)) return;
+  console.log("Building the bench helper (takyon-bench)…");
   const proc = Bun.spawn(
-    ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, ...args],
-    { stdout: "pipe", stderr: "pipe" },
+    [
+      "cargo",
+      "build",
+      "--manifest-path",
+      join(ROOT, "apps", "desktop", "src-tauri", "Cargo.toml"),
+      "-p",
+      "takyon-bench",
+      "--release",
+    ],
+    { stdout: "inherit", stderr: "inherit" },
   );
+  if ((await proc.exited) !== 0) throw new Error("could not build takyon-bench");
+}
+
+async function helper(args: string[]): Promise<string> {
+  const proc = Bun.spawn([HELPER, ...args], { stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  if (code !== 0) throw new Error(`${script} failed (${code}): ${err.trim()}`);
+  if (code !== 0) throw new Error(`takyon-bench ${args.join(" ")} failed (${code}): ${err.trim()}`);
   return out.trim();
 }
 
@@ -139,7 +179,15 @@ async function main() {
   const args = parseArgs(Bun.argv.slice(2));
 
   const profile = args.dev ? "debug" : "release";
-  const exe = join(ROOT, "apps", "desktop", "src-tauri", "target", profile, "takyon.exe");
+  const exe = join(
+    ROOT,
+    "apps",
+    "desktop",
+    "src-tauri",
+    "target",
+    profile,
+    process.platform === "win32" ? "takyon.exe" : "takyon",
+  );
   if (!existsSync(exe)) {
     console.error(
       `No ${profile} binary at ${exe}\n` +
@@ -148,6 +196,31 @@ async function main() {
           : "Run `bun run build` first. Benching a debug build measures the compiler, not the product — pass --dev only if that is what you meant."),
     );
     process.exit(1);
+  }
+
+  await buildHelper();
+
+  /*
+    A second Takyon hands off to the first and exits (single-instance), writing
+    nothing to TAKYON_BENCH_LOG. Unchecked, the harness waits out its deadline
+    and blames the hotkey. An installed Takyon in the tray is the ordinary case.
+  */
+  const running = (JSON.parse(await helper(["pids", "--name", "takyon"])) as number[]).filter(
+    (p) => p !== process.pid,
+  );
+  if (running.length > 0) {
+    if (!args.killRunning) {
+      console.error(
+        `Takyon is already running (pid ${running.join(", ")}).\n` +
+          "  A second instance hands off to the first and exits immediately, so this\n" +
+          "  run would measure a process that was never alive.\n" +
+          "  Quit it from the tray and re-run, or pass --kill-running to end it here.",
+      );
+      process.exit(1);
+    }
+    console.log(`Ending the running Takyon (pid ${running.join(", ")}) — --kill-running.\n`);
+    for (const pid of running) process.kill(pid);
+    await sleep(1000);
   }
 
   mkdirSync(RESULTS, { recursive: true });
@@ -211,8 +284,8 @@ async function main() {
     // WebView2's first paint. That is a real cost but it is not the cost being
     // budgeted, so it is spent here and discarded.
     await sleep(1500);
-    await show(ROOT, logPath, 0, args);
-    await hide(ROOT);
+    await show(logPath, 0, args);
+    await hide();
     await sleep(400);
 
     const warmup = readLog(logPath).filter((r) => r.event === "show_to_first_pixel").length;
@@ -226,9 +299,9 @@ async function main() {
       await sleep(args.idle * 60_000);
     } else {
       for (let i = 0; i < args.runs; i++) {
-        await show(ROOT, logPath, warmup + i, args);
-        await typeOneEntry(ROOT, logPath, i);
-        await hide(ROOT);
+        await show(logPath, warmup + i, args);
+        await typeOneEntry(logPath, i);
+        await hide();
         // Long enough for the trim thread to finish, so the next show pays the
         // page faults the model says it should.
         await sleep(250);
@@ -238,16 +311,20 @@ async function main() {
     }
 
     if (args.idle > 0) {
-      await show(ROOT, logPath, warmup, args);
-      await hide(ROOT);
+      await show(logPath, warmup, args);
+      await hide();
     }
 
     // Settle before measuring memory: the trim happens on a background thread
     // after hide, and reading immediately would measure the untrimmed state.
     await sleep(3000);
-    const mem = JSON.parse(
-      await powershell(join(ROOT, "scripts", "bench-mem.ps1"), ["-RootPid", String(child.pid)]),
-    ) as { processes: number; workingSet: number; privateBytes: number };
+    const mem = JSON.parse(await helper(["mem", "--pid", String(child.pid)])) as {
+      processes: number;
+      workingSet: number;
+      privateBytes: number;
+      privateBytesAvailable?: boolean;
+      untrackedWebKitHelpers?: number;
+    };
 
     const rows = readLog(logPath);
     const shows = rows
@@ -342,8 +419,8 @@ async function main() {
  * application is unusual but not a reason to discard the three budgets that did
  * measure. Its absence shows up as a smaller sample count, which is reported.
  */
-async function typeOneEntry(root: string, logPath: string, alreadySeen: number) {
-  await powershell(join(root, "scripts", "bench-input.ps1"), ["-Key", "LetterC"]);
+async function typeOneEntry(logPath: string, alreadySeen: number) {
+  await helper(["input", "--key", "LetterC"]);
   try {
     await waitFor(
       logPath,
@@ -356,11 +433,8 @@ async function typeOneEntry(root: string, logPath: string, alreadySeen: number) 
   }
 }
 
-async function show(root: string, logPath: string, alreadySeen: number, args: Args) {
-  await powershell(join(root, "scripts", "bench-input.ps1"), [
-    "-Key",
-    args.altHotkey ? ALT_HOTKEY.inputKey : "AltSpace",
-  ]);
+async function show(logPath: string, alreadySeen: number, args: Args) {
+  await helper(["input", "--key", args.altHotkey ? ALT_HOTKEY.inputKey : "AltSpace"]);
   await waitFor(
     logPath,
     (rows) => rows.filter((r) => r.event === "show_to_first_pixel").length > alreadySeen,
@@ -369,8 +443,8 @@ async function show(root: string, logPath: string, alreadySeen: number, args: Ar
   );
 }
 
-async function hide(root: string) {
-  await powershell(join(root, "scripts", "bench-input.ps1"), ["-Key", "Escape"]);
+async function hide() {
+  await helper(["input", "--key", "Escape"]);
 }
 
 await main();

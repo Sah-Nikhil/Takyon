@@ -56,42 +56,16 @@ function Log($m) {
     Add-Content -Path $transcript -Value $line
 }
 
-Add-Type -Namespace B -Name I -MemberDefinition @"
-[DllImport("user32.dll", SetLastError=true)] public static extern void keybd_event(byte v, byte s, uint f, System.UIntPtr e);
-"@
-
-function Send-AltSpace {
-    [B.I]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)
-    [B.I]::keybd_event(0x20, 0, 0, [UIntPtr]::Zero)
-    [B.I]::keybd_event(0x20, 0, 2, [UIntPtr]::Zero)
-    [B.I]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
-}
-function Send-Escape {
-    [B.I]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero)
-    [B.I]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
+# Input injection and the process-tree walk both live in `takyon-bench` now, so
+# there is one implementation of each rather than one here and one in bench.ts.
+$helper = Join-Path $repo 'apps\desktop\src-tauri\target\release\takyon-bench.exe'
+if (-not (Test-Path $helper)) {
+    throw "no bench helper at $helper -- run 'cargo build -p takyon-bench --release' first"
 }
 
-# Whole-process-tree memory. WebView2's renderer is a child of its browser
-# process, not of us, so a one-level walk misses where the memory actually is.
-function Get-TreeMemory([int]$root) {
-    $all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId
-    $seen = [System.Collections.Generic.HashSet[int]]::new()
-    $null = $seen.Add($root)
-    $q = [System.Collections.Generic.Queue[int]]::new(); $q.Enqueue($root)
-    while ($q.Count -gt 0) {
-        $p = $q.Dequeue()
-        foreach ($r in $all) {
-            if ($r.ParentProcessId -eq $p -and $seen.Add([int]$r.ProcessId)) { $q.Enqueue([int]$r.ProcessId) }
-        }
-    }
-    $ws = 0L; $pv = 0L; $n = 0
-    foreach ($id in $seen) {
-        $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
-        if ($null -eq $proc) { continue }
-        $ws += $proc.WorkingSet64; $pv += $proc.PrivateMemorySize64; $n++
-    }
-    [pscustomobject]@{ processes = $n; workingSet = $ws; privateBytes = $pv }
-}
+function Send-AltSpace { & $helper input --key AltSpace }
+function Send-Escape { & $helper input --key Escape }
+function Get-TreeMemory([int]$root) { & $helper mem --pid $root | ConvertFrom-Json }
 
 function Read-Shows {
     if (-not (Test-Path $benchLog)) { return @() }

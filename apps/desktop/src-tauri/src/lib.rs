@@ -736,6 +736,13 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
+            // Agent app: no Dock icon, no app menu (ADR-0028). Info.plist's
+            // LSUIElement does this for the bundle; a dev build has no bundle,
+            // so set it here too. Both, because LSUIElement avoids the Dock
+            // icon flashing before this line runs.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Managed before the hotkey, because the hotkey handler reaches for it
             // on the very first press.
             app.manage(Bench::from_env(started));

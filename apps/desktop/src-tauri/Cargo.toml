@@ -1,5 +1,5 @@
 [workspace]
-members = ["uiaccess"]
+members = ["uiaccess", "bench-helper"]
 
 [package]
 name = "takyon"

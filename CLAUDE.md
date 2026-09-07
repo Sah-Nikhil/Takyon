@@ -189,7 +189,12 @@ under `docs/`.
   and the limit**: it cannot reach ranking, Frecency or anything else in Rust.
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
   as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
-  already owns `Alt+Space`, which is most machines.
+  already owns `Alt+Space`, which is most machines. **Quit an installed Takyon
+  first**: single-instance makes the spawned copy hand off and exit, and the run
+  then measures a process that was never alive. The harness detects this and says
+  so; `--kill-running` ends it for you. The OS half is `takyon-bench`, a Rust
+  workspace member with a Windows and a macOS arm — not PowerShell, so the
+  harness runs on both platforms.
 - macOS compile gate: `bun run check:macos` — cross-compiles and lints for
   `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
   build unpacked locally, which not every machine has. Run it after touching

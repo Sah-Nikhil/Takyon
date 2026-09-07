@@ -613,8 +613,9 @@ TBC-0013 and TBC-0014. **macOS 13 Ventura, Apple Silicon only.**
 - [x] Row 9, `sources/system.rs` — 28 `x-apple.systempreferences:` panes. **Ids unverified**: Apple renamed most at Ventura and there is no enumeration API, so a wrong one opens System Settings at its front page rather than erroring
 - [x] Row 2 part one — `apps/bundles.rs` walks the three `.app` roots, depth-capped so `Xcode.app`'s helpers stay out
 - [ ] **First run on a Mac.** Nothing here has ever executed on macOS. `bun run dev`, then `bun run build`, which links — something `check:macos` never does
-- [ ] **`bun run bench` on the Mac**, which needs the harness ported to Rust first. ADR-0028 removes ADR-0003's working-set trim on macOS, so the **150 MB idle-RSS budget is unverified** and must not be quoted as if it held. The three latency budgets port unchanged
-- [ ] `tauri.macos.conf.json` — `minimumSystemVersion: "13.0"`, `LSUIElement`, ADR-0020's two literals
+- [x] **The harness ported to Rust** — `takyon-bench`, a workspace member with both platform arms, driving `bench.ts` and `bench-idle.ps1` alike. **Proven on Windows**: the memory half returns byte-for-byte what `bench-mem.ps1` did on the same live tree, and a full 30-show run passed all four budgets — first pixel p95 21.9 ms, first Entry p95 24.3 ms, start to hotkey 263.9 ms, idle RSS 25.8 MB. The macOS arm compiles and has run nowhere. It also reports `untrackedWebKitHelpers`, because WKWebView's helpers are launchd-owned XPC services and the tree walk that finds every WebView2 process may find none of them — [`docs/tbd/v0.12.md`](./docs/tbd/v0.12.md) §2 and §4
+- [ ] **`bun run bench` on the Mac.** ADR-0028 removes ADR-0003's working-set trim on macOS, so the **150 MB idle-RSS budget is unverified** and must not be quoted as if it held. The three latency budgets port unchanged
+- [x] `tauri.macos.conf.json` — `minimumSystemVersion: "13.0"`, `dmg` as the only target. `LSUIElement` is not a Tauri config key, so it is a new `src-tauri/Info.plist` the bundler merges, plus `set_activation_policy(Accessory)` for dev builds, which have no bundle. ADR-0020's two literals stay in the base config rather than being copied into a second one. **Never launched** — `LSUIElement` only takes effect on a clean launch and nothing here has run on a Mac
 - [ ] Row 8, the window — agent app, non-activating panel over all Spaces, and dismiss-on-click-away rebuilt on `NSEvent.addGlobalMonitorForEvents` because a non-activating panel never becomes key
 - [ ] Row 7, launch — `NSWorkspace.openApplication` with its completion handler, which **keeps launched-image identity** and gives Frecency a `bundleIdentifier` that survives an app being moved or updated. Replaces the `/usr/bin/open` stopgap
 - [ ] Row 3, icons — `NSWorkspace.icon(forFile:)` into the same `icons.bin`, with `ICON_PX` raised 64 → 128 on **both** platforms
@@ -626,7 +627,7 @@ TBC-0013 and TBC-0014. **macOS 13 Ventura, Apple Silicon only.**
 - [ ] `steam_path()` → `~/Library/Application Support/Steam`. One function; the VDF parser and `steam://` URLs are already portable
 - [ ] **Cmd+Space onboarding**, last — Raycast-shaped, blocking, advancing by polling the registration rather than asking the user to confirm
 - [ ] Uninstall — a "Remove all Takyon data" button, since dragging to the Trash runs nothing and leaves a Keychain item and an encrypted clipboard database behind
-- [ ] `docs/verify/macos.md`, written as rows land rather than batched at the end
+- [ ] `docs/verify/macos.md`, written as rows land rather than batched at the end. **Started**: sections A (first run), B (the agent app), C (the benchmark) and D (the 28 pane ids) are written and none has been run. One section per row follows as the row lands
 - [ ] Visual suite: a **`webkit`** Playwright project with its own baselines, run **locally on the Mac only** — never CI, where `macos-latest` bills at ten times the Linux rate
 
 **Exit criteria:** someone summons Takyon with Cmd+Space over a full-screen app,
