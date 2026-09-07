@@ -11,12 +11,15 @@
 //! TBC-0005's amendment carries the measurement. That is why this is a fallback
 //! and not the mechanism.
 
+#[cfg(windows)]
 use std::path::PathBuf;
 
 use crate::index::FileHit;
+#[cfg(windows)]
 use crate::rank;
 
 /// The OLE DB provider that answers `SystemIndex` queries.
+#[cfg(windows)]
 const PROVIDER: &str = "Provider=Search.CollatorDSO;Extended Properties='Application=Windows'";
 
 /// A query against the OS index. No state: the service holds it all.
@@ -54,6 +57,7 @@ impl WindowsSearch {
 ///
 /// Doubling is what the OLE DB dialect wants. Every other character is safe:
 /// the needle only ever reaches a `LIKE` on a filename.
+#[cfg(windows)]
 fn escape(needle: &str) -> String {
     needle.replace('\'', "''")
 }
@@ -62,6 +66,7 @@ fn escape(needle: &str) -> String {
 ///
 /// A fallback answer is from outside the roots the user chose, so it is a wider
 /// guess than a local one and must not outrank it.
+#[cfg(windows)]
 fn hit_of(path: String) -> Option<FileHit> {
     let path = PathBuf::from(path);
     let is_dir = path.is_dir();
@@ -175,7 +180,8 @@ fn invoke(
     Ok(result)
 }
 
-#[cfg(test)]
+// Windows-only: every helper under test speaks OLE DB to Windows Search.
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 

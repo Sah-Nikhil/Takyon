@@ -19,6 +19,7 @@ use super::roots::is_excluded;
 /// 64 KB is the documented ceiling for a network path and holds roughly a
 /// thousand names locally. Bigger buffers make overflow rarer; they cannot make
 /// it impossible, which is why the overflow path exists at all.
+#[cfg(windows)]
 const BUFFER_BYTES: usize = 64 * 1024;
 
 /// One thing that happened under a root.

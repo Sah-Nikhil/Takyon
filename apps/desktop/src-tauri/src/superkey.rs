@@ -10,14 +10,18 @@
 //! `docs/plans/v0.10-appearance.md` §6 and `docs/tbd/v0.10.md`.
 
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+#[cfg(windows)]
 use std::sync::mpsc::{self, Sender};
+#[cfg(windows)]
 use std::sync::{Mutex, OnceLock};
 
 use tauri::AppHandle;
 
 /// Whether the Windows key is currently held, as this hook has seen it.
+#[cfg(windows)]
 static WIN_DOWN: AtomicBool = AtomicBool::new(false);
 /// Whether any other key was pressed while it was held. A chord, not a tap.
+#[cfg(windows)]
 static CHORDED: AtomicBool = AtomicBool::new(false);
 /// Whether a hook is installed right now. The switch in Settings reads this.
 static ARMED: AtomicBool = AtomicBool::new(false);
@@ -26,9 +30,11 @@ static ARMED: AtomicBool = AtomicBool::new(false);
 ///
 /// The callback may not: showing a window touches the event loop, far beyond
 /// this hook's budget. A send is a few instructions and blocks on nothing.
+#[cfg(windows)]
 static TOGGLE: OnceLock<Sender<()>> = OnceLock::new();
 
 /// The hook thread's id, so it can be told to quit. `None` when nothing is armed.
+#[cfg(windows)]
 static THREAD: Mutex<Option<u32>> = Mutex::new(None);
 
 /// Whether the hook is installed. Not the same question as whether it was asked

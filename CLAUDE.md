@@ -16,12 +16,11 @@ numbered sources. v0.10 is **appearance**: five theme families each carrying a
 light and a dark half, Compact and Expanded window modes, and the Windows key as
 an optional second binding.
 
-**CI exists but has never run.** `.github/workflows/ci.yml` (typecheck, lint,
-every test layer) and `release.yml` (tag → Windows installer → GitHub Release)
-are written and their YAML parses, and that is all that can be said: this repo
-has no GitHub remote yet, so neither workflow has executed once. Two of the
-three CI jobs are on `windows-latest` deliberately — the crate is Windows-only,
-and the screenshot baselines were rasterised by Windows.
+**CI runs.** The remote is `github.com/Sah-Nikhil/Takyon`, and `ci.yml`
+(typecheck, lint, every test layer) has executed — v0.10.1 merged through a pull
+request. Two jobs are on `windows-latest` deliberately: the product is Windows,
+and the screenshot baselines were rasterised by Windows. A third, `macos`, is a
+compile gate only.
 
 **Two verification scripts are unrun, and they are the two newest.**
 `docs/verify/v0.10.md` section E has never been executed by anyone — the
@@ -44,16 +43,15 @@ Two things are outstanding rather than done: a real code-signing certificate for
 the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
 Steam steps are blocked because this machine's library holds no game.
 
-**Windows only, and further from macOS than the workspace layout suggests.**
-`apps/` and `packages/shared` were split ahead of need so the seams would exist,
-and the frontend genuinely is portable — but roughly 7,400 lines across 20 Rust
-files name the `windows` crate. `ClipboardStore` and `Hotkey` are now real traits
-(ADR-0025) and `identity.rs` knows the macOS data directory, which is the whole
-of what exists: no implementation of anything that touches the OS, and no way to
-check the `cfg(target_os = "macos")` arms from here, because `cargo check
---target aarch64-apple-darwin` dies in `libsqlite3-sys` for want of a cross `cc`.
-The two open questions are settled in `docs/tbc/0013` (the HTTP client) and
-`docs/tbc/0014` (signing). `docs/plans/macos.md` states the whole picture.
+**macOS compiles, and has never run.** `bun run check:macos` is clean for
+`aarch64-apple-darwin` — library, unit tests, integration tests, `-D warnings`.
+Four rows are written: identity, the `.app` bundle walk, launch and reveal
+through `/usr/bin/open`, and the System Settings panes; the clipboard reads and
+writes through `pbpaste`/`pbcopy`. Icons, the file index, clipboard history,
+`!s` retrieval and paste-back all refuse in words, and the next rows need
+`objc2` in the locked stack — an ADR, not a `bun add`. `ClipboardStore` and
+`Hotkey` are traits (ADR-0025); the two open questions are `docs/tbc/0013` (HTTP
+client) and `docs/tbc/0014` (signing). `docs/plans/macos.md` has the table.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
@@ -178,6 +176,10 @@ under `docs/`.
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
   as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
   already owns `Alt+Space`, which is most machines.
+- macOS compile gate: `bun run check:macos` — cross-compiles and lints for
+  `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
+  build unpacked locally, which not every machine has. Run it after touching
+  anything with a `cfg(windows)` arm.
 - release: `bun run release` — preflight (typecheck, lint, test), `tauri build`,
   then the installer into `releases/v{version}/` with its SHA-256. Same layout as
   tesseract's `releases/`, and `releases/` is gitignored. No `latest.json` or
@@ -346,6 +348,12 @@ the next.
   window had probably never rendered in a real build. Nothing caught it because the
   visual suite reaches that route through Vite, never through Tauri —
   `scripts/verify-drive-v0.6.ps1` now samples pixels for exactly this.
+- **A bare `cargo check --target aarch64-apple-darwin` fails before it reaches
+  our code.** `libsqlite3-sys` and `objc2-exception-helper` build native C and
+  Objective-C, so cargo wants a compiler that can target macOS. `bun run
+  check:macos` supplies zig as that compiler — it ships the macOS libc and
+  Objective-C headers, so no Apple SDK is involved. The error names `cc` and
+  reads like a missing toolchain, which it is; it is not a Rust problem.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding

@@ -8,6 +8,7 @@
 //! app", which in the first second after login is exactly wrong.
 
 pub mod appsfolder;
+pub mod bundles;
 pub mod games;
 pub mod lnk;
 pub mod noise;
@@ -284,8 +285,8 @@ impl Source for AppSource {
 /// Order matters, because [`rank::dedupe`] keeps the better-scoring Entry and
 /// these paths produce descending quality of metadata: a Start Menu shortcut knows
 /// the real display name, a bare `PATH` executable knows only its basename.
+#[cfg(windows)]
 fn discover_all(icons: &IconStore) -> Vec<App> {
-    #[cfg(windows)]
     let _com = crate::com::ComScope::new();
 
     let mut apps: Vec<App> = Vec::new();
@@ -457,6 +458,54 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
 
     attach_versions(&mut apps, crate::version::of);
     apps
+}
+
+/// One discovery path on macOS: the `.app` bundles.
+///
+/// The other four have no counterpart — no `AppsFolder`, no `.lnk`, no Desktop
+/// convention — and `PATH` executables need an exec-bit check `path.rs`'s
+/// extension list cannot give them. `docs/plans/macos.md` row 2 owns that.
+#[cfg(target_os = "macos")]
+fn discover_all(icons: &IconStore) -> Vec<App> {
+    let mut apps: Vec<App> = Vec::new();
+    let mut seen: std::collections::HashSet<EntryId> = std::collections::HashSet::new();
+
+    for bundle in bundles::discover() {
+        let target = LaunchTarget::Exe {
+            path: bundle.path.clone(),
+            args: None,
+            working_dir: None,
+        };
+        let id = EntryId::for_launch(&target);
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        let mut app = App {
+            id,
+            origin: AppOrigin::Installed,
+            // No second haystack term: a bundle's name *is* its executable name,
+            // unlike a `.lnk` whose title and target stem routinely disagree.
+            hay: Haystack::new(&bundle.name, None),
+            title: bundle.name,
+            subtitle: Some(bundle.path.to_string_lossy().to_string()),
+            target,
+            icon_source: Some(bundle.path),
+            icon: None,
+            version: None,
+        };
+        app.icon = icons.register(icon_source_for(&app));
+        apps.push(app);
+    }
+
+    attach_versions(&mut apps, crate::version::of);
+    apps
+}
+
+/// Neither Windows nor macOS: nothing is discovered, and the Palette says so by
+/// finding no application rather than by failing.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn discover_all(_icons: &IconStore) -> Vec<App> {
+    Vec::new()
 }
 
 /// Stamp a version on same-named executables that disagree about theirs.

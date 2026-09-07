@@ -68,7 +68,11 @@ pub fn host() -> &'static dyn ClipboardStore {
     {
         &WindowsClipboard
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        &MacClipboard
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         &UnsupportedClipboard
     }
@@ -111,26 +115,101 @@ impl ClipboardStore for WindowsClipboard {
     }
 }
 
-/// Every target that is not Windows, until one is written.
+/// macOS: `pbpaste` and `pbcopy`, which are `NSPasteboard` with a shell in front.
+///
+/// Deliberately not an `objc2` binding yet. Two processes per copy is more than
+/// `NSPasteboard` costs, and the paths that use it are user-initiated rather than
+/// on any latency budget — Copy and Copy path, never the Bangless walk.
+#[cfg(target_os = "macos")]
+pub struct MacClipboard;
+
+#[cfg(target_os = "macos")]
+impl ClipboardStore for MacClipboard {
+    fn read_text(&self) -> Option<String> {
+        use std::process::{Command, Stdio};
+
+        let out = Command::new("/usr/bin/pbpaste")
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        // Empty is `None`, matching Windows: an empty clipboard holds no text
+        // rather than holding an empty string, and `acceptable` rejects it
+        // anyway.
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        (!text.is_empty()).then_some(text)
+    }
+
+    fn write_text(&self, text: &str) -> Result<(), String> {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("/usr/bin/pbcopy")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("could not run pbcopy: {e}"))?;
+
+        // Dropped before the wait: `pbcopy` reads to EOF, so holding the pipe
+        // open here is a deadlock rather than a slow write.
+        {
+            let stdin = child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| "pbcopy took no stdin".to_string())?;
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("could not write to pbcopy: {e}"))?;
+        }
+        drop(child.stdin.take());
+
+        match child.wait() {
+            Ok(status) if status.success() => Ok(()),
+            Ok(status) => Err(format!("pbcopy exited {}", status.code().unwrap_or(-1))),
+            Err(e) => Err(format!("pbcopy could not be waited on: {e}")),
+        }
+    }
+
+    fn send_paste_chord(&self) -> Result<(), String> {
+        // `CGEventPost` needs the Accessibility permission and a Core Graphics
+        // binding, neither of which exists yet. Refusing leaves the clip on the
+        // clipboard and the user one Cmd+V away, which is the ordering `paste.rs`
+        // is built around.
+        Err("Paste-back needs the Accessibility permission, which Takyon does not request yet.".into())
+    }
+
+    fn spawn_watcher(&self, _store: Arc<ClipStore>, _blocklist: Arc<Blocklist>) {
+        // `NSPasteboard` has no change notification — the documented way is to
+        // poll `changeCount`, which contradicts ADR-0003's idle-and-warm premise
+        // as directly as `GetClipboardSequenceNumber` did on Windows. Left unbuilt
+        // rather than built badly; `docs/plans/macos.md` row 6 owns it.
+    }
+}
+
+/// Every target that is neither Windows nor macOS, until one is written.
 ///
 /// Refuses in words rather than silently doing nothing: clipboard history that
 /// is merely absent reads as a broken feature, and this string reaches the
 /// Palette.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub struct UnsupportedClipboard;
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 impl ClipboardStore for UnsupportedClipboard {
     fn read_text(&self) -> Option<String> {
         None
     }
 
     fn write_text(&self, _text: &str) -> Result<(), String> {
-        Err("the clipboard is only implemented on Windows".into())
+        Err("the clipboard is not implemented on this platform".into())
     }
 
     fn send_paste_chord(&self) -> Result<(), String> {
-        Err("paste-back is only implemented on Windows".into())
+        Err("paste-back is not implemented on this platform".into())
     }
 
     fn spawn_watcher(&self, _store: Arc<ClipStore>, _blocklist: Arc<Blocklist>) {}

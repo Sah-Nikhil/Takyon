@@ -8,6 +8,9 @@
 //! every app it ever started.
 //!
 //! Elevation is the same call with the `runas` verb. Nothing here runs elevated.
+//!
+//! macOS goes through `/usr/bin/open`, for the same reasons: Finder's own path,
+//! resolves bundles and URL schemes alike, child gets `launchd`'s environment.
 
 use std::path::PathBuf;
 
@@ -78,13 +81,30 @@ pub fn reveal(target: &LaunchTarget) -> Result<(), String> {
     let LaunchTarget::Exe { path, .. } = target else {
         return Err("This kind of application has no file to show.".into());
     };
-    shell_execute(
-        None,
-        "explorer.exe",
-        Some(&format!("/select,\"{}\"", path.display())),
-        None,
-    )
-    .map(|_| ())
+
+    #[cfg(windows)]
+    {
+        shell_execute(
+            None,
+            "explorer.exe",
+            Some(&format!("/select,\"{}\"", path.display())),
+            None,
+        )
+        .map(|_| ())
+    }
+
+    // `-R` is Finder's own reveal-and-select. No quoting problem to solve: the
+    // path is one argument rather than a command line.
+    #[cfg(target_os = "macos")]
+    {
+        run_open(&["-R", &path.to_string_lossy()], None).map(|_| ())
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = path;
+        Err("revealing a file is not implemented on this platform".into())
+    }
 }
 
 /// The path an Entry points at, for "Copy path".
@@ -187,14 +207,74 @@ fn image_of(handle: windows::Win32::Foundation::HANDLE) -> Option<PathBuf> {
     )))
 }
 
-#[cfg(not(windows))]
+/// Start something through `/usr/bin/open`.
+///
+/// Returns `None` rather than a path: `open` hands off to `launchd` and says
+/// nothing about what started, so v0.3's launched-image identity has no macOS
+/// half. Frecency falls back to the Entry's own id, as it did before v0.3.
+#[cfg(target_os = "macos")]
+fn shell_execute(
+    verb: Option<&str>,
+    file: &str,
+    args: Option<&str>,
+    dir: Option<&str>,
+) -> Result<Option<PathBuf>, String> {
+    // No macOS analogue, and none wanted: privilege is a per-operation
+    // authorisation prompt, not a way to start an application (ADR-0007's
+    // no-elevation stance holds here too).
+    if verb == Some("runas") {
+        return Err("macOS has no equivalent of running an application as administrator.".into());
+    }
+
+    let mut argv: Vec<&str> = vec![file];
+    // Everything after `--args` goes to the application rather than to `open`.
+    // Split on whitespace, which is what the Windows side's single argument
+    // string already assumes; a quoted argument containing spaces is a gap both
+    // platforms share.
+    if let Some(args) = args {
+        argv.push("--args");
+        argv.extend(args.split_whitespace());
+    }
+    run_open(&argv, dir)
+}
+
+/// Run `open` with the arguments given, detached from our handles.
+///
+/// `status()` rather than `spawn()`: `open` exits as soon as the request is
+/// accepted, so this waits milliseconds and turns a refusal into an error.
+/// Streams are null — a launcher must not hold a pipe per app it ever started.
+#[cfg(target_os = "macos")]
+fn run_open(args: &[&str], dir: Option<&str>) -> Result<Option<PathBuf>, String> {
+    use std::process::{Command, Stdio};
+
+    let mut command = Command::new("/usr/bin/open");
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(dir) = dir {
+        command.current_dir(dir);
+    }
+
+    match command.status() {
+        Ok(status) if status.success() => Ok(None),
+        Ok(status) => Err(format!(
+            "macOS refused to start it (open exited {}).",
+            status.code().unwrap_or(-1)
+        )),
+        Err(e) => Err(format!("could not run open: {e}")),
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn shell_execute(
     _verb: Option<&str>,
     _file: &str,
     _args: Option<&str>,
     _dir: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
-    Err("launching is only implemented on Windows".into())
+    Err("launching is only implemented on Windows and macOS".into())
 }
 
 /// Invoke a shell item's default verb by its absolute PIDL (task 8).
@@ -249,9 +329,12 @@ fn with_aligned_pidl<T>(
     }
 }
 
+/// A PIDL is a Windows shell concept and has no counterpart anywhere else, so
+/// this refuses rather than waiting for an implementation. Nothing off Windows
+/// produces a `LaunchTarget::ShellItem` to reach it.
 #[cfg(not(windows))]
 fn shell_execute_idlist(_pidl_bytes: &[u8]) -> Result<Option<PathBuf>, String> {
-    Err("launching is only implemented on Windows".into())
+    Err("shell items exist only on Windows.".into())
 }
 
 /// Does a captured PIDL still bind to a live shell item, without launching it?

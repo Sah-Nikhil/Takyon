@@ -1,19 +1,32 @@
 # macOS — what a port actually needs
 
-**Status: the seams exist, the implementations do not.** There is still no
-`tauri.macos.conf.json` and no macOS implementation of anything that touches the
-OS. What changed is that the three decisions below have been made and the two
-missing traits have been written (ADR-0025), so the port is now a matter of
-implementing named things rather than deciding what they are.
+**Status: it compiles, and four rows of it work.** `cargo clippy --target
+aarch64-apple-darwin -p takyon --all-targets -- -D warnings` is clean — the
+library, its unit tests and every integration test.
 
-The crate does not compile for `aarch64-apple-darwin` and would not get past the
-first module that reaches for the `windows` crate — which is declared under
-`[target.'cfg(windows)'.dependencies]`, so on any other target the import
-resolves to nothing at all. **Nor can that be checked from here**: `cargo check
---target aarch64-apple-darwin` fails before it reaches our code, because
-`libsqlite3-sys`'s build script wants a cross `cc` and the development machine
-has none. Every `cfg(target_os = "macos")` arm in the tree is therefore reasoned,
-never compiled — the same state `docs/verify/v0.10.md` section E is in.
+What works: it finds applications through the `.app` walk, launches them and
+reveals them in Finder, opens System Settings panes and web addresses, and reads
+and writes the clipboard. What does not: no icons, no file index, no clipboard
+history, no `!s` retrieval, no paste-back. Each of those is a stub that refuses
+in words rather than a gap that fails silently.
+
+**None of it has run on a Mac.** The compiler has checked every line and nothing
+else has.
+
+**The 7,450-line figure was misleading and this is where it gets corrected.**
+Twenty files do name the `windows` crate, but only `search/fetch.rs` had a
+module-level `use windows::` that no `cfg` guarded. Everywhere else the Win32
+imports already sat inside `#[cfg(windows)]` functions with a non-Windows twin
+beside them — the pattern `superkey.rs` and `launch.rs` had been following since
+v0.1. Closing the gap took gating one transport, four dead constants, four
+statics, two helpers and three tests. The 7,450 lines are still the *porting*
+work; they were never the *compiling* work.
+
+**It can be checked from Windows.** `bun run check:macos` cross-compiles through
+zig, which ships the macOS libc and Objective-C headers, so no Apple SDK is
+involved. `libsqlite3-sys` and `objc2-exception-helper` both build native code
+and are what a bare `cargo check` fails on. Linking a real `.app` still needs a
+Mac; CI's `macos` job on `macos-latest` is the second gate.
 
 This document exists because the question "is there a macOS setup?" deserves a
 number rather than a shrug. The number is **7,410 lines across 20 files** that
@@ -48,20 +61,32 @@ implementations.
 | # | Subsystem | Windows today | macOS |
 |---|---|---|---|
 | 1 | ~~`identity.rs`~~ | `%LOCALAPPDATA%\v3sper\takyon` | **written**: `~/Library/Application Support/com.v3sper.takyon`, the slug rather than `<vendor>/<app>` |
-| 2 | `sources/apps` (1,350 lines) | Start Menu COM walk, `.lnk` parsing, AppsFolder | bundle walk of `/Applications`, `~/Applications`, `/System/Applications`; `Info.plist` for the display name |
+| 2 | `sources/apps` (1,350) | Start Menu COM walk, `.lnk` parsing, AppsFolder | **part written**: `apps/bundles.rs` walks the three roots. Display name is the bundle stem, not `CFBundleDisplayName`; `PATH` executables need an exec-bit check `path.rs` cannot give them |
 | 3 | `icons.rs` (785) | `IShellItemImageFactory` | `NSWorkspace.iconForFile`, same `icons.bin` on the other side |
 | 4 | `index/` (1,110) | `ReadDirectoryChangesW`, Windows Search fallback | FSEvents; Spotlight (`NSMetadataQuery`) as the fallback |
-| 5 | `search/fetch.rs` (377) | WinHTTP (ADR-0019) | see the ADR question below |
-| 6 | `clips/` (802) | DPAPI key, clipboard format listener, `SendInput` paste | Keychain, `NSPasteboard.changeCount`, `CGEvent` paste |
-| 7 | `launch.rs` (439) | `ShellExecuteW` | `NSWorkspace.open` |
+| 5 | `search/fetch.rs` (377) | WinHTTP (ADR-0019) | **stubbed**: `send` refuses by name, TBC-0013 owns the real answer |
+| 6 | `clips/` (1,100) | DPAPI key, clipboard format listener, `SendInput` paste | **part written**: `MacClipboard` reads and writes through `pbpaste`/`pbcopy`. The key wrap (Keychain), the watcher (`changeCount`) and the paste chord (`CGEvent`, Accessibility permission) all refuse in words |
+| 7 | ~~`launch.rs`~~ (439) | `ShellExecuteW` | **written**: `/usr/bin/open`, which is Finder's own path — bundles, URL schemes and `-R` reveal alike. Returns no launched-image path, so v0.3's identity refinement has no macOS half |
 | 8 | `window.rs` (1,040) | monitor placement, foreground checks | mostly Tauri already; the placement maths is the part to keep |
-| 9 | `sources/system.rs` (419) | Windows settings pages | System Settings panes |
-| 10 | `search/browser.rs` (163) | default browser from the registry | `LSCopyDefaultApplicationURLForURL` |
+| 9 | ~~`sources/system.rs`~~ (419) | Windows settings pages | **written**: 28 `x-apple.systempreferences:` panes. The ids are unverified — Apple renamed most of them at Ventura and there is no enumeration API |
+| 10 | `search/browser.rs` (163) | default browser from the registry | **works by way of row 7**: `open <url>` uses the default browser. `default_browser()` still returns `None`, so Enter on `!s` opens the provider's results page rather than the browser's own engine |
 | 11 | `tray.rs` (297) | mostly Tauri, some Win32 | menu bar item |
 | 12 | `version.rs` (142) | file version info | `Info.plist` |
 
 Row 6 has a fourth part the table did not list: `clips/key.rs` (287), the DPAPI
 wrap, which is now `#[cfg(windows)]` and needs a Keychain item on the other side.
+
+Every remaining row already has a macOS arm that compiles and refuses. Replacing
+one is a self-contained change with a compile gate under it, which is what makes
+the rows independent of each other and of their order.
+
+**The rows still open need a decision first, and it is one decision.** Icons,
+FSEvents, Spotlight, the pasteboard watcher and the paste chord have no
+command-line stand-in the way `open`, `pbcopy` and `pbpaste` did. They need
+`objc2` and its Foundation/AppKit crates in the locked stack — permissively
+licensed, so ADR-0005 does not rule them out, but a dependency tree is a stack
+change and belongs in an ADR. The four rows already written were chosen because
+they did not need one.
 
 **Dropped rather than ported:** `uiaccess.rs` (189) and `superkey.rs` (250).
 UIAccess has no macOS analogue — the equivalent problem, showing over another
@@ -112,6 +137,21 @@ narrowing the escape hatch, the updater landing, or the Windows certificate bein
 bought — and the verdict: buy the Apple membership in the same decision as the
 Windows certificate, never before it.
 
+## How to work on it
+
+```
+bun run check:macos      # cross-compile check + clippy, from Windows, via zig
+```
+
+Needs a zig build unpacked into `%LOCALAPPDATA%\zig\`, on `PATH`, or pointed at
+by `TAKYON_ZIG`; the script adds the Rust target itself. `scripts/zig/` holds two
+wrappers it drives — `zig cc` pinned to `aarch64-macos` with cc-rs's own
+`--target=arm64-apple-macosx` filtered out, which zig's clang frontend rejects.
+
+What this does **not** do: link, bundle, or run a single test. It type-checks and
+lints. Anything asserting behaviour needs a Mac, and CI's `macos` job is where
+that will start.
+
 ## CI is already wired for it
 
 `.github/workflows/release.yml` carries a `build-macos` job, skipped unless the
@@ -131,7 +171,6 @@ largest single piece of work left in the project.
 
 What has been done is the part that is worth doing whether or not the port ever
 finishes: the seams are named, the two open questions are recorded as TBC notes,
-and `identity.rs` knows where a macOS install would keep its data. None of it
-moves the crate closer to compiling for `aarch64-apple-darwin` — 19 files still
-reach for the `windows` crate unguarded — and none of it has been executed on a
-Mac.
+`identity.rs` knows where a macOS install would keep its data, and the crate
+compiles for the target with a check that runs on the development machine. None
+of it has been executed on a Mac, and none of it does anything on one.

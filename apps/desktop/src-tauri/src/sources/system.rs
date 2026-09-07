@@ -1,15 +1,16 @@
 //! System entries: Windows settings pages and control-panel tasks (task 8).
 //!
 //! Two halves, one Source (CONTEXT.md: System entry). Settings pages are a
-//! **curated `ms-settings:` table** — there is no public enumeration API, and
-//! Raycast's ~950 "catalog" entries are a shipped list, not something discovered.
-//! Control-panel tasks come from the **All Tasks shell folder**
-//! (`::{ED7BA470-8E54-465E-825C-99712043E01C}`), enumerated through the same
-//! `IEnumShellItems` path `appsfolder.rs` already walks — no new Windows surface.
+//! **curated `ms-settings:` table** — no enumeration API exists, and Raycast's
+//! ~950 "catalog" entries are a shipped list too. Control-panel tasks come from
+//! the **All Tasks shell folder** (`::{ED7BA470-8E54-465E-825C-99712043E01C}`),
+//! through the same `IEnumShellItems` path `appsfolder.rs` already walks.
 //!
 //! Both produce [`EntryKind::System`], ranked below applications and never
 //! interleaved (the task-4 kind rule). Ids are stable across reinstalls —
 //! `ms-settings:<page>` and `system:<task name>`, minted here like recents.
+//!
+//! macOS: same shape, `x-apple.systempreferences:` over a pane bundle id.
 
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -22,11 +23,16 @@ use crate::rank::{self, Haystack};
 
 pub const SOURCE_ID: SourceId = SourceId("system");
 
+/// The scheme every page id is prefixed with, which is also the Entry id.
+#[cfg(windows)]
+const SETTINGS_SCHEME: &str = "ms-settings:";
+
 /// The curated settings catalog: `(title, ms-settings page, keywords)`.
 ///
 /// Grown from use, not derived. Keywords are exact-match aliases, so `wifi`
 /// reaches Network though the title never says it. Page slugs are the stable
 /// part; titles track Windows' own copy and may drift between versions.
+#[cfg(windows)]
 const SETTINGS: &[(&str, &str, &[&str])] = &[
     ("Bluetooth", "bluetooth", &["bluetooth"]),
     ("Wi-Fi", "network-wifi", &["wifi", "wireless"]),
@@ -65,6 +71,53 @@ const SETTINGS: &[(&str, &str, &[&str])] = &[
     ("Remote Desktop", "remotedesktop", &["remote desktop", "rdp"]),
 ];
 
+#[cfg(target_os = "macos")]
+const SETTINGS_SCHEME: &str = "x-apple.systempreferences:";
+
+/// The macOS catalog: `(title, pane bundle id, keywords)`.
+///
+/// **Unverified against a real Mac.** Apple renamed most panes at Ventura and
+/// there is no enumeration API to check these against (`docs/plans/macos.md`
+/// row 9). A wrong id opens System Settings at its front page, not an error.
+#[cfg(target_os = "macos")]
+const SETTINGS: &[(&str, &str, &[&str])] = &[
+    ("Bluetooth", "com.apple.Bluetooth-Settings.extension", &["bluetooth"]),
+    ("Wi-Fi", "com.apple.wifi-settings-extension", &["wifi", "wireless"]),
+    ("Network", "com.apple.Network-Settings.extension", &["network", "internet", "ethernet"]),
+    ("Displays", "com.apple.Displays-Settings.extension", &["display", "screen", "resolution", "monitor"]),
+    ("Night Shift", "com.apple.NightShift-Settings.extension", &["nightshift", "night shift"]),
+    ("Sound", "com.apple.Sound-Settings.extension", &["sound", "audio", "volume", "speakers", "microphone"]),
+    ("Notifications", "com.apple.Notifications-Settings.extension", &["notifications", "alerts"]),
+    ("Focus", "com.apple.Focus-Settings.extension", &["focus", "do not disturb"]),
+    ("Battery", "com.apple.Battery-Settings.extension", &["power", "battery", "energy"]),
+    ("Login Items", "com.apple.LoginItems-Settings.extension", &["startup", "login items"]),
+    ("Date & Time", "com.apple.Date-Time-Settings.extension", &["date", "time", "clock", "timezone"]),
+    ("Language & Region", "com.apple.Localization-Settings.extension", &["language", "region", "locale"]),
+    ("Keyboard", "com.apple.Keyboard-Settings.extension", &["keyboard", "typing", "shortcuts"]),
+    ("Appearance", "com.apple.Appearance-Settings.extension", &["appearance", "accent", "dark mode"]),
+    ("Wallpaper", "com.apple.Wallpaper-Settings.extension", &["background", "wallpaper", "desktop picture"]),
+    ("Lock Screen", "com.apple.Lock-Screen-Settings.extension", &["lock screen", "screen saver"]),
+    ("Desktop & Dock", "com.apple.Desktop-Settings.extension", &["dock", "mission control", "spaces"]),
+    ("Software Update", "com.apple.Software-Update-Settings.extension", &["update", "updates", "upgrade"]),
+    ("Touch ID & Password", "com.apple.Touch-ID-Settings.extension", &["touch id", "password", "fingerprint"]),
+    ("Users & Groups", "com.apple.Users-Groups-Settings.extension", &["account", "accounts", "users"]),
+    ("Trackpad", "com.apple.Trackpad-Settings.extension", &["trackpad", "gestures"]),
+    ("Mouse", "com.apple.Mouse-Settings.extension", &["mouse", "pointer"]),
+    ("Accessibility", "com.apple.Accessibility-Settings.extension", &["accessibility"]),
+    ("Privacy & Security", "com.apple.settings.PrivacyAndSecurity", &["privacy", "security", "permissions"]),
+    ("Screen Time", "com.apple.Screen-Time-Settings.extension", &["screen time"]),
+    ("Sharing", "com.apple.Sharing-Settings.extension", &["sharing", "screen sharing", "airdrop"]),
+    ("Printers & Scanners", "com.apple.Print-Scan-Settings.extension", &["printer", "printers", "scanner"]),
+    ("Storage", "com.apple.settings.Storage", &["storage", "disk"]),
+];
+
+/// No settings surface anywhere else, so the catalog is empty rather than wrong.
+#[cfg(not(any(windows, target_os = "macos")))]
+const SETTINGS_SCHEME: &str = "";
+
+#[cfg(not(any(windows, target_os = "macos")))]
+const SETTINGS: &[(&str, &str, &[&str])] = &[];
+
 /// The All Tasks ("God Mode") shell folder — every control-panel task in one flat
 /// list with human-readable names. `shell:` prefix so `SHCreateItemFromParsingName`
 /// resolves it.
@@ -94,10 +147,11 @@ pub fn settings_catalog() -> Vec<SystemEntry> {
             // the title never says it. Not `aliases` — that rung is the user's
             // own naming, and it must outrank one we shipped.
             hay.keywords = keywords.iter().map(|k| k.to_lowercase()).collect();
+            let uri = format!("{SETTINGS_SCHEME}{page}");
             SystemEntry {
-                id: EntryId(format!("ms-settings:{page}")),
+                id: EntryId(uri.clone()),
                 title: title.to_string(),
-                target: LaunchTarget::Uri(format!("ms-settings:{page}")),
+                target: LaunchTarget::Uri(uri),
                 hay,
                 kind: EntryKind::System,
             }
@@ -331,6 +385,7 @@ mod com {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     #[test]
     fn v0_3_a_settings_page_is_keyed_by_its_ms_settings_uri() {
         let catalog = settings_catalog();
@@ -340,6 +395,7 @@ mod tests {
     }
 
     /// The exit criterion, as a unit: `bluetooth` reaches the Bluetooth page.
+    #[cfg(windows)]
     #[test]
     fn v0_3_bluetooth_reaches_the_bluetooth_settings_page() {
         let source = SystemSource::new();
@@ -350,12 +406,46 @@ mod tests {
     }
 
     /// A keyword the title never carries still reaches the page — `wifi` → Wi-Fi.
+    #[cfg(windows)]
     #[test]
     fn v0_3_a_keyword_reaches_a_page_its_title_does_not_name() {
         let source = SystemSource::new();
         source.set_for_test(settings_catalog());
         let entries = source.query(&Query::new("wifi"), Duration::from_millis(20));
         assert_eq!(entries[0].id.as_str(), "ms-settings:network-wifi");
+    }
+
+    /// The same two claims on the macOS table: the id is the URI, and a keyword
+    /// the title never carries still reaches its pane. The pane *ids* cannot be
+    /// checked without a Mac — this checks the wiring around them.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn v0_11_a_settings_pane_is_keyed_by_its_system_preferences_uri() {
+        let catalog = settings_catalog();
+        let bt = catalog.iter().find(|s| s.title == "Bluetooth").unwrap();
+        assert_eq!(
+            bt.id.as_str(),
+            "x-apple.systempreferences:com.apple.Bluetooth-Settings.extension"
+        );
+        assert!(matches!(&bt.target, LaunchTarget::Uri(u) if u == bt.id.as_str()));
+
+        let source = SystemSource::new();
+        source.set_for_test(settings_catalog());
+        let entries = source.query(&Query::new("wifi"), Duration::from_millis(20));
+        assert_eq!(entries[0].title, "Wi-Fi");
+    }
+
+    /// Every pane id carries the scheme exactly once. A table entry that already
+    /// spelled the scheme would produce `x-apple.systempreferences:x-apple…`,
+    /// which opens nothing and looks like a wrong pane id.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn v0_11_no_pane_id_repeats_the_scheme() {
+        for entry in settings_catalog() {
+            let id = entry.id.as_str();
+            assert!(id.starts_with(SETTINGS_SCHEME), "{id}");
+            assert!(!id[SETTINGS_SCHEME.len()..].contains(':'), "{id}");
+        }
     }
 
     /// A control-panel task is keyed by name and launched by its captured PIDL.

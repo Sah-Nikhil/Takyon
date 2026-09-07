@@ -587,11 +587,12 @@ These block nothing today but should be settled before they become expensive:
 - **Open source vs proprietary.** Constrains dependency licensing; already ruled
   out one option (ADR-0005).
 - **Portable / no-installer mode** — in scope or not.
-- **macOS**, deliberately post-V1 (`docs/plans/post-v1.md`). Sized at v0.10.1
-  rather than left as a gesture: 7,410 lines across 20 files name the `windows`
-  crate. The three decisions it needed first are now made — `ClipboardStore` and
-  `Hotkey` are real traits (ADR-0025), the HTTP client is TBC-0013 and signing is
-  TBC-0014 — and `identity.rs` has its macOS arm. Everything that touches the OS
-  is still unwritten, and no `cfg(target_os = "macos")` arm has ever been
-  compiled. `docs/plans/macos.md` has the table and the CI switch that is already
-  wired for the day it compiles.
+- **macOS**, deliberately post-V1 (`docs/plans/post-v1.md`). **The crate compiles
+  for `aarch64-apple-darwin`** — `bun run check:macos` is clean with `-D warnings`
+  across the library and every test — and four of the twelve rows are written:
+  identity, the `.app` walk, launch and reveal through `/usr/bin/open`, and the
+  System Settings panes; the clipboard reads and writes through
+  `pbpaste`/`pbcopy`. Everything else refuses in words. **Nothing has run on a
+  Mac.** The next rows — icons, FSEvents, Spotlight, the pasteboard watcher, the
+  paste chord — all need `objc2` in the locked stack, which is an ADR.
+  `docs/plans/macos.md` has the table, the check, and the release switch.

@@ -7,10 +7,16 @@
 //! Two limits are the point. `WinHttpSetTimeouts` bounds one request, and
 //! `pages` stops reading at `DEADLINE` however many are still in flight — one
 //! slow page must not hold the whole answer (v0.9 Traps).
+//!
+//! [`send`] is the transport and the only Windows-specific thing here; URL
+//! parsing, encoding and the `pages` fan-out are portable. macOS answer is
+//! open — TBC-0013 weighs `URLSession` against one Rust client everywhere.
 
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
 use windows::core::PCWSTR;
+#[cfg(windows)]
 use windows::Win32::Networking::WinHttp::{
     WinHttpCloseHandle, WinHttpConnect, WinHttpOpen, WinHttpOpenRequest, WinHttpQueryDataAvailable,
     WinHttpQueryHeaders, WinHttpReadData, WinHttpReceiveResponse, WinHttpSendRequest,
@@ -22,9 +28,11 @@ use super::SearchError;
 
 /// What Takyon calls itself to a server. Its own constant: a blank agent is
 /// refused outright by a noticeable share of sites.
+#[cfg(windows)]
 const AGENT: &str = "Takyon/0.9 (+https://github.com/Sah-Nikhil)";
 
 /// Per-request timeouts, milliseconds. Resolve, connect, send, receive.
+#[cfg(windows)]
 const TIMEOUT_MS: i32 = 6_000;
 
 /// Total budget for reading pages, whatever is still in flight.
@@ -180,6 +188,7 @@ fn request(host: &str, path: &str, headers: &str) -> Result<Response, SearchErro
 ///
 /// Every handle is closed on every path, including the error ones: a leaked
 /// session holds a connection and a thread, and nothing reports it.
+#[cfg(windows)]
 fn send(
     host: &str,
     path: &str,
@@ -273,7 +282,28 @@ fn send(
     }
 }
 
+/// No transport off Windows yet, so every request fails by name.
+///
+/// Refusing here rather than earlier keeps `!s` honest end to end: the Bang
+/// still parses, retrieval still runs its own error path, and the Palette shows
+/// this sentence instead of an empty answer. TBC-0013 owns the real one.
+#[cfg(not(windows))]
+fn send(
+    _host: &str,
+    _path: &str,
+    _headers: &str,
+    _secure: bool,
+    _method: &str,
+    _body: Option<&[u8]>,
+    _cap: usize,
+) -> Result<Response, SearchError> {
+    Err(SearchError::Failed(
+        "HTTP is only implemented on Windows; macOS needs URLSession (TBC-0013).".into(),
+    ))
+}
+
 /// Read the body, stopping at `cap`.
+#[cfg(windows)]
 unsafe fn read_bytes(
     request: *mut core::ffi::c_void,
     cap: usize,
@@ -304,8 +334,10 @@ unsafe fn read_bytes(
 
 /// A WinHTTP handle that closes itself. The one mistake this API punishes
 /// silently — a leaked session keeps a connection and never says so.
+#[cfg(windows)]
 struct Handle(*mut core::ffi::c_void);
 
+#[cfg(windows)]
 impl Drop for Handle {
     fn drop(&mut self) {
         unsafe {
@@ -314,10 +346,12 @@ impl Drop for Handle {
     }
 }
 
+#[cfg(windows)]
 fn last_error(what: &str) -> SearchError {
     SearchError::Failed(format!("{what}: {}", windows::core::Error::from_win32()))
 }
 
+#[cfg(windows)]
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }

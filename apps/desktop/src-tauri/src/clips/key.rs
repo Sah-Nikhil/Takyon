@@ -262,6 +262,7 @@ mod tests {
 
     /// Entropy is part of the contract. A blob wrapped with it must not unwrap
     /// without it, or the constant is decoration.
+    #[cfg(windows)]
     #[test]
     fn v0_5_unwrapping_without_the_entropy_fails() {
         let key = ClipKey::generate();

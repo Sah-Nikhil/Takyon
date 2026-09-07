@@ -9,6 +9,10 @@
 //! Its own test binary because it mutates process environment, and a `Mutex`
 //! within it because the tests inside still share one process.
 
+// Windows-only: it writes `.lnk` files through `IShellLinkW`, and the Recents
+// Source it drives has no macOS shape yet (`docs/plans/macos.md`).
+#![cfg(windows)]
+
 mod common;
 
 use std::path::{Path, PathBuf};

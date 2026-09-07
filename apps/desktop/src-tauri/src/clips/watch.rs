@@ -11,12 +11,17 @@
 //! Two exclusions are checked before anything is read, both from ADR-0006 — the
 //! clipboard format password managers set, and the user's own blocklist.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+#[cfg(windows)]
+use std::sync::OnceLock;
 
 use super::blocklist::Blocklist;
-use super::store::{ClipKind, ClipStore};
+#[cfg(windows)]
+use super::store::ClipKind;
+use super::store::ClipStore;
 
 /// Sent to every listener when the clipboard changes. Not in `windows-rs`.
+#[cfg(windows)]
 const WM_CLIPBOARDUPDATE: u32 = 0x031D;
 
 /// Longest capture, in characters.
@@ -31,6 +36,7 @@ pub const MAX_CHARS: usize = 4 * 1024 * 1024;
 /// The first is what ADR-0006 names and what password managers set. The second is
 /// Windows' own opt-out, honoured for the same reason: an application that told
 /// the OS not to keep this meant it for us too.
+#[cfg(windows)]
 const EXCLUDE_FORMATS: &[&str] = &[
     "ExcludeClipboardContentFromMonitorProcessing",
     "CanIncludeInClipboardHistory",
@@ -38,11 +44,13 @@ const EXCLUDE_FORMATS: &[&str] = &[
 
 /// What the window procedure needs. A static because the procedure is an
 /// `extern "system"` function with no room for a payload.
+#[cfg(windows)]
 struct Context {
     store: Arc<ClipStore>,
     blocklist: Arc<Blocklist>,
 }
 
+#[cfg(windows)]
 static CONTEXT: OnceLock<Context> = OnceLock::new();
 
 /// Whether a copy from `exe` is recorded at all.
@@ -396,6 +404,7 @@ mod tests {
 
     /// Both spellings, asserted literally. A typo in either is an exclusion that
     /// silently never fires, which is the failure nothing else would notice.
+    #[cfg(windows)]
     #[test]
     fn v0_5_the_exclusion_format_names_are_the_ones_windows_defines() {
         assert_eq!(

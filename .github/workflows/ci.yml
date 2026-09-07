@@ -1,17 +1,20 @@
 name: CI
 
-# Dormant until this repo is pushed to GitHub. Runs the same four layers
-# `bun run test` runs locally, plus typecheck and lint — the gate release.yml
-# waits on rather than repeating.
+# Runs the same four layers `bun run test` runs locally, plus typecheck and
+# lint — the gate release.yml waits on rather than repeating.
 #
-# Two of the three jobs are on Windows on purpose:
+# Two jobs are on Windows on purpose:
 #
-#   - `rust` because the crate is Windows-only. Twenty files reach for the
+#   - `rust` because the product is Windows. Twenty files reach for the
 #     `windows` crate and it is declared under `[target.'cfg(windows)']`, so a
 #     Linux runner would not compile the product at all. See docs/plans/macos.md.
 #   - `visual` because the screenshot baselines were rasterised by Windows. Same
 #     Chromium on Linux puts every glyph in a slightly different place, and the
 #     150px budget is deliberately tight enough to notice.
+#
+# `macos` is a compile gate rather than a test run: the crate builds for
+# aarch64-apple-darwin on stubs that refuse in words, and the job exists so a
+# Windows-only call losing its `cfg` is caught the day it lands.
 
 on:
   push:
@@ -61,6 +64,26 @@ jobs:
       # real, and a network flake is not a broken commit.
       - run: cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml
       - run: cargo clippy --workspace --all-targets --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
+
+  macos:
+    name: cargo clippy (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          shared-key: rust-desktop-macos
+      # A compile gate, not a test run. Every macOS arm in the tree is a stub
+      # that refuses in words, so there is nothing to assert yet — what this
+      # catches is a Windows-only call losing its `cfg` and taking the port back
+      # to not building at all. `-p takyon`: the uiaccess helper is Windows by
+      # definition. Locally the same check is `bun run check:macos`, which
+      # cross-compiles from Windows through zig.
+      - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -p takyon --all-targets -- -D warnings
 
   visual:
     name: Playwright screenshots (Windows)
