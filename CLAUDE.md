@@ -67,7 +67,7 @@ Distribution is undecided — open source vs proprietary is an open question, so
 see ADR-0005).
 
 ## Communication
-**Always use the `/homonid` skill in this repo.** Invoke it at the start of every
+**Always use the `/homonid` skill in this repo at max setting.** Invoke it at the start of every
 session, before the first substantive reply, and stay in it — chat prose is terse
 and article-free, technical substance unchanged. The skill's own auto-clarity rules
 still win for destructive-action confirmations and multi-step sequences.
@@ -297,7 +297,9 @@ unless something genuinely needs explaining.
 
 ```
 NEW d0.1.1 brand asset pipeline
+
 FIX d0.1.2 mark particle bound to --accent, a surface token
+
 UPDATE d0.1.3 v0.1 plan warns tauri init clobbers icons
 ```
 
