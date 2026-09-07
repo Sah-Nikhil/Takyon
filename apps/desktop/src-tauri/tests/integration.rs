@@ -492,11 +492,9 @@ fn v0_3_measure_executables_sharing_a_filename() {
 
 /// Versions land on the rows that need them and nowhere else.
 ///
-/// **Presence is not asserted, deliberately.** A version appears only where two
-/// installed executables share a filename and disagree about their version, which
-/// is a fact about this machine — a CI runner has no second `node.exe`. The rule
-/// itself is proven against an injected reader in `apps.rs`; what is left here is
-/// that the wiring survives a real walk, and that the cost control holds.
+/// **Presence is not asserted, deliberately.** A version needs two same-named
+/// executables that disagree, which is a fact about the machine — a CI runner has
+/// no second `node.exe`. `apps.rs` proves the rule against an injected reader.
 #[test]
 fn v0_3_only_ambiguous_executables_carry_a_version() {
     let dir = TempDir::new("versions");
@@ -513,11 +511,10 @@ fn v0_3_only_ambiguous_executables_carry_a_version() {
             }
         }
     }
-    // The cost control, and the assertion that runs on every machine: a version
-    // everywhere would mean reading all 1233 files rather than the collisions.
-    // `* 10 <` rather than `< total / 10`: integer division makes the ratio
-    // meaningless on a machine that walked few applications, and `0 < 0` would
-    // fail a runner whose Start Menu is empty.
+    // The cost control, and the one assertion that runs on every machine: a
+    // version everywhere would mean reading all 1233 files. `* 10 <` rather than
+    // `< total / 10` because integer division makes `0 < 0` fail a runner that
+    // walked almost nothing.
     let total = apps.len();
     assert!(
         with_version * 10 < total.max(10),

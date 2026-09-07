@@ -370,6 +370,12 @@ the next.
   check:macos` supplies zig as that compiler — it ships the macOS libc and
   Objective-C headers, so no Apple SDK is involved. The error names `cc` and
   reads like a missing toolchain, which it is; it is not a Rust problem.
+- **Never compare a path as a string in a test that uses `TempDir`.** `%TEMP%`
+  is an 8.3 short path wherever the account name exceeds eight characters —
+  `C:\Users\RUNNER~1\...` on a GitHub runner, but the long form on a dev machine
+  with a short username — while the shell and COM hand back the long form. The
+  two name one file and string equality says they do not. `std::fs::canonicalize`
+  both sides; it collapses the alias and proves the file exists at the same time.
 - **A ranking test that calls `Pipeline::query` twice with the same string is
   flaky, and only on a slow machine.** The Stability lock pins the top row once
   the same query has stood still for `LOCK_DELAY_MS` (100 ms), so past that the
