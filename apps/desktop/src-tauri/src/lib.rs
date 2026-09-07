@@ -510,6 +510,15 @@ fn open_settings(app: tauri::AppHandle) {
     settings::open(&app);
 }
 
+/// A chord held by another application that only the user can release.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContestedChord {
+    pub accelerator: String,
+    /// The System Settings URL that opens where it is released.
+    pub pane: String,
+}
+
 #[tauri::command]
 fn hotkey_status(state: tauri::State<'_, HotkeyState>) -> HotkeyStatus {
     state.get()
@@ -532,6 +541,58 @@ fn set_hotkey(
     prefs: tauri::State<'_, Arc<prefs::Prefs>>,
 ) -> HotkeyStatus {
     hotkey::rebind(&app, &accelerator, &prefs)
+}
+
+/// The chord that has to be taken from another application, and where.
+///
+/// `None` on Windows: nothing there is system-reserved in a way a user has to
+/// go and release. macOS returns Spotlight's `Cmd+Space` and the pane that
+/// frees it (v0.12 § Onboarding).
+#[tauri::command]
+fn contested_chord() -> Option<ContestedChord> {
+    #[cfg(target_os = "macos")]
+    {
+        Some(ContestedChord {
+            accelerator: hotkey::CONTESTED_CHORD?.to_string(),
+            pane: hotkey::CONTESTED_CHORD_PANE.to_string(),
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// Open System Settings where the contested chord can be released.
+#[tauri::command]
+fn open_contested_chord_pane() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        launch::open(&entry::LaunchTarget::Uri(
+            hotkey::CONTESTED_CHORD_PANE.to_string(),
+        ))
+        .map(|_| ())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("There is no chord to release on this platform.".into())
+    }
+}
+
+/// Try to take the contested chord, keeping it if it works.
+///
+/// Polled by the onboarding step rather than confirmed by a button: the moment
+/// the user unchecks Spotlight's shortcut this starts succeeding, so the step
+/// advances on the real thing rather than on a claim it cannot verify.
+#[tauri::command(async)]
+fn claim_contested_chord(
+    app: tauri::AppHandle,
+    prefs: tauri::State<'_, Arc<prefs::Prefs>>,
+) -> HotkeyStatus {
+    match hotkey::CONTESTED_CHORD {
+        Some(chord) => hotkey::rebind(&app, chord, &prefs),
+        None => app.state::<HotkeyState>().get(),
+    }
 }
 
 /// The frontend reporting that a show's frame has been painted. See `bench.rs` for
@@ -699,6 +760,7 @@ pub fn run() {
             settings::reset_files_roots,
             settings::opened_count,
             settings::clear_opened,
+            settings::remove_all_data,
             settings::set_recents,
             settings::set_tray,
             settings::set_placement,
@@ -709,6 +771,9 @@ pub fn run() {
             settings::set_ui_size,
             hotkey_choices,
             set_hotkey,
+            contested_chord,
+            open_contested_chord_pane,
+            claim_contested_chord,
             clip_blocklist,
             set_clip_blocked,
             aliases,
@@ -845,8 +910,21 @@ pub fn run() {
                     exclude: Vec::new(),
                 },
             ));
-            app.manage(file_index.clone());
-            let files = Arc::new(sources::files::FileSource::new(file_index.clone()));
+            // macOS asks Spotlight instead: no walk, no watcher, no blob
+            // (ADR-0027). Scope is a query predicate there, so the roots the
+            // Settings page writes take effect on the next `!e`, with nothing
+            // to rebuild.
+            #[cfg(target_os = "macos")]
+            let search_index = Arc::new(index::spotlight::SpotlightIndex::new(
+                settings::stored_roots(&prefs),
+            ));
+            #[cfg(not(target_os = "macos"))]
+            let search_index = file_index.clone();
+
+            app.manage(search_index.clone());
+            let files = Arc::new(sources::files::FileSource::new(
+                search_index as Arc<dyn index::FileIndex>,
+            ));
             // Read at startup rather than pushed: a keystroke can arrive before
             // any window has mounted, and both would answer wrongly until one
             // did. The same gap v0.6 closed for the calculator policy.

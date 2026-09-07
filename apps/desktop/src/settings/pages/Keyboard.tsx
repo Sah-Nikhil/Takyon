@@ -14,14 +14,14 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import type { HotkeyStatus } from "@takyon/shared";
+import type { ContestedChord, HotkeyStatus } from "@takyon/shared";
 import * as api from "@/api";
 import { Select } from "@/components/Select";
 import { preferences, setSuperHotkey } from "@/prefs";
 import { Group, Row, Switch } from "../controls";
 
-/** Matches Rust's `hotkey::DEFAULT_ACCELERATOR`; the reset button offers it. */
-const DEFAULT = "Alt+Space";
+/** How often the takeover step re-attempts the contested chord. */
+const CLAIM_POLL_MS = 700;
 
 /** How long "Applied" stays up. Matches `controls.tsx`'s own. */
 const APPLIED_MS = 1400;
@@ -32,10 +32,14 @@ export function Keyboard() {
   const [applied, setApplied] = useState(false);
   const [superKey, setSuperKey] = useState(() => preferences().superHotkey);
   const [superError, setSuperError] = useState<string | null>(null);
+  const [contested, setContested] = useState<ContestedChord | null>(null);
+  const [platform, setPlatform] = useState<string>("other");
 
   useEffect(() => {
     void api.hotkeyChoices().then(setChoices);
     void api.hotkeyStatus().then(setStatus);
+    void api.contestedChord().then(setContested);
+    void api.settingsSnapshot().then((snap) => setPlatform(snap.platform));
   }, []);
 
   const bind = useCallback(async (accelerator: string) => {
@@ -68,7 +72,32 @@ export function Keyboard() {
     }
   }, []);
 
-  const live = status?.accelerator ?? DEFAULT;
+  // Rust orders `CHOICES` with the platform default first, so the reset button
+  // offers the right chord without a second copy of it here — the previous
+  // literal said Alt+Space, which is Option+Space on macOS.
+  const fallback = choices[0] ?? "";
+  const live = status?.accelerator ?? fallback;
+  const held = contested !== null && live === contested.accelerator && !status?.registered;
+
+  /*
+    Poll rather than offer an "I've done it" button. Registration starts
+    succeeding the instant Spotlight's shortcut is unchecked, so this advances
+    on the real thing — nothing to lie to, and no dead end.
+  */
+  useEffect(() => {
+    if (!held) return;
+    let live = true;
+    const timer = setInterval(() => {
+      void api.claimContestedChord().then((next) => {
+        if (live && next.registered) setStatus(next);
+      });
+    }, CLAIM_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [held]);
+
 
   return (
     <Group>
@@ -80,7 +109,9 @@ export function Keyboard() {
         description={
           status && !status.registered
             ? "Nothing is bound. Pick another chord — the launcher is running, but only the tray can reach it."
-            : "Pressed anywhere in Windows. Alt+Space is contested: PowerToys Run and the classic window menu both want it."
+            : platform === "macos"
+              ? "Pressed anywhere. Carbon hotkeys are known not to fire inside some self-drawn terminals, such as Zed and VS Code."
+              : "Pressed anywhere in Windows. Alt+Space is contested: PowerToys Run and the classic window menu both want it."
         }
       >
         {/*
@@ -98,14 +129,32 @@ export function Keyboard() {
         />
         <button
           type="button"
-          onClick={() => void bind(DEFAULT)}
-          disabled={live === DEFAULT}
+          onClick={() => void bind(fallback)}
+          disabled={!fallback || live === fallback}
           className="rounded-control px-2 py-1 text-[12.5px] text-fg/64 transition-colors hover:bg-row-hover hover:text-fg/86 disabled:opacity-30 disabled:hover:bg-transparent"
         >
           Reset
         </button>
       </Row>
 
+
+      {held && contested && (
+        <Row
+          id="release-contested-chord"
+          label={`${contested.accelerator.replace(/\+/g, " + ")} is held by the system`}
+          description="Spotlight has it, and no application can take it programmatically. Uncheck “Show Spotlight search” in Keyboard Shortcuts and Takyon binds it the moment you do — there is no button to press here afterwards."
+        >
+          <button
+            type="button"
+            onClick={() => void api.openContestedChordPane()}
+            className="rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg/86 transition-colors hover:text-fg"
+          >
+            Open Keyboard Shortcuts
+          </button>
+        </Row>
+      )}
+
+      {platform !== "macos" && (
       <Row
         id="super-hotkey"
         label="Open Takyon with the Windows key"
@@ -118,6 +167,7 @@ export function Keyboard() {
           onChange={(on) => void toggleSuper(on)}
         />
       </Row>
+      )}
     </Group>
   );
 }

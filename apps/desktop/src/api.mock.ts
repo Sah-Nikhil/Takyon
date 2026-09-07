@@ -570,6 +570,9 @@ let snapshot: SettingsSnapshot = {
   filesFallback: false,
   filesRoots: ["C:\\Users\\you\\Documents", "C:\\Programming"],
   filesExcludes: ["node_modules", ".git", "target"],
+  // The visual baselines are Windows, so the mock is too — a macOS screenshot
+  // would need its own baseline set regardless.
+  platform: "windows",
 };
 
 /** Rows in the owned recents list, for the clear-history confirmation. */
@@ -864,6 +867,12 @@ export const mock = {
     openedRows = 0;
     return gone;
   },
+  removeAllData: async () => ({
+    dataDir: "/Users/you/Library/Application Support/com.v3sper.takyon",
+    removedDataDir: true,
+    removedKeychain: true,
+    problems: [],
+  }),
   fileIndexStatus: async (): Promise<FileIndexReport> => ({
     state: "ready",
     entries: 26844,
@@ -934,6 +943,14 @@ export const mock = {
     liveHotkey = accelerator;
     return { accelerator, registered: true };
   },
+  // Null, matching the Windows baselines the visual suite screenshots. The
+  // macOS takeover block is exercised on hardware, not here.
+  contestedChord: async () => null,
+  openContestedChordPane: async () => {},
+  claimContestedChord: async (): Promise<HotkeyStatus> => ({
+    accelerator: liveHotkey,
+    registered: true,
+  }),
   clipBlocklist: async () => [...blocked],
   setClipBlocked: async (exe: string, block: boolean) => {
     const name = exe.trim().toLowerCase();

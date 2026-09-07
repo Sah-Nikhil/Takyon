@@ -7,8 +7,8 @@ bundles or executes a line.
 
 This file grows as rows land. Sections are written when the row they cover is
 built, not batched at the end, so an unwritten section means an unbuilt row
-rather than an untested one. Sections A to D exist today; the row-by-row
-sections after them arrive with their rows.
+rather than an untested one. Every row has a section now; what is left unwritten
+is listed at the end.
 
 **Target: macOS 13 Ventura or later, Apple Silicon.** A machine on 11 or 12 is
 out of scope and the bundle will refuse to launch on one.
@@ -43,12 +43,13 @@ it before touching any other section.
 
 ### 2. The hotkey registers
 
-1. With the app running, press **Option+Space**.
+1. With the app running, press **Cmd+Space**.
 
-   `DEFAULT_ACCELERATOR` is still the literal `Alt+Space` with no macOS arm, and
-   on this platform that means Option+Space, not Cmd+Space. The Cmd+Space
-   takeover is unit 12 and is deliberately last — [`docs/tbd/v0.12.md`](../tbd/v0.12.md) §7.
-2. The Palette appears.
+   It will almost certainly do nothing: Spotlight holds that chord on a stock
+   Mac and `RegisterEventHotKey` fails silently while it does. That is expected
+   here and section L is where it gets taken. To carry on now, open Settings ->
+   Keyboard and pick **Control+Space**.
+2. The Palette appears on whichever chord registered.
 3. **If it does not**: check the Palette's own banner and the terminal for a
    failed registration. Carbon's `RegisterEventHotKey` needs no Accessibility
    permission, so a failure here is a taken chord, not a permission prompt.
@@ -58,8 +59,8 @@ it before touching any other section.
 
 1. Open the Palette and type a few letters of an installed application.
 2. Entries appear, and they are applications rather than nothing.
-3. Icons are **expected to be missing** — row 3 is unbuilt and its stub refuses in
-   words. A placeholder is correct here; a crash is not.
+3. Icons should be present — row 3 is built. A placeholder or two while the blob
+   fills is fine; none at all after a few queries is section G's problem.
 
 ### 4. A release bundle links
 
@@ -279,14 +280,168 @@ here is a failure of the real design rather than of a stopgap.
    reached and it means the handler is not firing — worth knowing, though the
    application will still have started.
 
+## G. Icons (row 3)
+
+`ICON_PX` went 64 → 128 on **both** platforms, so this section has a Windows
+half too.
+
+1. Open the Palette and type a few letters. **Rows have real icons**, not
+   placeholders, and they are crisp rather than soft on a Retina display.
+2. Icons appear as rows draw rather than all at once — extraction is lazy and
+   that is correct.
+3. Quit and relaunch. Icons appear immediately: the blob was written and mapped.
+4. `ls -l ~/Library/Application\ Support/com.v3sper.takyon/icons.bin` is
+   hundreds of kilobytes, not 12 bytes. Twelve bytes means a header and no
+   icons, which is what v0.2's C5 failed on for two releases.
+5. **On Windows, once**: the first launch after this change re-extracts every
+   icon, because `FORMAT_VERSION` went to 2 and the old blob is discarded. That
+   is one slow fill, not a bug. The second launch is fast again.
+
+## H. Files (row 4)
+
+Spotlight through `MDQuery`, and the thing to check first is that it asks at
+all.
+
+1. Type `!e` and a filename you know exists. **Entries appear.**
+2. **No Full Disk Access prompt appears.** This is ADR-0027's central claim —
+   metadata queries return paths without one. A prompt here would be a finding.
+3. Search for something with a space, and something with an apostrophe.
+4. Search for a string containing `*`. It matches files containing a literal
+   asterisk, **not** everything — the wildcard is escaped.
+5. Compare against Spotlight itself (Cmd+Space, once you have it) for the same
+   needle. Takyon's list should be a plausible subset, not empty and not wild.
+6. **Known gap**: the roots set in Settings → Files do **not** reach the query
+   yet, so this searches everywhere Spotlight indexes —
+   [`docs/tbd/v0.12.md`](../tbd/v0.12.md) §12. Confirm the behaviour, do not
+   file it.
+
+## I. Web search (row 5)
+
+1. `!s` a question. Results arrive with numbered sources.
+2. The answer streams rather than appearing whole.
+3. Favicons appear beside sources — same `URLSession` path, different cap.
+4. Turn Wi-Fi off and `!s` again. It fails **in a sentence**, within about six
+   seconds, rather than hanging: that is `NSURLRequest`'s timeout doing its job.
+5. If the machine has a proxy configured in System Settings, `!s` still works —
+   that is half the reason ADR-0029 chose `URLSession` over a Rust client.
+
+## J. The clipboard (row 6)
+
+Four mechanisms, and the markers matter most because they are the safety story.
+
+### 1. Capture
+
+1. Copy some text in another application. Open the Palette, go to clipboard
+   history. **The clip is there.**
+2. Copy twice within half a second. Expect **one** row, not two — the accepted
+   cost of a 500 ms poll (ADR-0030).
+3. Copy from several applications and confirm each row is attributed to the
+   right one.
+
+### 2. The markers, which is the part that must not be wrong
+
+1. Install or open a password manager that implements nspasteboard.org — 1Password
+   and Bitwarden both do.
+2. Copy a password from it.
+3. **It does not appear in clipboard history.** If it does, stop and treat it as
+   a defect: this is ADR-0006's primary safety mechanism, not a nicety.
+4. Copy ordinary text from the same application afterwards. That *should* appear
+   — the marker is per-copy, not per-application.
+
+### 3. Paste-back and the permission
+
+1. With Accessibility **not** granted, choose a clip and press Enter.
+   **The clip is on the pasteboard** and the message says the permission is
+   needed and where to grant it. Cmd+V by hand works.
+2. Grant Accessibility in System Settings → Privacy & Security.
+3. Try again. **The clip pastes itself.**
+4. Revoke the permission and try once more: it must return to step 1's behaviour
+   rather than silently doing nothing. `AXIsProcessTrusted` asks without
+   prompting, so this is checkable as many times as you like.
+
+### 4. The Keychain
+
+1. Open Keychain Access and search for `com.v3sper.takyon`. **One generic
+   password item**, account `clip.key`.
+2. Quit Takyon, relaunch, open clipboard history. **Old clips still decrypt** —
+   the key came back from the Keychain rather than being regenerated. A history
+   that looks empty here means a new key, which is the failure worth catching.
+
+## K. The small rows (10, 11, 12)
+
+1. **Default browser**: set a non-Safari default in System Settings, then press
+   Enter on an `!s` result. It opens in *that* browser, and a query opens as a
+   search in the browser's own engine rather than as a URL.
+2. **Menu bar**: the item is present, and its glyph is legible in **both**
+   appearances — switch System Settings → Appearance between Light and Dark and
+   look again. Wrong polarity means a glyph that vanishes into the bar.
+3. **Versions**: install two applications with the same name in different
+   places. Both Entries show a version to tell them apart.
+4. **Steam**: if Steam is installed, its games appear and launch through
+   `steam://`. Unverifiable on a machine with no game — the same gap Windows has.
+
+## L. Taking Cmd+Space (unit 12)
+
+The mechanism, not the first-run screen — that surface is still unbuilt
+([`docs/tbd/v0.12.md`](../tbd/v0.12.md) §15). Everything below is reachable from
+Settings -> Keyboard today.
+
+1. On a stock Mac, Spotlight holds Cmd+Space. Open Settings -> Keyboard.
+2. "Open Takyon with" shows **Command + Space**, and it is **not** registered —
+   the row says so and a block appears offering to open Keyboard Shortcuts.
+3. Press **Open Keyboard Shortcuts**. System Settings opens **at Keyboard
+   Shortcuts**, not at its front page. A front page means the pane id is wrong,
+   which is section D's failure mode.
+4. Uncheck "Show Spotlight search".
+5. **Without touching Takyon**, watch the Settings window. Within about a second
+   the block disappears and the row reads as registered — the poll took the chord
+   on its own. There is no button to press, and that is the point.
+6. Press Cmd+Space. The Palette opens.
+7. Re-check Spotlight's box, quit and relaunch Takyon: the chord fails to
+   register again and the block comes back.
+
+Also confirm the two platform differences on that page:
+
+8. The chord list offers macOS spellings — Command, Control, Option — not
+   Alt+Space.
+9. **There is no "Open Takyon with the Windows key" row.** `superkey.rs` is
+   dropped on macOS (ADR-0025), so a switch there would offer a hook that can
+   never install.
+10. Pick a non-default chord, then press **Reset**. It returns to Command+Space,
+    not Alt+Space — the page reads Rust's own list rather than a second copy of
+    the default.
+
+## M. Removing all data (unit 13)
+
+**Destructive and irreversible. Do this last**, or every section above has to be
+set up again.
+
+1. Use Takyon enough to have clipboard history and some launch history.
+2. Settings -> Advanced. A **Data** group is present with "Remove all Takyon
+   data". On Windows that group does not appear at all — the NSIS uninstaller
+   already does this.
+3. Press **Remove**. A confirmation names what will go and says it cannot be
+   undone. Cancel once, and confirm nothing was deleted.
+4. Press **Remove** again and confirm.
+5. The line under the button reports success and names the directory.
+6. Check by hand: the data directory under `~/Library/Application Support/` named
+   `com.v3sper.takyon` is gone, and Keychain Access finds no item for
+   `com.v3sper.takyon`.
+7. Clipboard history in the Palette is empty rather than erroring.
+8. Quit and relaunch. Takyon starts cleanly on an empty directory and a fresh
+   Keychain item rather than failing because something it expected is missing.
+9. **If the report names a problem instead**, read it: a surviving Keychain entry
+   is exactly the case this reports rather than rounding to "done", and it is the
+   one worth chasing.
+
 ## Still to be written
 
-One section per row, as the row lands:
+Every row now has a section above. What is left is work that is not yet written
+at all:
 
-- Row 3, icons — and `ICON_PX` at 128 on a 2× display.
-- Row 4, Spotlight — including that **no** Full Disk Access prompt appears.
-- Row 6, the clipboard — the poll, the nspasteboard.org markers, the Keychain
-  item, and paste-back with and without Accessibility granted.
 - Unit 12, the Cmd+Space takeover — the blocking onboarding step and its polling.
 - Unit 13, uninstall — that "Remove all Takyon data" leaves no Keychain item and
   no data directory behind.
+- Row 4's remainder — that the roots chosen in Settings → Files actually scope
+  the Spotlight query ([`docs/tbd/v0.12.md`](../tbd/v0.12.md) §12).
+- The `webkit` Playwright baselines, which have to be generated on this machine.

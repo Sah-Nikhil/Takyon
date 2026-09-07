@@ -171,7 +171,22 @@ fn taskbar_is_light() -> bool {
     }
 }
 
-#[cfg(not(windows))]
+/// Is the *menu bar* light?
+///
+/// `AppleInterfaceStyle` is absent in light mode and `Dark` in dark. Read from
+/// defaults rather than `NSApp.effectiveAppearance`, which needs the main
+/// thread — the tray is built on whichever thread `setup` hands over.
+#[cfg(target_os = "macos")]
+fn taskbar_is_light() -> bool {
+    use objc2_foundation::{NSString, NSUserDefaults};
+
+    NSUserDefaults::standardUserDefaults()
+        .stringForKey(&NSString::from_str("AppleInterfaceStyle"))
+        .map(|style| !style.to_string().eq_ignore_ascii_case("dark"))
+        .unwrap_or(true)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn taskbar_is_light() -> bool {
     false
 }

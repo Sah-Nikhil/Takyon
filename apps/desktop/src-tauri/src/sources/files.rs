@@ -20,7 +20,7 @@ use crate::entry::{
     Action, Entry, EntryId, EntryKind, Query, Source, SourceId, MAX_ENTRIES, SOURCE_SHORTLIST,
 };
 use crate::frecency::Frecency;
-use crate::index::live::WalkIndex;
+
 use crate::index::wsearch::WindowsSearch;
 use crate::index::{FileHit, FileIndex};
 
@@ -28,7 +28,7 @@ pub const SOURCE_ID: SourceId = SourceId("files");
 
 /// The file Source, and the `!e` Mode behind the same index.
 pub struct FileSource {
-    index: Arc<WalkIndex>,
+    index: Arc<dyn FileIndex>,
     /// Whether file Entries join Bangless results (task 11). Default off, and
     /// atomic because it is read on the keystroke path.
     bangless: AtomicBool,
@@ -38,7 +38,7 @@ pub struct FileSource {
 }
 
 impl FileSource {
-    pub fn new(index: Arc<WalkIndex>) -> Self {
+    pub fn new(index: Arc<dyn FileIndex>) -> Self {
         FileSource {
             index,
             bangless: AtomicBool::new(false),
@@ -62,7 +62,7 @@ impl FileSource {
         self.fallback.load(Ordering::Relaxed)
     }
 
-    pub fn index(&self) -> &Arc<WalkIndex> {
+    pub fn index(&self) -> &Arc<dyn FileIndex> {
         &self.index
     }
 
@@ -172,6 +172,7 @@ fn key(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::live::WalkIndex;
     use crate::index::roots::Roots;
     use std::path::PathBuf;
 

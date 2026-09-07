@@ -20,7 +20,6 @@ use serde::Serialize;
 use crate::bang::{self, Route};
 use crate::clips::{Clip, ClipStore};
 use crate::entry::{Entry, EntryId, Query, Source, MAX_ENTRIES, SOURCE_BUDGET};
-use crate::index::FileIndex;
 use crate::frecency::Frecency;
 use crate::icons::IconStore;
 use crate::rank;

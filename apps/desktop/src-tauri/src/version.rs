@@ -27,7 +27,22 @@ pub fn of(path: &Path) -> Option<String> {
     win::read(path).map(|v| tidy(&v)).filter(|v| v != "0")
 }
 
-#[cfg(not(windows))]
+/// The version of an application bundle, from its `Info.plist`.
+///
+/// `CFBundleShortVersionString` is the one users see — `CFBundleVersion` is the
+/// build number and is routinely a bare integer, which `tidy` would then drop
+/// anyway. Reads a plist, so it is only ever called for a colliding name.
+#[cfg(target_os = "macos")]
+pub fn of(path: &Path) -> Option<String> {
+    use objc2_foundation::{NSBundle, NSString};
+
+    let bundle = NSBundle::bundleWithPath(&NSString::from_str(&path.to_string_lossy()))?;
+    let value = bundle.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?;
+    let text = value.downcast::<NSString>().ok()?.to_string();
+    Some(tidy(&text)).filter(|v| v != "0" && !v.is_empty())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn of(_path: &Path) -> Option<String> {
     None
 }

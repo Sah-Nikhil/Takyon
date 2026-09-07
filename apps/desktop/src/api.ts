@@ -38,10 +38,12 @@ import {
   type CalcPolicy,
   type ClipRetention,
   type ClipRow,
+  type ContestedChord,
   type ViewKind,
   type FileIndexReport,
   type HotkeyStatus,
   type QueryResult,
+  type RemovalReport,
   type SettingsSnapshot,
   type ShowPayload,
 } from "@takyon/shared";
@@ -91,6 +93,16 @@ export const openedCount = () =>
 
 export const clearOpened = () =>
   inTauri ? invoke<number>("clear_opened") : mock.clearOpened();
+
+/**
+ * Delete the data directory and the Keychain item. Irreversible.
+ *
+ * Reports what it managed rather than throwing on a partial removal: the user
+ * needs to know a Keychain entry survived, and an exception would say only that
+ * something went wrong.
+ */
+export const removeAllData = () =>
+  inTauri ? invoke<RemovalReport>("remove_all_data") : mock.removeAllData();
 
 /**
  * What the file index can promise right now (§5 task 7).
@@ -191,6 +203,35 @@ export const setHotkey = (accelerator: string) =>
   inTauri
     ? invoke<HotkeyStatus>("set_hotkey", { accelerator })
     : mock.setHotkey(accelerator);
+
+/**
+ * A chord another application holds that only the user can release (v0.12).
+ *
+ * `null` on Windows, where nothing is reserved in a way that needs a trip to
+ * System Settings. On macOS it is Spotlight's `Cmd+Space`.
+ */
+export const contestedChord = () =>
+  inTauri
+    ? invoke<ContestedChord | null>("contested_chord")
+    : mock.contestedChord();
+
+/** Open System Settings where the contested chord is released. */
+export const openContestedChordPane = () =>
+  inTauri
+    ? invoke<void>("open_contested_chord_pane")
+    : mock.openContestedChordPane();
+
+/**
+ * Try to take the contested chord, keeping it if it works.
+ *
+ * Polled rather than confirmed by a button: the moment the user unchecks
+ * Spotlight's shortcut this starts succeeding, so the step advances on the real
+ * registration rather than on a claim that cannot be checked.
+ */
+export const claimContestedChord = () =>
+  inTauri
+    ? invoke<HotkeyStatus>("claim_contested_chord")
+    : mock.claimContestedChord();
 
 /** Executables whose clipboard is never recorded (ADR-0006). */
 export const clipBlocklist = () =>
