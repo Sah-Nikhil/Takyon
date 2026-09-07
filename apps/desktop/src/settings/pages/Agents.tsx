@@ -14,10 +14,17 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import type { AgentKind, AgentSettings, AgentSnapshot } from "@takyon/shared";
+import type { AgentKind, AgentSettings, AgentSnapshot, PathReport } from "@takyon/shared";
 
 import * as api from "@/api";
-import { AGENT_LABELS, agentSummary, canAsk, HEALTH_DOT, versionLabel } from "@/agents/status";
+import {
+  AGENT_LABELS,
+  agentSummary,
+  canAsk,
+  HEALTH_DOT,
+  pathSummary,
+  versionLabel,
+} from "@/agents/status";
 import { Select } from "@/components/Select";
 import { Group, Row, Switch, useApplied } from "../controls";
 
@@ -27,13 +34,16 @@ const DEFAULT_ORDER: AgentKind[] = ["claude", "codex", "opencode"];
 export function Agents() {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [snapshots, setSnapshots] = useState<AgentSnapshot[] | null>(null);
+  const [pathReport, setPathReport] = useState<PathReport | null>(null);
   const [cwd, setCwd] = useState("");
 
   // Three process spawns, so on mount and on demand — never per keystroke and
-  // never at login (v0.8 Traps).
+  // never at login (v0.8 Traps). The `PATH` report comes with it: a re-probe is
+  // exactly when someone is asking why an Agent was not found.
   const probe = useCallback(() => {
     setSnapshots(null);
     void api.agentSnapshots().then(setSnapshots);
+    void api.agentPathReport().then(setPathReport);
   }, []);
 
   // Fetched here rather than through `probe`, which resets the rows to their
@@ -44,6 +54,7 @@ export function Agents() {
       setCwd(next.cwd);
     });
     void api.agentSnapshots().then(setSnapshots);
+    void api.agentPathReport().then(setPathReport);
   }, []);
 
   const cwdApplied = useApplied(api.setAskCwd, async () => (await api.agentSettings()).cwd);
@@ -75,6 +86,11 @@ export function Agents() {
               account or a key of its own. `!c` asks the first agent switched on here and works
               down the list.
             </p>
+            {pathSummary(pathReport) && (
+              <p className="mt-1.5 text-[12px] leading-snug text-fg/46">
+                {pathSummary(pathReport)}
+              </p>
+            )}
           </div>
           <button
             type="button"

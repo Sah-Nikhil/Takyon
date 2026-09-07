@@ -716,6 +716,7 @@ pub fn run() {
             set_alias,
             open_crash_logs,
             agents::ipc::agent_snapshots,
+            agents::ipc::agent_path_report,
             agents::ipc::agent_settings,
             agents::ipc::set_ask_order,
             agents::ipc::set_ask_enabled,
@@ -920,6 +921,9 @@ pub fn run() {
                 tray::self_heal_autostart(&deferred);
                 uiaccess::start(&deferred);
                 firstrun::maybe_enable(&deferred);
+                // Last: on unix it spawns a login shell with a five-second
+                // deadline, and the three above are the ones a user notices.
+                agents::shellenv::hydrate();
             });
 
             // Clipboard capture and the retention sweep, off the startup path.

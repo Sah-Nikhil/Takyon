@@ -12,6 +12,8 @@ CLI you are already signed in to.
 
 Windows only, built on Tauri 2. Current release is **0.10.0**.
 
+![The Palette answering a query, with applications, a settings page and a recent file in one list](apps/desktop/tests/visual/__screenshots__/palette-entries.png)
+
 ---
 
 ## Contents
@@ -54,6 +56,8 @@ by type, pasted back into wherever you were.
 
 **Does math.** Type an expression and the answer is the first row. No app opens.
 
+![A calculation answered as a card in the first row of the Palette](apps/desktop/tests/visual/__screenshots__/palette-calc.png)
+
 **Answers questions.** `!c` asks an agent CLI and streams the answer into the
 Palette. A follow up promotes the same window into a chat, without opening a
 second window.
@@ -61,6 +65,8 @@ second window.
 **Searches the web.** `!s` asks DuckDuckGo, reads the pages it gets back, and gives
 you a headline plus a few labelled findings, each one ending in the sources
 behind it. Every citation is a chip that opens the real page.
+
+![A web search answer with labelled findings and numbered source chips](apps/desktop/tests/visual/__screenshots__/palette-web-answered.png)
 
 ---
 
@@ -98,6 +104,8 @@ path, run as administrator, and whatever else the selected kind supports. Common
 actions also have modifier accelerators, listed inside the menu so you do not
 have to learn them from folklore.
 
+![The Ctrl+K action menu open over a selected result](apps/desktop/tests/visual/__screenshots__/palette-action-menu.png)
+
 The Palette always opens empty, and dismisses when it loses focus.
 
 ---
@@ -127,6 +135,10 @@ bluetooth                       the Windows Bluetooth page
 !c when is the next total solar eclipse
 !s who won the last f1 race
 ```
+
+![Clipboard history under the !v bang, filterable by type](apps/desktop/tests/visual/__screenshots__/palette-clips.png)
+
+![An agent answer streamed into the Palette under the !c bang](apps/desktop/tests/visual/__screenshots__/palette-ask-answered.png)
 
 Two things worth knowing about the outbound bangs. Nothing is sent while you
 type, only when you press Enter, so there is no debounce because there is no
@@ -162,6 +174,8 @@ rather than becoming a dead end. The first answer runs with tools disabled and i
 a scratch directory; tools turn on only if you follow up and promote the question
 into a chat.
 
+![Settings, Agents: one ranked row per agent with its sign in state, model and effort](apps/desktop/tests/visual/__screenshots__/settings-agents.png)
+
 The same ranking is what `!s` uses to write its answer, so web search works on a
 machine that only has Codex installed.
 
@@ -191,6 +205,8 @@ error. You always get an answer, but a broken key will not announce itself. The
 answer header names whichever service actually replied, so that is where to look
 if results seem worse than expected.
 
+![Settings, Web Search: the optional Exa key and the DuckDuckGo fallback](apps/desktop/tests/visual/__screenshots__/settings-web-search.png)
+
 ---
 
 ## Settings
@@ -211,6 +227,12 @@ own search box.
 | Web Search | Your optional Exa key, and the DuckDuckGo fallback |
 | Advanced | Crash logs, hotkey status, package identity and the data folder |
 | About | Version |
+
+![Settings, General](apps/desktop/tests/visual/__screenshots__/settings-general.png)
+
+![Settings, Appearance: five theme families, each with a light and a dark half](apps/desktop/tests/visual/__screenshots__/settings-appearance.png)
+
+![The Palette on a light theme](apps/desktop/tests/visual/__screenshots__/palette-light.png)
 
 An alias makes a name reach an app it would not otherwise match, and it applies
 without waiting for the next walk.

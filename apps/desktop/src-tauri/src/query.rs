@@ -1332,7 +1332,12 @@ otepad.exe")]);
         let promoted;
         {
             let first = build();
-            let entries = first.query("code", 1).entries;
+            // `query_at`, never `query`: two wall-clock queries of the same
+            // string more than LOCK_DELAY_MS apart let the Stability lock pin the
+            // cold top, and Frecency then cannot move it. Pinning the clock at 0
+            // keeps every call inside the delay, where reordering is allowed.
+            let entries = first.query_at("code", 1, 0).entries;
+            assert_eq!(entries.len(), 2, "only the two fixtures match `code`");
             cold_top = entries[0].title.clone();
             promoted = entries
                 .iter()
@@ -1342,13 +1347,13 @@ otepad.exe")]);
             for _ in 0..5 {
                 first.frecency.record(&promoted, EntryKind::App).unwrap();
             }
-            assert_ne!(first.query("code", 2).entries[0].title, cold_top);
+            assert_ne!(first.query_at("code", 2, 0).entries[0].title, cold_top);
         }
 
         // A different Pipeline, a different Frecency, the same directory.
         let second = build();
         assert_eq!(
-            second.query("code", 1).entries[0].id, promoted,
+            second.query_at("code", 1, 0).entries[0].id, promoted,
             "usage must outlive the process that learned it"
         );
 
@@ -1366,10 +1371,13 @@ otepad.exe")]);
             app("T3 Code (Alpha)", r"C:\t3\t3code.exe"),
             app("Visual Studio Code", r"C:\vsc\Code.exe"),
         ]);
-        let top = |p: &Pipeline| p.query("code", 1).entries[0].title.clone();
+        // Pinned at 0 for the reason the restart test gives: past LOCK_DELAY_MS
+        // the Stability lock holds the cold top and no Frecency can move it, so
+        // a wall clock would make this pass or fail on how busy the machine is.
+        let top = |p: &Pipeline| p.query_at("code", 1, 0).entries[0].title.clone();
         assert_eq!(top(&p), "T3 Code (Alpha)", "cold, the shorter name wins");
 
-        let editor = p.query("code", 2).entries.iter()
+        let editor = p.query_at("code", 2, 0).entries.iter()
             .find(|e| e.title == "Visual Studio Code")
             .map(|e| e.id.clone())
             .expect("the editor is in the list, just not first");

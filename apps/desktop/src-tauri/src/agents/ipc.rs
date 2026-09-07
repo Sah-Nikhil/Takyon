@@ -41,6 +41,16 @@ pub fn agent_snapshots() -> Vec<Snapshot> {
     super::snapshots()
 }
 
+/// Where the searched `PATH` came from, and how much of it Takyon was not given.
+///
+/// Hydration is idempotent, so asking is free once it has run and does the work
+/// once if Settings opened before the deferred-init thread got there.
+#[tauri::command(async)]
+pub fn agent_path_report() -> Option<super::shellenv::Report> {
+    super::shellenv::hydrate();
+    super::shellenv::report()
+}
+
 #[tauri::command(async)]
 pub fn agent_settings(prefs: tauri::State<'_, Arc<Prefs>>) -> AgentSettings {
     let models = AgentKind::ALL

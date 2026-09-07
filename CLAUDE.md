@@ -56,11 +56,16 @@ Every architectural decision is now made and none of them is open: **ADR-0026**
 amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
 ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
 
-**Four phases are planned and written up, sitting between v0.10.1 and v1.0.**
-`v0.11` PATH hydration (needs no Mac, fixes a live Windows hole, start here),
-`v0.12` macOS, `v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc
-with a task checklist, and `v0.12-macos.md` carries a § Hand-off table breaking
-the port into 15 agent-sized units with the files each one needs.
+**Four phases sit between v0.10.1 and v1.0, and the first of them is built.**
+**v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
+(unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
+caches it off the startup path, and hands it to `probe::resolve`, to every
+spawned Agent, and to Row 2's `PATH` walk. **The Windows half is measured; the
+unix half compiles and has never run** — `docs/verify/v0.11.md` §B is unexecuted,
+and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
+`v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc with a task
+checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port into
+15 agent-sized units with the files each one needs.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
@@ -365,6 +370,21 @@ the next.
   check:macos` supplies zig as that compiler — it ships the macOS libc and
   Objective-C headers, so no Apple SDK is involved. The error names `cc` and
   reads like a missing toolchain, which it is; it is not a Rust problem.
+- **Never compare a path as a string in a test that uses `TempDir`.** `%TEMP%`
+  is an 8.3 short path wherever the account name exceeds eight characters —
+  `C:\Users\RUNNER~1\...` on a GitHub runner, but the long form on a dev machine
+  with a short username — while the shell and COM hand back the long form. The
+  two name one file and string equality says they do not. `std::fs::canonicalize`
+  both sides; it collapses the alias and proves the file exists at the same time.
+- **A ranking test that calls `Pipeline::query` twice with the same string is
+  flaky, and only on a slow machine.** The Stability lock pins the top row once
+  the same query has stood still for `LOCK_DELAY_MS` (100 ms), so past that the
+  cold top holds and no Frecency weight can move it. Two wall-clock queries are
+  microseconds apart on a dev machine and over 100 ms on a loaded CI runner,
+  where `cargo test --workspace` has four test binaries competing for the disk.
+  It surfaced as `v0_3_a_fresh_pipeline_ranks_by_what_an_earlier_one_learned`
+  failing on CI and passing everywhere locally. **Use `query_at` with an explicit
+  `now_ms`** — that seam exists for this, as `query.rs`'s `started` field says.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding

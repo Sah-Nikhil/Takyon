@@ -3644,6 +3644,7 @@ name = "takyon"
 version = "0.10.0"
 dependencies = [
  "aes-gcm",
+ "libc",
  "memmap2",
  "png 0.17.16",
  "rayon",

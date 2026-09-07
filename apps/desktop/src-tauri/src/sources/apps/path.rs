@@ -9,6 +9,7 @@
 //! without that ordering `co` returns `comp.exe` before Google Chrome.
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 /// Extensions treated as launchable.
@@ -16,6 +17,7 @@ use std::path::{Path, PathBuf};
 /// A deliberate subset of `PATHEXT`, which also lists `.VBS`, `.JS` and friends.
 /// Those are scripts Windows will run, not applications, and offering to execute
 /// a stray `.js` on one keystroke is a footgun wearing a hat.
+#[cfg(windows)]
 const LAUNCHABLE: &[&str] = &["exe", "com", "bat", "cmd"];
 
 /// Most executables to take from any one directory.
@@ -30,12 +32,14 @@ const MAX_PER_DIR: usize = 4000;
 /// `calc`/`notepad` stub into packaged apps; `explorer` is File Explorer's real
 /// binary. All appear in `AppsFolder`, so the bare exe duplicates a row no path
 /// match can catch (an `AppsFolder` app has no path). Curated; `docs/tbd/v0.3.md` §7.
+#[cfg(windows)]
 const WINDOWS_DIR_APP_DUPLICATES: &[&str] = &["calc", "notepad", "explorer"];
 
 /// Is this a Windows-directory exe the shell already surfaces as its own app?
 ///
 /// Under the Windows dir, not just `System32` (`notepad.exe` ships in both). The
 /// directory is checked, so someone's own `calc.exe` elsewhere on `PATH` stays.
+#[cfg(windows)]
 pub fn is_windows_app_duplicate(path: &Path) -> bool {
     let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
         return false;
@@ -53,6 +57,7 @@ pub fn is_windows_app_duplicate(path: &Path) -> bool {
 ///
 /// From `%SystemRoot%` rather than a hardcoded `C:\Windows`, because Windows can be
 /// installed on another volume and the stubs move with it.
+#[cfg(windows)]
 fn is_under_windows_dir(path: &Path) -> bool {
     let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
     let norm = |s: &str| s.to_lowercase().replace('/', "\\");
@@ -70,43 +75,17 @@ pub struct PathExe {
 
 /// Split a raw `PATH` value into usable directories, in resolution order.
 ///
-/// Pure, because every interesting case needs no filesystem: `;;` (the current
-/// directory), quoted segments holding semicolons, trailing separators, and
-/// relative entries — dropped, since they resolve against `System32` here.
-pub fn split_path_var(raw: &str) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-    let mut quoted = false;
-
-    for c in raw.chars() {
-        match c {
-            '"' => quoted = !quoted,
-            ';' if !quoted => {
-                push_dir(&mut out, &current);
-                current.clear();
-            }
-            other => current.push(other),
-        }
-    }
-    push_dir(&mut out, &current);
-    out
-}
-
-fn push_dir(out: &mut Vec<PathBuf>, raw: &str) {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return;
-    }
-    let path = PathBuf::from(trimmed);
-    // `is_absolute` on Windows is false for `\Windows` (drive-relative) as well as
-    // for `..\bin`, and both are just as meaningless from a login-launched process.
-    if !path.is_absolute() {
-        return;
-    }
-    out.push(path);
+/// `split_paths` carries the platform separator and Windows' quoting rule. What
+/// is added is dropping empty segments (the current directory, `System32` for a
+/// login-launched process) and relative ones — `\Windows` as well as `..\bin`.
+pub fn split_path_var<S: AsRef<OsStr>>(raw: S) -> Vec<PathBuf> {
+    std::env::split_paths(raw.as_ref())
+        .filter(|dir| dir.is_absolute())
+        .collect()
 }
 
 /// Is this filename something worth offering to launch?
+#[cfg(windows)]
 pub fn is_launchable(name: &str) -> bool {
     Path::new(name)
         .extension()
@@ -137,24 +116,15 @@ pub fn discover_in(dirs: &[PathBuf]) -> Vec<PathExe> {
             }
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
-            if !is_launchable(name) {
-                continue;
-            }
-            // `file_type` is served from the directory entry the OS already read,
-            // so it costs nothing; `metadata` would be a separate stat per file and
-            // there are thousands of these.
-            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            if !offerable(&entry, name) {
                 continue;
             }
             let full = entry.path();
+            #[cfg(windows)]
             if is_windows_app_duplicate(&full) {
                 continue;
             }
-            let stem = Path::new(name)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(name)
-                .to_string();
+            let stem = stem_of(name);
             if !seen.insert(stem.to_lowercase()) {
                 continue;
             }
@@ -173,29 +143,82 @@ pub fn discover_in(dirs: &[PathBuf]) -> Vec<PathExe> {
 /// first-occurrence-wins is what makes the result match the shell.
 fn dedupe_dirs(dirs: &[PathBuf]) -> Vec<&PathBuf> {
     let mut seen = HashSet::new();
-    dirs.iter()
-        .filter(|d| {
-            let key = d
-                .to_string_lossy()
-                .to_lowercase()
-                .replace('/', "\\")
-                .trim_end_matches('\\')
-                .to_string();
-            seen.insert(key)
-        })
-        .collect()
+    dirs.iter().filter(|d| seen.insert(dir_key(d))).collect()
 }
 
-/// Everything launchable on this process's `PATH`.
+#[cfg(windows)]
+fn dir_key(dir: &Path) -> String {
+    dir.to_string_lossy()
+        .to_lowercase()
+        .replace('/', "\\")
+        .trim_end_matches('\\')
+        .to_string()
+}
+
+/// No case folding: two unix directories differing in case are two directories,
+/// whatever the volume happens to do about it.
+#[cfg(not(windows))]
+fn dir_key(dir: &Path) -> String {
+    dir.to_string_lossy().trim_end_matches('/').to_string()
+}
+
+/// Is this directory entry a program worth offering?
+///
+/// Windows answers from the name; `file_type` comes free with the entry. Unix
+/// has to `metadata` each candidate for the exec bit, which follows symlinks —
+/// every Homebrew binary is one, and a dangling link is not a program.
+#[cfg(windows)]
+fn offerable(entry: &std::fs::DirEntry, name: &str) -> bool {
+    is_launchable(name) && !entry.file_type().map(|t| t.is_dir()).unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn offerable(entry: &std::fs::DirEntry, name: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    // A dotfile in `/usr/local/bin` is configuration, never a command.
+    if name.starts_with('.') {
+        return false;
+    }
+    entry
+        .metadata()
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+/// The name this executable is typed under.
+///
+/// Windows strips the extension — nobody types `code.cmd`. Unix keeps the whole
+/// name: `python3.11` is the command, and `file_stem` would offer `python3`.
+#[cfg(windows)]
+fn stem_of(name: &str) -> String {
+    Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string()
+}
+
+#[cfg(not(windows))]
+fn stem_of(name: &str) -> String {
+    name.to_string()
+}
+
+/// Everything launchable on `PATH`, hydrated where `shellenv` could hydrate it.
+///
+/// The hydrated value is the whole reason a `bun add -g` shows up without a
+/// reboot; before v0.11 this read the `PATH` that existed at login.
 pub fn discover() -> Vec<PathExe> {
-    let raw = std::env::var("PATH").unwrap_or_default();
-    discover_in(&split_path_var(&raw))
+    let raw = crate::agents::shellenv::hydrated_path()
+        .or_else(|| std::env::var_os("PATH"))
+        .unwrap_or_default();
+    discover_in(&split_path_var(raw))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     #[test]
     fn v0_2_a_plain_path_splits_in_order() {
         let dirs = split_path_var(r"C:\Windows\System32;C:\Program Files\Git\cmd");
@@ -211,12 +234,14 @@ mod tests {
     /// An empty segment means "the current directory". Searching it would make the
     /// results depend on where the process happened to be started, and for a
     /// login-launched process that is `System32`.
+    #[cfg(windows)]
     #[test]
     fn v0_2_empty_path_segments_are_dropped() {
         let dirs = split_path_var(r";;C:\bin;;");
         assert_eq!(dirs, vec![PathBuf::from(r"C:\bin")]);
     }
 
+    #[cfg(windows)]
     #[test]
     fn v0_2_a_quoted_segment_may_contain_a_semicolon() {
         let dirs = split_path_var(r#""C:\odd;dir";C:\bin"#);
@@ -226,12 +251,14 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn v0_2_relative_and_drive_relative_entries_are_dropped() {
         let dirs = split_path_var(r"..\bin;.;C:\real;bin");
         assert_eq!(dirs, vec![PathBuf::from(r"C:\real")]);
     }
 
+    #[cfg(windows)]
     #[test]
     fn v0_2_only_real_executables_are_launchable() {
         assert!(is_launchable("code.exe"));
@@ -250,6 +277,7 @@ mod tests {
     /// `calc.exe` in System32 exits immediately having started the packaged
     /// Calculator, which `AppsFolder` already lists under its real name. Verified
     /// by running it: the stub exits, `CalculatorApp.exe` appears.
+    #[cfg(windows)]
     #[test]
     fn v0_2_a_windows_dir_app_duplicate_is_dropped() {
         // Both copies: `notepad.exe` ships in `C:\Windows` as well as in
@@ -267,6 +295,7 @@ mod tests {
     /// `explorer.exe` is File Explorer's binary, and File Explorer is already a
     /// shell app (the `AppsFolder` AUMID). The bare exe is the duplicate the user
     /// sees as a second "File Explorer".
+    #[cfg(windows)]
     #[test]
     fn v0_3_the_bare_explorer_exe_is_a_shell_app_duplicate() {
         for p in [r"C:\Windows\explorer.exe", r"c:\windows\EXPLORER.EXE"] {
@@ -279,6 +308,7 @@ mod tests {
 
     /// The list has to stay short. These are real programs that live in the same
     /// directory, and hiding one would be far worse than showing a duplicate.
+    #[cfg(windows)]
     #[test]
     fn v0_2_real_system32_tools_are_not_treated_as_shims() {
         // `charmap` and `msinfo32` were checked by running them: both stay up, so
@@ -292,6 +322,7 @@ mod tests {
 
     /// Only Windows' own copies are shims. Someone's `calc.exe` elsewhere on
     /// `PATH` is a program they installed, and stays.
+    #[cfg(windows)]
     #[test]
     fn v0_2_a_shim_name_outside_the_windows_directory_is_kept() {
         for path in [
@@ -305,6 +336,7 @@ mod tests {
 
     /// `PATH` here repeats the Windows directories four times, in two casings.
     /// Walking each once is the difference between reading 627 files and 2,508.
+    #[cfg(windows)]
     #[test]
     fn v0_2_repeated_path_directories_are_walked_once() {
         let dirs = split_path_var(
@@ -319,6 +351,7 @@ mod tests {
 
     /// Shell resolution order, as a test. If two `PATH` directories both hold
     /// `python.exe`, the launcher must offer the same one a terminal would run.
+    #[cfg(windows)]
     #[test]
     fn v0_2_the_first_directory_on_path_wins_a_name_collision() {
         let dir = std::env::temp_dir().join("takyon-path-test");
@@ -343,5 +376,78 @@ mod tests {
     fn v0_2_a_missing_path_directory_is_skipped_silently() {
         let found = discover_in(&[PathBuf::from(r"Z:\nope\nothing\here")]);
         assert!(found.is_empty());
+    }
+
+    /// The unix separator, and relative entries dropped for the same reason
+    /// they are on Windows.
+    #[cfg(unix)]
+    #[test]
+    fn v0_11_a_unix_path_splits_on_colons() {
+        let dirs = split_path_var("/opt/homebrew/bin:/usr/bin::../bin:.:/sbin");
+        assert_eq!(
+            dirs,
+            vec![
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/sbin"),
+            ]
+        );
+    }
+
+    /// Unix has no launchable extension: the exec bit is the whole test, and a
+    /// `README` sitting in a `bin` directory must not become an Entry.
+    #[cfg(unix)]
+    #[test]
+    fn v0_11_only_executable_files_are_offered_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join("takyon-unix-path-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, mode) in [("ripgrep", 0o755), ("README", 0o644), (".keep", 0o755)] {
+            let file = dir.join(name);
+            std::fs::write(&file, b"").unwrap();
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        let found = discover_in(std::slice::from_ref(&dir));
+        let names: Vec<&str> = found.iter().map(|e| e.stem.as_str()).collect();
+        assert_eq!(names, vec!["ripgrep"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `python3.11` is the command. Stripping what looks like an extension
+    /// would offer `python3`, which on this machine may be a different binary.
+    #[cfg(unix)]
+    #[test]
+    fn v0_11_a_unix_command_keeps_its_whole_name() {
+        assert_eq!(stem_of("python3.11"), "python3.11");
+        assert_eq!(stem_of("rg"), "rg");
+    }
+
+    /// The `PATH` walked is the hydrated one where there is one. Asserted by
+    /// shape, never by which executables this machine happens to hold.
+    #[test]
+    fn v0_11_discovery_reads_the_hydrated_path() {
+        let _guard = crate::agents::shellenv::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::agents::shellenv::invalidate();
+        crate::agents::shellenv::hydrate();
+        let hydrated = crate::agents::shellenv::hydrated_path();
+        let walked = split_path_var(
+            hydrated
+                .clone()
+                .or_else(|| std::env::var_os("PATH"))
+                .unwrap_or_default(),
+        );
+        // Every directory `discover` reports from is one of the walked ones.
+        for exe in discover() {
+            let parent = exe.path.parent().map(|p| p.to_path_buf());
+            assert!(
+                parent.is_some_and(|p| walked.iter().any(|d| dir_key(d) == dir_key(&p))),
+                "{} came from outside the walked PATH",
+                exe.path.display()
+            );
+        }
+        crate::agents::shellenv::invalidate();
     }
 }

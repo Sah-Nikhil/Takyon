@@ -113,7 +113,18 @@ fn v0_3_a_shortcut_in_the_recent_folder_becomes_a_document_entry() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].title, "quarterly report.txt");
     assert_eq!(entries[0].kind, EntryKind::File);
-    assert_eq!(entries[0].id.as_str(), doc.to_string_lossy().to_lowercase());
+    // Through the filesystem, not through strings. `%TEMP%` is an 8.3 short path
+    // wherever the account name is over eight characters — `RUNNER~1` on CI —
+    // while the shell resolves the shortcut to the long form. Both name one file
+    // and only `canonicalize` knows it.
+    let id = std::path::PathBuf::from(entries[0].id.as_str());
+    assert_eq!(
+        std::fs::canonicalize(&id).expect("the entry names a file that exists"),
+        std::fs::canonicalize(&doc).expect("the fixture exists"),
+        "the entry does not name the document the shortcut points at"
+    );
+    // The id is still stored lowercased, which is what makes it a stable key.
+    assert_eq!(entries[0].id.as_str(), entries[0].id.as_str().to_lowercase());
 }
 
 /// `docs/tbd/v0.3.md` §2, demonstrated rather than deduced from reading code.

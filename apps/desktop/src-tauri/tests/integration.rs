@@ -491,6 +491,10 @@ fn v0_3_measure_executables_sharing_a_filename() {
 }
 
 /// Versions land on the rows that need them and nowhere else.
+///
+/// **Presence is not asserted, deliberately.** A version needs two same-named
+/// executables that disagree, which is a fact about the machine — a CI runner has
+/// no second `node.exe`. `apps.rs` proves the rule against an injected reader.
 #[test]
 fn v0_3_only_ambiguous_executables_carry_a_version() {
     let dir = TempDir::new("versions");
@@ -507,13 +511,18 @@ fn v0_3_only_ambiguous_executables_carry_a_version() {
             }
         }
     }
-    assert!(with_version > 0, "nothing carried a version at all");
-    // The cost control: a version everywhere would mean reading 1233 files.
+    // The cost control, and the one assertion that runs on every machine: a
+    // version everywhere would mean reading all 1233 files. `* 10 <` rather than
+    // `< total / 10` because integer division makes `0 < 0` fail a runner that
+    // walked almost nothing.
     let total = apps.len();
     assert!(
-        with_version < total / 10,
+        with_version * 10 < total.max(10),
         "{with_version} of {total} carry a version, which is not a collision set"
     );
+    if with_version == 0 {
+        eprintln!("  no colliding executable on this machine, so nothing was stamped");
+    }
 }
 
 /// Why did each row match? The rung, computed before Frecency touches it.

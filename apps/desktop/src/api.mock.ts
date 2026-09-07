@@ -17,6 +17,7 @@ import type {
   AgentKind,
   AgentSettings,
   AgentSnapshot,
+  PathReport,
   AliasRow,
   AppAliasRow,
   TurnMessage,
@@ -1005,6 +1006,12 @@ export const mock = {
   },
   appsIndexing: async () => indexing,
   agentSnapshots: async (): Promise<AgentSnapshot[]> => agentFixtures,
+  // The Windows shape, which is what the screenshots are rasterised on.
+  agentPathReport: async (): Promise<PathReport | null> => ({
+    source: "registry",
+    entries: 42,
+    added: 3,
+  }),
   agentSettings: async (): Promise<AgentSettings> => ({
     order: [...askOrder],
     enabled: { ...askEnabled },
