@@ -370,6 +370,15 @@ the next.
   check:macos` supplies zig as that compiler — it ships the macOS libc and
   Objective-C headers, so no Apple SDK is involved. The error names `cc` and
   reads like a missing toolchain, which it is; it is not a Rust problem.
+- **A ranking test that calls `Pipeline::query` twice with the same string is
+  flaky, and only on a slow machine.** The Stability lock pins the top row once
+  the same query has stood still for `LOCK_DELAY_MS` (100 ms), so past that the
+  cold top holds and no Frecency weight can move it. Two wall-clock queries are
+  microseconds apart on a dev machine and over 100 ms on a loaded CI runner,
+  where `cargo test --workspace` has four test binaries competing for the disk.
+  It surfaced as `v0_3_a_fresh_pipeline_ranks_by_what_an_earlier_one_learned`
+  failing on CI and passing everywhere locally. **Use `query_at` with an explicit
+  `now_ms`** — that seam exists for this, as `query.rs`'s `started` field says.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding
