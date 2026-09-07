@@ -56,11 +56,16 @@ Every architectural decision is now made and none of them is open: **ADR-0026**
 amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
 ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
 
-**Four phases are planned and written up, sitting between v0.10.1 and v1.0.**
-`v0.11` PATH hydration (needs no Mac, fixes a live Windows hole, start here),
-`v0.12` macOS, `v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc
-with a task checklist, and `v0.12-macos.md` carries a § Hand-off table breaking
-the port into 15 agent-sized units with the files each one needs.
+**Four phases sit between v0.10.1 and v1.0, and the first of them is built.**
+**v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
+(unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
+caches it off the startup path, and hands it to `probe::resolve`, to every
+spawned Agent, and to Row 2's `PATH` walk. **The Windows half is measured; the
+unix half compiles and has never run** — `docs/verify/v0.11.md` §B is unexecuted,
+and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
+`v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc with a task
+checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port into
+15 agent-sized units with the files each one needs.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

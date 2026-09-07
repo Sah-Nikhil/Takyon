@@ -567,20 +567,29 @@ four things that made the release unusable before anyone could evaluate them.
 platform. Plan: [`docs/plans/v0.11-path-hydration.md`](./docs/plans/v0.11-path-hydration.md).
 
 The one phase here that needs no Mac, fixes a live Windows hole, and is a
-prerequisite for v0.12's row 2. It can start immediately.
+prerequisite for v0.12's row 2. Built; the Windows half is proven on this
+machine, the unix half compiles and has never run.
 
-- [ ] `agents/shellenv.rs`, pure parts first — `merge_path_entries`, sentinel extraction, login-shell candidates. All testable with no process spawn
-- [ ] **The Unix probe** — `$SHELL -ilc` with a sentinel-delimited `printenv PATH`, then `launchctl getenv PATH` as the macOS fallback. `-i` is load-bearing: nvm, asdf and mise live in rc files a non-interactive shell never sources
-- [ ] **The Windows probe** — `HKCU\Environment` and the machine `Path`, `ExpandEnvironmentStringsW`, merged user-then-machine-then-inherited. **Not** the PowerShell profile: it can be slow, can prompt, and can print
-- [ ] Cache with explicit `invalidate()`, hydrated on the **deferred-init thread** — the login-shell probe's 5 s timeout cannot sit inside the 500 ms login budget
-- [ ] `probe::resolve` rewritten to hydrated → inherited → `extra_dirs()`, the hardcoded list demoted to last resort rather than deleted
-- [ ] Re-probe on failure, so an Agent installed mid-session is found without a restart
-- [ ] Settings → Agents reports which shell answered and how many entries were recovered. Without it, "`!c` says Claude isn't installed" is indistinguishable from a probe bug
-- [ ] `sources/apps/path.rs` gains a macOS arm that checks the exec bit rather than an extension list *(needs v0.12)*
+- [x] `agents/shellenv.rs`, pure parts first — `merge_path_entries`, sentinel extraction, login-shell candidates. All testable with no process spawn
+- [x] **The Unix probe** — `$SHELL -ilc` with a sentinel-delimited `printenv PATH`, then `launchctl getenv PATH` as the macOS fallback. `-i` is load-bearing: nvm, asdf and mise live in rc files a non-interactive shell never sources
+- [x] **The Windows probe** — `HKCU\Environment` and the machine `Path`, `ExpandEnvironmentStringsW`, merged user-then-machine-then-inherited. **Not** the PowerShell profile: it can be slow, can prompt, and can print
+- [x] Cache with explicit `invalidate()`, hydrated on the **deferred-init thread** — the login-shell probe's 5 s timeout cannot sit inside the 500 ms login budget
+- [x] `probe::resolve` rewritten to hydrated → inherited → `extra_dirs()`, the hardcoded list demoted to last resort rather than deleted
+- [x] Re-probe on failure, so an Agent installed mid-session is found without a restart
+- [x] Settings → Agents reports which shell answered and how many entries were recovered. Without it, "`!c` says Claude isn't installed" is indistinguishable from a probe bug
+- [x] `sources/apps/path.rs` gains a macOS arm that checks the exec bit rather than an extension list. Written whole rather than deferred: it compiles under `bun run check:macos` today, and only its runtime verification waits for a Mac
+- [x] **Every spawned Agent gets the hydrated `PATH` too**, not only the resolution. A `claude` from `bun add -g` is a shim that re-execs `node`, so a child holding the login `PATH` fails at its own first step on a machine where resolution just succeeded. Not in the plan; added during the build
+- [ ] The unix half run on a real Mac — [`docs/verify/v0.11.md`](./docs/verify/v0.11.md) §B, which needs v0.12 *(needs a Mac)*
 
 **Exit criteria:** on a Mac with `claude` installed through Homebrew or
 `bun add -g`, launching Takyon from Finder and typing `!c` finds it. On Windows,
 `bun add -g opencode` followed by a re-probe finds it without a reboot.
+
+**Where it stands:** the Windows half is measured — the registry answers in
+1.3 ms, and under a deliberately truncated two-entry `PATH` it recovered 52
+folders, 50 of them new, with Claude and opencode still resolving. The unix half
+is entirely reasoned: it compiles for `aarch64-apple-darwin` and no login shell
+has ever been spawned by it.
 
 ---
 

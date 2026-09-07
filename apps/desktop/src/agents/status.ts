@@ -8,7 +8,7 @@
  * about the same Agent.
  */
 
-import type { AgentHealth, AgentKind, AgentSnapshot } from "@takyon/shared";
+import type { AgentHealth, AgentKind, AgentSnapshot, PathReport } from "@takyon/shared";
 
 /**
  * The dot beside an Agent's name. T3 Code's treatment, Takyon's palette.
@@ -132,6 +132,26 @@ export function blockedReason(snapshot: AgentSnapshot | undefined): string | nul
     return snapshot.message ?? "Sign in via the CLI to authenticate again.";
   }
   return null;
+}
+
+/**
+ * Where the searched `PATH` came from, in one sentence (v0.11).
+ *
+ * `null` while hydration has not answered yet. The count is the point: "not
+ * found on PATH" means one thing against 12 inherited directories and another
+ * against 60 the login shell handed over.
+ */
+export function pathSummary(report: PathReport | null): string | null {
+  if (!report) return null;
+  const where = report.source === "registry" ? "the registry" : report.source;
+  if (!where) {
+    return "PATH could not be read from your environment. Agents are searched on the one Takyon was launched with.";
+  }
+  const entries = `${report.entries} ${report.entries === 1 ? "folder" : "folders"}`;
+  if (report.added === 0) {
+    return `PATH read from ${where}: ${entries}, the same set Takyon was launched with.`;
+  }
+  return `PATH read from ${where}: ${entries}, ${report.added} more than Takyon was launched with.`;
 }
 
 /** The version as a card shows it. A bare semver gets a `v`, a tag does not. */

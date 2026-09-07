@@ -1,7 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentSnapshot } from "@takyon/shared";
 
-import { agentSummary, blockedReason, canAsk, pickAgent, versionLabel } from "./status";
+import {
+  agentSummary,
+  blockedReason,
+  canAsk,
+  pathSummary,
+  pickAgent,
+  versionLabel,
+} from "./status";
 
 const base: AgentSnapshot = {
   kind: "claude",
@@ -135,5 +142,29 @@ describe("versionLabel", () => {
     expect(versionLabel("2.1.261")).toBe("v2.1.261");
     expect(versionLabel("nightly-2026-09-01")).toBe("nightly-2026-09-01");
     expect(versionLabel(undefined)).toBeNull();
+  });
+});
+
+describe("pathSummary", () => {
+  /// Before hydration answers there is nothing true to say, and a placeholder
+  /// sentence about the PATH is worse than no sentence.
+  it("v0.11 says nothing until hydration has answered", () => {
+    expect(pathSummary(null)).toBeNull();
+  });
+
+  /// The two mechanisms are named in the user's words, not ours: "registry" is
+  /// a thing they can look in, `zsh` is a thing they can run.
+  it("v0.11 names what answered and how much it added", () => {
+    expect(pathSummary({ source: "registry", entries: 42, added: 3 })).toContain("the registry");
+    expect(pathSummary({ source: "registry", entries: 42, added: 3 })).toContain("42 folders");
+    expect(pathSummary({ source: "zsh", entries: 61, added: 14 })).toContain("from zsh");
+    expect(pathSummary({ source: "zsh", entries: 1, added: 0 })).toContain("1 folder");
+  });
+
+  /// Hydration that recovered nothing is a different sentence from hydration
+  /// that failed: the first found the PATH, the second never read one.
+  it("v0.11 distinguishes nothing recovered from nothing read", () => {
+    expect(pathSummary({ source: "bash", entries: 12, added: 0 })).toContain("the same set");
+    expect(pathSummary({ entries: 0, added: 0 })).toContain("could not be read");
   });
 });

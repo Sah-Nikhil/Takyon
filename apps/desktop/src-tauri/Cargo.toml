@@ -114,7 +114,17 @@ windows = { version = "0.61", features = [
   # own proxy, and nothing added to the installer.
   "Win32_Networking_WinHttp",
   "Win32_UI_Input_KeyboardAndMouse",
+  # v0.11. `Win32_System_Environment` is `ExpandEnvironmentStringsW`: the
+  # registry's `Path` is a `REG_EXPAND_SZ` full of `%SystemRoot%` references, and
+  # an unexpanded one names no directory that exists.
+  "Win32_System_Environment",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+# v0.11. `getpwuid_r` for the account's login shell, `setsid`/`kill` to put the
+# shell probe in its own process group. Already in `Cargo.lock` via Tauri, so
+# this adds a name rather than a build (ADR-0026's rule, applied here too).
+libc = "0.2"
 
 [profile.release]
 # The product *is* the latency budget. LTO and a single codegen unit are the two

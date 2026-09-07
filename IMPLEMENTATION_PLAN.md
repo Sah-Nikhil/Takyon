@@ -129,6 +129,17 @@ store. The id is the launcher's own, so a game that moves drive keeps its
 Frecency. Xbox and Game Pass need no implementor — those are MSIX packages with
 AUMIDs and `appsfolder.rs` already lists them.
 
+**`PATH` hydration is a seam without a trait (v0.11).** `agents::shellenv` is one
+module with two `cfg` arms rather than a `PathSource` trait, because there is
+exactly one implementor per platform and nothing ever holds two at once. It
+exposes three functions — `hydrated_path`, `hydrate`, `invalidate` — and one
+cache, and everything that needs a `PATH` reads through it: `probe::resolve`,
+`probe::command` (so a spawned Agent's own re-exec of `node` resolves too) and
+`sources::apps::path::discover`. `hydrate` runs on the deferred-init thread and
+nothing on a latency budget waits for it; a caller that arrives first gets the
+inherited `PATH` and is re-probed later. Details in
+`docs/plans/v0.11-path-hydration.md`.
+
 **No Source knows anything about the UI.** Sources return Entries; ranking and
 rendering are separate concerns. This is what keeps TBC-0002's escape hatch — a
 native Palette with no webview — affordable, and it's the single most important
@@ -574,6 +585,16 @@ export const setFilesRoots    = (roots: string[], excludes: string[]) => invoke<
 export const openedCount      = () => invoke<number>("opened_count");
 export const clearOpened      = () => invoke<number>("clear_opened");
 ```
+
+v0.11 adds one read-only command for the `PATH` the process searches:
+
+```ts
+export const agentPathReport = () => invoke<PathReport | null>("agent_path_report");
+```
+
+`null` means hydration has not answered yet. It is asked alongside `agent_snapshots`
+and nowhere else, because the only moment the answer matters is when someone is
+looking at an Agent that was not found.
 
 **`file_index_status` is not a field on `QueryResult`.** The state changes on the
 walk's schedule rather than the user's, so riding the keystroke path would ship

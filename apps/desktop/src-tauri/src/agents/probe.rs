@@ -53,15 +53,20 @@ const EXTS: [&str; 4] = ["exe", "cmd", "bat", "ps1"];
 #[cfg(not(windows))]
 const EXTS: [&str; 1] = [""];
 
-/// Locate `binary` on `PATH`, then in the places these CLIs actually install to.
+/// Locate `binary`, searching three `PATH`s in decreasing trustworthiness.
 ///
-/// The second half matters because `PATH` in a GUI process is the `PATH` that
-/// existed at login: a `bun add -g` afterwards is invisible until a re-probe.
+/// The hydrated `PATH` first (`shellenv`), then the inherited one, then the
+/// hardcoded install directories. A GUI process's `PATH` is the one that existed
+/// at login, which is why the first tier exists at all.
 pub fn resolve(binary: &str) -> Option<PathBuf> {
-    let from_path = std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
-        .unwrap_or_default();
-    for dir in from_path.into_iter().chain(extra_dirs()) {
+    let dirs = |value: Option<std::ffi::OsString>| {
+        value
+            .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let hydrated = dirs(super::shellenv::hydrated_path());
+    let inherited = dirs(std::env::var_os("PATH"));
+    for dir in hydrated.into_iter().chain(inherited).chain(extra_dirs()) {
         if let Some(hit) = in_dir(&dir, binary) {
             return Some(hit);
         }
@@ -70,6 +75,10 @@ pub fn resolve(binary: &str) -> Option<PathBuf> {
 }
 
 /// Where `claude`, `codex` and `opencode` land when their installers run.
+///
+/// Kept and demoted to last resort now that `shellenv` exists: it costs nothing,
+/// it covers a shell probe that timed out on a broken rc, and deleting it would
+/// trade one failure mode for another.
 #[cfg(windows)]
 fn extra_dirs() -> Vec<PathBuf> {
     let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
@@ -111,8 +120,35 @@ fn in_dir(dir: &Path, binary: &str) -> Option<PathBuf> {
 /// Both pipes are drained on their own threads. Reading them in sequence
 /// deadlocks the moment a child fills the pipe we are not reading.
 pub fn run(exe: &Path, args: &[&str], timeout: Duration) -> std::io::Result<Output> {
-    let mut child = command(exe)
-        .args(args)
+    let mut cmd = command(exe);
+    cmd.args(args);
+    run_command(cmd, timeout, false)
+}
+
+/// Run a prebuilt command, killing it and whatever it spawned at `timeout`.
+///
+/// For `shellenv`'s probe: the environment is the caller's, so `command`'s
+/// hydrated `PATH` is deliberately absent, and the child gets its own process
+/// group — an rc's grandchildren otherwise hold our pipes open after it dies.
+pub fn run_isolated(cmd: Command, timeout: Duration) -> std::io::Result<Output> {
+    run_command(cmd, timeout, true)
+}
+
+fn run_command(mut cmd: Command, timeout: Duration, own_group: bool) -> std::io::Result<Output> {
+    #[cfg(not(unix))]
+    let _ = own_group;
+    #[cfg(unix)]
+    if own_group {
+        use std::os::unix::process::CommandExt;
+        // Already-a-leader is the only failure and is harmless, so it is ignored.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
+    let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -136,6 +172,12 @@ pub fn run(exe: &Path, args: &[&str], timeout: Duration) -> std::io::Result<Outp
         match child.try_wait()? {
             Some(status) => break status.code(),
             None if Instant::now() >= deadline => {
+                // The group first: killing only the shell leaves whatever its rc
+                // spawned holding our pipes, and the drain below never returns.
+                #[cfg(unix)]
+                if own_group {
+                    unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
+                }
                 let _ = child.kill();
                 let _ = child.wait();
                 break None;
@@ -159,11 +201,16 @@ pub fn run(exe: &Path, args: &[&str], timeout: Duration) -> std::io::Result<Outp
     })
 }
 
-/// A `Command` with the window suppressed. The only place a child is built.
+/// A `Command` with the window suppressed and the hydrated `PATH` on it.
+///
+/// The `PATH` is not only for finding the binary: `claude` from `bun add -g` is
+/// a shim that re-execs `node`, so a child holding the login `PATH` fails at its
+/// own first step on a machine where resolution just succeeded.
 pub fn command(exe: &Path) -> Command {
-    // Only the Windows arm below mutates it.
-    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = Command::new(exe);
+    if let Some(path) = super::shellenv::hydrated_path() {
+        cmd.env("PATH", path);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

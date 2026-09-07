@@ -24,6 +24,7 @@ import {
   type AgentKind,
   type AgentSettings,
   type AgentSnapshot,
+  type PathReport,
   type TurnMessage,
   type SearchMessage,
   type WebSettings,
@@ -483,6 +484,15 @@ export const agentSnapshots = () =>
 
 export const agentSettings = () =>
   inTauri ? invoke<AgentSettings>("agent_settings") : mock.agentSettings();
+
+/**
+ * Where the searched `PATH` came from (v0.11). `null` before hydration has run.
+ *
+ * Asked alongside the probe, because a missing Agent and a `PATH` that was never
+ * hydrated are the same sentence to a user and different bugs to us.
+ */
+export const agentPathReport = () =>
+  inTauri ? invoke<PathReport | null>("agent_path_report") : mock.agentPathReport();
 
 /** The order `!c` tries Agents in. Rust caches it for the keystroke path. */
 export const setAskOrder = (order: AgentKind[]) =>

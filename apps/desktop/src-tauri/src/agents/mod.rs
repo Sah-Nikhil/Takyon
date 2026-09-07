@@ -15,6 +15,7 @@ pub mod ipc;
 pub mod opencode;
 pub mod probe;
 pub mod scratch;
+pub mod shellenv;
 pub mod turn;
 
 use std::path::PathBuf;
@@ -354,11 +355,53 @@ pub fn order_to_json(order: &[AgentKind]) -> String {
     serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
 }
 
+/// Agents that resolved the last time anyone looked.
+///
+/// The trigger for re-hydration: an Agent that was found and now is not means
+/// the `PATH` moved, not that it was uninstalled — a Node switch under `nvm`
+/// relocates every globally installed CLI at once.
+static LAST_RESOLVED: std::sync::Mutex<Vec<AgentKind>> = std::sync::Mutex::new(Vec::new());
+
 /// Probe every Agent. Lazy by contract: never called on the login path.
+///
+/// Resolution happens twice at most: once against whatever `shellenv` holds, and
+/// again after re-hydrating if an Agent that used to resolve no longer does.
 pub fn snapshots() -> Vec<Snapshot> {
-    drivers()
+    let drivers = drivers();
+    let mut found: Vec<Option<PathBuf>> = drivers
         .iter()
-        .map(|driver| match probe::resolve(driver.binary()) {
+        .map(|driver| probe::resolve(driver.binary()))
+        .collect();
+
+    let lost = {
+        let last = LAST_RESOLVED.lock().unwrap_or_else(|e| e.into_inner());
+        drivers
+            .iter()
+            .zip(&found)
+            .any(|(driver, hit)| hit.is_none() && last.contains(&driver.kind()))
+    };
+    if lost {
+        shellenv::invalidate();
+        shellenv::hydrate();
+        for (driver, hit) in drivers.iter().zip(found.iter_mut()) {
+            if hit.is_none() {
+                *hit = probe::resolve(driver.binary());
+            }
+        }
+    }
+
+    if let Ok(mut last) = LAST_RESOLVED.lock() {
+        *last = drivers
+            .iter()
+            .zip(&found)
+            .filter(|(_, hit)| hit.is_some())
+            .map(|(driver, _)| driver.kind())
+            .collect();
+    }
+    drivers
+        .iter()
+        .zip(found)
+        .map(|(driver, hit)| match hit {
             Some(exe) => driver.probe(&exe),
             None => Snapshot::missing(driver.kind(), driver.label(), driver.binary()),
         })

@@ -497,6 +497,42 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
         apps.push(app);
     }
 
+    // Executables on `PATH`, after the bundles and for the same reason as on
+    // Windows: least metadata, so a `.app` wins any collision on the name. The
+    // `PATH` is `shellenv`'s hydrated one, without which `launchd` would leave
+    // four directories to walk (`docs/plans/v0.11-path-hydration.md`).
+    let known_titles: std::collections::HashSet<String> =
+        apps.iter().map(|a| a.title.to_lowercase()).collect();
+    for exe in path::discover() {
+        if known_titles.contains(&exe.stem.to_lowercase()) {
+            continue;
+        }
+        let target = LaunchTarget::Exe {
+            path: exe.path.clone(),
+            args: None,
+            working_dir: None,
+        };
+        let id = EntryId::for_launch(&target);
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        apps.push(App {
+            id,
+            // No display name to borrow, exactly as on Windows: a bare `PATH`
+            // entry must not reach the exact-name rung on its basename.
+            hay: Haystack::for_executable(&exe.stem),
+            title: exe.stem,
+            origin: AppOrigin::CommandLine,
+            subtitle: Some(exe.path.to_string_lossy().to_string()),
+            target,
+            // No icon: a Mach-O binary carries none, and asking the workspace for
+            // one per executable is a `NSWorkspace` round trip per row.
+            icon_source: None,
+            icon: None,
+            version: None,
+        });
+    }
+
     attach_versions(&mut apps, crate::version::of);
     apps
 }

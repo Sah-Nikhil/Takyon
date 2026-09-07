@@ -548,6 +548,22 @@ export interface AgentSnapshot {
   efforts: string[];
 }
 
+/**
+ * Where the `PATH` Takyon searches came from.
+ *
+ * A GUI process inherits the `PATH` that existed at login, so Takyon asks the
+ * login shell (unix) or the registry (Windows) for the real one. Shown in
+ * Settings because "`!c` says Claude isn't installed" is otherwise unreadable.
+ */
+export interface PathReport {
+  /** A shell's own name, `launchctl`, or `registry`. Absent means nothing answered. */
+  source?: string;
+  /** Directories on the hydrated `PATH`. */
+  entries: number;
+  /** How many of those the inherited `PATH` did not have. */
+  added: number;
+}
+
 /** Agent preferences, in one response for the same reason as `SettingsSnapshot`. */
 export interface AgentSettings {
   /** The preference order, first to last. Every Agent appears once. */
