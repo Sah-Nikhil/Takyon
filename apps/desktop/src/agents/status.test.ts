@@ -161,6 +161,16 @@ describe("pathSummary", () => {
     expect(pathSummary({ source: "zsh", entries: 1, added: 0 })).toContain("1 folder");
   });
 
+  /// The deep Windows pass names both sources, because "the registry" alone
+  /// would be a lie about where an fnm-managed node was found.
+  it("v0.11 names the profile when the deep pass answered", () => {
+    const deep = pathSummary({ source: "registry+profile", entries: 71, added: 9 });
+    expect(deep).toContain("the registry and your PowerShell profile");
+    expect(deep).toContain("9 more");
+    // A shell's own name passes through: it is what the user would run.
+    expect(pathSummary({ source: "fish", entries: 30, added: 2 })).toContain("from fish");
+  });
+
   /// Hydration that recovered nothing is a different sentence from hydration
   /// that failed: the first found the PATH, the second never read one.
   it("v0.11 distinguishes nothing recovered from nothing read", () => {

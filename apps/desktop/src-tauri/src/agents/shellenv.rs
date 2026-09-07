@@ -78,8 +78,30 @@ pub fn hydrate() {
     if matches!(CACHE.lock(), Ok(guard) if guard.is_some()) {
         return;
     }
+    fill(false);
+}
+
+/// Discover again, asking the sources that cost a process.
+///
+/// Windows only: the PowerShell profile, where `fnm` puts a per-session node the
+/// registry cannot see. Runs **after a probe has already failed**, never on the
+/// deferred-init thread (`docs/tbd/v0.11.md` §4).
+#[cfg(windows)]
+pub fn hydrate_deep() {
+    invalidate();
+    fill(true);
+}
+
+/// Unix has nothing deeper: `-i` already sourced the rc files, which is where
+/// `nvm`, `asdf` and `mise` install themselves.
+#[cfg(not(windows))]
+pub fn hydrate_deep() {
+    hydrate();
+}
+
+fn fill(deep: bool) {
     let inherited = std::env::var_os("PATH").unwrap_or_default();
-    let (discovered, source) = discover();
+    let (discovered, source) = discover(deep);
     let hydrated = match discovered {
         Some(found) => {
             let merged = merge_path_entries(&found, &inherited);
@@ -205,8 +227,8 @@ pub fn strip_ansi(line: &str) -> String {
 /// The `PATH` the shell printed between the markers, or `None`.
 ///
 /// The last start marker wins: an rc with `set -v` echoes the script first, so
-/// the marker appears twice. A candidate must also contain a `/`, which rejects
-/// that echo — unix data whichever host parses it, never `MAIN_SEPARATOR`.
+/// the marker appears twice. A candidate must also hold `/` or `\`, which
+/// rejects that echo — both, because a shell and a profile disagree on which.
 pub fn extract_between_sentinels(stdout: &str) -> Option<String> {
     let lines: Vec<String> = stdout.lines().map(strip_ansi).collect();
     let start = lines.iter().rposition(|l| l.contains(SENTINEL_START))?;
@@ -219,7 +241,7 @@ pub fn extract_between_sentinels(stdout: &str) -> Option<String> {
     lines[start + 1..end]
         .iter()
         .map(|line| line.trim())
-        .find(|line| !line.is_empty() && line.contains('/'))
+        .find(|line| !line.is_empty() && (line.contains('/') || line.contains('\\')))
         .map(|line| line.to_string())
 }
 
@@ -260,7 +282,9 @@ fn probe_script() -> String {
 ///
 /// Returns the raw discovered `PATH` and the name of whatever answered.
 #[cfg(unix)]
-fn discover() -> (Option<OsString>, Option<String>) {
+fn discover(deep: bool) -> (Option<OsString>, Option<String>) {
+    // Nothing costs extra here: `-i` already sources every rc file.
+    let _ = deep;
     let env_shell = std::env::var("SHELL").ok();
     let account = account_shell();
     for shell in login_shell_candidates(env_shell.as_deref(), account.as_deref()) {
@@ -313,7 +337,7 @@ fn account_shell() -> Option<String> {
 /// environment is passed through untouched, so nothing we hold biases it.
 #[cfg(unix)]
 fn path_from_login_shell(shell: &std::path::Path) -> Option<OsString> {
-    let mut cmd = std::process::Command::new(shell);
+    let mut cmd = crate::agents::probe::bare_command(shell);
     cmd.arg("-ilc").arg(probe_script());
     let out = crate::agents::probe::run_isolated(cmd, SHELL_TIMEOUT).ok()?;
     extract_between_sentinels(&out.stdout).map(OsString::from)
@@ -323,7 +347,7 @@ fn path_from_login_shell(shell: &std::path::Path) -> Option<OsString> {
 /// called `launchctl setenv`. It is a last resort, not the mechanism.
 #[cfg(target_os = "macos")]
 fn path_from_launchctl() -> Option<OsString> {
-    let mut cmd = std::process::Command::new("/bin/launchctl");
+    let mut cmd = crate::agents::probe::bare_command("/bin/launchctl");
     cmd.arg("getenv").arg("PATH");
     let out = crate::agents::probe::run_isolated(cmd, LAUNCHCTL_TIMEOUT).ok()?;
     out.stdout
@@ -347,7 +371,7 @@ const LAUNCHCTL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2)
 /// can print, and the registry already carries every `PATH` edit an installer
 /// makes. Merge order matches how Windows itself composes the variable.
 #[cfg(windows)]
-fn discover() -> (Option<OsString>, Option<String>) {
+fn discover(deep: bool) -> (Option<OsString>, Option<String>) {
     use windows::core::w;
     use windows::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 
@@ -356,15 +380,47 @@ fn discover() -> (Option<OsString>, Option<String>) {
         HKEY_LOCAL_MACHINE,
         w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"),
     );
-    if user.is_none() && machine.is_none() {
+    // Below the registry, so a profile can add a directory but never reorder one.
+    let profile = if deep { path_from_powershell_profile() } else { None };
+    if user.is_none() && machine.is_none() && profile.is_none() {
         return (None, None);
     }
-    let merged = merge_path_entries(
-        &user.unwrap_or_default(),
-        &machine.unwrap_or_default(),
-    );
-    (Some(merged), Some("registry".to_string()))
+    let registry = merge_path_entries(&user.unwrap_or_default(), &machine.unwrap_or_default());
+    let source = match &profile {
+        Some(_) => "registry+profile",
+        None => "registry",
+    };
+    let merged = merge_path_entries(&registry, &profile.unwrap_or_default());
+    (Some(merged), Some(source.to_string()))
 }
+
+/// `PATH` as the user's PowerShell profile computes it.
+///
+/// The profile is loaded on purpose — that is the whole point, and it is what
+/// `hydrate` refuses to pay for. `-NonInteractive` turns a prompting profile
+/// into an error rather than a hang, and stdin is closed underneath it too.
+#[cfg(windows)]
+fn path_from_powershell_profile() -> Option<OsString> {
+    let script = format!(
+        "Write-Output '{SENTINEL_START}'; Write-Output $env:PATH; Write-Output '{SENTINEL_END}'"
+    );
+    for shell in ["pwsh.exe", "powershell.exe"] {
+        let mut cmd = crate::agents::probe::bare_command(shell);
+        cmd.arg("-NonInteractive").arg("-Command").arg(&script);
+        let Ok(out) = crate::agents::probe::run_isolated(cmd, PROFILE_TIMEOUT) else {
+            continue;
+        };
+        if let Some(path) = extract_between_sentinels(&out.stdout) {
+            return Some(OsString::from(path));
+        }
+    }
+    None
+}
+
+/// t3code's own figure. A profile that sources a version manager is doing real
+/// work, and this only ever runs once, after an Agent was already not found.
+#[cfg(windows)]
+const PROFILE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// One `Path` value, read raw and expanded here.
 ///
@@ -439,7 +495,7 @@ fn expand_env(raw: &str) -> String {
 
 /// Neither Windows nor unix: nothing to ask, and the inherited `PATH` stands.
 #[cfg(not(any(windows, unix)))]
-fn discover() -> (Option<OsString>, Option<String>) {
+fn discover(_deep: bool) -> (Option<OsString>, Option<String>) {
     (None, None)
 }
 
@@ -502,6 +558,43 @@ mod tests {
             extract_between_sentinels(&echoed).as_deref(),
             Some("/usr/local/bin:/usr/bin")
         );
+    }
+
+    /// The PowerShell profile answers in `\`, the unix shell in `/`. Both are
+    /// paths; neither host's separator may be assumed.
+    #[test]
+    fn v0_11_a_windows_path_between_the_markers_is_read_too() {
+        let windows = format!(
+            "{SENTINEL_START}\nC:\\Users\\me\\.bun\\bin;C:\\Windows\\System32\n{SENTINEL_END}"
+        );
+        assert_eq!(
+            extract_between_sentinels(&windows).as_deref(),
+            Some(r"C:\Users\me\.bun\bin;C:\Windows\System32")
+        );
+        // Still rejects a line that names no path at all.
+        let noise = format!("{SENTINEL_START}\nsome words\n{SENTINEL_END}");
+        assert_eq!(extract_between_sentinels(&noise), None);
+    }
+
+    /// The deep pass is the one allowed to cost a process, so it must actually
+    /// reach further — never fewer folders than the cheap one found.
+    #[test]
+    fn v0_11_deep_hydration_is_a_superset_of_the_cheap_one() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        invalidate();
+        hydrate();
+        let cheap = hydrated_path();
+        let cheap_entries = report().map(|r| r.entries).unwrap_or(0);
+
+        hydrate_deep();
+        let deep = report().expect("deep hydration always leaves a report");
+        if cheap.is_some() {
+            assert!(deep.entries >= cheap_entries, "deep lost folders");
+            // The label says which sources answered, and Settings reads it.
+            let source = deep.source.unwrap_or_default();
+            assert!(source.contains("registry") || !cfg!(windows), "{source}");
+        }
+        invalidate();
     }
 
     /// Discovered entries lead, inherited ones follow, and nothing appears

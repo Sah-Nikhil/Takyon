@@ -219,6 +219,22 @@ pub fn command(exe: &Path) -> Command {
     cmd
 }
 
+/// A `Command` with the window suppressed and **no** hydrated `PATH` on it.
+///
+/// What `shellenv`'s own probes spawn through: seeding a child with the value we
+/// are trying to discover would bias the answer it gives back.
+pub fn bare_command(exe: impl AsRef<std::ffi::OsStr>) -> Command {
+    // Only the Windows arm below mutates it.
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut cmd = Command::new(exe);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// Erases which pipe is being drained so both reader threads share one body.
 enum PipeSource {
     Out(std::process::ChildStdout),

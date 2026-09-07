@@ -83,6 +83,42 @@ fn v0_11_agents_resolve_against_the_hydrated_path() {
     shellenv::invalidate();
 }
 
+/// The deep pass against the real PowerShell profile, or the real login shell.
+///
+/// Prints what it cost, which is the number the decision to gate it rests on
+/// (`docs/tbd/v0.11.md` §4). Never asserts that a profile added anything: most
+/// machines have no version manager, and finding nothing is a correct answer.
+#[test]
+#[ignore = "spawns the user's login shell or their PowerShell profile"]
+fn v0_11_the_deep_pass_reaches_at_least_as_far_as_the_cheap_one() {
+    shellenv::invalidate();
+    shellenv::hydrate();
+    let cheap = shellenv::report().expect("a report");
+    let cheap_path = shellenv::hydrated_path();
+
+    let started = Instant::now();
+    shellenv::hydrate_deep();
+    let took = started.elapsed();
+    let deep = shellenv::report().expect("a report");
+    eprintln!(
+        "cheap: source={:?} entries={} | deep: source={:?} entries={} in {took:?}",
+        cheap.source, cheap.entries, deep.source, deep.entries
+    );
+
+    assert!(deep.entries >= cheap.entries, "the deep pass lost folders");
+    if let (Some(cheap_path), Some(deep_path)) = (cheap_path, shellenv::hydrated_path()) {
+        let deep_dirs: Vec<_> = std::env::split_paths(&deep_path).collect();
+        for dir in std::env::split_paths(&cheap_path) {
+            assert!(
+                deep_dirs.iter().any(|d| same_dir(d, &dir)),
+                "the deep pass dropped {}",
+                dir.display()
+            );
+        }
+    }
+    shellenv::invalidate();
+}
+
 /// Case-insensitively on Windows, exactly on unix — the same rule the merge uses.
 fn same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
     if cfg!(windows) {

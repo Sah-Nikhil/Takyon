@@ -362,6 +362,19 @@ pub fn order_to_json(order: &[AgentKind]) -> String {
 /// relocates every globally installed CLI at once.
 static LAST_RESOLVED: std::sync::Mutex<Vec<AgentKind>> = std::sync::Mutex::new(Vec::new());
 
+/// Whether the process-costing hydration has been asked for yet. One shot: on a
+/// machine with no Agent installed, every Settings probe would otherwise spawn.
+static DEEP_TRIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Resolve again, for the Agents still missing. The second half of a re-probe.
+fn re_resolve(drivers: &[Box<dyn AgentDriver>], found: &mut [Option<PathBuf>]) {
+    for (driver, hit) in drivers.iter().zip(found.iter_mut()) {
+        if hit.is_none() {
+            *hit = probe::resolve(driver.binary());
+        }
+    }
+}
+
 /// Probe every Agent. Lazy by contract: never called on the login path.
 ///
 /// Resolution happens twice at most: once against whatever `shellenv` holds, and
@@ -383,11 +396,18 @@ pub fn snapshots() -> Vec<Snapshot> {
     if lost {
         shellenv::invalidate();
         shellenv::hydrate();
-        for (driver, hit) in drivers.iter().zip(found.iter_mut()) {
-            if hit.is_none() {
-                *hit = probe::resolve(driver.binary());
-            }
-        }
+        re_resolve(&drivers, &mut found);
+    }
+
+    // Nothing at all, and the expensive source has not been asked yet. On Windows
+    // that is the PowerShell profile, where `fnm` puts a per-session node the
+    // registry cannot see (`docs/tbd/v0.11.md` §4). Once per process: a machine
+    // with no Agent installed must not spawn a shell on every probe.
+    if found.iter().all(Option::is_none)
+        && !DEEP_TRIED.swap(true, std::sync::atomic::Ordering::Relaxed)
+    {
+        shellenv::hydrate_deep();
+        re_resolve(&drivers, &mut found);
     }
 
     if let Ok(mut last) = LAST_RESOLVED.lock() {

@@ -135,6 +135,18 @@ export function blockedReason(snapshot: AgentSnapshot | undefined): string | nul
 }
 
 /**
+ * What Rust's mechanism names read as in a sentence.
+ *
+ * Anything unlisted is a shell's own name — `zsh`, `bash`, `fish` — and is shown
+ * verbatim, because that is the thing the user would run to check it themselves.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  registry: "the registry",
+  "registry+profile": "the registry and your PowerShell profile",
+  launchctl: "launchctl",
+};
+
+/**
  * Where the searched `PATH` came from, in one sentence (v0.11).
  *
  * `null` while hydration has not answered yet. The count is the point: "not
@@ -143,7 +155,7 @@ export function blockedReason(snapshot: AgentSnapshot | undefined): string | nul
  */
 export function pathSummary(report: PathReport | null): string | null {
   if (!report) return null;
-  const where = report.source === "registry" ? "the registry" : report.source;
+  const where = SOURCE_LABELS[report.source ?? ""] ?? report.source;
   if (!where) {
     return "PATH could not be read from your environment. Agents are searched on the one Takyon was launched with.";
   }

@@ -579,7 +579,9 @@ machine, the unix half compiles and has never run.
 - [x] Settings → Agents reports which shell answered and how many entries were recovered. Without it, "`!c` says Claude isn't installed" is indistinguishable from a probe bug
 - [x] `sources/apps/path.rs` gains a macOS arm that checks the exec bit rather than an extension list. Written whole rather than deferred: it compiles under `bun run check:macos` today, and only its runtime verification waits for a Mac
 - [x] **Every spawned Agent gets the hydrated `PATH` too**, not only the resolution. A `claude` from `bun add -g` is a shim that re-execs `node`, so a child holding the login `PATH` fails at its own first step on a machine where resolution just succeeded. Not in the plan; added during the build
+- [x] **The PowerShell profile pass**, gated on a probe that found nothing at all and run once per process. `fnm` sets `PATH` to a per-session folder from `$PROFILE` and never writes `HKCU\Environment`, so the cheap read cannot see it by construction. Narrower than it first looks: nvm-for-Windows, Volta and scoop each add a fixed folder at install, which the registry already sees. Measured: 1.46 s against the registry's 1.2 ms, which is why it is gated rather than default. Copied from t3code's conditional second pass after reading its source
 - [ ] The unix half run on a real Mac — [`docs/verify/v0.11.md`](./docs/verify/v0.11.md) §B, which needs v0.12 *(needs a Mac)*
+- [ ] The profile pass seen to actually recover a folder — [`docs/verify/v0.11.md`](./docs/verify/v0.11.md) §A.6 *(needs `fnm` specifically; the other managers cannot reproduce it)*
 
 **Exit criteria:** on a Mac with `claude` installed through Homebrew or
 `bun add -g`, launching Takyon from Finder and typing `!c` finds it. On Windows,
