@@ -126,6 +126,31 @@ windows = { version = "0.61", features = [
 # this adds a name rather than a build (ADR-0026's rule, applied here too).
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# v0.12, ADR-0026: the objc2 family direct, and every one of these is already in
+# `Cargo.lock` via Tauri and wry. `block2` is the global mouse monitor's handler;
+# `objc2` itself is the `Retained` that keeps that monitor registered.
+objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-core-foundation",
+  "NSEvent",
+  "NSResponder",
+  "NSRunningApplication",
+  "NSWindow",
+  "NSWorkspace",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "NSArray",
+  "NSError",
+  "NSString",
+  "NSURL",
+] }
+
 [profile.release]
 # The product *is* the latency budget. LTO and a single codegen unit are the two
 # cheapest things that move it, and `panic = "abort"` removes unwinding tables

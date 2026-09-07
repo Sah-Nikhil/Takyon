@@ -26,6 +26,8 @@ pub mod icons;
 pub mod identity;
 pub mod index;
 pub mod launch;
+#[cfg(target_os = "macos")]
+pub mod panel;
 pub mod prefs;
 pub mod query;
 pub mod rank;
@@ -742,6 +744,16 @@ pub fn run() {
             // icon flashing before this line runs.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // Float over full-screen apps, join every Space, and dismiss on a
+            // click elsewhere — none of which Tauri expresses (ADR-0028). Here in
+            // setup because both are main-thread calls and neither needs a window
+            // that has been shown.
+            #[cfg(target_os = "macos")]
+            {
+                panel::configure(&handle);
+                panel::watch_clicks(&handle);
+            }
 
             // Managed before the hotkey, because the hotkey handler reaches for it
             // on the very first press.

@@ -170,13 +170,119 @@ shortcut.
 4. Ventura, Sonoma and Sequoia moved panes independently, so note which macOS
    version this pass was run on — a table that passes on one may not on the next.
 
+## E. The window (row 8)
+
+**Do E.1 before writing any more window code.** It decides whether a hard piece
+of work exists at all — [`docs/tbd/v0.12.md`](../tbd/v0.12.md) §9. The Palette is
+a configured `NSWindow`, not an `NSPanel`, and the four checks below are exactly
+the behaviours a panel would have bought.
+
+### 1. The four panel behaviours, without a panel
+
+1. Put an app into full screen (green button). Press the hotkey.
+   **The Palette draws over it, and the Space does not switch.**
+2. With the Palette open, switch Space with Ctrl+→.
+   **The Palette is still there**, not stranded on the old desktop.
+3. Open the Palette over a normal window, then click that window's title bar.
+   The Palette dismisses (that is check 3 below) — now re-open it and instead
+   watch whether it vanishes **on its own** the instant the app underneath
+   regains focus. **It must not.**
+4. Press the hotkey while a document app is frontmost and type nothing. The
+   other app's title bar **stays active-looking** and its cursor keeps blinking
+   — Takyon has not stolen activation.
+
+Record each one. **All four pass** → no `NSPanel` is needed, amend ADR-0028 and
+say so. **Any one fails** → that is the dynamic `NSPanel` subclass, and §9 says
+what it costs.
+
+### 2. Typing still works
+
+The point of the non-activating configuration is that the Palette takes key
+events without activating the app. Confirm it did not take the first half away:
+
+1. Press the hotkey, type a few letters.
+2. The characters appear in the Palette, not in the app underneath.
+3. Escape dismisses.
+
+If characters land in the other application, the window is not becoming key and
+this is the failure mode the whole configuration risks.
+
+### 3. Dismiss on click-away
+
+Rebuilt on `NSEvent.addGlobalMonitorForEventsMatchingMask`, because Tauri's
+`Focused(false)` is not reliable for this window.
+
+1. Open the Palette. Click once anywhere in another application.
+2. **The Palette hides**, and the click still reaches what was clicked — the
+   monitor observes and cannot consume.
+3. Do it with a right-click too; both buttons are watched.
+4. Open the Palette and click **inside it**. It stays open. A global monitor only
+   sees events delivered to other applications, so this should hold by
+   construction; check it anyway, because if it fails the Palette is unusable.
+5. Watch for an Accessibility prompt. There should be none — a global monitor for
+   mouse-down needs no permission. **If macOS prompts here, that is new
+   information** and changes the permission story in the plan's § Permissions.
+
+### 4. Placement
+
+`place_on_cursor_monitor` ports unchanged from Windows, including its two-pass
+re-centring for mixed scale factors. That logic is not new; what is new is
+whether Tauri's monitor APIs report macOS geometry the way it assumes.
+
+1. On a single display: the Palette is horizontally centred and sits high on the
+   screen, not dead centre.
+2. With an external display attached, move the cursor to the second screen and
+   press the hotkey. **The Palette appears on the screen holding the cursor.**
+3. If the two displays have different scale factors (a Retina laptop plus a 1×
+   external is the common case), check both directions. This is what the two-pass
+   re-centring exists for and it has never run here.
+4. The menu bar and the Dock do not overlap it on either screen.
+
+## F. Launching (row 7)
+
+All of this goes through `NSWorkspace` now. `/usr/bin/open` is gone, so a failure
+here is a failure of the real design rather than of a stopgap.
+
+### 1. Applications start
+
+1. Open the Palette, type an application's name, press Enter.
+2. **It starts**, and the Palette dismissed before it appeared rather than after.
+3. Try one with a space in its path and one in `~/Applications` rather than
+   `/Applications`.
+4. Try an application that is already running: it comes forward rather than
+   starting a second copy.
+
+### 2. Ctrl+K actions
+
+1. **Reveal in Finder** opens a Finder window with the file *selected*, not just
+   the folder. This is `activateFileViewerSelectingURLs:`.
+2. **Copy path** puts the path on the pasteboard.
+3. **Run as administrator** is offered but refuses in words — macOS has no
+   equivalent, and ADR-0007's no-elevation stance holds here. The message must be
+   a sentence, not an error code.
+
+### 3. URLs
+
+1. A `steam://` Entry opens Steam (only if Steam is installed; the library on the
+   dev machine has no game, so this may be unverifiable here as it is on Windows).
+2. A System Settings Entry opens System Settings — that is section D.
+3. `!s` results open in the default browser, not always Safari. Set a non-Safari
+   default browser first, or this passes for the wrong reason.
+
+### 4. What it reported
+
+`open_application` waits up to two seconds for the completion handler.
+
+1. Launch several applications in a row. **None of them feels slower than the
+   Palette dismissing**, which is the only thing this wait could regress.
+2. If a launch ever appears to hang for two seconds, that is the timeout being
+   reached and it means the handler is not firing — worth knowing, though the
+   application will still have started.
+
 ## Still to be written
 
 One section per row, as the row lands:
 
-- Row 8, the window — over a full-screen app, across Spaces, dismiss on
-  click-away, and placement on a mixed-scale-factor multi-monitor setup.
-- Row 7, launch — and that Frecency keeps its identity when an app is moved.
 - Row 3, icons — and `ICON_PX` at 128 on a 2× display.
 - Row 4, Spotlight — including that **no** Full Disk Access prompt appears.
 - Row 6, the clipboard — the poll, the nspasteboard.org markers, the Keychain

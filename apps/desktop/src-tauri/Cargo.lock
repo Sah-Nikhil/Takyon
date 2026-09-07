@@ -3644,8 +3644,12 @@ name = "takyon"
 version = "0.10.0"
 dependencies = [
  "aes-gcm",
+ "block2",
  "libc",
  "memmap2",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "png 0.17.16",
  "rayon",
  "rusqlite",
