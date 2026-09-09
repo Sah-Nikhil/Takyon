@@ -17,10 +17,10 @@ pub const SCHEME: &str = "takyon-icon";
 
 /// Square edge, physical pixels, that icons are extracted at.
 ///
-/// Rows are 44 logical tall and the icon takes ~24, so 64 covers a 2x display.
-/// Row size looks soft on any modern laptop; 256 quadruples the blob and the
-/// decode cost for pixels nobody sees.
-pub const ICON_PX: u32 = 64;
+/// 128 since v0.12: every Apple Silicon Mac is 2x, Windows has 200% displays,
+/// and 64 px in a 32 pt slot is visibly soft. One number for both platforms;
+/// 256 quadruples the blob for pixels nobody sees.
+pub const ICON_PX: u32 = 128;
 
 /// Where an icon can be extracted from.
 ///
@@ -118,10 +118,16 @@ struct Blob {
 
 /// Bumping this discards every cached icon.
 ///
-/// The escape hatch for the one case the mtime key cannot cover: a packaged app
-/// whose icon changed without any file we can stat changing.
-const FORMAT_VERSION: u32 = 1;
+/// The escape hatch the mtime key cannot cover: a packaged app whose icon
+/// changed without any file we can stat changing. **2 since v0.12**, where
+/// `ICON_PX` went 64 → 128 and an old blob would draw small into a big slot.
+const FORMAT_VERSION: u32 = 2;
 const MAGIC: &[u8; 4] = b"TKI1";
+
+// A change to `ICON_PX` without a format bump loads old entries at the wrong
+// size, which shows up as soft icons and nothing in any log. Caught at compile
+// time rather than by a reviewer noticing.
+const _: () = assert!(!(ICON_PX == 128 && FORMAT_VERSION < 2));
 
 /// How long extraction must be quiet before the blob is written.
 ///
@@ -411,9 +417,74 @@ pub fn extract(source: &IconSource) -> Option<Vec<u8>> {
     win::extract(source)
 }
 
-#[cfg(not(windows))]
+/// Ask `NSWorkspace` for an icon and encode it as a PNG.
+#[cfg(target_os = "macos")]
+pub fn extract(source: &IconSource) -> Option<Vec<u8>> {
+    mac::extract(source)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn extract(_source: &IconSource) -> Option<Vec<u8>> {
     None
+}
+
+#[cfg(target_os = "macos")]
+mod mac {
+    use super::*;
+    use objc2::AnyThread;
+    use objc2_app_kit::{
+        NSBitmapImageFileType, NSBitmapImageRep, NSGraphicsContext, NSImage, NSWorkspace,
+    };
+    use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize, NSString};
+
+    pub fn extract(source: &IconSource) -> Option<Vec<u8>> {
+        // `Aumid` is a Windows shell concept with no macOS counterpart, and no
+        // macOS Source produces one. Refuse rather than invent a path.
+        let IconSource::File(path) = source else {
+            return None;
+        };
+        let image =
+            NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(&path.to_string_lossy()));
+        png_at_icon_px(&image)
+    }
+
+    /// Redraw an `NSImage` at exactly `ICON_PX` and encode it.
+    ///
+    /// Drawn into a bitmap rather than asked for `TIFFRepresentation`: an app
+    /// icon carries reps up to 512 px, and the data directly gives whichever
+    /// AppKit prefers rather than the size the blob's slots need.
+    fn png_at_icon_px(image: &NSImage) -> Option<Vec<u8>> {
+        let side = ICON_PX as f64;
+        let rep = unsafe {
+            NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+                NSBitmapImageRep::alloc(),
+                std::ptr::null_mut(),
+                ICON_PX as isize,
+                ICON_PX as isize,
+                8,
+                4,
+                true,
+                false,
+                objc2_app_kit::NSDeviceRGBColorSpace,
+                0,
+                0,
+            )
+        }?;
+
+        let context = NSGraphicsContext::graphicsContextWithBitmapImageRep(&rep)?;
+        NSGraphicsContext::saveGraphicsState_class();
+        NSGraphicsContext::setCurrentContext(Some(&context));
+        image.drawInRect(NSRect::new(
+            NSPoint::new(0.0, 0.0),
+            NSSize::new(side, side),
+        ));
+        NSGraphicsContext::restoreGraphicsState_class();
+
+        let data = unsafe {
+            rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
+        }?;
+        Some(data.to_vec())
+    }
 }
 
 #[cfg(windows)]
@@ -736,6 +807,18 @@ mod tests {
         truncated.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
         truncated.extend_from_slice(&1u32.to_le_bytes());
         assert!(parse_index(&truncated).is_none());
+    }
+
+    /// The `ICON_PX` 64 → 128 bump is only safe because the old blob is rejected.
+    ///
+    /// Without this a v1 cache loads and its 64 px entries are drawn into a
+    /// 128 px slot — soft icons with nothing in any log to explain them.
+    #[test]
+    fn v0_12_a_version_one_blob_is_discarded_after_the_icon_px_bump() {
+        let mut previous = MAGIC.to_vec();
+        previous.extend_from_slice(&1u32.to_le_bytes());
+        previous.extend_from_slice(&0u32.to_le_bytes());
+        assert!(parse_index(&previous).is_none());
     }
 
     #[test]

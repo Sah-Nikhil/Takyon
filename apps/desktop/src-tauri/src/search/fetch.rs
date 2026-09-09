@@ -35,6 +35,10 @@ const AGENT: &str = "Takyon/0.9 (+https://github.com/Sah-Nikhil)";
 #[cfg(windows)]
 const TIMEOUT_MS: i32 = 6_000;
 
+/// The same budget for `NSURLRequest`, which counts in seconds.
+#[cfg(target_os = "macos")]
+const TIMEOUT_SECS: f64 = 6.0;
+
 /// Total budget for reading pages, whatever is still in flight.
 pub const DEADLINE: Duration = Duration::from_secs(12);
 
@@ -282,12 +286,101 @@ fn send(
     }
 }
 
-/// No transport off Windows yet, so every request fails by name.
+/// The macOS half of `search::fetch`, over `NSURLSession` (ADR-0029).
 ///
-/// Refusing here rather than earlier keeps `!s` honest end to end: the Bang
-/// still parses, retrieval still runs its own error path, and the Palette shows
-/// this sentence instead of an empty answer. TBC-0013 owns the real one.
-#[cfg(not(windows))]
+/// Same seam and reasons as WinHTTP: OS TLS, the user's proxy, nothing added to
+/// the installer. `dataTaskWithRequest:` is asynchronous, so its handler posts
+/// to a channel this waits on — every caller is already on a worker.
+#[cfg(target_os = "macos")]
+fn send(
+    host: &str,
+    path: &str,
+    headers: &str,
+    secure: bool,
+    method: &str,
+    body: Option<&[u8]>,
+    cap: usize,
+) -> Result<Response, SearchError> {
+    use objc2_foundation::{
+        NSData, NSHTTPURLResponse, NSMutableURLRequest, NSString, NSURLSession, NSURL,
+    };
+
+    let scheme = if secure { "https" } else { "http" };
+    let url = NSURL::URLWithString(&NSString::from_str(&format!("{scheme}://{host}{path}")))
+        .ok_or_else(|| SearchError::Failed(format!("{scheme}://{host}{path} is not a URL.")))?;
+
+    let request = NSMutableURLRequest::requestWithURL(&url);
+    request.setHTTPMethod(&NSString::from_str(method));
+    request.setTimeoutInterval(TIMEOUT_SECS);
+    for (name, value) in parse_header_block(headers) {
+        request.setValue_forHTTPHeaderField(
+            Some(&NSString::from_str(&value)),
+            &NSString::from_str(&name),
+        );
+    }
+    if let Some(body) = body {
+        request.setHTTPBody(Some(&NSData::with_bytes(body)));
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(u16, Vec<u8>), String>>();
+    let handler = block2::RcBlock::new(
+        move |data: *mut NSData,
+              response: *mut objc2_foundation::NSURLResponse,
+              error: *mut objc2_foundation::NSError| {
+            // SAFETY: the three pointers are valid for the duration of the call.
+            let outcome = if !error.is_null() {
+                Err(unsafe { (*error).localizedDescription() }.to_string())
+            } else {
+                let status = unsafe { response.as_ref() }
+                    .and_then(|r| r.downcast_ref::<NSHTTPURLResponse>())
+                    .map(|http| http.statusCode() as u16)
+                    .unwrap_or(0);
+                let bytes = unsafe { data.as_ref() }.map(|d| d.to_vec()).unwrap_or_default();
+                Ok((status, bytes))
+            };
+            let _ = tx.send(outcome);
+        },
+    );
+
+    let task = unsafe {
+        NSURLSession::sharedSession().dataTaskWithRequest_completionHandler(&request, &handler)
+    };
+    task.resume();
+
+    // A second past the request's own timeout: the deadline that should fire is
+    // URLSession's, which reports why. This one only stops a lost callback from
+    // parking the worker forever.
+    let waited = std::time::Duration::from_secs_f64(TIMEOUT_SECS + 1.0);
+    let (status, mut bytes) = match rx.recv_timeout(waited) {
+        Ok(Ok(response)) => response,
+        Ok(Err(e)) => return Err(SearchError::Failed(e)),
+        Err(_) => return Err(SearchError::Failed("the request timed out.".into())),
+    };
+
+    bytes.truncate(cap);
+    Ok(Response {
+        status,
+        body: String::from_utf8_lossy(&bytes).into_owned(),
+        bytes,
+    })
+}
+
+/// Split a raw `Name: Value\r\n` block into pairs.
+///
+/// WinHTTP takes the block whole; `NSMutableURLRequest` wants one call per
+/// field. Pure, so a Windows test run covers it — the block is built by
+/// `get` and `post` on both platforms.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn parse_header_block(headers: &str) -> Vec<(String, String)> {
+    headers
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_string(), value.trim().to_string()))
+        .filter(|(name, _)| !name.is_empty())
+        .collect()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn send(
     _host: &str,
     _path: &str,
@@ -298,7 +391,7 @@ fn send(
     _cap: usize,
 ) -> Result<Response, SearchError> {
     Err(SearchError::Failed(
-        "HTTP is only implemented on Windows; macOS needs URLSession (TBC-0013).".into(),
+        "HTTP is not implemented on this platform.".into(),
     ))
 }
 
@@ -359,6 +452,26 @@ fn wide(text: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WinHTTP takes one block, `NSMutableURLRequest` one call per field, and
+    /// both platforms build the block the same way — so this parses on Windows.
+    #[test]
+    fn v0_12_a_header_block_splits_into_fields() {
+        let block = "Accept: text/html\r\nX-Api-Key: abc123\r\n";
+        assert_eq!(
+            parse_header_block(block),
+            vec![
+                ("Accept".to_string(), "text/html".to_string()),
+                ("X-Api-Key".to_string(), "abc123".to_string()),
+            ]
+        );
+        assert!(parse_header_block("").is_empty());
+        // A value holding a colon keeps it: only the first one separates.
+        assert_eq!(
+            parse_header_block("Referer: https://example.com/x\r\n"),
+            vec![("Referer".to_string(), "https://example.com/x".to_string())]
+        );
+    }
 
     /// A question is a query value, so everything outside the unreserved set is
     /// escaped — an `&` in a question would otherwise start a second parameter.

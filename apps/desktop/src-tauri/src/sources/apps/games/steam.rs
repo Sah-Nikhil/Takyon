@@ -304,7 +304,19 @@ pub fn steam_path() -> Option<PathBuf> {
     }
 }
 
-#[cfg(not(windows))]
+/// Where Steam is installed. Fixed, unlike Windows' registry value.
+///
+/// The client always keeps its libraries here regardless of where `Steam.app`
+/// itself sits, so there is nothing to look up. The VDF parser and the
+/// `steam://` URLs above are already portable.
+#[cfg(target_os = "macos")]
+pub fn steam_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let path = PathBuf::from(home).join("Library/Application Support/Steam");
+    path.is_dir().then_some(path)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn steam_path() -> Option<PathBuf> {
     None
 }

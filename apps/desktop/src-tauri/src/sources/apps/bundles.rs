@@ -85,7 +85,8 @@ fn walk(dir: &Path, depth: usize, found: &mut Vec<Bundle>) {
         }
         taken += 1;
 
-        if let Some(name) = bundle_name(&path) {
+        if let Some(stem) = bundle_name(&path) {
+            let name = finder_name(&path).unwrap_or(stem);
             found.push(Bundle { name, path });
         } else if depth < MAX_DEPTH {
             walk(&path, depth + 1, found);
@@ -105,6 +106,22 @@ pub fn bundle_name(path: &Path) -> Option<String> {
             .then(|| &name[..name.len() - 4])
     })?;
     (!stem.is_empty()).then(|| stem.to_string())
+}
+
+/// What Finder itself shows for this path, when it differs from the stem.
+///
+/// `displayNameAtPath` is Finder's own answer, so it is localized and already
+/// strips `.app` — better than reading `CFBundleDisplayName`, which needs a
+/// binary-plist parse. Returns `None` when it adds nothing over the stem.
+fn finder_name(path: &Path) -> Option<String> {
+    use objc2_foundation::{NSFileManager, NSString};
+
+    let shown = NSFileManager::defaultManager()
+        .displayNameAtPath(&NSString::from_str(&path.to_string_lossy()))
+        .to_string();
+    // It returns the last path component when it knows nothing better, which
+    // still carries `.app` — the stem is the better answer in that case.
+    (!shown.is_empty() && !shown.ends_with(".app")).then_some(shown)
 }
 
 #[cfg(test)]

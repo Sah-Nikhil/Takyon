@@ -1,5 +1,5 @@
 [workspace]
-members = ["uiaccess"]
+members = ["uiaccess", "bench-helper"]
 
 [package]
 name = "takyon"
@@ -125,6 +125,63 @@ windows = { version = "0.61", features = [
 # shell probe in its own process group. Already in `Cargo.lock` via Tauri, so
 # this adds a name rather than a build (ADR-0026's rule, applied here too).
 libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# v0.12, ADR-0026: the objc2 family direct, and every one of these is already in
+# `Cargo.lock` via Tauri and wry. `block2` is the global mouse monitor's handler;
+# `objc2` itself is the `Retained` that keeps that monitor registered.
+objc2 = "0.6"
+block2 = "0.6"
+# v0.12 row 6: `CGEventPost` for the paste chord, the one call that needs the
+# Accessibility permission (ADR-0030).
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+  "std",
+  "CGEvent",
+  "CGEventSource",
+  "CGEventTypes",
+  "CGRemoteOperation",
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "CFArray",
+  "CFString",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-core-foundation",
+  "NSBitmapImageRep",
+  "NSEvent",
+  "NSGraphicsContext",
+  "NSImage",
+  "NSImageRep",
+  "NSResponder",
+  "NSPasteboard",
+  "NSRunningApplication",
+  "NSWindow",
+  "NSWorkspace",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "NSArray",
+  "NSBundle",
+  "NSData",
+  "NSDictionary",
+  "NSError",
+  "NSFileManager",
+  "NSGeometry",
+  "NSString",
+  "NSURL",
+  "NSURLRequest",
+  "NSURLResponse",
+  "NSURLSession",
+  "NSUserDefaults",
+] }
+# v0.12 row 6, ADR-0030: the clipboard key is a Keychain generic password rather
+# than DPAPI's file wrap. The one genuinely new crate in the port, named by that
+# ADR — the alternative is hand-rolled `SecItem*` with CFDictionary building.
+security-framework = "3.6.0"
 
 [profile.release]
 # The product *is* the latency budget. LTO and a single codegen unit are the two

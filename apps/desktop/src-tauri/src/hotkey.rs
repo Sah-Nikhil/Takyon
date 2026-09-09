@@ -18,6 +18,13 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// The default binding. Rebindable from v0.6; until then this is it.
+///
+/// **`Cmd+Space` on macOS, and it does not register until Spotlight lets go.**
+/// The chord is system-reserved, so `RegisterEventHotKey` fails silently while
+/// Spotlight holds it (v0.12 § Onboarding).
+#[cfg(target_os = "macos")]
+pub const DEFAULT_ACCELERATOR: &str = "Command+Space";
+#[cfg(not(target_os = "macos"))]
 pub const DEFAULT_ACCELERATOR: &str = "Alt+Space";
 
 /// Override the accelerator for one run.
@@ -39,6 +46,7 @@ pub const ACCELERATOR_ENV: &str = "TAKYON_HOTKEY";
 ///
 /// Pinned rather than a raw capture field (ROADMAP v0.6): a capture field invites
 /// chords Windows reserves and reports the failure only afterwards.
+#[cfg(not(target_os = "macos"))]
 pub const CHOICES: [&str; 6] = [
     "Alt+Space",
     "Ctrl+Space",
@@ -47,6 +55,36 @@ pub const CHOICES: [&str; 6] = [
     "Ctrl+Alt+Space",
     "Ctrl+Shift+P",
 ];
+
+/// The macOS list. `Cmd+Space` leads because it is the default; everything
+/// below it needs no System Settings trip, which is what makes them the
+/// alternatives the onboarding step offers.
+#[cfg(target_os = "macos")]
+pub const CHOICES: [&str; 6] = [
+    "Command+Space",
+    "Control+Space",
+    "Option+Space",
+    "Command+Shift+Space",
+    "Control+Option+Space",
+    "Command+Shift+P",
+];
+
+/// The chord this platform has to be argued out of another application's hands.
+///
+/// `None` where there is nothing to take. On macOS it is Spotlight's, and the
+/// only route is the user unchecking it in System Settings.
+#[cfg(target_os = "macos")]
+pub const CONTESTED_CHORD: Option<&str> = Some("Command+Space");
+#[cfg(not(target_os = "macos"))]
+pub const CONTESTED_CHORD: Option<&str> = None;
+
+/// Where the user goes to release [`CONTESTED_CHORD`].
+///
+/// Ventura's pane id, like `sources/system.rs`. A wrong id opens System
+/// Settings at its front page rather than erroring — `docs/verify/macos.md` §D.
+#[cfg(target_os = "macos")]
+pub const CONTESTED_CHORD_PANE: &str =
+    "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts";
 
 /// Pick the accelerator to register: env override, then stored, then default.
 ///

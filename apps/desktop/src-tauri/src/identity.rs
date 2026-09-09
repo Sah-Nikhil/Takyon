@@ -131,9 +131,124 @@ pub fn ensure_data_dir() -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// What a removal actually managed to delete.
+///
+/// Reported rather than reduced to a bool: a Keychain item left behind and a
+/// database left behind are different problems, and the user has been told
+/// their data is gone.
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovalReport {
+    /// The directory that was targeted, for the sentence shown afterwards.
+    pub data_dir: Option<String>,
+    pub removed_data_dir: bool,
+    pub removed_keychain: bool,
+    /// Anything that could not be removed, in the OS's own words.
+    pub problems: Vec<String>,
+}
+
+/// Is this a path [`remove_all_data`] is allowed to delete?
+///
+/// The last component must be ours. A `data_dir()` returning a parent — unset
+/// `HOME`, a future refactor — would hand `remove_dir_all` someone's whole
+/// Application Support folder.
+pub fn is_removable_data_dir(dir: &std::path::Path) -> bool {
+    let ours = [IDENTITY, "takyon"];
+    dir.file_name()
+        .and_then(|n| n.to_str())
+        .map(|leaf| ours.iter().any(|o| leaf.eq_ignore_ascii_case(o)))
+        .unwrap_or(false)
+}
+
+/// Delete everything Takyon has stored, while it is still running.
+///
+/// Dragging the app to the Trash runs nothing on macOS, so the data directory
+/// and the Keychain item survive an "uninstall" — wrong for *this* app's data:
+/// an encrypted clipboard database whose owner believes it is gone.
+pub fn remove_all_data() -> RemovalReport {
+    let mut report = RemovalReport::default();
+
+    let Some(dir) = data_dir() else {
+        report
+            .problems
+            .push("There is nowhere Takyon stores data on this system.".into());
+        return report;
+    };
+    report.data_dir = Some(dir.to_string_lossy().to_string());
+
+    if !is_removable_data_dir(&dir) {
+        report.problems.push(format!(
+            "{} is not a directory Takyon will delete.",
+            dir.display()
+        ));
+        return report;
+    }
+
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => report.removed_data_dir = true,
+        // Already gone is success: the user asked for it to not be there.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => report.removed_data_dir = true,
+        Err(e) => report
+            .problems
+            .push(format!("{} could not be deleted: {e}", dir.display())),
+    }
+
+    remove_stored_key(&mut report);
+    report
+}
+
+/// The clipboard key, which does not live in the data directory on macOS.
+#[cfg(target_os = "macos")]
+fn remove_stored_key(report: &mut RemovalReport) {
+    use security_framework::passwords::delete_generic_password;
+
+    match delete_generic_password(crate::clips::key::KEYCHAIN_SERVICE, crate::clips::key::KEYCHAIN_ACCOUNT) {
+        Ok(()) => report.removed_keychain = true,
+        // No item is the same outcome the user asked for.
+        Err(e) if e.code() == -25300 => report.removed_keychain = true,
+        Err(e) => report
+            .problems
+            .push(format!("the Keychain item could not be deleted: {e}")),
+    }
+}
+
+/// Windows keeps the key inside the data directory, so it went with it.
+#[cfg(not(target_os = "macos"))]
+fn remove_stored_key(report: &mut RemovalReport) {
+    report.removed_keychain = true;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The guard that stands between a button and someone's Application Support
+    /// folder. A `data_dir()` returning a parent is the failure it exists for.
+    #[test]
+    fn v0_12_only_our_own_directory_is_removable() {
+        assert!(is_removable_data_dir(std::path::Path::new(
+            "/Users/me/Library/Application Support/com.v3sper.takyon"
+        )));
+        assert!(is_removable_data_dir(std::path::Path::new(
+            r"C:\Users\me\AppData\Local\v3sper\takyon"
+        )));
+        assert!(!is_removable_data_dir(std::path::Path::new(
+            "/Users/me/Library/Application Support"
+        )));
+        assert!(!is_removable_data_dir(std::path::Path::new("/")));
+        assert!(!is_removable_data_dir(std::path::Path::new(
+            r"C:\Users\me\AppData\Local\v3sper"
+        )));
+    }
+
+    /// Removing a directory that is already gone is what the user asked for,
+    /// not a failure to report at them.
+    #[test]
+    fn v0_12_an_absent_directory_is_a_successful_removal() {
+        let mut report = RemovalReport::default();
+        remove_stored_key(&mut report);
+        assert!(report.problems.is_empty() || cfg!(target_os = "macos"));
+    }
 
     /// The slug is a literal, never built from the display name. Reaching for
     /// `format!("com.v3sper.{}", DISPLAY_NAME.to_lowercase())` happens to produce

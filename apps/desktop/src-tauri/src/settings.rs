@@ -53,6 +53,23 @@ pub struct Snapshot {
     /// user-editable, and both shown with the live entry count beside them.
     pub files_roots: Vec<String>,
     pub files_excludes: Vec<String>,
+    /// Which platform this is running on: `windows`, `macos` or `other`.
+    ///
+    /// The pages genuinely differ — no Windows-key row on macOS, and a "Remove
+    /// all Takyon data" button only where dragging to the Trash runs nothing.
+    /// Sent rather than sniffed from a user agent.
+    pub platform: String,
+}
+
+/// The platform name the Settings pages branch on.
+pub fn platform() -> String {
+    if cfg!(windows) {
+        "windows".into()
+    } else if cfg!(target_os = "macos") {
+        "macos".into()
+    } else {
+        "other".into()
+    }
 }
 
 /// Appearance, as stored. Anything unrecognised follows the system.
@@ -146,6 +163,7 @@ impl Snapshot {
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
             files_excludes: stored_roots(prefs).exclude,
+            platform: platform(),
         }
     }
 }
@@ -238,6 +256,15 @@ pub fn set_files_fallback(
     }
 }
 
+/// The index the Files page configures, which differs by platform.
+///
+/// Windows walks and watches, so its rescan and entry counts are real. macOS
+/// asks Spotlight, which reports neither (ADR-0027).
+#[cfg(not(target_os = "macos"))]
+pub type ConfiguredIndex = crate::index::live::WalkIndex;
+#[cfg(target_os = "macos")]
+pub type ConfiguredIndex = crate::index::spotlight::SpotlightIndex;
+
 /// Replace the indexed roots and exclusions, then rebuild (TBC-0005).
 ///
 /// Rebuilt on a thread: a walk is seconds and this is a settings click, so
@@ -248,7 +275,7 @@ pub fn set_files_roots(
     roots: Vec<String>,
     excludes: Vec<String>,
     prefs: tauri::State<'_, Arc<Prefs>>,
-    index: tauri::State<'_, Arc<crate::index::live::WalkIndex>>,
+    index: tauri::State<'_, Arc<ConfiguredIndex>>,
 ) -> Result<(), String> {
     let include: Vec<std::path::PathBuf> = roots.iter().map(std::path::PathBuf::from).collect();
     for (key, value) in [
@@ -260,13 +287,27 @@ pub fn set_files_roots(
             .map_err(|e| e.to_string())?;
     }
 
-    index.set_roots(crate::index::roots::Roots {
-        // Overlapping roots would index every file beneath both twice, and a
-        // hand-edited list is exactly where that happens.
-        include: crate::index::roots::subsume(include),
-        exclude: excludes,
-    });
-    let rebuilding = index.inner().clone();
+    apply_roots(
+        &index,
+        crate::index::roots::Roots {
+            // Overlapping roots would index every file beneath both twice, and a
+            // hand-edited list is exactly where that happens.
+            include: crate::index::roots::subsume(include),
+            exclude: excludes,
+        },
+    );
+    Ok(())
+}
+
+/// Hand new scopes to whichever index this platform runs.
+///
+/// Windows re-walks and re-watches, because scope is a walk boundary there.
+/// macOS only stores them: `MDQuery` takes scope as a predicate, so there is
+/// nothing to rebuild and nothing to watch (ADR-0027).
+#[cfg(not(target_os = "macos"))]
+fn apply_roots(index: &Arc<crate::index::live::WalkIndex>, roots: crate::index::roots::Roots) {
+    index.set_roots(roots);
+    let rebuilding = index.clone();
     std::thread::spawn(move || {
         rebuilding.set_status(crate::index::IndexStatus::Building { pct: 0 });
         if let Err(e) = rebuilding.rebuild() {
@@ -276,7 +317,14 @@ pub fn set_files_roots(
         // walked once and then never updated again.
         rebuilding.watch();
     });
-    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn apply_roots(
+    index: &Arc<crate::index::spotlight::SpotlightIndex>,
+    roots: crate::index::roots::Roots,
+) {
+    index.set_roots(roots);
 }
 
 /// Forget the stored scopes and exclusions, back to the probed defaults (v0.10).
@@ -287,7 +335,7 @@ pub fn set_files_roots(
 #[tauri::command]
 pub fn reset_files_roots(
     prefs: tauri::State<'_, Arc<Prefs>>,
-    index: tauri::State<'_, Arc<crate::index::live::WalkIndex>>,
+    index: tauri::State<'_, Arc<ConfiguredIndex>>,
 ) -> Result<Vec<String>, String> {
     for key in [
         prefs::FILES_ROOTS,
@@ -304,17 +352,7 @@ pub fn reset_files_roots(
         .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect();
-    index.set_roots(roots);
-    let rebuilding = index.inner().clone();
-    std::thread::spawn(move || {
-        rebuilding.set_status(crate::index::IndexStatus::Building { pct: 0 });
-        if let Err(e) = rebuilding.rebuild() {
-            eprintln!("[takyon] the index could not be rebuilt: {e}");
-        }
-        // Watchers are bound to the paths they started on, exactly as in
-        // `set_files_roots` — a new root would be walked once and never updated.
-        rebuilding.watch();
-    });
+    apply_roots(&index, roots);
     Ok(listed)
 }
 
@@ -337,6 +375,16 @@ pub fn clear_opened(
     frecency: tauri::State<'_, Arc<crate::frecency::Frecency>>,
 ) -> Result<usize, String> {
     frecency.clear_opened().map_err(|e| e.to_string())
+}
+
+/// Delete every trace of Takyon's data, while the app can still run.
+///
+/// Irreversible and says so in the UI. Reports what it managed rather than a
+/// bare bool: a Keychain item left behind and a database left behind are
+/// different problems, and the user has just been told their data is gone.
+#[tauri::command]
+pub fn remove_all_data() -> crate::identity::RemovalReport {
+    crate::identity::remove_all_data()
 }
 
 /// Show or hide the tray icon. Refused while the hotkey is unregistered.
@@ -562,6 +610,7 @@ mod tests {
                 "filesFallback",
                 "filesRoots",
                 "placement",
+                "platform",
                 "recents",
                 "reduceMotion",
                 "superHotkey",

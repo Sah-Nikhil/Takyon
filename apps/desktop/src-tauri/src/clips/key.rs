@@ -33,9 +33,10 @@ pub const KEY_LEN: usize = 32;
 /// which reads to the user as history that silently emptied itself.
 const ENTROPY: &[u8] = b"com.v3sper.takyon/clip.key/v1";
 
-/// The pre-ADR-0020 entropy. A key wrapped under it is rewrapped in place by
-/// [`load_or_create`]; delete this and every clip stored before the rename
-/// becomes undecryptable.
+/// The pre-ADR-0020 entropy. Gated, never deleted: a key wrapped under it is
+/// rewrapped in place by [`load_or_create`], and deleting it makes every clip
+/// stored before the rename undecryptable. macOS has no DPAPI and no legacy.
+#[cfg(not(target_os = "macos"))]
 const LEGACY_ENTROPY: &[u8] = b"com.v3sper.launcher/clip.key/v1";
 
 /// 32 bytes of key material, zeroed when dropped.
@@ -74,9 +75,43 @@ impl Drop for ClipKey {
 
 /// The key for `dir`, creating and wrapping one on first call.
 ///
+/// A Keychain item with a default ACL is bound to this application, so another
+/// process reading it needs the user's own consent — stronger than DPAPI, which
+/// any code running as the user can unwrap (ADR-0030).
+#[cfg(target_os = "macos")]
+pub fn load_or_create(_dir: &Path) -> std::io::Result<ClipKey> {
+    use security_framework::passwords::{get_generic_password, set_generic_password};
+
+    // No file and no wrap: the Keychain *is* the store, so there is nothing on
+    // disk to protect. `dir` is unused here rather than removed, because the
+    // Windows arm keys off it and the signature is shared.
+    match get_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) {
+        Ok(bytes) => into_key(bytes),
+        Err(_) => {
+            let key = ClipKey::generate();
+            set_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, key.bytes()).map_err(|e| {
+                std::io::Error::other(format!("the Keychain refused to store the clip key: {e}"))
+            })?;
+            Ok(key)
+        }
+    }
+}
+
+/// The Keychain generic-password item holding the clip key.
+///
+/// ADR-0020's identity slug, exactly as every other OS-facing name — a display
+/// name here would put "Takyon" in Keychain Access and the slug everywhere else.
+#[cfg(target_os = "macos")]
+pub const KEYCHAIN_SERVICE: &str = "com.v3sper.takyon";
+#[cfg(target_os = "macos")]
+pub const KEYCHAIN_ACCOUNT: &str = "clip.key";
+
+/// The key for `dir`, creating and wrapping one on first call.
+///
 /// A key file that exists but will not unwrap is an error, never a silently
 /// regenerated key: regenerating makes every stored clip undecryptable, and the
 /// user sees an empty history rather than a failure.
+#[cfg(not(target_os = "macos"))]
 pub fn load_or_create(dir: &Path) -> std::io::Result<ClipKey> {
     let path = key_file(dir);
     if path.exists() {
@@ -280,6 +315,7 @@ mod tests {
     /// stored before the rename is lost, and lost silently — the history just
     /// looks empty. Asserts the key survives *and* that the file stops being
     /// legacy-wrapped, so the fallback can be deleted one day.
+    #[cfg(windows)]
     #[test]
     fn v0_10_a_legacy_wrapped_key_is_rewrapped_in_place() {
         let dir = std::env::temp_dir().join("takyon-clipkey-rewrap");

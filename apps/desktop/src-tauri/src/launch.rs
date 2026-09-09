@@ -9,8 +9,8 @@
 //!
 //! Elevation is the same call with the `runas` verb. Nothing here runs elevated.
 //!
-//! macOS goes through `/usr/bin/open`, for the same reasons: Finder's own path,
-//! resolves bundles and URL schemes alike, child gets `launchd`'s environment.
+//! macOS goes through **`NSWorkspace`** (ADR-0026), whose
+//! `openApplicationAtURL:` reports the launched app rather than needing a diff.
 
 use std::path::PathBuf;
 
@@ -97,7 +97,7 @@ pub fn reveal(target: &LaunchTarget) -> Result<(), String> {
     // path is one argument rather than a command line.
     #[cfg(target_os = "macos")]
     {
-        run_open(&["-R", &path.to_string_lossy()], None).map(|_| ())
+        reveal_in_finder(path)
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -227,44 +227,146 @@ fn shell_execute(
     }
 
     let mut argv: Vec<&str> = vec![file];
-    // Everything after `--args` goes to the application rather than to `open`.
     // Split on whitespace, which is what the Windows side's single argument
     // string already assumes; a quoted argument containing spaces is a gap both
-    // platforms share.
+    // platforms share. No `--args` separator any more — that was `open`'s
+    // calling convention, and `NSWorkspaceOpenConfiguration` takes a real array.
     if let Some(args) = args {
-        argv.push("--args");
         argv.extend(args.split_whitespace());
     }
     run_open(&argv, dir)
 }
 
-/// Run `open` with the arguments given, detached from our handles.
+/// How long to wait for `openApplicationAtURL:` to report what it started.
 ///
-/// `status()` rather than `spawn()`: `open` exits as soon as the request is
-/// accepted, so this waits milliseconds and turns a refusal into an error.
-/// Streams are null — a launcher must not hold a pipe per app it ever started.
+/// The Palette is already hidden and nothing is waiting on a frame, but a launch
+/// that hangs must not hang the action thread with it.
+#[cfg(target_os = "macos")]
+const LAUNCH_REPORT_WAIT_MS: u64 = 2_000;
+
+/// Start something through `NSWorkspace`, and report what actually started.
+///
+/// Replaces the `/usr/bin/open` stopgap (ADR-0026). An `.app` goes through
+/// `openApplicationAtURL:`, whose completion handler hands back the launched
+/// `NSRunningApplication` — no diffing, no notification observing, no race.
 #[cfg(target_os = "macos")]
 fn run_open(args: &[&str], dir: Option<&str>) -> Result<Option<PathBuf>, String> {
-    use std::process::{Command, Stdio};
+    // `dir` has no NSWorkspace counterpart: a launched app inherits launchd's
+    // environment rather than ours, so there is no working directory to set.
+    // Dropped rather than faked; it is a Windows-only affordance.
+    let _ = dir;
 
-    let mut command = Command::new("/usr/bin/open");
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if let Some(dir) = dir {
-        command.current_dir(dir);
+    let (file, arguments) = args.split_first().ok_or("nothing to open")?;
+
+    if is_app_bundle(file) {
+        open_application(file, arguments)
+    } else {
+        open_url(file).map(|_| None)
+    }
+}
+
+/// Is this path an application bundle rather than a document or a URL?
+///
+/// Decides which of the two `NSWorkspace` entry points to use, and is the one
+/// piece of `run_open` with any judgement in it. Compiled on every platform so a
+/// Windows test run covers it (the same reason `shellenv`'s parsers are).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn is_app_bundle(path: &str) -> bool {
+    std::path::Path::new(path.trim_end_matches('/'))
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("app"))
+}
+
+/// Is this a URL to hand to `URLWithString`, or a path for `fileURLWithPath`?
+///
+/// `URLWithString` returns nil for an absolute path, and `fileURLWithPath`
+/// mangles a URL into a relative file name, so guessing wrong fails either
+/// silently or absurdly rather than loudly.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn looks_like_url(spec: &str) -> bool {
+    spec.contains(':') && !spec.starts_with('/')
+}
+
+/// Open an `.app` bundle and wait briefly for its identity.
+///
+/// The wait is what buys launched-image identity: `openApplicationAtURL:` is
+/// asynchronous, so without it the handler fires after this returns. A timeout
+/// yields `None`, never an error — the application started regardless.
+#[cfg(target_os = "macos")]
+fn open_application(path: &str, arguments: &[&str]) -> Result<Option<PathBuf>, String> {
+    use objc2_app_kit::{NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration};
+    use objc2_foundation::{NSArray, NSError, NSString, NSURL};
+
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    let config = NSWorkspaceOpenConfiguration::configuration();
+    if !arguments.is_empty() {
+        let args: Vec<_> = arguments.iter().map(|a| NSString::from_str(a)).collect();
+        config.setArguments(&NSArray::from_retained_slice(&args));
     }
 
-    match command.status() {
-        Ok(status) if status.success() => Ok(None),
-        Ok(status) => Err(format!(
-            "macOS refused to start it (open exited {}).",
-            status.code().unwrap_or(-1)
-        )),
-        Err(e) => Err(format!("could not run open: {e}")),
+    let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+    let handler = block2::RcBlock::new(
+        move |app: *mut NSRunningApplication, err: *mut NSError| {
+            // SAFETY: AppKit passes objects that are valid for this call.
+            let outcome = if !err.is_null() {
+                Err(unsafe { (*err).localizedDescription() }.to_string())
+            } else if app.is_null() {
+                Ok(None)
+            } else {
+                Ok(unsafe { (*app).bundleURL() }
+                    .and_then(|u| u.path())
+                    .map(|p| p.to_string()))
+            };
+            let _ = tx.send(outcome);
+        },
+    );
+
+    NSWorkspace::sharedWorkspace().openApplicationAtURL_configuration_completionHandler(
+        &url,
+        &config,
+        Some(&handler),
+    );
+
+    match rx.recv_timeout(std::time::Duration::from_millis(LAUNCH_REPORT_WAIT_MS)) {
+        Ok(Ok(path)) => Ok(path.map(PathBuf::from)),
+        Ok(Err(e)) => Err(format!("macOS refused to start it: {e}")),
+        Err(_) => Ok(None),
     }
+}
+
+/// Hand a URL, or a file that is not an application, to its default handler.
+#[cfg(target_os = "macos")]
+fn open_url(spec: &str) -> Result<(), String> {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSString, NSURL};
+
+    let text = NSString::from_str(spec);
+    // A scheme makes it a URL, anything else is a path — and a path needs the
+    // file-URL constructor, because `URLWithString` returns nil for one.
+    let url = if looks_like_url(spec) {
+        NSURL::URLWithString(&text)
+    } else {
+        Some(NSURL::fileURLWithPath(&text))
+    };
+    let url = url.ok_or_else(|| format!("{spec} is not something macOS can open."))?;
+
+    if NSWorkspace::sharedWorkspace().openURL(&url) {
+        Ok(())
+    } else {
+        Err("macOS refused to open it.".into())
+    }
+}
+
+/// Show a file in Finder with it selected.
+#[cfg(target_os = "macos")]
+fn reveal_in_finder(path: &std::path::Path) -> Result<(), String> {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSArray, NSString, NSURL};
+
+    let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+    let urls = NSArray::from_retained_slice(&[url]);
+    NSWorkspace::sharedWorkspace().activateFileViewerSelectingURLs(&urls);
+    Ok(())
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -467,6 +569,30 @@ mod tests {
     use super::*;
     use crate::entry::GameLauncher;
     use std::path::PathBuf;
+
+    #[test]
+    fn v0_12_an_app_bundle_is_told_from_a_document() {
+        // Picks which NSWorkspace entry point runs, and only one of the two
+        // reports what it launched.
+        assert!(is_app_bundle("/Applications/Safari.app"));
+        assert!(is_app_bundle("/Applications/Safari.app/"));
+        assert!(is_app_bundle("/Users/me/My Apps/Some Thing.APP"));
+        assert!(!is_app_bundle("/Users/me/notes.txt"));
+        assert!(!is_app_bundle("/opt/homebrew/bin/claude"));
+        assert!(!is_app_bundle("steam://rungameid/440"));
+    }
+
+    #[test]
+    fn v0_12_a_url_is_told_from_a_path() {
+        assert!(looks_like_url("steam://rungameid/440"));
+        assert!(looks_like_url("https://example.com"));
+        assert!(looks_like_url(
+            "x-apple.systempreferences:com.apple.preference.security"
+        ));
+        // An absolute path can hold a colon and is still a path.
+        assert!(!looks_like_url("/Users/me/a:b.txt"));
+        assert!(!looks_like_url("/Applications/Safari.app"));
+    }
 
     fn exe(path: &str) -> LaunchTarget {
         LaunchTarget::Exe {

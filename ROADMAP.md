@@ -601,8 +601,15 @@ has ever been spawned by it.
 [`docs/plans/v0.12-macos.md`](./docs/plans/v0.12-macos.md), which carries the row
 table, the build order and a § Hand-off breaking it into 15 agent units.
 
-The largest single piece of work left in the project. Every architectural
-decision is made — **ADR-0026** (`objc2` direct, zero new crates), **ADR-0027**
+**Every row is written and nothing has run.** The code compiles for
+`aarch64-apple-darwin` under `-D warnings`; not one line has executed on a Mac,
+so every claim below is reasoning until `docs/verify/macos.md` is run. What is
+left needing no Mac: the blocking first-run screen for the Cmd+Space takeover,
+and the `NSPanel` swap — which should not be written until §E.1 of that script
+says whether it is needed at all.
+
+Every architectural decision is made — **ADR-0026** (`objc2` direct, zero new
+crates, with `security-framework` the one exception ADR-0030 names), **ADR-0027**
 (Spotlight through `MDQuery`, superseding ADR-0007 on macOS), **ADR-0028** (agent
 app + non-activating `NSPanel`), **ADR-0029** (`URLSession`, amending ADR-0019),
 **ADR-0030** (the macOS clipboard, amending ADR-0006 and ADR-0008) — plus
@@ -613,25 +620,27 @@ TBC-0013 and TBC-0014. **macOS 13 Ventura, Apple Silicon only.**
 - [x] Row 9, `sources/system.rs` — 28 `x-apple.systempreferences:` panes. **Ids unverified**: Apple renamed most at Ventura and there is no enumeration API, so a wrong one opens System Settings at its front page rather than erroring
 - [x] Row 2 part one — `apps/bundles.rs` walks the three `.app` roots, depth-capped so `Xcode.app`'s helpers stay out
 - [ ] **First run on a Mac.** Nothing here has ever executed on macOS. `bun run dev`, then `bun run build`, which links — something `check:macos` never does
-- [ ] **`bun run bench` on the Mac**, which needs the harness ported to Rust first. ADR-0028 removes ADR-0003's working-set trim on macOS, so the **150 MB idle-RSS budget is unverified** and must not be quoted as if it held. The three latency budgets port unchanged
-- [ ] `tauri.macos.conf.json` — `minimumSystemVersion: "13.0"`, `LSUIElement`, ADR-0020's two literals
-- [ ] Row 8, the window — agent app, non-activating panel over all Spaces, and dismiss-on-click-away rebuilt on `NSEvent.addGlobalMonitorForEvents` because a non-activating panel never becomes key
-- [ ] Row 7, launch — `NSWorkspace.openApplication` with its completion handler, which **keeps launched-image identity** and gives Frecency a `bundleIdentifier` that survives an app being moved or updated. Replaces the `/usr/bin/open` stopgap
-- [ ] Row 3, icons — `NSWorkspace.icon(forFile:)` into the same `icons.bin`, with `ICON_PX` raised 64 → 128 on **both** platforms
-- [ ] Row 2 remainder — `NSBundle` display names, exec-bit `PATH` scan
-- [ ] Row 4, files — `MDQuery` + `kMDQuerySynchronous` behind `FileIndex`, roots as Spotlight scopes
-- [ ] Row 5, `URLSession` — unblocks `!s` retrieval and favicons together
-- [ ] Row 6, clipboard — `NSPasteboard`, 500 ms poll suspended while locked, nspasteboard.org markers, Keychain key, `CGEventPost` paste
-- [ ] Rows 10, 11, 12 — default browser, `NSStatusItem`, `NSBundle` versions
-- [ ] `steam_path()` → `~/Library/Application Support/Steam`. One function; the VDF parser and `steam://` URLs are already portable
-- [ ] **Cmd+Space onboarding**, last — Raycast-shaped, blocking, advancing by polling the registration rather than asking the user to confirm
-- [ ] Uninstall — a "Remove all Takyon data" button, since dragging to the Trash runs nothing and leaves a Keychain item and an encrypted clipboard database behind
-- [ ] `docs/verify/macos.md`, written as rows land rather than batched at the end
+- [x] **The harness ported to Rust** — `takyon-bench`, a workspace member with both platform arms, driving `bench.ts` and `bench-idle.ps1` alike. **Proven on Windows**: the memory half returns byte-for-byte what `bench-mem.ps1` did on the same live tree, and a full 30-show run passed all four budgets — first pixel p95 21.9 ms, first Entry p95 24.3 ms, start to hotkey 263.9 ms, idle RSS 25.8 MB. The macOS arm compiles and has run nowhere. It also reports `untrackedWebKitHelpers`, because WKWebView's helpers are launchd-owned XPC services and the tree walk that finds every WebView2 process may find none of them — [`docs/tbd/v0.12.md`](./docs/tbd/v0.12.md) §2 and §4
+- [ ] **`bun run bench` on the Mac.** ADR-0028 removes ADR-0003's working-set trim on macOS, so the **150 MB idle-RSS budget is unverified** and must not be quoted as if it held. The three latency budgets port unchanged
+- [x] `tauri.macos.conf.json` — `minimumSystemVersion: "13.0"`, `dmg` as the only target. `LSUIElement` is not a Tauri config key, so it is a new `src-tauri/Info.plist` the bundler merges, plus `set_activation_policy(Accessory)` for dev builds, which have no bundle. ADR-0020's two literals stay in the base config rather than being copied into a second one. **Never launched** — `LSUIElement` only takes effect on a clean launch and nothing here has run on a Mac
+- [ ] Row 8, the window — **written, one part deliberately not.** `panel.rs` sets the floating level, `CanJoinAllSpaces | FullScreenAuxiliary`, `hidesOnDeactivate(false)` and the `NonactivatingPanel` bit, and rebuilds dismiss-on-click-away on `NSEvent.addGlobalMonitorForEventsMatchingMask`. It does **not** swap the window's class to `NSPanel`: objc2's `set_class` requires a subclass relationship that tao's `NSWindow` subclass and `NSPanel` do not have, and getting it wrong is undefined behaviour rather than a bad layout. Whether a panel is needed at all is four checks on hardware — [`docs/verify/macos.md`](./docs/verify/macos.md) §E.1, reasoning in [`docs/tbd/v0.12.md`](./docs/tbd/v0.12.md) §9
+- [x] Row 7, launch — `NSWorkspace` throughout, replacing the `/usr/bin/open` stopgap. An `.app` goes through `openApplicationAtURL:` and its completion handler reports the launched `NSRunningApplication`; everything else is `openURL:`, and reveal is `activateFileViewerSelectingURLs:`. `bundleIdentifier` is **not** plumbed into Frecency yet and the image path still goes to `let _image` — nothing consumes it on either platform (TBC-0010), so shaping it now would be guessing. `working_dir` has no `NSWorkspace` counterpart and is dropped — [`docs/tbd/v0.12.md`](./docs/tbd/v0.12.md) §10 and §11. Compiles; never run
+- [x] Row 3, icons — `NSWorkspace.icon(forFile:)` redrawn into a bitmap at `ICON_PX` and encoded as PNG into the same `icons.bin`. `ICON_PX` raised 64 → 128 on **both** platforms, with `FORMAT_VERSION` 1 → 2 beside it so an old blob is discarded rather than drawn small into a big slot — a compile-time assert now ties the two together. The invalidation is tested and passes on Windows; the extraction itself has never run
+- [x] Row 2 remainder — smaller than the plan implied: v0.11 task 8 had already built the exec-bit `PATH` scan, so only the display name was open. `NSFileManager.displayNameAtPath` rather than `CFBundleDisplayName`, because it is Finder's own answer and needs no binary-plist parse; falls back to the stem
+- [x] Row 4, files — `MDQuery` + `kMDQuerySynchronous` behind `FileIndex` through hand-declared CoreServices externs, with roots as Spotlight scopes and exclusions as a post-filter. `FileSource` holds `Arc<dyn FileIndex>` and `settings::ConfiguredIndex` resolves per platform, so the roots the Files page writes reach the query — scope is a predicate there, so nothing rebuilds. The page shows no entry count on macOS, exactly as ADR-0027 specifies: `FileIndexReport.entries` is `null` and the line reads "Searching through Spotlight"
+- [x] Row 5, `URLSession` — `dataTaskWithRequest:` with its completion handler on a channel, behind the same `search::fetch` seam and the same 6 s budget as WinHTTP. Unblocks `!s` retrieval and favicons together
+- [x] Row 6, clipboard — all four parts. `NSPasteboard` replaces the `pbcopy`/`pbpaste` stopgap, a 500 ms `changeCount` poll on a parked thread, the three nspasteboard.org markers, and `CGEventPost` for Cmd+V behind an `AXIsProcessTrusted` check that asks without prompting. The key is a Keychain generic password through **`security-framework`** — the one genuinely new crate in the port, named by ADR-0030
+- [x] Rows 10, 11, 12 — default browser through `URLForApplicationToOpenURL:` (same Launch Services answer as row 10's `LSCopyDefaultApplicationURLForURL`, through a framework already linked), the tray glyph's polarity from `AppleInterfaceStyle`, and another bundle's version from its `Info.plist`
+- [x] `steam_path()` → `~/Library/Application Support/Steam`. Fixed rather than looked up, unlike Windows' registry value; the VDF parser and `steam://` URLs were already portable
+- [ ] **Cmd+Space onboarding** — **mechanism built, the blocking first-run screen is not.** `DEFAULT_ACCELERATOR` is `Command+Space` on macOS with its own `CHOICES` list, `contested_chord` names the chord and the pane that frees it, `open_contested_chord_pane` deep-links there, and `claim_contested_chord` is polled every 700 ms so the step advances on a real registration rather than a button the user can lie to. Settings → Keyboard carries all of it. What is missing is the first-run surface that *blocks* until it registers — [`docs/tbd/v0.12.md`](./docs/tbd/v0.12.md) §15
+- [x] Uninstall — "Remove all Takyon data" in Settings → Advanced, macOS only, behind a confirmation. Deletes the data directory and the Keychain item and **reports what it managed** rather than a bare success: a surviving Keychain entry is the thing the user most needs to hear about. A path guard refuses anything whose last component is not ours, so a `data_dir()` that ever returned a parent cannot hand `remove_dir_all` someone's Application Support folder
+- [ ] `docs/verify/macos.md`, written as rows land rather than batched at the end. **Started**: sections A (first run), B (the agent app), C (the benchmark) and D (the 28 pane ids) are written and none has been run. One section per row follows as the row lands
 - [ ] Visual suite: a **`webkit`** Playwright project with its own baselines, run **locally on the Mac only** — never CI, where `macos-latest` bills at ten times the Linux rate
 
 **Exit criteria:** someone summons Takyon with Cmd+Space over a full-screen app,
 launches something, searches a file, copies from history and gets an `!s` answer —
-on a Mac, without reading any of this.
+on a Mac, without reading any of this. *Not claimable from a compiler: every
+piece of that sentence is written and none of it has run.*
 
 ---
 

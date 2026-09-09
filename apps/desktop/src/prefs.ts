@@ -44,6 +44,9 @@ let current: SettingsSnapshot = {
   filesFallback: false,
   filesRoots: [],
   filesExcludes: [],
+  // Overwritten by the first snapshot. "other" rather than a guess, so a page
+  // that branches on this hides a platform control instead of showing a wrong one.
+  platform: "other",
 };
 
 /** Whether Windows itself is asking for less motion. Independent of our switch. */

@@ -72,8 +72,13 @@ export interface FileIndexReport {
   state: FileIndexState;
   /** Present only while `state` is `building`. A progress row, not a promise. */
   pct?: number;
-  /** Entries in the mapped file. Settings shows this live. */
-  entries: number;
+  /**
+   * Entries in the mapped file. Settings shows this live.
+   *
+   * `null` where the index is the OS's own — Spotlight reports no count, and
+   * asking per root would be work for a number nobody acts on (ADR-0027).
+   */
+  entries: number | null;
   /** Bumped by every rescan, so two results can be told apart. */
   generation: number;
 }
@@ -149,6 +154,44 @@ export interface SettingsSnapshot {
   /** Indexed roots, and the names skipped inside them (TBC-0005). */
   filesRoots: string[];
   filesExcludes: string[];
+  /**
+   * Which platform this is running on.
+   *
+   * Sent rather than sniffed from a user agent: the Settings pages genuinely
+   * differ, and a "Remove all Takyon data" button exists only where dragging to
+   * the Trash runs nothing.
+   */
+  platform: Platform;
+}
+
+/**
+ * A chord another application holds that only the user can release (v0.12).
+ *
+ * macOS reserves `Cmd+Space` for Spotlight, and no application can take it
+ * programmatically — the onboarding step walks the user to the checkbox and
+ * polls the registration until it succeeds.
+ */
+export interface ContestedChord {
+  accelerator: string;
+  /** The System Settings URL that opens where it is released. */
+  pane: string;
+}
+
+/** The platforms Settings branches on. */
+export type Platform = "windows" | "macos" | "other";
+
+/**
+ * What a data removal managed to delete (v0.12 unit 13).
+ *
+ * Not a bool: a Keychain item left behind and a database left behind are
+ * different problems, and the user has just been told their data is gone.
+ */
+export interface RemovalReport {
+  dataDir: string | null;
+  removedDataDir: boolean;
+  removedKeychain: boolean;
+  /** Anything that survived, in the OS's own words. */
+  problems: string[];
 }
 
 /**
