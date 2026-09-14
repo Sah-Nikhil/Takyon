@@ -73,9 +73,10 @@ jobs:
           # matches exactly; `preflight` matched nothing, so it waited on itself
           # until the step timed out.
           running-workflow-name: Verify the tag and wait for CI
-          # Not gating yet: the bench has never passed on a hosted runner
-          # (TBC-0015). Drop this line once it has.
-          ignore-checks: Performance bench (Windows)
+          # Bench not gating yet: never passed on a hosted runner (TBC-0015).
+          # Release's own jobs ignored too: a failed tag leaves them `skipped`
+          # on the commit, and every later tag on it would refuse forever.
+          ignore-checks: Performance bench (Windows),Build the Windows installer,Build the macOS app (Apple Silicon, not yet portable),Publish the GitHub release
           allowed-conclusions: success
 
   build-windows:
