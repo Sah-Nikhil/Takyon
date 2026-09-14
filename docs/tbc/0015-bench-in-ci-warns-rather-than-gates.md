@@ -26,6 +26,29 @@ session, so `RegisterHotKey`, `keybd_event` and WebView2's first paint all work
 there. Nobody has seen this job run yet. Its first run is the proof, and a
 failure there reads as a harness failure, which is the correct outcome.
 
+## First run
+
+The first hosted run (CI run 34819407800 on `main`, 2026-09-14, image
+`windows-2025-vs2026`) failed before measuring anything:
+`timed out waiting for the hotkey to be registered`. No bench log file was created,
+and `Bench::from_env` creates it inside Tauri's `setup` hook, so the app never
+reached `setup` at all. Tauri creates the Palette's WebView2 window before that
+hook runs, which makes a WebView2 or desktop-session problem the leading suspect,
+but nothing in the log could tell a crash from a hang.
+
+Two changes follow, and both are temporary:
+
+- **The bench no longer gates anything.** The job is `continue-on-error`, and
+  `release.yml` passes it to the wait step's `ignore-checks`, until it has passed
+  once on a hosted runner.
+- **The next failure says why.** `bench.ts` now reports whether `takyon.exe`
+  exited, with its exit code, or is still running. A `Diagnose a failed bench`
+  step prints the session type, the WebView2 runtime version, `panic.log` and
+  recent Application event log errors.
+
+If the diagnosis shows the runner cannot host the Palette at all, the third
+trigger below has fired.
+
 ## How we'd know we were wrong
 
 - **The numbers turn out to be stable.** After 14 daily runs, if the p95 of
