@@ -210,10 +210,14 @@ under `docs/`.
   `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
   build unpacked locally, which not every machine has. Run it after touching
   anything with a `cfg(windows)` arm.
-- release: `bun run release` — preflight (typecheck, lint, test), `tauri build`,
-  then the installer into `releases/v{version}/` with its SHA-256. Same layout as
-  tesseract's `releases/`, and `releases/` is gitignored. No `latest.json` or
-  `.sig` yet; the updater is a v1.0 item.
+- release, local: `bun run release --local` — preflight (typecheck, lint, test),
+  `tauri build`, then the installer into `releases/v{version}/` with its SHA-256.
+  Same layout as tesseract's `releases/`, and `releases/` is gitignored. No
+  `latest.json` or `.sig` yet; the updater is a v1.0 item.
+- release, GitHub: `bun run release --git <version>` — on a `main` level with
+  `origin/main`: bump, preflight, commit the version files and `Cargo.lock` as
+  `UPDATE d<phase>.<n> version <version>`, push, wait for CI to register, then tag
+  `v<version>` and push it. `release.yml` publishes. Bare `bun run release` refuses.
 
 ## Testing
 Use the **`/tdd` skill** for writing and running tests — test-first, not
@@ -305,7 +309,8 @@ reply and stop. Committing is a manual step, always.
 
 **Forbidden outright:** `git commit`, `git push` in any form (including
 `git push -u origin <branch>` for a brand-new branch), `git merge`, `git rebase`,
-and anything that rewrites history. Staging and inspection are fine.
+and anything that rewrites history. So is `bun run release --git`, which commits,
+tags and pushes: it is the user's command to run. Staging and inspection are fine.
 
 **Format.** `<VERB> d<phase>.<n> <subject>` — one line, extremely short, no body
 unless something genuinely needs explaining.
