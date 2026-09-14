@@ -57,7 +57,7 @@ impl SearchProvider for ExaProvider {
         match response.status {
             200 => parse_hits(&response.body),
             401 | 403 => Err(SearchError::BadKey),
-            429 => Err(SearchError::RateLimited),
+            429 => Err(SearchError::RateLimited(LABEL)),
             code => Err(SearchError::Failed(format!("{LABEL} answered {code}."))),
         }
     }

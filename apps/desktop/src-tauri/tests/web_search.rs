@@ -1,7 +1,7 @@
 //! Web search against the real network and the real disk (v0.9).
 //!
 //! The unit tests parse captured bodies and stored blobs; this reaches the
-//! internet. It is the only layer that catches Brave changing its response
+//! internet. It is the only layer that catches DuckDuckGo or Exa changing their
 //! shape, WinHTTP refusing a request, or extraction meeting a real page rather
 //! than a fixture.
 //!
@@ -113,7 +113,7 @@ fn v0_9_pages_are_read_in_parallel_and_a_dead_one_does_not_stop_the_rest() {
 
 /// A whole search, against the key this machine actually holds.
 ///
-/// `#[ignore]` twice over: it needs a network and it spends a Brave request.
+/// `#[ignore]` twice over: it needs a network and it spends an Exa request.
 /// Skips itself rather than failing when no key is stored, because that is the
 /// state a machine that has never used `!s` is in.
 #[test]
@@ -140,14 +140,33 @@ fn v0_9_a_real_search_returns_coherent_hits() {
 #[test]
 #[ignore]
 fn v0_10_a_real_keyless_search_returns_coherent_hits() {
-    let hits = search::keyless()
-        .search("ferrari formula one", "")
-        .expect("DuckDuckGo answered");
+    let hits = keyless_search("ferrari formula one");
     assert_coherent(&hits);
     // The redirector unwraps, or every source click and page read goes through
     // duckduckgo.com instead of the site the row names.
     for hit in &hits {
         assert!(!hit.url.contains("duckduckgo.com/l/"), "{}", hit.url);
+    }
+}
+
+/// A keyless search that waits out DuckDuckGo's throttle (202), common on shared
+/// runner IPs. Twice, then a failure that names the throttle, so it is never read
+/// as the parser breaking.
+fn keyless_search(query: &str) -> Vec<takyon_lib::search::Hit> {
+    for wait in [10, 30] {
+        match search::keyless().search(query, "") {
+            Err(SearchError::RateLimited(_)) => {
+                eprintln!("DuckDuckGo is rate limiting this machine; retrying in {wait}s");
+                std::thread::sleep(std::time::Duration::from_secs(wait));
+            }
+            other => return other.expect("DuckDuckGo answered"),
+        }
+    }
+    match search::keyless().search(query, "") {
+        Err(SearchError::RateLimited(_)) => panic!(
+            "DuckDuckGo still rate limiting after 40s: this IP is throttled, not a parser change"
+        ),
+        other => other.expect("DuckDuckGo answered"),
     }
 }
 

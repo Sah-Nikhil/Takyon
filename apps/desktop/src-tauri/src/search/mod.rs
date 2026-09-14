@@ -51,8 +51,9 @@ pub enum SearchError {
     /// The provider refused the key. Distinct from `NoKey`: a wrong key looks
     /// like a working one until it is used.
     BadKey,
-    /// Rate limited. Free tier is per second, so this is expected, not broken.
-    RateLimited,
+    /// Rate limited, naming who: Exa's free tier is per second, and DuckDuckGo
+    /// answers 202 to traffic it suspects is automated. Expected, not broken.
+    RateLimited(&'static str),
     /// Anything else, already in the provider's or the OS's words.
     Failed(String),
 }
@@ -61,9 +62,9 @@ impl SearchError {
     /// The sentence shown in the Palette. Ends in what to do where that is known.
     pub fn message(&self) -> String {
         match self {
-            // Only a keyed provider reaches these three, and Exa is the only
-            // one selected (ADR-0021). Reached at all only when the fallback
-            // failed too, since `search` swallows them otherwise.
+            // Only a keyed provider reaches these two, and Exa is the only one
+            // selected (ADR-0021). Reached at all only when the fallback failed
+            // too, since `search` swallows them otherwise.
             SearchError::NoKey => {
                 format!("No {} key. Add one in Settings → Web search.", exa::LABEL)
             }
@@ -71,10 +72,9 @@ impl SearchError {
                 "{} refused the key. Check it in Settings → Web search.",
                 exa::LABEL
             ),
-            SearchError::RateLimited => format!(
-                "{} is rate limiting. Wait a moment and ask again.",
-                exa::LABEL
-            ),
+            SearchError::RateLimited(provider) => {
+                format!("{provider} is rate limiting. Wait a moment and ask again.")
+            }
             SearchError::Failed(why) => why.clone(),
         }
     }

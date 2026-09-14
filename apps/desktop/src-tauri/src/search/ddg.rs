@@ -34,10 +34,19 @@ impl SearchProvider for DdgProvider {
         let response = fetch::get(HOST, &path, &[("Accept", "text/html")])?;
         match response.status {
             200 => parse_hits(&response.body),
-            // No key to be wrong, so every refusal is the same thing: the
-            // endpoint declining to serve this request.
-            code => Err(SearchError::Failed(format!("{LABEL} answered {code}."))),
+            code => Err(refusal(code)),
         }
+    }
+}
+
+/// What a non-200 means. No key to be wrong, so it is either a wait or a failure.
+///
+/// 202 is DuckDuckGo's own throttle: a challenge page, not results, for traffic
+/// it suspects is automated. Seen on shared CI runners; it clears on its own.
+fn refusal(code: u16) -> SearchError {
+    match code {
+        202 | 429 => SearchError::RateLimited(LABEL),
+        code => SearchError::Failed(format!("{LABEL} answered {code}.")),
     }
 }
 
@@ -167,5 +176,20 @@ mod tests {
             hits[1].description,
             "Scuderia Ferrari is the racing division of luxury Italian auto manufacturer Ferrari & the oldest team."
         );
+    }
+
+    /// 202 is DuckDuckGo holding back traffic it suspects is automated, seen on a
+    /// GitHub runner: a wait-and-retry, not an outage and not a parser change.
+    #[test]
+    fn v0_11_a_202_or_429_is_rate_limiting_and_names_duckduckgo() {
+        assert_eq!(refusal(202), SearchError::RateLimited(LABEL));
+        assert_eq!(refusal(429), SearchError::RateLimited(LABEL));
+        assert_eq!(
+            refusal(503),
+            SearchError::Failed("DuckDuckGo answered 503.".into())
+        );
+        assert!(refusal(202)
+            .message()
+            .starts_with("DuckDuckGo is rate limiting"));
     }
 }
