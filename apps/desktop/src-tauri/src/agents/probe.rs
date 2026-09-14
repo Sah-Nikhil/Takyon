@@ -48,8 +48,11 @@ impl Output {
 ///
 /// `.cmd` is not an afterthought: an `npm i -g` install is a `.cmd` shim on
 /// Windows, so half the installs in the wild have no `.exe` at all.
+/// `.ps1` is deliberately absent: no default `PATHEXT` contains it and
+/// `CreateProcessW` refuses a script with error 193, which reads as
+/// "Could not start" rather than "reinstall PowerShell".
 #[cfg(windows)]
-const EXTS: [&str; 4] = ["exe", "cmd", "bat", "ps1"];
+const EXTS: [&str; 3] = ["exe", "cmd", "bat"];
 #[cfg(not(windows))]
 const EXTS: [&str; 1] = [""];
 
@@ -88,8 +91,13 @@ fn extra_dirs() -> Vec<PathBuf> {
         home.as_ref().map(|h| h.join(".local").join("bin")),
         home.as_ref().map(|h| h.join(".bun").join("bin")),
         home.as_ref().map(|h| h.join(".cargo").join("bin")),
-        appdata.map(|a| a.join("npm")),
-        local.map(|l| l.join("pnpm")),
+        home.as_ref().map(|h| h.join("scoop").join("shims")),
+        appdata.as_ref().map(|a| a.join("npm")),
+        local.as_ref().map(|l| l.join("pnpm")),
+        // Volta — per-user Node version manager, puts shims here.
+        local.as_ref().map(|l| l.join("Volta").join("bin")),
+        // Standard Node.js Windows installer target.
+        local.as_ref().map(|l| l.join("Programs").join("nodejs")),
     ]
     .into_iter()
     .flatten()

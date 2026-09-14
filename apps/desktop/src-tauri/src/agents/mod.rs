@@ -257,10 +257,20 @@ pub trait AgentDriver: Send + Sync {
     /// An Agent that will not say returns empty, and the picker says so.
     fn models(&self, exe: &std::path::Path) -> Vec<String>;
 
-    /// The arguments for one Turn. The prompt is included; the cwd is not,
-    /// because two of the three take it as a flag and one takes it as the
-    /// process cwd.
+    /// The arguments for one Turn. **Never** the prompt — a `.cmd` shim
+    /// refuses a line break in argv, and `!s`'s prompt is past `cmd.exe`'s
+    /// argv length limit. The prompt travels on stdin via [`turn_input`].
+    ///
+    /// [`turn_input`]: AgentDriver::turn_input
     fn turn_args(&self, req: &TurnRequest) -> Vec<String>;
+
+    /// What the Turn writes to the Agent's stdin. Default: `styled_prompt(req)`.
+    ///
+    /// Claude overrides this to return the bare prompt, because its style
+    /// already travels in `--append-system-prompt` (one line, safe in argv).
+    fn turn_input(&self, req: &TurnRequest) -> String {
+        styled_prompt(req)
+    }
 
     /// Whether this Agent wants the cwd as the spawned process's directory
     /// rather than as a flag. Only Claude does.
@@ -592,9 +602,9 @@ mod tests {
         assert_eq!(route(&prefs)[0], AgentKind::OpenCode);
     }
 
-    /// Every Turn answers in the house style, whichever Agent writes it. Claude
-    /// takes it as a system prompt; the other two have no flag for one, so it
-    /// leads the prompt instead.
+    /// The house style must reach every Agent on a first Turn. Claude carries it
+    /// in `--append-system-prompt`; Codex and opencode carry it in `turn_input`.
+    /// Neither path may put a newline in argv — `.cmd` shims refuse it.
     #[test]
     fn v0_9_every_driver_carries_the_answer_style_on_a_first_turn() {
         let base = TurnRequest {
@@ -607,15 +617,35 @@ mod tests {
         };
         for driver in drivers() {
             let args = driver.turn_args(&base);
+            let input = driver.turn_input(&base);
+
+            // No arg may carry a newline — `.cmd` shim refuses it.
+            for arg in &args {
+                assert!(
+                    !arg.contains('\n') && !arg.contains('\r'),
+                    "{} has a newline in argv: {:?}",
+                    driver.label(),
+                    arg
+                );
+            }
+
+            // Style and question must appear somewhere across args + input.
+            let all = args.join("\0") + "\0" + &input;
             assert!(
-                args.iter().any(|a| a.contains(ANSWER_STYLE)),
+                all.contains(ANSWER_STYLE),
                 "{} sent no answer style",
                 driver.label()
             );
-            // Never instead of the question.
             assert!(
-                args.iter().any(|a| a.contains("who directed fast five")),
+                all.contains("who directed fast five"),
                 "{} lost the question",
+                driver.label()
+            );
+
+            // Prompt must not appear in argv — it travels on stdin.
+            assert!(
+                !args.iter().any(|a| a.contains("who directed fast five")),
+                "{} put the prompt in argv",
                 driver.label()
             );
         }

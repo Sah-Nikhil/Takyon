@@ -72,8 +72,11 @@ impl AgentDriver for ClaudeDriver {
 
     fn turn_args(&self, req: &TurnRequest) -> Vec<String> {
         let mut args = vec![
+            // `-p` alone signals "read the prompt from stdin". The prompt
+            // itself travels via `turn_input`, which this driver overrides to
+            // the bare text so the style is not repeated (it goes in
+            // `--append-system-prompt` below, which is one line, safe in argv).
             "-p".into(),
-            req.prompt.clone(),
             "--output-format".into(),
             "stream-json".into(),
             // stream-json refuses to emit without it, rather than warning.
@@ -90,7 +93,7 @@ impl AgentDriver for ClaudeDriver {
         ];
         if !req.tools {
             // A real switch, unlike Codex and opencode, which only have a
-            // read-only posture. `""` removes the whole built-in set.
+            // read-only posture. `"\"\"` removes the whole built-in set.
             args.push("--tools".into());
             args.push(String::new());
         }
@@ -107,6 +110,15 @@ impl AgentDriver for ClaudeDriver {
             args.push(session.clone());
         }
         args
+    }
+
+    /// Bare prompt only: the style already travels in `--append-system-prompt`.
+    ///
+    /// A resumed session carries the style from Turn one, so no repeat is
+    /// needed there either — `styled_prompt` handles that, but Claude's style
+    /// goes through the flag, not the prompt, so this always returns the raw text.
+    fn turn_input(&self, req: &super::TurnRequest) -> String {
+        req.prompt.clone()
     }
 
     /// Claude has no working-directory flag; it uses the process cwd.

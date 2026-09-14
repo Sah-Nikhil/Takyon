@@ -118,6 +118,11 @@ windows = { version = "0.61", features = [
   # registry's `Path` is a `REG_EXPAND_SZ` full of `%SystemRoot%` references, and
   # an unexpanded one names no directory that exists.
   "Win32_System_Environment",
+  # v0.11.1. `Win32_System_JobObjects` for `CreateJobObjectW` and
+  # `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` — every Agent process is assigned to a
+  # job so that cancel and Palette-hide both kill the whole process tree, including
+  # `node` and the real Agent under a `.cmd` shim.
+  "Win32_System_JobObjects",
 ] }
 
 [target.'cfg(unix)'.dependencies]

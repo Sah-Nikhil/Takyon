@@ -80,6 +80,14 @@ impl Searches {
             flag.store(true, Ordering::Relaxed);
         }
     }
+
+    /// Stop every running search. Called from `window::hide` before EVENT_HIDE.
+    pub fn cancel_all(&self) {
+        let mut guard = self.running.lock().expect("searches mutex");
+        for (_, flag) in guard.drain() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 /// What Settings shows for web search. The key itself never crosses IPC.

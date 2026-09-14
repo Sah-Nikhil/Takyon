@@ -453,6 +453,12 @@ pub fn show(app: &AppHandle, bench: &Bench) {
         return;
     };
 
+    // Open the gate before the window is visible: a Turn that starts in the
+    // tiny window between set_visible and the actual show is fine.
+    if let Ok(turns) = app.try_state::<std::sync::Arc<crate::agents::turn::Turns>>() {
+        turns.set_visible(true);
+    }
+
     place_on_cursor_monitor(app, &win);
 
     // Stamped before `show()`, not after: the stray focus event can be delivered
@@ -499,6 +505,19 @@ pub fn hide(app: &AppHandle, reason: &str) {
     if let Err(e) = win.hide() {
         eprintln!("[takyon] could not hide the Palette: {e}");
         return;
+    }
+
+    // Close the gate and stop every Turn **before** EVENT_HIDE, so dismissal
+    // does not depend on the webview running a cleanup. TerminateJobObject does
+    // not block; reaping stays on each Turn's own thread.
+    if let Ok(turns) = app.try_state::<std::sync::Arc<crate::agents::turn::Turns>>() {
+        turns.set_visible(false);
+        turns.cancel_all();
+    }
+    // Cancel any in-progress web search too. A fetch already in flight runs
+    // to its own timeout, but the synthesis Turn is stopped above.
+    if let Ok(searches) = app.try_state::<std::sync::Arc<crate::search::ipc::Searches>>() {
+        searches.cancel_all();
     }
 
     // Back to one input row, while hidden. The Palette always opens empty

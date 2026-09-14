@@ -108,8 +108,8 @@ impl AgentDriver for OpenCodeDriver {
             args.push("-s".into());
             args.push(session.clone());
         }
-        // Same as Codex: no system prompt to append to, so it leads the prompt.
-        args.push(super::styled_prompt(req));
+        // No message argument: `run.ts` reads `Bun.stdin.text()` when the process
+        // is not a TTY. The prompt travels on stdin via `turn_input` (default).
         args
     }
 
@@ -262,8 +262,12 @@ mod tests {
         assert_eq!(args[agent + 1], READ_ONLY_AGENT);
         let dir = args.iter().position(|a| a == "--dir").expect("dir flag");
         assert_eq!(args[dir + 1], r"C:\scratch");
-        // The prompt is last, after every flag, with the house style ahead of it.
-        assert!(args.last().unwrap().ends_with("hi"));
+        // The prompt travels on stdin, not in argv.
+        assert!(OpenCodeDriver.turn_input(&base).ends_with("hi"));
+        assert!(
+            !args.iter().any(|a| a.contains("hi")),
+            "prompt must not appear in argv"
+        );
 
         let with_tools = OpenCodeDriver.turn_args(&TurnRequest {
             tools: true,

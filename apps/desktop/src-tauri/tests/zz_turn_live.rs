@@ -1,5 +1,5 @@
 //! TEMP diagnostic: replicate turn.rs's spawn + read loop against real claude.
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::process::Stdio;
 use std::time::Instant;
 
@@ -24,18 +24,29 @@ fn live_turn_prints_events() {
     eprintln!("exe: {}", exe.display());
     eprintln!("cwd: {}", req.cwd.display());
     eprintln!("args: {:?}", driver.turn_args(&req));
+    eprintln!("input (first 120 chars): {:?}", &driver.turn_input(&req)[..120.min(driver.turn_input(&req).len())]);
 
     let t0 = Instant::now();
     let mut command = agents::probe::command(&exe);
     command
         .args(driver.turn_args(&req))
-        .stdin(Stdio::null())
+        // Prompt goes on stdin — never argv after v0.11.1.
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if driver.cwd_is_process_cwd() {
         command.current_dir(&req.cwd);
     }
     let mut child = command.spawn().expect("spawn");
+
+    // Write the prompt and close stdin so Claude does not wait for more input.
+    if let Some(mut stdin) = child.stdin.take() {
+        let input = driver.turn_input(&req).into_bytes();
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&input);
+        });
+    }
+
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     std::thread::spawn(move || {

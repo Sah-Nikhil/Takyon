@@ -110,8 +110,9 @@ impl AgentDriver for CodexDriver {
             args.push("-c".into());
             args.push(format!("model_reasoning_effort=\"{effort}\""));
         }
-        // No system-prompt flag, so the style leads the first Turn's prompt.
-        args.push(super::styled_prompt(req));
+        // `-` tells `codex exec` (and `exec resume`) to read the prompt from
+        // stdin. Prompt travels on stdin via `turn_input` (default).
+        args.push("-".into());
         args
     }
 
@@ -284,8 +285,17 @@ mod tests {
             .position(|a| a == "--sandbox")
             .expect("sandbox flag");
         assert_eq!(args[sandbox + 1], "read-only");
-        // The prompt is last, after every flag, with the house style ahead of it.
-        assert!(args.last().unwrap().ends_with("hi"));
+        // Prompt is on stdin, not in argv. `-` is the stdin sentinel.
+        assert_eq!(args.last().unwrap(), "-");
+        let input = CodexDriver.turn_input(&TurnRequest {
+            prompt: "hi".into(),
+            cwd: std::path::PathBuf::from(r"C:\scratch"),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        });
+        assert!(input.ends_with("hi"));
     }
 
     /// A follow-up is `exec resume <id>`, and the id comes right after `resume`.
