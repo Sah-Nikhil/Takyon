@@ -100,6 +100,8 @@ export function setAnswer(text: string) {
 
 let askOrder: AgentKind[] = ["claude", "codex", "opencode"];
 let askEnabled: Record<AgentKind, boolean> = { claude: true, codex: true, opencode: true };
+/** Whether an order or switch was ever written. False is a first run (ADR-0031). */
+let askChosen = false;
 let askCwd = "";
 let askModels: Partial<Record<AgentKind, string>> = {};
 let askEfforts: Partial<Record<AgentKind, string>> = {};
@@ -219,6 +221,28 @@ function emitTurn(message: TurnMessage) {
  */
 export function setAskOrder(order: AgentKind[]) {
   askOrder = [...order];
+  askChosen = true;
+}
+
+/**
+ * Uninstall one Agent, so a test can reach a first run with one installed.
+ *
+ * Fixtures leave two installed, which ADR-0031's first-run ranking ignores.
+ */
+export function setAgentMissing(kind: AgentKind) {
+  agentFixtures = agentFixtures.map((snapshot) =>
+    snapshot.kind === kind
+      ? {
+          ...snapshot,
+          installed: false,
+          version: undefined,
+          health: "error" as const,
+          signIn: { status: "unknown" as const },
+          message: `${snapshot.label} (\`${snapshot.binary}\`) was not found on PATH.`,
+          efforts: [],
+        }
+      : snapshot,
+  );
 }
 
 /**
@@ -1005,7 +1029,17 @@ export const mock = {
     };
   },
   appsIndexing: async () => indexing,
-  agentSnapshots: async (): Promise<AgentSnapshot[]> => agentFixtures,
+  // Rust's `lead_sole_agent`: a first run with one Agent installed ranks it first.
+  agentSnapshots: async (): Promise<AgentSnapshot[]> => {
+    const installed = agentFixtures.filter((snapshot) => snapshot.installed);
+    const sole = installed.length === 1 ? installed[0]?.kind : undefined;
+    if (sole && !askChosen) {
+      askOrder = [sole, ...askOrder.filter((kind) => kind !== sole)];
+      askEnabled = { ...askEnabled, [sole]: true };
+      askChosen = true;
+    }
+    return agentFixtures;
+  },
   // The Windows shape, which is what the screenshots are rasterised on.
   agentPathReport: async (): Promise<PathReport | null> => ({
     source: "registry",
@@ -1023,9 +1057,11 @@ export const mock = {
   agentModels: async (agent: AgentKind) => [...AGENT_MODELS[agent]],
   setAskOrder: async (order: AgentKind[]) => {
     askOrder = [...order];
+    askChosen = true;
   },
   setAskEnabled: async (agent: AgentKind, enabled: boolean) => {
     askEnabled = { ...askEnabled, [agent]: enabled };
+    askChosen = true;
   },
   setAskCwd: async (path: string) => {
     askCwd = path.trim();

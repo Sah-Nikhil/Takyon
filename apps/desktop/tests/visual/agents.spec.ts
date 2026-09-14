@@ -147,6 +147,57 @@ test("the agents page shows one card per agent", async ({ page }) => {
   await expect(page).toHaveScreenshot("settings-agents.png");
 });
 
+type AgentsMock = {
+  setAgentMissing: (k: string) => void;
+  setAskOrder: (o: string[]) => void;
+};
+
+/**
+ * ADR-0031. First run, one Agent installed: the probe ranks it first. Through
+ * Check again, not mount: StrictMode's second mount re-reads settings after the
+ * first probe, which passed this with the page's own re-read deleted.
+ */
+test("a first run with one agent installed ranks it first", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+  await expect(page.getByText("Not found", { exact: true })).toHaveCount(1);
+
+  await page.evaluate(() => {
+    (window as unknown as { __takyon_mock: AgentsMock }).__takyon_mock.setAgentMissing("claude");
+  });
+  await page.getByRole("button", { name: "Check again" }).click();
+
+  await expect(page.getByText("Not found", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^Move .* up$/ }).first()).toHaveAttribute(
+    "aria-label",
+    "Move opencode up",
+  );
+  await expect(page.getByRole("switch", { name: "Use opencode for !c" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
+/** A stored order means not a first run, and the probe leaves it alone. */
+test("a chosen agent order survives a probe that finds one agent", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.evaluate(() => {
+    const mock = (window as unknown as { __takyon_mock: AgentsMock }).__takyon_mock;
+    mock.setAskOrder(["claude", "codex", "opencode"]);
+    mock.setAgentMissing("claude");
+  });
+  await page.getByRole("button", { name: "Agents" }).click();
+
+  // Both missing Agents reporting is the probe landing.
+  await expect(page.getByText("Not found", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^Move .* up$/ }).first()).toHaveAttribute(
+    "aria-label",
+    "Move Claude Code up",
+  );
+});
+
 /**
  * The switch is what lets `!c` name its Agent on the first keystroke: a
  * switched-off Agent is skipped without being probed.

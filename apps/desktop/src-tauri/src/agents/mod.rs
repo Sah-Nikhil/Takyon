@@ -349,6 +349,32 @@ pub fn route(prefs: &crate::prefs::Prefs) -> Vec<AgentKind> {
         .collect()
 }
 
+/// First run with one Agent installed: rank it first and switch it on.
+///
+/// Returns whether prefs changed, so the caller can refresh `Pipeline`'s route.
+/// Reasoning in ADR-0031.
+pub fn lead_sole_agent(prefs: &crate::prefs::Prefs, snapshots: &[Snapshot]) -> bool {
+    // Any stored choice, the legacy key included, means not a first run.
+    let chosen = prefs.get(crate::prefs::ASK_ORDER).is_some()
+        || prefs.get(crate::prefs::ASK_AGENT).is_some()
+        || AgentKind::ALL
+            .iter()
+            .any(|kind| prefs.get(&crate::prefs::ask_enabled_key(*kind)).is_some());
+    if chosen {
+        return false;
+    }
+    let mut installed = snapshots.iter().filter(|s| s.installed).map(|s| s.kind);
+    let (Some(sole), None) = (installed.next(), installed.next()) else {
+        return false;
+    };
+    // Writing the order is also what makes this one-shot: the gate above sees it.
+    let order = normalise_order(vec![sole]);
+    prefs
+        .set(&crate::prefs::ask_enabled_key(sole), "1")
+        .and_then(|()| prefs.set(crate::prefs::ASK_ORDER, &order_to_json(&order)))
+        .is_ok()
+}
+
 /// The order as `settings.db` holds it: one JSON row rather than three keys.
 pub fn order_to_json(order: &[AgentKind]) -> String {
     let names: Vec<&str> = order.iter().map(|kind| kind.as_str()).collect();
@@ -604,6 +630,84 @@ mod tests {
         assert!(ANSWER_STYLE.contains("as few words"));
         assert!(ANSWER_STYLE.contains("No preamble"));
         assert!(ANSWER_STYLE.contains("Never abbreviate"));
+    }
+
+    /// A probe that found exactly `installed`, every other Agent missing.
+    fn probed(installed: &[AgentKind]) -> Vec<Snapshot> {
+        AgentKind::ALL
+            .iter()
+            .map(|kind| Snapshot {
+                installed: installed.contains(kind),
+                ..Snapshot::missing(*kind, "Agent", "agent")
+            })
+            .collect()
+    }
+
+    /// First run, one Agent installed: it is all `!c` can reach, so it leads.
+    #[test]
+    fn v0_11_a_sole_installed_agent_leads_on_a_fresh_install() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        assert!(lead_sole_agent(&prefs, &probed(&[AgentKind::Codex])));
+        assert_eq!(
+            route(&prefs),
+            vec![AgentKind::Codex, AgentKind::Claude, AgentKind::OpenCode]
+        );
+    }
+
+    /// Any stored Agent choice means the user has been here: theirs wins, even a
+    /// sole Agent switched off.
+    #[test]
+    fn v0_11_a_stored_agent_choice_is_never_overridden() {
+        let only_codex = probed(&[AgentKind::Codex]);
+
+        let ordered = crate::prefs::Prefs::open(None).unwrap();
+        ordered
+            .set(crate::prefs::ASK_ORDER, r#"["opencode","claude","codex"]"#)
+            .unwrap();
+        assert!(!lead_sole_agent(&ordered, &only_codex));
+        assert_eq!(
+            route(&ordered),
+            vec![AgentKind::OpenCode, AgentKind::Claude, AgentKind::Codex]
+        );
+
+        let switched = crate::prefs::Prefs::open(None).unwrap();
+        switched
+            .set(&crate::prefs::ask_enabled_key(AgentKind::Codex), "0")
+            .unwrap();
+        assert!(!lead_sole_agent(&switched, &only_codex));
+        assert_eq!(route(&switched), vec![AgentKind::Claude, AgentKind::OpenCode]);
+
+        let legacy = crate::prefs::Prefs::open(None).unwrap();
+        legacy.set(crate::prefs::ASK_AGENT, "opencode").unwrap();
+        assert!(!lead_sole_agent(&legacy, &only_codex));
+        assert_eq!(route(&legacy)[0], AgentKind::OpenCode);
+    }
+
+    /// One-shot: switching the led Agent off afterwards sticks on the next probe.
+    #[test]
+    fn v0_11_a_sole_agent_switched_off_after_leading_stays_off() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        let only_codex = probed(&[AgentKind::Codex]);
+        assert!(lead_sole_agent(&prefs, &only_codex));
+
+        prefs
+            .set(&crate::prefs::ask_enabled_key(AgentKind::Codex), "0")
+            .unwrap();
+        assert!(!lead_sole_agent(&prefs, &only_codex));
+        assert_eq!(route(&prefs), vec![AgentKind::Claude, AgentKind::OpenCode]);
+    }
+
+    /// None or several installed decides nothing, and must not use up the first
+    /// run: a later probe that finds one Agent still leads it.
+    #[test]
+    fn v0_11_no_sole_agent_leaves_the_first_run_unspent() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        assert!(!lead_sole_agent(&prefs, &probed(&[])));
+        assert!(!lead_sole_agent(&prefs, &probed(&[AgentKind::Claude, AgentKind::OpenCode])));
+        assert_eq!(route(&prefs), AgentKind::ALL.to_vec());
+
+        assert!(lead_sole_agent(&prefs, &probed(&[AgentKind::OpenCode])));
+        assert_eq!(route(&prefs)[0], AgentKind::OpenCode);
     }
 
     /// The missing-CLI sentence names the binary, because that is the fix.

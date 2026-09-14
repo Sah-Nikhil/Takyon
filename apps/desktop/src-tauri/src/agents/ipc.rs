@@ -36,9 +36,19 @@ pub struct AgentSettings {
 }
 
 /// Probe every Agent. Three process spawns, so never on the login path.
+///
+/// Also the only moment installed-ness is known, so a first run with one Agent
+/// installed gets it ranked first here (ADR-0031).
 #[tauri::command(async)]
-pub fn agent_snapshots() -> Vec<Snapshot> {
-    super::snapshots()
+pub fn agent_snapshots(
+    prefs: tauri::State<'_, Arc<Prefs>>,
+    pipeline: tauri::State<'_, Arc<crate::query::Pipeline>>,
+) -> Vec<Snapshot> {
+    let snapshots = super::snapshots();
+    if super::lead_sole_agent(&prefs, &snapshots) {
+        pipeline.set_ask_order(super::route(&prefs));
+    }
+    snapshots
 }
 
 /// Where the searched `PATH` came from, and how much of it Takyon was not given.
