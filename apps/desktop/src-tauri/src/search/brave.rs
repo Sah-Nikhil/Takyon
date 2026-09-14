@@ -40,7 +40,7 @@ impl SearchProvider for BraveProvider {
         match response.status {
             200 => parse_hits(&response.body),
             401 | 403 => Err(SearchError::BadKey),
-            429 => Err(SearchError::RateLimited),
+            429 => Err(SearchError::RateLimited(super::PROVIDER_LABEL)),
             code => Err(SearchError::Failed(format!(
                 "{} answered {code}.",
                 super::PROVIDER_LABEL
