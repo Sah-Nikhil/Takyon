@@ -329,7 +329,9 @@ async function main() {
 
   if (failed) {
     console.error("\nAt least one budget was missed. Treat this as a failing test.");
-    process.exit(1);
+    // 2, not 1: CI warns on a missed budget but fails on 1, which is a harness
+    // that measured nothing (a thrown error exits 1). Both are non-zero here.
+    process.exit(2);
   }
 }
 
