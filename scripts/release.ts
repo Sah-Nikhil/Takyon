@@ -17,12 +17,9 @@ import { ROOT, preflight, runInherit } from "./lib/release-utils";
 preflight(process.argv.includes("--skip-preflight"));
 
 /*
-  `tauri build`, never a bare `cargo build --release`.
-
-  A bare cargo build produces a takyon.exe that launches, registers the hotkey and
-  shows the Palette with a completely dead frontend — it fails in the one way that
-  looks like a Rust bug. `tauri build` runs `beforeBuildCommand` and sets the
-  TAURI_ENV_* the asset embedding depends on; cargo alone does neither.
+  `tauri build`, never a bare `cargo build --release`: that exe launches with a dead
+  frontend. `tauri build` runs `beforeBuildCommand` and sets the TAURI_ENV_* asset
+  embedding needs (CLAUDE.md, Gotchas).
 */
 console.log("\nBuilding the installer (tauri build)...\n");
 const code = runInherit(["bun", "--cwd=apps/desktop", "run", "tauri", "build"], ROOT);
@@ -58,13 +55,9 @@ const bytes = readFileSync(dest);
 const hash = createHash("sha256").update(bytes).digest("hex");
 
 /*
-  Written beside the installer, not only printed: a hash that scrolls out of a
-  terminal answers nothing later. Two spaces between hash and filename is the
-  `sha256sum` format, so `sha256sum -c` verifies it directly and this is the file
-  to publish next to a download link.
-
-  Not a reproducibility check — Rust release builds are not bit-identical between
-  runs, so rebuilding a version yields a different hash.
+  Written beside the installer, not only printed. Two spaces is `sha256sum`
+  format, so `sha256sum -c` verifies it. Not a reproducibility check: Rust
+  release builds are not bit-identical, so a rebuild hashes differently.
 */
 writeFileSync(join(releaseDir, "SHA256SUMS.txt"), `${hash}  ${name}\n`);
 

@@ -25,11 +25,22 @@ fn seed(root: &Path) {
     std::fs::write(root.join("alpha").join("src").join("palette.rs"), "x").unwrap();
     std::fs::write(root.join("alpha").join("Cargo.toml"), "x").unwrap();
     std::fs::write(
-        root.join("alpha").join("node_modules").join("left-pad").join("index.js"),
+        root.join("alpha")
+            .join("node_modules")
+            .join("left-pad")
+            .join("index.js"),
         "x",
     )
     .unwrap();
-    std::fs::write(root.join("beta").join("a").join("b").join("c").join("buried.md"), "x").unwrap();
+    std::fs::write(
+        root.join("beta")
+            .join("a")
+            .join("b")
+            .join("c")
+            .join("buried.md"),
+        "x",
+    )
+    .unwrap();
 }
 
 fn built(temp: &TempDir, label: &str) -> WalkIndex {
@@ -41,7 +52,10 @@ fn built(temp: &TempDir, label: &str) -> WalkIndex {
         temp.path().join(format!("{label}-index")),
         Roots {
             include: vec![tree],
-            exclude: roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
+            exclude: roots::DEFAULT_EXCLUDES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         },
     );
     index.rebuild().expect("the index writes");
@@ -137,7 +151,10 @@ fn v0_7_a_file_created_now_is_findable_through_the_watcher() {
         temp.path().join("watch-index"),
         Roots {
             include: vec![tree.clone()],
-            exclude: roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
+            exclude: roots::DEFAULT_EXCLUDES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         },
     ));
     index.rebuild().expect("the index writes");
@@ -216,7 +233,10 @@ fn v0_7_a_deletion_reaches_the_index_through_the_watcher() {
         temp.path().join("watch-index"),
         Roots {
             include: vec![tree.clone()],
-            exclude: roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
+            exclude: roots::DEFAULT_EXCLUDES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         },
     ));
     index.rebuild().expect("the index writes");
@@ -230,7 +250,10 @@ fn v0_7_a_deletion_reaches_the_index_through_the_watcher() {
     while !index.search("cargo", 10).is_empty() && Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
-    assert!(index.search("cargo", 10).is_empty(), "deletion never arrived");
+    assert!(
+        index.search("cargo", 10).is_empty(),
+        "deletion never arrived"
+    );
 }
 
 /// What the index adds to startup **above** `hotkey::register`.
@@ -259,7 +282,10 @@ fn v0_7_measure_what_boot_costs_before_the_hotkey() {
     let load_us = at.elapsed().as_micros();
 
     println!("roots::defaults  {roots_us} us");
-    println!("WalkIndex::load  {load_us} us  ({} entries)", index.entry_count());
+    println!(
+        "WalkIndex::load  {load_us} us  ({} entries)",
+        index.entry_count()
+    );
     println!("total on the startup path: {} us", roots_us + load_us);
 }
 
@@ -298,8 +324,7 @@ fn v0_7_real_hits_resolve_to_openable_targets() {
     )
     .with_files(std::sync::Arc::new(FileSource::new(index)));
 
-    let needles =
-        std::env::var("TAKYON_OPEN_NEEDLES").unwrap_or_else(|_| "Zettelkasten,HH".into());
+    let needles = std::env::var("TAKYON_OPEN_NEEDLES").unwrap_or_else(|_| "Zettelkasten,HH".into());
     let mut checked = 0;
     for needle in needles.split(',') {
         let entries = pipeline.query(&format!("!e {needle}"), 1).entries;
@@ -351,7 +376,10 @@ fn v0_7_probe_a_path() {
     let needles = std::env::var("TAKYON_PROBE_NEEDLES").unwrap_or_else(|_| "readme".into());
     // Extra exclusions, comma-separated, on top of the defaults. What a
     // whole-drive scope has to be tested with before it can be proposed.
-    let mut exclude: Vec<String> = roots::DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
+    let mut exclude: Vec<String> = roots::DEFAULT_EXCLUDES
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     if let Ok(extra) = std::env::var("TAKYON_PROBE_EXCLUDES") {
         exclude.extend(extra.split(',').map(|s| s.trim().to_string()));
     }

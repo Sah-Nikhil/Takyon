@@ -146,7 +146,10 @@ mod tests {
         let hits = parse_hits(PAGE).expect("a real page parses");
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].url, "https://www.ferrari.com/en-EN/formula1");
-        assert_eq!(hits[1].url, "https://en.wikipedia.org/wiki/Scuderia_Ferrari");
+        assert_eq!(
+            hits[1].url,
+            "https://en.wikipedia.org/wiki/Scuderia_Ferrari"
+        );
     }
 
     /// The endpoint is markup for a browser, so a row's text arrives with `<b>`

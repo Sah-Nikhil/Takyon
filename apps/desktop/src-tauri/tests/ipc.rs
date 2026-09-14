@@ -25,7 +25,9 @@ use takyon_lib::prefs::Prefs;
 use takyon_lib::query::{Pipeline, QueryResult};
 use takyon_lib::sources::recents::RecentsSource;
 use takyon_lib::sources::system::SystemSource;
-use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY};
+use tauri::test::{
+    get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
+};
 use tauri::webview::InvokeRequest;
 use tauri::Manager;
 
@@ -173,7 +175,11 @@ fn v0_6_a_settings_snapshot_carries_exactly_the_fields_ipc_ts_declares() {
 fn v0_6_a_written_preference_reads_back_across_the_seam() {
     let (_app, webview) = mock_settings();
 
-    call(&webview, "set_reduce_motion", serde_json::json!({ "on": true }));
+    call(
+        &webview,
+        "set_reduce_motion",
+        serde_json::json!({ "on": true }),
+    );
     let after = call(&webview, "settings_snapshot", serde_json::json!({}));
     assert_eq!(after["reduceMotion"].as_bool(), Some(true));
 }
@@ -194,7 +200,11 @@ fn v0_6_migration_seeds_an_empty_install_then_never_speaks_again() {
     assert_eq!(seeded["calcPolicy"].as_str(), Some("explicit"));
 
     // The user then turns motion back on in the settings window.
-    call(&webview, "set_reduce_motion", serde_json::json!({ "on": false }));
+    call(
+        &webview,
+        "set_reduce_motion",
+        serde_json::json!({ "on": false }),
+    );
 
     // A second window mounts, still holding the stale legacy key.
     let again = call(
@@ -220,7 +230,9 @@ const FILE_INDEX_OPTIONAL: [&str; 1] = ["pct"];
 /// be driven directly. Roots are empty — this asserts wire shape, not a walk.
 fn mock_file_index() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
     let app = mock_builder()
-        .invoke_handler(tauri::generate_handler![takyon_lib::index::file_index_status])
+        .invoke_handler(tauri::generate_handler![
+            takyon_lib::index::file_index_status
+        ])
         .build(mock_context(noop_assets()))
         .expect("mock app");
 
@@ -253,7 +265,10 @@ fn v0_7_the_file_index_report_matches_ipc_ts() {
                 || FILE_INDEX_OPTIONAL.contains(&key.as_str()),
             "FileIndexReport carries {key}, which ipc.ts does not declare"
         );
-        assert!(!value.is_null(), "{key} serialised as null rather than absent");
+        assert!(
+            !value.is_null(),
+            "{key} serialised as null rather than absent"
+        );
     }
 
     // Nothing walked, so this is the Building shape — and `pct` rides with it
@@ -285,7 +300,11 @@ fn v0_7_every_index_state_serialises_as_ipc_ts_spells_it() {
 #[test]
 fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "query", serde_json::json!({ "q": "e", "seq": 1u64 }));
+    let response = call(
+        &webview,
+        "query",
+        serde_json::json!({ "q": "e", "seq": 1u64 }),
+    );
 
     let object = response.as_object().expect("QueryResult is an object");
     let mut keys: Vec<_> = object.keys().map(String::as_str).collect();
@@ -298,7 +317,10 @@ fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
     assert!(object["statusRow"].is_boolean());
 
     let entries = object["entries"].as_array().expect("entries is an array");
-    assert!(!entries.is_empty(), "nothing matched, so nothing was checked");
+    assert!(
+        !entries.is_empty(),
+        "nothing matched, so nothing was checked"
+    );
     eprintln!("  {} entries checked", entries.len());
 
     for entry in entries {
@@ -314,7 +336,10 @@ fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
             // An optional the frontend reads as `field?: T` must be absent, not
             // null: `"subtitle": null` types as `string | null` and breaks the
             // `?.` the Palette uses on it.
-            assert!(!value.is_null(), "{key} serialised as null rather than absent");
+            assert!(
+                !value.is_null(),
+                "{key} serialised as null rather than absent"
+            );
         }
 
         assert!(fields["id"].is_string());
@@ -331,10 +356,21 @@ fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
 #[test]
 fn v0_3_the_action_menu_response_matches_api_ts() {
     let (_app, webview) = mock_palette();
-    let result = call(&webview, "query", serde_json::json!({ "q": "e", "seq": 1u64 }));
-    let id = result["entries"][0]["id"].as_str().expect("an Entry").to_string();
+    let result = call(
+        &webview,
+        "query",
+        serde_json::json!({ "q": "e", "seq": 1u64 }),
+    );
+    let id = result["entries"][0]["id"]
+        .as_str()
+        .expect("an Entry")
+        .to_string();
 
-    let actions = call(&webview, "actions_for", serde_json::json!({ "entryId": id }));
+    let actions = call(
+        &webview,
+        "actions_for",
+        serde_json::json!({ "entryId": id }),
+    );
     let actions = actions.as_array().expect("Action[]");
     assert!(!actions.is_empty(), "{id} offered no actions");
     eprintln!("  {} actions for {id}", actions.len());
@@ -342,33 +378,37 @@ fn v0_3_the_action_menu_response_matches_api_ts() {
     for action in actions {
         let fields = action.as_object().expect("Action is an object");
         for key in ACTION_REQUIRED {
-            assert!(fields.contains_key(key), "Action is missing {key}: {action}");
+            assert!(
+                fields.contains_key(key),
+                "Action is missing {key}: {action}"
+            );
         }
         for (key, value) in fields {
             assert!(
                 ACTION_REQUIRED.contains(&key.as_str()) || ACTION_OPTIONAL.contains(&key.as_str()),
                 "Action carries {key}, which ipc.ts does not declare"
             );
-            assert!(!value.is_null(), "{key} serialised as null rather than absent");
+            assert!(
+                !value.is_null(),
+                "{key} serialised as null rather than absent"
+            );
             assert!(value.is_string());
         }
     }
 }
 
-/// `api.ts` sends `{ entryId }` and Tauri maps it onto an `entry_id` parameter.
-///
-/// The convention, not the production signature — the handler here is a copy, so
-/// a rename in `lib.rs` would not turn this red. What it pins is that the
-/// mapping exists at all, which every camelCase argument in `api.ts` relies on.
 /// v0.4: a Calc Entry reaches the wire in the shape `ipc.ts` declares.
 ///
-/// The machine-independent half of the contract test above. A calculation is the
-/// one Entry that does not depend on what is installed, so this asserts values
-/// and not only field names.
+/// Machine-independent half of the contract test above: a calculation depends on
+/// nothing installed, so this asserts values, not only field names.
 #[test]
 fn v0_4_a_calculation_reaches_the_wire_as_a_calc_entry() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "query", serde_json::json!({ "q": "12*1.18", "seq": 1u64 }));
+    let response = call(
+        &webview,
+        "query",
+        serde_json::json!({ "q": "12*1.18", "seq": 1u64 }),
+    );
 
     let entries = response["entries"].as_array().expect("entries is an array");
     let calc = &entries[0];
@@ -384,7 +424,10 @@ fn v0_4_a_calculation_reaches_the_wire_as_a_calc_entry() {
     );
     // No icon key: an answer has no file to extract one from, and a `null` here
     // would break the `icon?: string` the row reads with `?.`.
-    assert!(calc.get("icon").is_none(), "a calculation shipped an icon: {calc}");
+    assert!(
+        calc.get("icon").is_none(),
+        "a calculation shipped an icon: {calc}"
+    );
 }
 
 /// The menu Rust hands back for an id no Source holds an index for.
@@ -394,7 +437,11 @@ fn v0_4_a_calculation_reaches_the_wire_as_a_calc_entry() {
 #[test]
 fn v0_4_the_action_menu_for_a_calculation_is_not_empty() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "actions_for", serde_json::json!({ "entryId": "calc:14.16" }));
+    let response = call(
+        &webview,
+        "actions_for",
+        serde_json::json!({ "entryId": "calc:14.16" }),
+    );
 
     let actions = response.as_array().expect("actions_for returns an array");
     assert_eq!(actions.len(), 1, "{response}");
@@ -403,10 +450,18 @@ fn v0_4_the_action_menu_for_a_calculation_is_not_empty() {
     assert_eq!(actions[0]["accelerator"].as_str(), Some("Enter"));
 }
 
+/// `api.ts` sends `{ entryId }` and Tauri maps it onto an `entry_id` parameter.
+///
+/// The convention, not the production signature: the handler is a copy, so a rename
+/// in `lib.rs` stays green. Pins that the mapping every camelCase argument needs exists.
 #[test]
 fn v0_3_camel_case_argument_names_reach_snake_case_parameters() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "actions_for", serde_json::json!({ "entryId": "nope" }));
+    let response = call(
+        &webview,
+        "actions_for",
+        serde_json::json!({ "entryId": "nope" }),
+    );
     assert!(
         response.as_array().is_some(),
         "actions_for did not accept entryId: {response}"

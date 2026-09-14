@@ -62,14 +62,9 @@ export function SearchView({
   }, []);
 
   /*
-    Deliberately not following the stream. Since v0.10 the headline is the
-    answer's title, and following the tail scrolls it off the top before it has
-    been read — the reader ends up at the bottom of something they never saw the
-    start of. Arc does the same: text arrives below the fold and you stay put.
-
-    It also removes a real source of flake: where the view settled depended on
-    how fast tokens arrived, so the screenshot of a finished answer was never
-    the same twice.
+    Deliberately not following the stream: since v0.10 the headline is the title,
+    and following the tail scrolls it away unread. Arc stays put too. Also kills
+    a flake, since where the view settled depended on token speed.
    */
 
   const parsed = useMemo(

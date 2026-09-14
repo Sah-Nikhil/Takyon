@@ -280,7 +280,10 @@ pub fn version_from(text: &str) -> Option<String> {
 
 fn semver_like(token: &str) -> Option<String> {
     let parts: Vec<&str> = token.split('.').collect();
-    let numeric = parts.len() >= 2 && parts.iter().all(|p| !p.is_empty() && p.parse::<u32>().is_ok());
+    let numeric = parts.len() >= 2
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.parse::<u32>().is_ok());
     numeric.then(|| token.to_string())
 }
 
@@ -290,9 +293,15 @@ mod tests {
 
     #[test]
     fn v0_8_a_version_is_found_inside_whatever_the_cli_printed() {
-        assert_eq!(version_from("2.1.261 (Claude Code)").as_deref(), Some("2.1.261"));
+        assert_eq!(
+            version_from("2.1.261 (Claude Code)").as_deref(),
+            Some("2.1.261")
+        );
         assert_eq!(version_from("1.18.27").as_deref(), Some("1.18.27"));
-        assert_eq!(version_from("codex-cli 0.52.0\n").as_deref(), Some("0.52.0"));
+        assert_eq!(
+            version_from("codex-cli 0.52.0\n").as_deref(),
+            Some("0.52.0")
+        );
         assert_eq!(version_from("no numbers here"), None);
         // A lone integer is a count, not a version.
         assert_eq!(version_from("7 models"), None);

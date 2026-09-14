@@ -85,11 +85,11 @@ fn hit_of(path: String) -> Option<FileHit> {
 #[cfg(windows)]
 fn run(sql: &str) -> Result<Vec<String>, windows::core::Error> {
     use windows::core::BSTR;
-    use windows::Win32::System::Variant::VARIANT;
     use windows::Win32::System::Com::{
-        CoCreateInstance, CLSCTX_INPROC_SERVER, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS,
-        IDispatch,
+        CoCreateInstance, IDispatch, CLSCTX_INPROC_SERVER, DISPATCH_METHOD, DISPATCH_PROPERTYGET,
+        DISPPARAMS,
     };
+    use windows::Win32::System::Variant::VARIANT;
     use windows::Win32::System::Variant::VT_BSTR;
 
     let _com = crate::com::ComScope::new();
@@ -97,12 +97,23 @@ fn run(sql: &str) -> Result<Vec<String>, windows::core::Error> {
     // SAFETY: a documented, registered ProgID; the interface is released when the
     // binding drops.
     let connection: IDispatch = unsafe {
-        let clsid = windows::Win32::System::Com::CLSIDFromProgID(windows::core::w!("ADODB.Connection"))?;
+        let clsid =
+            windows::Win32::System::Com::CLSIDFromProgID(windows::core::w!("ADODB.Connection"))?;
         CoCreateInstance(&clsid, None, CLSCTX_INPROC_SERVER)?
     };
 
-    invoke(&connection, "Open", &[VARIANT::from(PROVIDER)], DISPATCH_METHOD)?;
-    let recordset = invoke(&connection, "Execute", &[VARIANT::from(sql)], DISPATCH_METHOD)?;
+    invoke(
+        &connection,
+        "Open",
+        &[VARIANT::from(PROVIDER)],
+        DISPATCH_METHOD,
+    )?;
+    let recordset = invoke(
+        &connection,
+        "Execute",
+        &[VARIANT::from(sql)],
+        DISPATCH_METHOD,
+    )?;
     let recordset: IDispatch = (&recordset).try_into()?;
 
     let mut out = Vec::new();
@@ -111,8 +122,14 @@ fn run(sql: &str) -> Result<Vec<String>, windows::core::Error> {
         if bool::try_from(&eof).unwrap_or(true) {
             break;
         }
-        let fields: IDispatch = (&invoke(&recordset, "Fields", &[], DISPATCH_PROPERTYGET)?).try_into()?;
-        let item = invoke(&fields, "Item", &[VARIANT::from(0i32)], DISPATCH_PROPERTYGET)?;
+        let fields: IDispatch =
+            (&invoke(&recordset, "Fields", &[], DISPATCH_PROPERTYGET)?).try_into()?;
+        let item = invoke(
+            &fields,
+            "Item",
+            &[VARIANT::from(0i32)],
+            DISPATCH_PROPERTYGET,
+        )?;
         let item: IDispatch = (&item).try_into()?;
         let value = invoke(&item, "Value", &[], DISPATCH_PROPERTYGET)?;
         // A row whose path is not a string is a row we cannot open. Skipped
@@ -140,8 +157,8 @@ fn invoke(
     flags: windows::Win32::System::Com::DISPATCH_FLAGS,
 ) -> Result<windows::Win32::System::Variant::VARIANT, windows::core::Error> {
     use windows::core::{HSTRING, PCWSTR};
-    use windows::Win32::System::Variant::VARIANT;
     use windows::Win32::System::Com::DISPPARAMS;
+    use windows::Win32::System::Variant::VARIANT;
 
     let wide = HSTRING::from(name);
     let mut names = [PCWSTR(wide.as_ptr())];

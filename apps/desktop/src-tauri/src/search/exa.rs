@@ -132,7 +132,10 @@ mod tests {
     fn v0_10_hits_carry_the_title_url_and_text() {
         let hits = parse_hits(BODY).expect("a valid body parses");
         assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0].url, "https://en.wikipedia.org/wiki/Scuderia_Ferrari");
+        assert_eq!(
+            hits[0].url,
+            "https://en.wikipedia.org/wiki/Scuderia_Ferrari"
+        );
         assert_eq!(
             hits[0].description,
             "Scuderia Ferrari is the racing division of Ferrari."
@@ -145,9 +148,8 @@ mod tests {
     #[test]
     fn v0_10_a_long_text_is_cut_to_a_snippet_on_a_word_boundary() {
         let long = "wordy ".repeat(200);
-        let body = format!(
-            r#"{{"results":[{{"title":"t","url":"https://e.x/a","text":"{long}"}}]}}"#
-        );
+        let body =
+            format!(r#"{{"results":[{{"title":"t","url":"https://e.x/a","text":"{long}"}}]}}"#);
         let hits = parse_hits(&body).expect("parses");
         let snippet = &hits[0].description;
         assert!(snippet.chars().count() <= SNIPPET_CHARS + 1);
@@ -202,6 +204,9 @@ mod tests {
     /// is in, and `search::search` reads it as "use DuckDuckGo" before this.
     #[test]
     fn v0_10_an_empty_key_fails_before_any_request() {
-        assert_eq!(ExaProvider.search("ferrari", "   "), Err(SearchError::NoKey));
+        assert_eq!(
+            ExaProvider.search("ferrari", "   "),
+            Err(SearchError::NoKey)
+        );
     }
 }

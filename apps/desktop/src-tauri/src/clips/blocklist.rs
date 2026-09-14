@@ -144,7 +144,8 @@ mod tests {
     #[test]
     fn v0_5_adding_a_full_path_blocks_the_same_thing_as_adding_a_name() {
         let list = list();
-        list.add(r"C:\Program Files\Bitwarden\Bitwarden.exe").unwrap();
+        list.add(r"C:\Program Files\Bitwarden\Bitwarden.exe")
+            .unwrap();
         assert!(list.blocks(Some("bitwarden.exe")));
         assert_eq!(list.all(), vec!["bitwarden.exe"]);
     }

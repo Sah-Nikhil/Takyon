@@ -76,8 +76,9 @@ function check(file: string): Violation[] {
     if (isBlock) {
       let j = i;
       while (j < lines.length && !lines[j]!.includes("*/")) j++;
-      // A block comment before any code is the file's doc-string.
-      const isModule = lines.slice(0, i).every((l) => !l.trim());
+      // A block comment before any code is the file's doc-string. A shebang is
+      // not code: it has to be line 1, so a script's doc-string follows it.
+      const isModule = lines.slice(0, i).every((l, n) => !l.trim() || (n === 0 && l.startsWith("#!")));
       const n = prose(lines.slice(i, j + 1));
       const max = isModule ? MODULE_MAX : ITEM_MAX;
       if (n > max) found.push({ file: rel, line: i + 1, kind: isModule ? "module" : "block", prose: n, max });

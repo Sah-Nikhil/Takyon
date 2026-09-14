@@ -1,18 +1,13 @@
 //! First-run autostart.
 //!
-//! **On by default since v0.6, and no longer a question.** A launcher that is not
-//! running cannot answer its hotkey, so the useful default is on. Through v0.5
-//! that was asked once in a modal, because declining had to be possible and there
-//! was nowhere else to do it — the Settings window existed but, as v0.6 found,
-//! had never actually rendered.
+//! **On by default since v0.6, no longer a question.** A launcher not running
+//! cannot answer its hotkey. Through v0.5 a modal asked, since Settings had never
+//! rendered (v0.6 found); General → "Start Takyon when I log in" now reads the
+//! registry on mount and turns it off in one click.
 //!
-//! There is somewhere else now. General → "Start Takyon when I log in" reads the
-//! registry on every mount and turns it off in one click, so the modal was asking
-//! for a decision the window already offers, before the user had seen the app.
-//!
-//! Every guard below is unchanged: never from a debug build, never while
-//! benchmarking, never from a `target\` directory. The marker file still records
-//! that first run happened, so a later "off" is never undone on the next launch.
+//! Guards unchanged: never from a debug build, while benchmarking, or from a
+//! `target\` directory. Marker file records first run, so a later "off" is never
+//! undone on next launch.
 
 use std::path::PathBuf;
 use tauri::AppHandle;
@@ -66,25 +61,10 @@ pub fn maybe_enable(app: &AppHandle) {
     }
 }
 
-
 /// Is this a launch that may claim a startup slot at all?
 ///
-/// `#[cfg(not(debug_assertions))]` is not sufficient, and this was learned the
-/// expensive way: a **release** build run straight out of `target\release\` passes
-/// that check, and `bun run bench` launches exactly such a binary. The bench then
-/// injects Alt+Space thirty times, one of which activated the prompt's default
-/// button, leaving a real `Run` entry pointing into the repo's build output. That
-/// entry survives `cargo clean`, deleting the repo, and installing the actual
-/// product.
-///
-/// So two further conditions:
-///
-/// 1. **Not while benchmarking.** `TAKYON_BENCH_LOG` being set means synthetic
-///    input is about to arrive, and a benchmark must never register anything on
-///    the user's behalf.
-/// 2. **Not from a build output directory.** A binary in `target\debug\` or
-///    `target\release\` is never an installed application, whatever profile it was
-///    compiled with, and it has no business claiming a startup slot.
+/// Release cfg alone let a bench-run binary in `target\release\` leave a `Run` key
+/// into build output. So never with `TAKYON_BENCH_LOG` set, never from `target\`.
 // Reached only from `maybe_enable`, which is compiled out of debug builds.
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn may_register() -> bool {
@@ -100,10 +80,8 @@ fn may_register() -> bool {
 
 /// Does this path sit inside a Cargo build output directory?
 ///
-/// Pure and path-taking so it is testable without moving a binary around.
-/// Compares path *components* rather than substrings: someone whose folder is
-/// named `targeted` is not running a build output, and a substring match would
-/// decide that they were.
+/// Path-taking, so testable without moving a binary. Compares *components*, not
+/// substrings: a folder named `targeted` is not build output.
 // Reached only from `maybe_enable`, which is compiled out of debug builds.
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn is_build_output(exe: &std::path::Path) -> bool {
@@ -118,17 +96,14 @@ fn is_build_output(exe: &std::path::Path) -> bool {
 
 /// Never in a dev build.
 ///
-/// The prompt is harmless, but the `enable()` behind it is not: it would write a
-/// `Run` key pointing at `target\debug\`, which launches a dev build every login
-/// and survives uninstalling the real app. Gating the prompt rather than only the
-/// write also means `bun run dev` does not consume the one-time question.
+/// `enable()` would write a `Run` key into `target\debug\` that outlives the real
+/// app. Gating the prompt too keeps `bun run dev` from spending the one question.
 #[cfg(debug_assertions)]
 pub fn maybe_enable(_app: &AppHandle) {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     /// The guard that would have prevented `bun run bench` from registering
     /// autostart against the repo's own build output.
@@ -149,7 +124,9 @@ mod tests {
         assert!(!is_build_output(std::path::Path::new(
             r"C:\Program Files\Takyon\takyon.exe"
         )));
-        assert!(!is_build_output(std::path::Path::new(r"C:\target\takyon.exe")));
+        assert!(!is_build_output(std::path::Path::new(
+            r"C:\target\takyon.exe"
+        )));
         assert!(!is_build_output(std::path::Path::new(
             r"C:\Users\targeted\release notes\takyon.exe"
         )));

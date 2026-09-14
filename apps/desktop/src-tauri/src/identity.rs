@@ -19,10 +19,8 @@ pub const DISPLAY_NAME: &str = "Takyon";
 
 /// `%LOCALAPPDATA%\v3sper\takyon\`.
 ///
-/// Deliberately *not* Tauri's `app_local_data_dir()`, which would hand back
-/// `%LOCALAPPDATA%\com.v3sper.takyon\` — correct in spirit, wrong on disk. The
-/// layout is `<vendor>\<app>\`, matching how Raycast for Windows lays its own data
-/// out and how a second `com.v3sper.*` product would sit beside this one.
+/// Not Tauri's `app_local_data_dir()` (`%LOCALAPPDATA%\com.v3sper.takyon\`). Layout
+/// is `<vendor>\<app>\`, as Raycast for Windows does, so a second product sits beside.
 #[cfg(windows)]
 pub fn data_dir() -> Option<PathBuf> {
     let local = std::env::var_os("LOCALAPPDATA")?;
@@ -173,7 +171,10 @@ mod tests {
             "got {}",
             dir.display()
         );
-        assert!(legacy_data_dir().is_none(), "the rename never reached macOS");
+        assert!(
+            legacy_data_dir().is_none(),
+            "the rename never reached macOS"
+        );
     }
 
     #[cfg(windows)]
@@ -196,7 +197,10 @@ mod tests {
         migrate_dir(&old, &new);
 
         assert_eq!(std::fs::read(new.join("clips.db")).unwrap(), b"rows");
-        assert!(!old.exists(), "the legacy directory should be gone, not copied");
+        assert!(
+            !old.exists(),
+            "the legacy directory should be gone, not copied"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -282,11 +286,9 @@ mod tests {
         dir
     }
 
-    /// Every place the slug is written down has to agree, and the two that live
-    /// outside Rust are the ones nothing else would catch: `tauri.conf.json`'s
-    /// identifier (which is what `tauri-plugin-single-instance` names its mutex
-    /// after) and the NSIS uninstall hook (which fails only at uninstall time, on
-    /// a machine that no longer has the app to debug it with).
+    /// Every copy of the slug must agree. Nothing else catches the two outside Rust:
+    /// `tauri.conf.json`'s identifier (names single-instance's mutex) and the NSIS
+    /// uninstall hook (fails only at uninstall, with no app left to debug).
     #[test]
     fn v0_1_config_and_installer_hook_agree_with_the_slug() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -330,12 +332,14 @@ mod tests {
     /// in a window nobody opens twice.
     #[test]
     fn v0_1_settings_capability_grants_autostart() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("capabilities/settings.json");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities/settings.json");
         let json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let perms = json["permissions"].as_array().unwrap();
-        assert!(perms.iter().any(|p| p.as_str() == Some("autostart:default")));
+        assert!(perms
+            .iter()
+            .any(|p| p.as_str() == Some("autostart:default")));
     }
 
     // Environment variables are process-global, so these helpers exist to keep the

@@ -72,10 +72,7 @@ pub fn root(page_url: &str) -> Option<String> {
 /// `None` rather than an error: a missing favicon is cosmetic, and a source row
 /// draws its letter tile instead.
 pub fn fetch_one(page_url: &str, html: Option<&str>) -> Option<Vec<u8>> {
-    let candidates = [
-        html.and_then(|h| declared(h, page_url)),
-        root(page_url),
-    ];
+    let candidates = [html.and_then(|h| declared(h, page_url)), root(page_url)];
     for url in candidates.into_iter().flatten() {
         if let Ok(response) = fetch::get_icon(&url) {
             if response.status == 200 && response.bytes.len() >= MIN_BYTES {
@@ -200,8 +197,14 @@ mod tests {
 
     #[test]
     fn v0_10_a_page_declaring_nothing_falls_back_to_the_root() {
-        assert_eq!(declared("<html><head></head></html>", "https://e.x/a"), None);
-        assert_eq!(root("https://e.x/a/b").as_deref(), Some("https://e.x/favicon.ico"));
+        assert_eq!(
+            declared("<html><head></head></html>", "https://e.x/a"),
+            None
+        );
+        assert_eq!(
+            root("https://e.x/a/b").as_deref(),
+            Some("https://e.x/favicon.ico")
+        );
     }
 
     /// Every href form that occurs: absolute, protocol-relative, root-relative
@@ -233,7 +236,13 @@ mod tests {
     #[test]
     fn v0_10_a_hostile_host_cannot_escape_the_cache_directory() {
         let dir = Path::new(r"C:\data");
-        for host in ["../../windows/system32", r"..\..\evil", "a/b/c", "..", "C:evil"] {
+        for host in [
+            "../../windows/system32",
+            r"..\..\evil",
+            "a/b/c",
+            "..",
+            "C:evil",
+        ] {
             let path = cache_file(dir, host);
             let inside = dir.join(DIR);
             assert!(path.starts_with(&inside), "{}", path.display());
@@ -284,8 +293,17 @@ mod tests {
 
     #[test]
     fn v0_10_attributes_parse_with_either_quote() {
-        assert_eq!(attribute(r#"<link rel="icon">"#, "rel").as_deref(), Some("icon"));
-        assert_eq!(attribute(r#"<link rel='icon'>"#, "rel").as_deref(), Some("icon"));
-        assert_eq!(attribute("<link rel=icon >", "rel").as_deref(), Some("icon"));
+        assert_eq!(
+            attribute(r#"<link rel="icon">"#, "rel").as_deref(),
+            Some("icon")
+        );
+        assert_eq!(
+            attribute(r#"<link rel='icon'>"#, "rel").as_deref(),
+            Some("icon")
+        );
+        assert_eq!(
+            attribute("<link rel=icon >", "rel").as_deref(),
+            Some("icon")
+        );
     }
 }

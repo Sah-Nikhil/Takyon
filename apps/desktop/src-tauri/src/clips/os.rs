@@ -179,7 +179,10 @@ impl ClipboardStore for MacClipboard {
         // binding, neither of which exists yet. Refusing leaves the clip on the
         // clipboard and the user one Cmd+V away, which is the ordering `paste.rs`
         // is built around.
-        Err("Paste-back needs the Accessibility permission, which Takyon does not request yet.".into())
+        Err(
+            "Paste-back needs the Accessibility permission, which Takyon does not request yet."
+                .into(),
+        )
     }
 
     fn spawn_watcher(&self, _store: Arc<ClipStore>, _blocklist: Arc<Blocklist>) {

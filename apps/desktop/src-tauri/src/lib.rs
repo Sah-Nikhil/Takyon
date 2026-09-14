@@ -222,10 +222,7 @@ fn clip_retention(prefs: tauri::State<'_, Arc<prefs::Prefs>>) -> String {
 /// Read *before* the change, so the confirmation can name the real number rather
 /// than "some items" (v0.5 traps). Zero for a window that removes nothing.
 #[tauri::command]
-fn clip_retention_impact(
-    value: String,
-    clips: tauri::State<'_, Option<Arc<ClipStore>>>,
-) -> usize {
+fn clip_retention_impact(value: String, clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> usize {
     let Some(store) = clips.inner() else {
         return 0;
     };
@@ -318,7 +315,10 @@ fn set_clip_bang(
 /// Executables whose clipboard is never recorded (ADR-0006).
 #[tauri::command]
 fn clip_blocklist(blocklist: tauri::State<'_, Option<Arc<Blocklist>>>) -> Vec<String> {
-    blocklist.inner().as_ref().map_or_else(Vec::new, |b| b.all())
+    blocklist
+        .inner()
+        .as_ref()
+        .map_or_else(Vec::new, |b| b.all())
 }
 
 /// Add or remove one executable. The store reloads its own cache on write, so the
@@ -613,7 +613,9 @@ pub fn run() {
                     // A miss is cosmetic: the row is already on screen with its
                     // placeholder. Never a panic — this path is reachable from the
                     // webview, so it is reachable from anything the webview loads.
-                    None => tauri::http::Response::builder().status(404).body(Vec::new()),
+                    None => tauri::http::Response::builder()
+                        .status(404)
+                        .body(Vec::new()),
                 };
                 if let Ok(response) = response {
                     responder.respond(response);
@@ -621,14 +623,10 @@ pub fn run() {
             });
         })
         /*
-          Favicons for `!s` sources (ADR-0022). Its own scheme rather than a
-          second key space inside `takyon-icon`: that store is keyed by an
-          application's path and mtime, this one by host, and one cache with two
-          key shapes is a cache nobody can reason about.
-
-          Asynchronous for the same reason as icons — a disk read must not run on
-          the thread WebView2 renders with.
-         */
+         Favicons for `!s` sources (ADR-0022). Own scheme, not a second key space
+         in `takyon-icon`: that store keys by app path and mtime, this by host.
+         Asynchronous like icons: no disk read on WebView2's render thread.
+        */
         .register_asynchronous_uri_scheme_protocol(
             search::favicon::SCHEME,
             |_ctx, request, responder| {
@@ -641,8 +639,8 @@ pub fn run() {
                     .to_string();
 
                 std::thread::spawn(move || {
-                    let bytes = identity::data_dir()
-                        .and_then(|dir| search::favicon::cached(&dir, &host));
+                    let bytes =
+                        identity::data_dir().and_then(|dir| search::favicon::cached(&dir, &host));
                     let response = match bytes {
                         // The bytes may be .ico, .png or .svg. No Content-Type is
                         // sent on purpose: the sniffing WebView2 does is right
@@ -864,7 +862,10 @@ pub fn run() {
             // reason: the row is drawn on the keystroke path and DPAPI is a
             // file read plus a syscall.
             pipeline.set_web_key_present(
-                identity::data_dir().as_deref().map(search::key::present).unwrap_or(false),
+                identity::data_dir()
+                    .as_deref()
+                    .map(search::key::present)
+                    .unwrap_or(false),
             );
             // Interface size, placement and window mode into atomics, before the
             // first show: all three sit on latency paths and must never reach

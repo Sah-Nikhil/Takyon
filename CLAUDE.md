@@ -18,9 +18,10 @@ an optional second binding.
 
 **CI runs.** The remote is `github.com/Sah-Nikhil/Takyon`, and `ci.yml`
 (typecheck, lint, every test layer) has executed — v0.10.1 merged through a pull
-request. Two jobs are on `windows-latest` deliberately: the product is Windows,
-and the screenshot baselines were rasterised by Windows. A third, `macos`, is a
-compile gate only.
+request. The Rust, visual, live web search and bench jobs are on `windows-latest`
+deliberately: the product is Windows, and the screenshot baselines were
+rasterised by Windows. `macos` is a compile gate only. CI also runs daily, for
+what breaks with no commit, and release.yml waits on every job.
 
 **Two verification scripts are unrun, and they are the two newest.**
 `docs/verify/v0.10.md` section E has never been executed by anyone — the
@@ -78,7 +79,8 @@ superseding v0.8's fresh process per Turn.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
-see ADR-0005).
+see ADR-0005). `bun run check:licences` enforces it over every crate and JS
+package, LGPL included, and runs in `lint` and CI.
 
 ## Communication
 **Always use the `/homonid` skill in this repo at max setting.** Invoke it at the start of every
@@ -102,9 +104,8 @@ tradeoff), `docs/tbc/` (one we expect to revisit) or `IMPLEMENTATION_PLAN.md`,
 with a one-line pointer left at the code. A file where the prose outweighs the
 logic is a file nobody reads either half of.
 
-`bun run check:comments` finds every comment over the ceiling. **Not yet part of
-`lint`**: v0.1's files predate the rule and still fail it. Fold it into `lint`
-once they are brought across, and treat it as blocking from then on.
+`bun run check:comments` finds every comment over the ceiling. **Part of `lint`
+and of CI**, and blocking: every file was brought under the ceiling during v0.11.
 
 ```rust
 // No: six lines of essay for one guard.
@@ -142,10 +143,13 @@ under `docs/`.
   interpreting it. **A half states seven roles and nothing else**; every other
   token is a `color-mix(in oklab, …)` over `plate` and `fg` in `styles.css`, so
   adding a theme is seven numbers per half and touches no component.
-  **No file under `apps/desktop/src` may name a colour** — the one exception is
-  Windows' close-button red in `TitleBar.tsx`, and it is commented as such. That
-  rule is not style: white-at-10% borders in `palette/` were invisible on a light
-  plate and shipped that way for four phases.
+  **No file under `apps/desktop/src` may name a colour** outside `theme/themes.ts`
+  and `styles.css`. Two exceptions: Windows' close-button red in `TitleBar.tsx`,
+  and `ThemeOrb.tsx`'s lighting, which previews themes other than the active one
+  so no token can describe it. Fixed status colours (the Agent health dots) are
+  tokens in `styles.css`, like `--color-scrim`. `bun run check:colours` enforces
+  it and lists the exceptions per literal. That rule is not style: white-at-10%
+  borders in `palette/` were invisible on a light plate for four phases.
   Values are authored in **oklch** so equal lightness across families is stated
   rather than hoped for. `--color-scrim` is the one role that is neither derived
   nor theme-owned: it must darken in *both* appearances.
@@ -174,9 +178,9 @@ under `docs/`.
   retrieval only (**ADR-0021**, amending ADR-0005's choice of Brave). Exa is asked
   first when a key is stored and **any failure falls silently through to
   DuckDuckGo** — `!s` is never a dead end, at the cost of a wrong key never
-  announcing itself. `ddg.rs` parses HTML, so run
-  `cargo test --test web_search -- --ignored` before a release: a class rename
-  there breaks `!s` and only that test notices. Plus the user's own **Agent
+  announcing itself. `ddg.rs` parses HTML, so a class rename there breaks `!s`
+  and only `cargo test --test web_search -- --ignored` notices. CI's `web-search`
+  job runs it daily and on every PR, and a release waits on it. Plus the user's own **Agent
   CLIs** — `claude`, `codex`, `opencode` — as subprocesses for `!c`. Takyon never
   holds an LLM account or key of its own, and never runs an Agent's login
   (**ADR-0017**; the terminal path is `docs/tbc/0012`). The one key it does hold
@@ -187,8 +191,9 @@ under `docs/`.
 
 ## Commands
 - dev: `bun run dev`
-- check before "done": `bun run typecheck && bun run lint` (lint covers both TS and
-  `cargo clippy`)
+- check before "done": `bun run typecheck && bun run lint` (lint covers ESLint,
+  `cargo fmt --check`, `cargo clippy`, and the comment, colour and licence checks)
+- format Rust: `bun run fmt`
 - test: `bun run test` — **every layer**: Rust unit and integration, TypeScript,
   then Playwright.
   `test:visual` was added to it at v0.3, because a suite that has to be remembered
@@ -198,7 +203,9 @@ under `docs/`.
   and the limit**: it cannot reach ranking, Frecency or anything else in Rust.
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
   as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
-  already owns `Alt+Space`, which is most machines.
+  already owns `Alt+Space`, which is most machines. Exits 2 on a missed budget
+  and 1 when it measured nothing; CI's `bench` job warns on 2 and fails on 1
+  (TBC-0015).
 - macOS compile gate: `bun run check:macos` — cross-compiles and lints for
   `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
   build unpacked locally, which not every machine has. Run it after touching
@@ -354,6 +361,11 @@ the next.
   dark half.
 
 ## Gotchas
+- **Toolchains are pinned: `rust-toolchain.toml` for Rust, `packageManager` in
+  `package.json` for bun** (setup-bun reads it). A Rust bump touches three places
+  together: the toml and the `dtolnay/rust-toolchain@` refs in `ci.yml` and
+  `release.yml`. On `@stable`, a Rust release could add a clippy lint and fail
+  `-D warnings` on CI with no commit.
 - **Never build the release binary with bare `cargo build --release`. Always
   `bun run build`.** A bare cargo build produces a `takyon.exe` that launches,
   registers the hotkey and shows the Palette — with a **completely dead frontend**:

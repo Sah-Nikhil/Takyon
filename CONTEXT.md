@@ -175,7 +175,8 @@ _Avoid_: provider, adapter, plugin, connector, harness
 The ranking of every Agent, first to last, set in Settings. `!c` asks the first
 one switched on and works down from there, so it is a preference rather than a
 choice — the second entry is what answers when the first cannot. Always holds
-every Agent exactly once, switched-off ones included.
+every Agent exactly once, switched-off ones included. On a first run with one
+Agent installed, the probe puts that Agent first (ADR-0031).
 _Avoid_: default agent, fallback chain, priority list, provider order
 
 **Switched on**:

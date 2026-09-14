@@ -251,11 +251,15 @@ mod tests {
         assert_eq!(answer("12*1.18", Policy::Explicit), None);
         assert_eq!(answer("2022", Policy::Explicit), None);
         assert_eq!(
-            answer("=12*1.18", Policy::Explicit).map(|a| a.display).as_deref(),
+            answer("=12*1.18", Policy::Explicit)
+                .map(|a| a.display)
+                .as_deref(),
             Some("14.16")
         );
         assert_eq!(
-            answer("=40 kg to lb", Policy::Explicit).map(|a| a.display).as_deref(),
+            answer("=40 kg to lb", Policy::Explicit)
+                .map(|a| a.display)
+                .as_deref(),
             Some("88.1849 lb")
         );
     }

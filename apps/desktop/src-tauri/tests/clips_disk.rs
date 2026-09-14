@@ -102,7 +102,12 @@ fn v0_5_a_swept_clip_leaves_no_ciphertext_behind() {
 
     let now = 10_000_000;
     store
-        .insert_at(ClipKind::Text, Some("notepad.exe"), SECRET, now - 40 * 86_400)
+        .insert_at(
+            ClipKind::Text,
+            Some("notepad.exe"),
+            SECRET,
+            now - 40 * 86_400,
+        )
         .expect("insert");
     let ciphertext = ciphertext(dir.path());
     assert!(ciphertext.len() > 16, "AES-GCM output is at least a tag");

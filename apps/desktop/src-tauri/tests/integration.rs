@@ -74,7 +74,10 @@ fn v0_3_the_real_walk_fills_the_palette() {
     assert!(!r.entries.is_empty());
     assert!(r.entries.len() <= MAX_ENTRIES);
     // `bun run bench` owns the 20 ms budget. This only catches a collapse.
-    assert!(elapsed < Duration::from_millis(200), "query took {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_millis(200),
+        "query took {elapsed:?}"
+    );
 }
 
 // -------------------------------------------------------------------- icons
@@ -92,12 +95,20 @@ fn v0_3_icons_extract_through_com_and_survive_a_restart() {
     apps.refresh(&icons);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let p = Pipeline::new(apps, Arc::new(RecentsSource::new()), Arc::new(SystemSource::new()), icons.clone(), frecency);
+    let p = Pipeline::new(
+        apps,
+        Arc::new(RecentsSource::new()),
+        Arc::new(SystemSource::new()),
+        icons.clone(),
+        frecency,
+    );
 
     let mut keys = Vec::new();
     for entry in p.query(BROAD, 1).entries.iter().take(6) {
         let Some(icon) = &entry.icon else { continue };
-        let Some(png) = icons.get(&icon.0) else { continue };
+        let Some(png) = icons.get(&icon.0) else {
+            continue;
+        };
         assert_eq!(&png[..4], b"\x89PNG", "{} gave a non-PNG icon", entry.title);
         keys.push((icon.0.clone(), png));
     }
@@ -136,7 +147,10 @@ fn v0_3_usage_learned_by_one_pipeline_ranks_the_next_one() {
     let (chosen, cold_top) = {
         let p = pipeline_in(&dir);
         let entries = p.query(BROAD, 1).entries;
-        assert!(entries.len() >= 2, "need two rows to move one past the other");
+        assert!(
+            entries.len() >= 2,
+            "need two rows to move one past the other"
+        );
         // Not the top row: promoting something already first proves nothing.
         let chosen = entries[1].id.clone();
         for _ in 0..10 {
@@ -172,17 +186,32 @@ fn v0_3_applications_outrank_documents_in_one_real_list() {
 
     let recents = Arc::new(RecentsSource::new());
     recents.set_for_test(vec![
-        recent_from(&std::path::PathBuf::from(format!(r"C:\docs\{word} plan.txt"))).unwrap(),
-        recent_from(&std::path::PathBuf::from(format!(r"C:\docs\{word} notes.txt"))).unwrap(),
+        recent_from(&std::path::PathBuf::from(format!(
+            r"C:\docs\{word} plan.txt"
+        )))
+        .unwrap(),
+        recent_from(&std::path::PathBuf::from(format!(
+            r"C:\docs\{word} notes.txt"
+        )))
+        .unwrap(),
     ]);
 
     let frecency = Arc::new(Frecency::open(Some(dir.to_owned())).unwrap());
-    let p = Pipeline::new(apps, recents, Arc::new(SystemSource::new()), icons, frecency);
+    let p = Pipeline::new(
+        apps,
+        recents,
+        Arc::new(SystemSource::new()),
+        icons,
+        frecency,
+    );
     let entries = p.query(&word, 1).entries;
     let kinds: Vec<_> = entries.iter().map(|e| e.kind).collect();
 
     eprintln!("  {word:?} -> {kinds:?}");
-    assert!(kinds.contains(&EntryKind::App), "no application matched {word:?}");
+    assert!(
+        kinds.contains(&EntryKind::App),
+        "no application matched {word:?}"
+    );
     assert!(
         kinds.contains(&EntryKind::File),
         "no document matched {word:?}, so nothing was ordered"
@@ -264,7 +293,11 @@ fn v0_3_an_alias_puts_its_target_first_in_the_real_list() {
     apps.apply_aliases(&store);
 
     let entries = p.query(alias, 3).entries;
-    assert_eq!(entries.first().map(|e| &e.id), Some(&target), "alias missed");
+    assert_eq!(
+        entries.first().map(|e| &e.id),
+        Some(&target),
+        "alias missed"
+    );
     eprintln!("  {alias} -> {}", entries[0].title);
 
     // A2: removing it puts the Entry back where matching alone had it.
@@ -309,7 +342,9 @@ fn v0_3_every_id_the_palette_shows_resolves_to_actions() {
     let p = pipeline_in(&dir);
     for e in p.query(BROAD, 1).entries.iter() {
         let id = e.id.as_str();
-        let namespaced = ["aumid:", "steam:", "epic:"].iter().any(|p| id.starts_with(p));
+        let namespaced = ["aumid:", "steam:", "epic:"]
+            .iter()
+            .any(|p| id.starts_with(p));
         if !namespaced {
             assert_eq!(id, id.to_lowercase(), "{id} is not canonicalised");
         }
@@ -321,9 +356,6 @@ fn v0_3_every_id_the_palette_shows_resolves_to_actions() {
 }
 
 // ------------------------------------------------------------------ identity
-
-
-
 
 /// What the Palette actually holds for one query: ids, icon keys, icon sharing.
 ///
@@ -360,7 +392,11 @@ fn v0_3_measure_what_a_query_returns() {
                 "    {:<38} shares icon with {} entries{}",
                 e.title,
                 shared.saturating_sub(1),
-                if icon.is_none() { "  (icon not cached)" } else { "" }
+                if icon.is_none() {
+                    "  (icon not cached)"
+                } else {
+                    ""
+                }
             );
             eprintln!("      id {}", e.id.as_str());
         }
@@ -395,7 +431,6 @@ fn v0_3_measure_whether_an_aumid_survives_discovery() {
     eprintln!("  {aumids} AUMID Entries survived discovery in total");
 }
 
-
 /// What a version column would cost and cover on this machine.
 #[test]
 #[ignore = "measures the host machine; run explicitly with --ignored"]
@@ -404,7 +439,13 @@ fn v0_3_measure_executable_versions() {
     let paths: Vec<String> = apps
         .icon_keys()
         .into_iter()
-        .map(|(id, _)| id.as_str().split('|').next().unwrap_or_default().to_string())
+        .map(|(id, _)| {
+            id.as_str()
+                .split('|')
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
         .filter(|p| p.ends_with(".exe"))
         .collect();
 
@@ -443,7 +484,13 @@ fn v0_3_measure_executables_sharing_a_filename() {
     let paths: Vec<String> = apps
         .icon_keys()
         .into_iter()
-        .map(|(id, _)| id.as_str().split('|').next().unwrap_or_default().to_string())
+        .map(|(id, _)| {
+            id.as_str()
+                .split('|')
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
         .filter(|p| p.ends_with(".exe"))
         .collect();
 
@@ -561,10 +608,14 @@ fn v0_3_measure_why_rows_match() {
     let (apps, _) = real_apps();
 
     for q in ["chrome", "code", "photo", "term"] {
-        eprintln!("
-  {q:?}");
+        eprintln!(
+            "
+  {q:?}"
+        );
         for e in p.query(q, 1).entries.iter().take(6) {
-            let Some(app) = apps.find(&e.id) else { continue };
+            let Some(app) = apps.find(&e.id) else {
+                continue;
+            };
             let base = rank::score(&Query::new(q), &app.hay).unwrap_or(0.0);
             eprintln!(
                 "    {:<34} {:>11} {:>6.0}   stem {:?}",
@@ -607,10 +658,7 @@ fn v0_3_measure_windows_dir_path_exes() {
             .query(&exe.stem, 1)
             .entries
             .into_iter()
-            .any(|e| {
-                e.title.eq_ignore_ascii_case(&exe.stem)
-                    && e.id.as_str() != full
-            });
+            .any(|e| e.title.eq_ignore_ascii_case(&exe.stem) && e.id.as_str() != full);
         let tag = if others { "" } else { "  <-- ONLY here" };
         if !others {
             unique += 1;
@@ -618,11 +666,16 @@ fn v0_3_measure_windows_dir_path_exes() {
         eprintln!("  {:<24} {}{}", exe.stem, full, tag);
         let _ = &apps;
     }
-    eprintln!("
-  {under} bare-PATH exes under {sysroot}; {unique} reachable no other way");
+    eprintln!(
+        "
+  {under} bare-PATH exes under {sysroot}; {unique} reachable no other way"
+    );
 }
 
 /// After the fix: `explorer` returns File Explorer, and no bare `explorer` row.
+///
+/// By AUMID and `%SystemRoot%`, never by title: "File Explorer" is the English
+/// name, and a German Windows calls it "Datei-Explorer".
 #[test]
 fn v0_3_explorer_is_one_row_not_two() {
     let dir = TempDir::new("explorer-fix");
@@ -637,27 +690,43 @@ fn v0_3_explorer_is_one_row_not_two() {
         eprintln!("  {t:<34} {id}");
     }
     // The bare PATH exe (id is exactly the plain path, no args) must be gone.
+    let sysroot = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    let bare = Path::new(&sysroot)
+        .join("explorer.exe")
+        .to_string_lossy()
+        .to_lowercase();
     assert!(
-        !titles.iter().any(|(_, id)| id == r"c:\windows\explorer.exe"),
+        !titles.iter().any(|(_, id)| *id == bare),
         "the bare explorer.exe row is still here"
     );
     // File Explorer (the shell app) must survive.
     assert!(
-        titles.iter().any(|(t, _)| t.eq_ignore_ascii_case("File Explorer")),
+        titles
+            .iter()
+            .any(|(_, id)| id.eq_ignore_ascii_case("aumid:Microsoft.Windows.Explorer")),
         "File Explorer disappeared"
     );
 }
 
 /// The SDK shortcut left `explorer`'s results but must stay findable by name.
+///
+/// Only where the walk found one. A Windows SDK is a machine fact, and a runner
+/// image or laptop without it is not a regression.
 #[test]
 fn v0_3_the_sdk_shortcut_is_still_reachable_by_its_name() {
+    let is_sdk = |title: &str| title.to_lowercase().contains("software development kit");
+    let (apps, _) = real_apps();
+    if !apps.all().iter().any(|app| is_sdk(&app.title)) {
+        eprintln!("  no Windows SDK shortcut on this machine; skipped");
+        return;
+    }
     let dir = TempDir::new("sdk");
     let p = pipeline_in(&dir);
     let hit = p
         .query("development", 1)
         .entries
         .into_iter()
-        .any(|e| e.title.to_lowercase().contains("software development kit"));
+        .any(|e| is_sdk(&e.title));
     assert!(hit, "the SDK shortcut vanished entirely");
 }
 
@@ -784,7 +853,12 @@ fn v0_3_an_epic_game_whose_executable_is_gone_is_dropped() {
         .expect("write manifest");
     };
     manifest("live", "Fall Guys", &installed, "RunFallGuys.exe");
-    manifest("stale", "Dying Light", &dir.path().join("DyingLight"), "DyingLightGame.exe");
+    manifest(
+        "stale",
+        "Dying Light",
+        &dir.path().join("DyingLight"),
+        "DyingLightGame.exe",
+    );
     manifest("dlc", "Dying Light The Following", &installed, "");
 
     let games = EpicLibrary::at(dir.path()).games();
@@ -927,7 +1001,11 @@ fn v0_3_measure_what_the_desktop_adds() {
             Some(_) => "same target",
             None => "same title",
         };
-        eprintln!("    [{verdict:>11}] {:<34} -> {}", sc.name, sc.target.display());
+        eprintln!(
+            "    [{verdict:>11}] {:<34} -> {}",
+            sc.name,
+            sc.target.display()
+        );
         if kept.is_none() {
             let p = pipeline_in(&dir);
             for e in p.query(&sc.name, 1).entries.iter().take(2) {
@@ -965,11 +1043,18 @@ fn v0_3_run_the_verify_steps_that_need_no_launch() {
         if !ok {
             failed += 1;
         }
-        eprintln!("  [{}] {step:<5} {detail}", if ok { "pass" } else { "FAIL" });
+        eprintln!(
+            "  [{}] {step:<5} {detail}",
+            if ok { "pass" } else { "FAIL" }
+        );
     };
 
     let titles = |q: &str| -> Vec<String> {
-        p.query(q, 1).entries.iter().map(|e| e.title.clone()).collect()
+        p.query(q, 1)
+            .entries
+            .iter()
+            .map(|e| e.title.clone())
+            .collect()
     };
     let top_is = |q: &str, want: &str| -> (bool, String) {
         let rows = titles(q);
@@ -997,7 +1082,11 @@ fn v0_3_run_the_verify_steps_that_need_no_launch() {
     for name in ["Obsidian", "Postman", "GitHub Desktop"] {
         let rows = titles(name);
         let n = rows.iter().filter(|t| t.eq_ignore_ascii_case(name)).count();
-        report("DK1", n == 1, format!("{name} -> {n} row(s): {}", rows.join(" | ")));
+        report(
+            "DK1",
+            n == 1,
+            format!("{name} -> {n} row(s): {}", rows.join(" | ")),
+        );
     }
 
     // DK2 is the one with teeth: the Desktop copies point at a dead
@@ -1048,13 +1137,20 @@ fn v0_3_measure_what_winget_would_add() {
         for word in name.split_whitespace() {
             let w = word.trim_matches(|c: char| c == '(' || c == ')' || c == ',');
             let versionish = w.chars().next().is_some_and(|c| c.is_ascii_digit())
-                || matches!(w.to_lowercase().as_str(), "x64" | "x86" | "64-bit" | "32-bit");
+                || matches!(
+                    w.to_lowercase().as_str(),
+                    "x64" | "x86" | "64-bit" | "32-bit"
+                );
             if versionish {
                 break;
             }
             kept.push(word);
         }
-        if kept.is_empty() { name.to_string() } else { kept.join(" ") }
+        if kept.is_empty() {
+            name.to_string()
+        } else {
+            kept.join(" ")
+        }
     };
 
     let mut missing = Vec::new();
@@ -1086,11 +1182,42 @@ fn v0_3_measure_whether_winget_apps_are_already_reachable() {
     let dir = TempDir::new("wingetreach");
     let p = pipeline_in(&dir);
     for q in [
-        "terminal", "visual studio code", "outlook", "onedrive", "roblox",
-        "ollama", "nvm", "rustup", "gh", "wsl", "java", "r 4", "signal",
-        "powertoys", "winrar", "zen", "docker", "f.lux", "hwinfo", "github cli",
+        "terminal",
+        "visual studio code",
+        "outlook",
+        "onedrive",
+        "roblox",
+        "ollama",
+        "nvm",
+        "rustup",
+        "gh",
+        "wsl",
+        "java",
+        "r 4",
+        "signal",
+        "powertoys",
+        "winrar",
+        "zen",
+        "docker",
+        "f.lux",
+        "hwinfo",
+        "github cli",
     ] {
-        let rows: Vec<String> = p.query(q, 1).entries.iter().take(2).map(|e| e.title.clone()).collect();
-        eprintln!("  {:<20} {}", format!("{q:?}"), if rows.is_empty() { "(nothing)".into() } else { rows.join(" | ") });
+        let rows: Vec<String> = p
+            .query(q, 1)
+            .entries
+            .iter()
+            .take(2)
+            .map(|e| e.title.clone())
+            .collect();
+        eprintln!(
+            "  {:<20} {}",
+            format!("{q:?}"),
+            if rows.is_empty() {
+                "(nothing)".into()
+            } else {
+                rows.join(" | ")
+            }
+        );
     }
 }

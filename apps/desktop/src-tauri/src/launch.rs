@@ -31,16 +31,17 @@ pub fn open(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
             None,
             &path.to_string_lossy(),
             args.as_deref(),
-            working_dir.as_ref().map(|d| d.to_string_lossy().to_string()).as_deref(),
+            working_dir
+                .as_ref()
+                .map(|d| d.to_string_lossy().to_string())
+                .as_deref(),
         ),
         LaunchTarget::Aumid(aumid) => {
             shell_execute(None, &format!(r"shell:AppsFolder\{aumid}"), None, None)
         }
         // Through the launcher, never the game's own executable. Each URI and why
         // it is shaped that way lives in `GameLauncher::uri`.
-        LaunchTarget::Game { launcher, id } => {
-            shell_execute(None, &launcher.uri(id), None, None)
-        }
+        LaunchTarget::Game { launcher, id } => shell_execute(None, &launcher.uri(id), None, None),
         // A URI the shell resolves itself — `ms-settings:bluetooth`. Same call as
         // a `steam://` URL; the shell picks the handler.
         LaunchTarget::Uri(uri) => shell_execute(None, uri, None, None),
@@ -66,7 +67,10 @@ pub fn run_as_admin(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
             Some("runas"),
             &path.to_string_lossy(),
             args.as_deref(),
-            working_dir.as_ref().map(|d| d.to_string_lossy().to_string()).as_deref(),
+            working_dir
+                .as_ref()
+                .map(|d| d.to_string_lossy().to_string())
+                .as_deref(),
         ),
         _ => Err("This kind of application cannot be run as administrator.".into()),
     }
@@ -129,9 +133,7 @@ fn shell_execute(
 ) -> Result<Option<PathBuf>, String> {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::UI::Shell::{
-        ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
-    };
+    use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
     let verb = verb.map(HSTRING::from);
@@ -173,7 +175,9 @@ fn shell_execute(
     if !info.hProcess.is_invalid() {
         // `SEE_MASK_NOCLOSEPROCESS` hands us the handle to close. Closing it does
         // not end the process; leaking it would hold a dead one alive all session.
-        unsafe { let _ = CloseHandle(info.hProcess); };
+        unsafe {
+            let _ = CloseHandle(info.hProcess);
+        };
     }
     Ok(image)
 }
@@ -348,8 +352,7 @@ pub fn shell_item_is_bindable(pidl_bytes: &[u8]) -> bool {
 
     let _com = crate::com::ComScope::new();
     with_aligned_pidl(pidl_bytes, |pidl| {
-        let item: Result<IShellItem, _> =
-            unsafe { SHCreateItemFromIDList(pidl as *const _) };
+        let item: Result<IShellItem, _> = unsafe { SHCreateItemFromIDList(pidl as *const _) };
         Ok(item.is_ok())
     })
     .unwrap_or(false)
@@ -417,9 +420,7 @@ unsafe fn open_clipboard_retrying() -> Result<(), String> {
 #[cfg(windows)]
 pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     use windows::Win32::Foundation::{HANDLE, HGLOBAL};
-    use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, SetClipboardData,
-    };
+    use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_UNICODETEXT;
 
@@ -460,7 +461,6 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
         result
     }
 }
-
 
 #[cfg(test)]
 mod tests {

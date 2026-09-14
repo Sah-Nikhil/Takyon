@@ -104,7 +104,10 @@ mod tests {
         store.set("ps", &ps).unwrap();
 
         let by_target = store.by_target();
-        assert_eq!(by_target.get(&ps).map(|v| v.as_slice()), Some(&["ps".to_string()][..]));
+        assert_eq!(
+            by_target.get(&ps).map(|v| v.as_slice()),
+            Some(&["ps".to_string()][..])
+        );
     }
 
     /// The needle is lowercased before matching, so a stored `PS` would never

@@ -73,7 +73,8 @@ impl Builder {
         let id = self.entries.len() as u32;
         let name_off = self.intern(name);
         let flags = if is_dir { FLAG_DIR } else { 0 };
-        self.entries.push([name_off, parent.unwrap_or(NO_PARENT), flags]);
+        self.entries
+            .push([name_off, parent.unwrap_or(NO_PARENT), flags]);
 
         if parent.is_none() {
             self.roots += 1;
@@ -429,7 +430,10 @@ mod tests {
             index.path(3),
             PathBuf::from(r"C:\Programming\takyon\src\main.rs")
         );
-        assert_eq!(index.path(6), PathBuf::from(r"C:\Programming\pitchr\main.rs"));
+        assert_eq!(
+            index.path(6),
+            PathBuf::from(r"C:\Programming\pitchr\main.rs")
+        );
         assert_eq!(index.path(0), PathBuf::from(r"C:\Programming"));
     }
 
@@ -447,7 +451,11 @@ mod tests {
     #[test]
     fn v0_7_candidates_narrow_to_entries_carrying_every_trigram() {
         let index = sample();
-        let hits: Vec<PathBuf> = index.candidates("bang").iter().map(|id| index.path(*id)).collect();
+        let hits: Vec<PathBuf> = index
+            .candidates("bang")
+            .iter()
+            .map(|id| index.path(*id))
+            .collect();
         assert_eq!(
             hits,
             vec![PathBuf::from(r"C:\Programming\takyon\src\bang.rs")]

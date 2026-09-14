@@ -58,12 +58,14 @@ fn v0_8_anything_that_is_not_ready_says_why() {
 
 /// An installed Agent reports a version, because the card shows one.
 ///
-/// Skipped rather than failed where nothing is installed: CI machines and fresh
-/// checkouts have no Agents, and a test that only passes on this laptop is not a
-/// test.
+/// Skipped rather than failed where nothing is installed. CI filters it out by
+/// name instead (ci.yml), so a runner with no Agents reports it as not run.
 #[test]
 fn v0_8_an_installed_agent_reports_its_version() {
-    let installed: Vec<_> = agents::snapshots().into_iter().filter(|s| s.installed).collect();
+    let installed: Vec<_> = agents::snapshots()
+        .into_iter()
+        .filter(|s| s.installed)
+        .collect();
     if installed.is_empty() {
         eprintln!("[takyon] no Agent CLI installed; version assertion skipped");
         return;
@@ -90,13 +92,17 @@ fn v0_8_probing_every_agent_is_bounded() {
         elapsed < Duration::from_secs(70),
         "probing every Agent took {elapsed:?}"
     );
-    eprintln!("[takyon] probed {} Agents in {elapsed:?}", AgentKind::ALL.len());
+    eprintln!(
+        "[takyon] probed {} Agents in {elapsed:?}",
+        AgentKind::ALL.len()
+    );
 }
 
 /// A signed-in Agent lists models, because Settings will not let you pick one
 /// otherwise and the model is locked down (v0.8 task 10).
 ///
 /// Shape only: which models exist is the Agent's business and changes weekly.
+/// Filtered out on CI by name (ci.yml): no runner is signed in to an Agent.
 #[test]
 fn v0_8_a_signed_in_agent_lists_models() {
     let mut checked = 0;
@@ -169,7 +175,11 @@ fn v0_8_a_real_turn_answers() {
             snapshot.label, state.session
         );
         assert!(!answer.trim().is_empty(), "{} said nothing", snapshot.label);
-        assert!(state.session.is_some(), "{} reported no session", snapshot.label);
+        assert!(
+            state.session.is_some(),
+            "{} reported no session",
+            snapshot.label
+        );
     }
 }
 

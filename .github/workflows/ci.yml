@@ -1,26 +1,45 @@
 name: CI
 
-# Runs the same four layers `bun run test` runs locally, plus typecheck and
-# lint — the gate release.yml waits on rather than repeating.
+# Runs the same four layers `bun run test` runs locally, plus typecheck, lint,
+# the live web search tests and the performance bench — the gate release.yml
+# waits on rather than repeating.
 #
-# Two jobs are on Windows on purpose:
+# The Windows jobs are on Windows on purpose:
 #
-#   - `rust` because the product is Windows. Twenty files reach for the
+#   - `rust-*` because the product is Windows. Twenty files reach for the
 #     `windows` crate and it is declared under `[target.'cfg(windows)']`, so a
 #     Linux runner would not compile the product at all. See docs/plans/v0.12-macos.md.
 #   - `visual` because the screenshot baselines were rasterised by Windows. Same
 #     Chromium on Linux puts every glyph in a slightly different place, and the
 #     150px budget is deliberately tight enough to notice.
+#   - `web-search` because `search::fetch` is WinHTTP, and `bench` because the
+#     budgets are for the Windows build.
 #
 # `macos` is a compile gate rather than a test run: the crate builds for
 # aarch64-apple-darwin on stubs that refuse in words, and the job exists so a
 # Windows-only call losing its `cfg` is caught the day it lands.
+#
+# Every job runs on every event, never behind an `if:`. release.yml's preflight
+# waits for all checks on the tagged commit to succeed, and a skipped job is not
+# a success.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  # Daily, for what breaks with no commit: DuckDuckGo's HTML, a runner image,
+  # a performance drift. A scheduled failure emails the repo owner.
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+# PRs: one run per PR, and a new push cancels the old one. Everything else gets
+# a group per commit and is never cancelled — release.yml needs a finished,
+# successful run on the exact commit it tags.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -29,10 +48,15 @@ jobs:
   ts:
     name: Typecheck, lint and TypeScript tests
     runs-on: ubuntu-latest
+    # Every timeout is roughly three times the job's measured warm run, so a
+    # cold cache fits and a hung process does not burn GitHub's 6-hour default.
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # No `bun-version`: setup-bun reads `packageManager` from package.json,
+      # which is the pin for every job here and in release.yml.
       - uses: oven-sh/setup-bun@v2
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
@@ -43,34 +67,84 @@ jobs:
       # `tests/visual`, whose specs import Playwright and are not bun tests.
       - run: bun test apps/desktop/src packages/shared/src
 
-  rust:
-    name: cargo test and clippy (Windows)
-    runs-on: windows-latest
+  # The rules CLAUDE.md states and nothing else checks. Linux: none of them
+  # compiles anything, and `cargo metadata` resolves Windows-only crates anyway.
+  hygiene:
+    name: Format, comments, colours and licences
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: rustfmt
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: cargo fmt --all --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
+      # `success() || failure()` on each: every check reports, so one failure
+      # cannot hide the next the way a failed `cargo test` once hid clippy.
+      - if: success() || failure()
+        run: bun run check:comments
+      - if: success() || failure()
+        run: bun run check:colours
+      - if: success() || failure()
+        run: bun run check:licences
+
+  rust-test:
+    name: cargo test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned, and in step with rust-toolchain.toml. `@stable` let a Rust
+      # release add a clippy lint and fail `-D warnings` with no commit.
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          # One key per job that builds, because a cache is written once per key
+          # and two jobs saving under one lose the race. `web-search` reads this
+          # one: same test profile, same dependencies.
+          shared-key: rust-desktop-test
+      # `--workspace`: the uiaccess helper is a second crate and has to build.
+      # The `--ignored` tests run in `web-search`, where a flake cannot block.
+      # The two `--skip`s need an installed, signed-in Agent CLI. A runner has
+      # none, so they returned early and read as passes; filtered out, they show
+      # up in the count as not run instead.
+      - run: >-
+          cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml --
+          --skip v0_8_an_installed_agent_reports_its_version
+          --skip v0_8_a_signed_in_agent_lists_models
+
+  # Its own job rather than a step after `cargo test`, so the two run side by
+  # side. It also means a failing test no longer hides a lint failure: the step
+  # after a failed one never runs, which kept clippy off CI for a week.
+  rust-clippy:
+    name: cargo clippy (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
-          # Shared with release.yml's build job. GitHub only exposes
-          # default-branch caches to tag refs, so a tag-scoped save would never
-          # warm the next tag. Debug here vs release there, so this warms the
-          # registry and dependency build rather than the final artefacts.
-          shared-key: rust-desktop
-      # `--workspace`: the uiaccess helper is a second crate and has to build.
-      # The `--ignored` tests stay out — `web_search` reaches DuckDuckGo for
-      # real, and a network flake is not a broken commit.
-      - run: cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml
+          shared-key: rust-desktop-clippy
       - run: cargo clippy --workspace --all-targets --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 
   macos:
     name: cargo clippy (macOS)
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -88,15 +162,16 @@ jobs:
   visual:
     name: Playwright screenshots (Windows)
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~\.bun\install\cache
           key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~\AppData\Local\ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
@@ -106,9 +181,75 @@ jobs:
       - run: bun run test:visual
       # The actual/diff pair for every failure, which is the only way to tell a
       # real regression from a rasterisation drift without a local repro.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-diffs
           path: apps/desktop/test-results/
           retention-days: 7
+
+  # The `#[ignore]`d tests in `web_search.rs`: a real DuckDuckGo search and real
+  # page reads. `ddg.rs` parses HTML, so a class rename on their side breaks `!s`
+  # and only this notices. Exa's tests skip themselves: a runner holds no key.
+  web-search:
+    name: Live web search (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    # A network flake is not a broken commit, so a PR still merges past it. The
+    # daily run is the one that must fail loudly, since nothing else will.
+    continue-on-error: ${{ github.event_name != 'schedule' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          shared-key: rust-desktop-test
+          save-if: false
+      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test web_search -- --ignored --nocapture
+
+  # `bun run bench` against a release build. Budget misses warn, harness
+  # failures fail: a shared runner's timings are too noisy to gate on, but a
+  # Palette that never shows is a real bug on any machine. TBC-0015.
+  bench:
+    name: Performance bench (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          # Release profile, shared with release.yml's build job. GitHub only
+          # exposes default-branch caches to tag refs, so a tag-scoped save
+          # would never warm the next tag.
+          shared-key: rust-desktop-release
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v6
+        with:
+          path: ~\.bun\install\cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      # `tauri build`, never bare cargo (CLAUDE.md, Gotchas). `--no-bundle`:
+      # the bench needs `takyon.exe`, not an installer.
+      - run: bun run build --no-bundle
+      - name: Run the bench
+        shell: bash
+        run: |
+          set +e
+          bun run bench 2>&1 | tee bench.txt
+          code=${PIPESTATUS[0]}
+          { echo '### Performance bench'; echo '```'; tr '\r' '\n' < bench.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = 2 ]; then
+            echo "::warning title=Performance budget::At least one budget was missed on this runner. Numbers are in the job summary."
+            exit 0
+          fi
+          exit "$code"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bench-results
+          path: bench/results/
+          if-no-files-found: ignore
+          retention-days: 30

@@ -87,7 +87,10 @@ pub fn key_for(source: &IconSource) -> String {
 /// impossible regardless. Sixteen lowercase hex digits and nothing else is the
 /// belt to that pair of braces, and costs one comparison.
 pub fn is_valid_key(key: &str) -> bool {
-    key.len() == 16 && key.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    key.len() == 16
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// The icon blob and everything needed to fill it.
@@ -331,10 +334,7 @@ impl IconStore {
 
             // The data starts after the header and the whole index, so every
             // offset can be computed before a single byte of image data is written.
-            let index_bytes: usize = all
-                .iter()
-                .map(|(k, _)| 2 + k.len() + 8 + 4)
-                .sum();
+            let index_bytes: usize = all.iter().map(|(k, _)| 2 + k.len() + 8 + 4).sum();
             let mut offset = (MAGIC.len() + 4 + 4 + index_bytes) as u64;
 
             for (key, bytes) in &all {
@@ -391,7 +391,9 @@ fn parse_index(map: &[u8]) -> Option<HashMap<String, (u64, u32)>> {
         if pos + key_len + 12 > map.len() {
             return None;
         }
-        let key = std::str::from_utf8(&map[pos..pos + key_len]).ok()?.to_string();
+        let key = std::str::from_utf8(&map[pos..pos + key_len])
+            .ok()?
+            .to_string();
         pos += key_len;
         let offset = u64::from_le_bytes(map[pos..pos + 8].try_into().ok()?);
         pos += 8;
@@ -446,8 +448,7 @@ mod win {
     fn extract_inner(source: &IconSource) -> Option<Vec<u8>> {
         unsafe {
             let name = HSTRING::from(source.parsing_name());
-            let factory: IShellItemImageFactory =
-                SHCreateItemFromParsingName(&name, None).ok()?;
+            let factory: IShellItemImageFactory = SHCreateItemFromParsingName(&name, None).ok()?;
 
             // ICONONLY, or the shell returns a *thumbnail*: a preview of an exe's
             // contents, or of the document a shortcut points at. BIGGERSIZEOK lets it
@@ -565,7 +566,10 @@ mod tests {
         assert!(!is_valid_key("../../../etc/passwd"));
         assert!(!is_valid_key(r"..\..\windows"));
         assert!(!is_valid_key(""));
-        assert!(!is_valid_key("ABCDEF0123456789"), "uppercase is not produced");
+        assert!(
+            !is_valid_key("ABCDEF0123456789"),
+            "uppercase is not produced"
+        );
         assert!(!is_valid_key("abc"));
         assert!(!is_valid_key("0123456789abcdef0"), "too long");
     }
@@ -584,13 +588,17 @@ mod tests {
 
         // Filesystem timestamps are coarse; set it explicitly rather than sleeping
         // and hoping the granularity cooperated.
-        let later = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2_000_000_000);
+        let later =
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2_000_000_000);
         let handle = std::fs::OpenOptions::new().write(true).open(&file).unwrap();
         handle.set_modified(later).unwrap();
         drop(handle);
 
         let after = key_for(&IconSource::File(file));
-        assert_ne!(before, after, "an updated binary must not keep its old icon");
+        assert_ne!(
+            before, after,
+            "an updated binary must not keep its old icon"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -660,7 +668,10 @@ mod tests {
     /// one fixed moment.
     #[test]
     fn v0_3_icons_are_written_once_extraction_settles() {
-        assert!(!should_flush(0, Duration::from_secs(60)), "nothing to write");
+        assert!(
+            !should_flush(0, Duration::from_secs(60)),
+            "nothing to write"
+        );
         assert!(
             !should_flush(4, Duration::ZERO),
             "still extracting — a flush per row rewrites the whole file per row"
@@ -689,7 +700,10 @@ mod tests {
 
         // A fresh store, as though the app had restarted.
         let reopened = IconStore::new(Some(dir.clone()));
-        assert_eq!(reopened.get(&key).as_deref(), Some(&b"pretend-png-bytes"[..]));
+        assert_eq!(
+            reopened.get(&key).as_deref(),
+            Some(&b"pretend-png-bytes"[..])
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -711,7 +725,9 @@ mod tests {
         let reopened = IconStore::new(Some(dir.clone()));
         for i in 0..8u64 {
             let key = format!("{i:016x}");
-            let got = reopened.get(&key).expect("every key survives the round trip");
+            let got = reopened
+                .get(&key)
+                .expect("every key survives the round trip");
             assert_eq!(got.len(), (i as usize + 1) * 10);
             assert!(got.iter().all(|&b| b == i as u8));
         }

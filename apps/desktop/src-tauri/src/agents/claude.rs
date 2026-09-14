@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use super::probe::{self, PROBE_TIMEOUT};
 use super::turn::TurnEvent;
-use super::{AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState};
+use super::{
+    AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState,
+};
 
 pub struct ClaudeDriver;
 
@@ -173,7 +175,10 @@ fn unverified(version: Option<String>, message: &str) -> Snapshot {
 
 /// Turn one `claude auth status --json` payload into a Snapshot.
 pub fn snapshot_from_auth(version: Option<String>, json: &Value) -> Snapshot {
-    let logged_in = json.get("loggedIn").and_then(Value::as_bool).unwrap_or(false);
+    let logged_in = json
+        .get("loggedIn")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     if !logged_in {
         return Snapshot {
             kind: AgentKind::Claude,
@@ -273,7 +278,9 @@ fn title_case_words(value: &str) -> String {
         .map(|part| {
             let mut chars = part.chars();
             match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+                Some(first) => {
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                }
                 None => String::new(),
             }
         })
@@ -302,7 +309,10 @@ mod tests {
         assert!(snap.installed);
         assert_eq!(snap.health, Health::Ready);
         assert_eq!(snap.sign_in.status, SignInStatus::In);
-        assert_eq!(snap.sign_in.label.as_deref(), Some("Claude Pro Subscription"));
+        assert_eq!(
+            snap.sign_in.label.as_deref(),
+            Some("Claude Pro Subscription")
+        );
         assert_eq!(snap.sign_in.account.as_deref(), Some("someone@example.com"));
         assert!(snap.message.is_none());
     }
@@ -319,21 +329,33 @@ mod tests {
     /// An API key beats the subscription, and Bedrock is read from apiProvider.
     #[test]
     fn v0_8_claude_account_labels_follow_t3_codes_rules() {
-        assert_eq!(auth_label(Some("pro"), Some("apiKey")).as_deref(), Some("Claude API Key"));
-        assert_eq!(auth_label(Some("max20"), None).as_deref(), Some("Claude Max 20x Subscription"));
+        assert_eq!(
+            auth_label(Some("pro"), Some("apiKey")).as_deref(),
+            Some("Claude API Key")
+        );
+        assert_eq!(
+            auth_label(Some("max20"), None).as_deref(),
+            Some("Claude Max 20x Subscription")
+        );
         assert_eq!(
             auth_label(Some("claudeEnterpriseSubscription"), None).as_deref(),
             Some("Claude Enterprise Subscription")
         );
         assert_eq!(auth_label(None, None), None);
-        assert_eq!(api_provider_label(Some("bedrock")).as_deref(), Some("Amazon Bedrock"));
+        assert_eq!(
+            api_provider_label(Some("bedrock")).as_deref(),
+            Some("Amazon Bedrock")
+        );
         assert_eq!(api_provider_label(Some("firstParty")), None);
     }
 
     /// An unknown plan name is title-cased rather than dropped.
     #[test]
     fn v0_8_an_unknown_claude_plan_still_reads_as_english() {
-        assert_eq!(subscription_auth_label("super_duper"), "Claude Super Duper Subscription");
+        assert_eq!(
+            subscription_auth_label("super_duper"),
+            "Claude Super Duper Subscription"
+        );
     }
 
     /// The init line is where the session id to resume comes from.
@@ -363,7 +385,9 @@ mod tests {
             {"type":"text","text":"Hello"}]}}"#;
         assert_eq!(
             ClaudeDriver.parse_line(line, &mut state),
-            Some(TurnEvent::Text { delta: "Hello".into() })
+            Some(TurnEvent::Text {
+                delta: "Hello".into()
+            })
         );
 
         let thinking_only =
@@ -381,7 +405,9 @@ mod tests {
         let bad = r#"{"type":"result","is_error":true,"result":"Credit balance too low"}"#;
         assert_eq!(
             ClaudeDriver.parse_line(bad, &mut state),
-            Some(TurnEvent::Failed { message: "Credit balance too low".into() })
+            Some(TurnEvent::Failed {
+                message: "Credit balance too low".into()
+            })
         );
     }
 
@@ -390,7 +416,10 @@ mod tests {
     #[test]
     fn v0_8_a_half_line_parses_to_nothing_rather_than_to_text() {
         let mut state = TurnState::default();
-        assert_eq!(ClaudeDriver.parse_line(r#"{"type":"assis"#, &mut state), None);
+        assert_eq!(
+            ClaudeDriver.parse_line(r#"{"type":"assis"#, &mut state),
+            None
+        );
         assert_eq!(ClaudeDriver.parse_line("not json at all", &mut state), None);
     }
 
@@ -406,12 +435,18 @@ mod tests {
             tools: false,
         };
         let args = ClaudeDriver.turn_args(&base);
-        let tools = args.iter().position(|a| a == "--tools").expect("tools flag");
+        let tools = args
+            .iter()
+            .position(|a| a == "--tools")
+            .expect("tools flag");
         assert_eq!(args[tools + 1], "");
         assert!(args.contains(&"stream-json".to_string()));
         assert!(args.contains(&"--verbose".to_string()));
 
-        let with_tools = ClaudeDriver.turn_args(&TurnRequest { tools: true, ..base.clone() });
+        let with_tools = ClaudeDriver.turn_args(&TurnRequest {
+            tools: true,
+            ..base.clone()
+        });
         assert!(!with_tools.contains(&"--tools".to_string()));
     }
 
@@ -426,9 +461,15 @@ mod tests {
             effort: Some("high".into()),
             tools: false,
         });
-        let model = args.iter().position(|a| a == "--model").expect("model flag");
+        let model = args
+            .iter()
+            .position(|a| a == "--model")
+            .expect("model flag");
         assert_eq!(args[model + 1], "opus");
-        let effort = args.iter().position(|a| a == "--effort").expect("effort flag");
+        let effort = args
+            .iter()
+            .position(|a| a == "--effort")
+            .expect("effort flag");
         assert_eq!(args[effort + 1], "high");
     }
 
@@ -460,9 +501,15 @@ mod tests {
             effort: None,
             tools: true,
         });
-        let resume = args.iter().position(|a| a == "--resume").expect("resume flag");
+        let resume = args
+            .iter()
+            .position(|a| a == "--resume")
+            .expect("resume flag");
         assert_eq!(args[resume + 1], "s-1");
-        let model = args.iter().position(|a| a == "--model").expect("model flag");
+        let model = args
+            .iter()
+            .position(|a| a == "--model")
+            .expect("model flag");
         assert_eq!(args[model + 1], "opus");
     }
 }

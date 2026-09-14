@@ -107,10 +107,10 @@ impl Haystack {
     }
 
     /// A Haystack for something with **no display name** — a bare `PATH` executable.
-        ///
-        /// `Haystack::new(stem, Some(stem))` is the obvious call and is wrong: it makes
-        /// the basename a display name, so `code` matches `code.cmd` at the exact-name
-        /// rung and beats Visual Studio Code. Empty name leaves only the 650 rung.
+    ///
+    /// `Haystack::new(stem, Some(stem))` is the obvious call and is wrong: it makes
+    /// the basename a display name, so `code` matches `code.cmd` at the exact-name
+    /// rung and beats Visual Studio Code. Empty name leaves only the 650 rung.
     pub fn for_executable(stem: &str) -> Self {
         Haystack {
             name: String::new(),
@@ -357,7 +357,10 @@ mod tests {
     #[test]
     fn v0_7_a_phrase_inside_a_filename_matches_for_files() {
         let hay = Haystack::new("EA SPORTS FC 26", None);
-        assert!(score(&Query::new("fc 26"), &hay).is_none(), "the app ladder declines it");
+        assert!(
+            score(&Query::new("fc 26"), &hay).is_none(),
+            "the app ladder declines it"
+        );
         assert!(score_path(&Query::new("fc 26"), &hay).is_some());
         // And the prefix rungs still win where they apply, so ordering is intact.
         let prefix = score_path(&Query::new("ea sports"), &hay).unwrap();
@@ -382,8 +385,14 @@ mod tests {
     #[test]
     fn v0_7_the_substring_rung_has_a_floor() {
         let hay = Haystack::new("EA SPORTS FC 26", None);
-        assert!(score_path(&Query::new("or"), &hay).is_none(), "two chars mid-word");
-        assert!(score_path(&Query::new("ort"), &hay).is_some(), "three chars mid-word");
+        assert!(
+            score_path(&Query::new("or"), &hay).is_none(),
+            "two chars mid-word"
+        );
+        assert!(
+            score_path(&Query::new("ort"), &hay).is_some(),
+            "three chars mid-word"
+        );
         // A word prefix is not the substring rung and keeps its own tier.
         assert!(score_path(&Query::new("fc"), &hay).unwrap() > TIER_SUBSTRING);
         assert_eq!(MIN_SUBSTRING_LEN, 3);
@@ -417,8 +426,14 @@ mod tests {
         let helium = exe_hay("Helium", "chrome");
         let q = q("chrome");
 
-        assert!(!matched_only_by_binary(&q, &chrome), "Chrome matches by its name");
-        assert!(matched_only_by_binary(&q, &helium), "Helium matches only by its exe");
+        assert!(
+            !matched_only_by_binary(&q, &chrome),
+            "Chrome matches by its name"
+        );
+        assert!(
+            matched_only_by_binary(&q, &helium),
+            "Helium matches only by its exe"
+        );
     }
 
     /// The rung still earns its place where no title answers. `devenv` names no
@@ -524,13 +539,15 @@ mod tests {
             titled("Code", r"C:\other\Code.exe"),
             titled("Notepad", r"C:\Windows\notepad.exe"),
         ]);
-        let kept: Vec<&str> = out
-            .iter()
-            .filter_map(|e| e.subtitle.as_deref())
-            .collect();
+        let kept: Vec<&str> = out.iter().filter_map(|e| e.subtitle.as_deref()).collect();
         assert_eq!(kept.len(), 2, "both Code rows keep theirs");
         assert!(kept.iter().all(|s| s.ends_with("Code.exe")));
-        assert!(out.iter().find(|e| e.title == "Notepad").unwrap().subtitle.is_none());
+        assert!(out
+            .iter()
+            .find(|e| e.title == "Notepad")
+            .unwrap()
+            .subtitle
+            .is_none());
     }
 
     /// Titles collide as the user reads them, not as bytes. `mspaint` beside
@@ -575,8 +592,14 @@ mod tests {
         let adobe = score(&q("adobe"), &hay("Adobe Photoshop")).unwrap();
         let photo = score(&q("photo"), &hay("Adobe Photoshop")).unwrap();
         assert!(adobe > photo);
-        assert_eq!(tier_of("adobe", &hay("Adobe Photoshop")), Some(TIER_NAME_PREFIX));
-        assert_eq!(tier_of("photo", &hay("Adobe Photoshop")), Some(TIER_WORD_PREFIX));
+        assert_eq!(
+            tier_of("adobe", &hay("Adobe Photoshop")),
+            Some(TIER_NAME_PREFIX)
+        );
+        assert_eq!(
+            tier_of("photo", &hay("Adobe Photoshop")),
+            Some(TIER_WORD_PREFIX)
+        );
     }
 
     /// Manual verification step 1: `phot` finds Photoshop.
@@ -676,7 +699,10 @@ mod tests {
         // An app whose name merely *starts* with the word still loses to the
         // keyword rung on tier — the 0.8 kind weight is what settles that pair,
         // and `query.rs` owns the test for it.
-        assert_eq!(tier_of("disk", &hay("Disk Cleanup")), Some(TIER_NAME_PREFIX));
+        assert_eq!(
+            tier_of("disk", &hay("Disk Cleanup")),
+            Some(TIER_NAME_PREFIX)
+        );
 
         // A user alias still wins outright, and an exact name still beats ours.
         let mut both = hay("Storage");
@@ -733,7 +759,10 @@ mod tests {
         }
         // The matches that do happen for a single character come from a real
         // position in the name, not from its initials.
-        assert_eq!(tier_of("v", &hay("Visual Studio Code")), Some(TIER_NAME_PREFIX));
+        assert_eq!(
+            tier_of("v", &hay("Visual Studio Code")),
+            Some(TIER_NAME_PREFIX)
+        );
         assert_eq!(tier_of("z", &hay("Quick Zip")), Some(TIER_WORD_PREFIX));
         assert!(tier_of("x", &hay("Quick Zip")).is_none());
     }
@@ -759,9 +788,15 @@ mod tests {
 
     #[test]
     fn v0_2_punctuation_in_app_names_splits_into_words() {
-        assert_eq!(tokenize("7-zip file manager"), ["7", "zip", "file", "manager"]);
+        assert_eq!(
+            tokenize("7-zip file manager"),
+            ["7", "zip", "file", "manager"]
+        );
         assert_eq!(tokenize("node.js (64-bit)"), ["node", "js", "64", "bit"]);
-        assert_eq!(tokenize("adobe photoshop 2024"), ["adobe", "photoshop", "2024"]);
+        assert_eq!(
+            tokenize("adobe photoshop 2024"),
+            ["adobe", "photoshop", "2024"]
+        );
     }
 
     #[test]
@@ -862,7 +897,12 @@ mod tests {
         // the user must see one row, and it must be the one with the real name.
         let merged = dedupe(vec![
             entry("c:\\vsc\\code.exe", "code", EntryKind::App, 650.0),
-            entry("c:\\vsc\\code.exe", "Visual Studio Code", EntryKind::App, 800.0),
+            entry(
+                "c:\\vsc\\code.exe",
+                "Visual Studio Code",
+                EntryKind::App,
+                800.0,
+            ),
         ]);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].title, "Visual Studio Code");

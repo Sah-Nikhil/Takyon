@@ -24,6 +24,7 @@ import {
   openedUrls,
   setAnswer,
   setAutostart,
+  setAgentMissing,
   setAgentSignedOut,
   setAskOrder,
   setWebKeyStored,
@@ -41,12 +42,9 @@ const kind = new URLSearchParams(window.location.search).get("window") ?? "palet
 // hidden, so the read lands long before any show could paint a frame.
 void load();
 
-// Outside Tauri there is no hotkey to press, so the show event would never fire
-// and the Palette would sit unfocused forever. Playwright and the browser console
-// drive it through here instead. Never exposed in the real app.
-// `setIndexing` joins them for the same reason: the window between login and the
-// application walk finishing is a few hundred milliseconds long, which no test
-// could catch by timing, and it has its own row in the Palette.
+// Outside Tauri no hotkey fires the show event, so Playwright and the console drive
+// it here; never exposed in the real app. `setIndexing` too: the login-to-walk-done
+// window is too short for any test to catch by timing, and it has its own row.
 if (!inTauri) {
   (window as unknown as Record<string, unknown>).__takyon_mock = {
     emitShow,
@@ -72,6 +70,9 @@ if (!inTauri) {
     // Every Agent signed out is the only state that blocks `!c` now that the
     // preference is an order, and no fixture is in it.
     setAgentSignedOut,
+    // One Agent installed on a first run, which ADR-0031 ranks first. No fixture
+    // is in that state.
+    setAgentMissing,
     // Whether `!s` holds a key. Rust keeps it DPAPI-wrapped on disk, which a
     // browser cannot reach, so the no-key state is unreachable without this.
     setWebKeyStored,

@@ -24,7 +24,10 @@ fn v0_9_a_key_survives_a_round_trip_through_a_real_directory() {
 
     key::store(temp.path(), "BSA-integration-token").expect("store");
     assert!(key::present(temp.path()));
-    assert_eq!(key::load(temp.path()).as_deref(), Some("BSA-integration-token"));
+    assert_eq!(
+        key::load(temp.path()).as_deref(),
+        Some("BSA-integration-token")
+    );
     assert_eq!(key::hint(temp.path()).as_deref(), Some("…oken"));
 
     // The file is what another account would find. It must not be the key.
@@ -131,13 +134,9 @@ fn v0_9_a_real_search_returns_coherent_hits() {
     assert_coherent(&hits);
 }
 
-/// The keyless provider against the live endpoint. Unlike the keyed one this
-/// needs no stored anything, so it runs anywhere `--ignored` is asked for and is
-/// the only end-to-end proof that `!s` works on a machine with no key at all.
-///
-/// It is also the tripwire for the maintenance cost in ADR-0021: DuckDuckGo
-/// renames a class and this fails, where the unit tests keep passing against a
-/// fixture frozen the day it was captured.
+/// The keyless provider against the live endpoint: needs no key, so it is the only
+/// end-to-end proof `!s` works on a machine without one. ADR-0021's tripwire: a
+/// DuckDuckGo class rename fails this while fixture-based unit tests stay green.
 #[test]
 #[ignore]
 fn v0_10_a_real_keyless_search_returns_coherent_hits() {

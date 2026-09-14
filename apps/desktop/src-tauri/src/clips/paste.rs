@@ -88,7 +88,6 @@ pub fn send_ctrl_v() -> Result<(), String> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

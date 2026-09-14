@@ -305,9 +305,10 @@ impl ClipStore {
         let Some(seconds) = retention.seconds() else {
             return 0;
         };
-        self.purge("DELETE FROM clips WHERE created_at < ?1", params![
-            now - seconds
-        ])
+        self.purge(
+            "DELETE FROM clips WHERE created_at < ?1",
+            params![now - seconds],
+        )
     }
 
     pub fn sweep(&self, retention: Retention) -> usize {
@@ -469,7 +470,9 @@ mod tests {
     #[test]
     fn v0_5_a_clip_round_trips_through_encryption() {
         let s = store();
-        let id = s.insert(ClipKind::Text, Some("notepad.exe"), "hello").unwrap();
+        let id = s
+            .insert(ClipKind::Text, Some("notepad.exe"), "hello")
+            .unwrap();
         assert_eq!(s.content(id).as_deref(), Some("hello"));
         let clip = s.recent(1).remove(0);
         assert_eq!(clip.preview, "hello");
@@ -497,7 +500,8 @@ mod tests {
     fn v0_5_every_row_gets_its_own_nonce() {
         let s = store();
         s.insert(ClipKind::Text, None, "same").unwrap();
-        s.insert(ClipKind::Text, Some("other.exe"), "different").unwrap();
+        s.insert(ClipKind::Text, Some("other.exe"), "different")
+            .unwrap();
         let conn = s.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT nonce FROM clips").unwrap();
         let nonces: Vec<Vec<u8>> = stmt
@@ -546,9 +550,12 @@ mod tests {
     #[test]
     fn v0_5_search_matches_decrypted_content_newest_first() {
         let s = store();
-        s.insert_at(ClipKind::Text, None, "old meeting notes", 1_000).unwrap();
-        s.insert_at(ClipKind::Text, None, "unrelated", 2_000).unwrap();
-        s.insert_at(ClipKind::Text, None, "new MEETING agenda", 3_000).unwrap();
+        s.insert_at(ClipKind::Text, None, "old meeting notes", 1_000)
+            .unwrap();
+        s.insert_at(ClipKind::Text, None, "unrelated", 2_000)
+            .unwrap();
+        s.insert_at(ClipKind::Text, None, "new MEETING agenda", 3_000)
+            .unwrap();
 
         let hits = s.search("meeting", 10);
         assert_eq!(hits.len(), 2);
@@ -570,8 +577,10 @@ mod tests {
     fn v0_5_the_sweep_deletes_older_than_the_window_and_keeps_the_rest() {
         let s = store();
         let now = 10_000_000;
-        s.insert_at(ClipKind::Text, None, "ancient", now - 40 * 86_400).unwrap();
-        s.insert_at(ClipKind::Text, None, "recent", now - 3 * 86_400).unwrap();
+        s.insert_at(ClipKind::Text, None, "ancient", now - 40 * 86_400)
+            .unwrap();
+        s.insert_at(ClipKind::Text, None, "recent", now - 3 * 86_400)
+            .unwrap();
 
         assert_eq!(s.count_older_than(now - 30 * 86_400), 1);
         assert_eq!(s.sweep_at(Retention::OneMonth, now), 1);
@@ -620,7 +629,8 @@ mod tests {
     #[test]
     fn v0_5_a_multi_line_clip_previews_as_one_line() {
         let s = store();
-        s.insert(ClipKind::Text, None, "  first\nsecond\ttab  ").unwrap();
+        s.insert(ClipKind::Text, None, "  first\nsecond\ttab  ")
+            .unwrap();
         assert_eq!(s.recent(1)[0].preview, "first second tab");
     }
 
@@ -652,7 +662,9 @@ mod tests {
             })
             .unwrap()
         };
-        let other = ClipStore::with_connection(Connection::open_in_memory().unwrap(), &ClipKey::generate()).unwrap();
+        let other =
+            ClipStore::with_connection(Connection::open_in_memory().unwrap(), &ClipKey::generate())
+                .unwrap();
         assert!(other.decrypt(&rows.0, &rows.1).is_none());
     }
 
