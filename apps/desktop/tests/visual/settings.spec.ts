@@ -547,7 +547,10 @@ test("About names the version and the identity slug", async ({ page }) => {
   // ADR-0011: what Windows keys off is the slug, never the display name.
   await expect(page.getByText("com.v3sper.takyon")).toBeVisible();
 
-  await expect(page).toHaveScreenshot("settings-about.png");
+  // Version masked: asserted exactly above, and a bump failed this baseline by 189px.
+  await expect(page).toHaveScreenshot("settings-about.png", {
+    mask: [page.getByText(`Version ${APP_VERSION}`)],
+  });
 });
 
 /**
