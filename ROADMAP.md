@@ -595,6 +595,35 @@ has ever been spawned by it.
 
 ---
 
+## v0.11.1 — Agents on npm installs
+
+**Goal:** `!c` and `!s` work with an Agent installed as an npm `.cmd` shim, and
+every process they start is gone the moment the Palette hides. Plan:
+[`docs/plans/v0.11.1-agent-spawning.md`](./docs/plans/v0.11.1-agent-spawning.md).
+
+Found on a test laptop, not by the suite: opencode from `npm i -g` failed every
+Turn with `batch file arguments are invalid`, because the prompt travels in argv
+and Rust's standard library refuses a line break in a `.cmd`'s arguments
+(the CVE-2024-24576 hardening). This machine's Agents are all real executables,
+so it never ran here. Auditing the spawn path found the worse defect beside it:
+cancelling a Turn kills `cmd.exe` and leaves `node` and the Agent running.
+Planned, not built.
+
+- [ ] **The prompt travels on stdin**, never in argv — `turn_input` on `AgentDriver`, `-p` with no positional for Claude, a trailing `-` for Codex, no message for opencode. Also clears argv's 32,767 and `cmd.exe`'s 8,191-character ceilings, which `!s`'s prompt is past
+- [ ] **Agent processes die with the Palette** — one Job Object per spawn (suspended, assigned, resumed; `KILL_ON_JOB_CLOSE`), a visibility gate on `Turns`, and `cancel_all` in `window::hide` before `EVENT_HIDE`. Closes the in-flight `agent_ask` race, the late `!s` Turn and the spawn-to-registration window, and makes a Takyon crash take its children with it
+- [ ] **Failures are facts** — `TurnFailure` (`notFound`, `launcherBroken`, `spawnFailed`, `agentError`, `exited`, `silent`) on the wire, copy in `status.ts`. Exit 9009 from a shim whose `node` is missing reads as that, not as a stderr tail
+- [ ] **Resolution from `PATHEXT`**, which drops the unspawnable `.ps1`, plus Volta, `Programs\nodejs` and scoop in `extra_dirs` — both from t3code's `shell.ts`
+- [ ] **Claude streams token by token** — `--include-partial-messages`, without rendering the final `assistant` message a second time
+- [ ] A `.cmd` fake-Agent integration test that fails today with the reported error, and a job test asserting no process survives a cancel
+- [ ] ADR-0031 (an Agent's prompt travels on stdin) and ADR-0032 (Agent processes die with the Palette), written with the code
+
+**Exit criteria:** on a machine whose Agents are npm `.cmd` installs, `!c` and
+`!s` answer with each of the three, including a multi-line question. Dismissing
+the Palette mid-answer — by hotkey, by Escape and by clicking away — leaves no
+process Takyon started.
+
+---
+
 ## v0.12 — macOS
 
 **Goal:** 1:1 with Windows on Apple Silicon. Plan:
@@ -677,6 +706,37 @@ and its blob are gone. Copy a password and confirm nothing is recorded.
 
 ---
 
+## v0.15 — Agent streaming and permissions
+
+**Goal:** all three Agents stream token by token, and a follow-up Turn can ask
+before it touches anything. Plan:
+[`docs/plans/v0.15-agent-streaming.md`](./docs/plans/v0.15-agent-streaming.md).
+
+Needs v0.11.1 first. `codex exec --json` and `opencode run --format json` cannot
+stream — Codex's JSONL printer maps a message only on completion, opencode's `run`
+emits text only once a part has finished — and nothing driven through argv and
+stdout can answer a permission prompt. So each Agent moves to a live, two-way
+process, t3code's chat path: Claude on stream-json input, Codex on `app-server`,
+opencode on `serve`. **This supersedes v0.8's fresh process per Turn**, and keeps
+v0.11.1's rule: a live process lasts one summon and dies when the Palette hides.
+Planned, not built.
+
+- [ ] Session registry — one live process per conversation inside v0.11.1's jobs, respawn and resume by session id on a crash, each Agent opting in separately with the one-shot path kept as fall-back
+- [ ] **Claude** — `--input-format stream-json`, `--include-partial-messages`, `--permission-prompts host`. Promotion replaces the tools-off process with a tools-on one started with `--resume`
+- [ ] **Codex** — `codex app-server` over JSON-RPC: `thread/start` or `thread/resume`, `turn/start`, `item/agentMessage/delta`, `turn/interrupt`, both `requestApproval` requests. The used subset pinned against `codex app-server generate-json-schema`, because the protocol is marked `[experimental]`
+- [ ] **opencode** — `opencode serve` on `127.0.0.1` with a per-spawn password, `promptAsync`, SSE events, `session.abort`. No idle TTL: t3code keeps its server 30 s, the Palette rule does not
+- [ ] Loopback HTTP and SSE over `std::net::TcpStream`, proposed as an ADR-0019 amendment — no TLS, no proxy, portable to macOS without `URLSession`
+- [ ] **Permission prompts** — `PermissionRequested` / `PermissionResolved`, `agent_permission_reply`, an approve/deny row in the Chat Surface. Allow means once. Closes [`docs/tbd/v0.8.md`](./docs/tbd/v0.8.md) §1
+- [ ] Probes — Codex from `account/read`, opencode from the provider list's `connected` set. Claude's `auth status --json` stays
+- [ ] First-token latency measured on a first Turn and a follow-up, before and after. Closes [`docs/tbd/v0.8.md`](./docs/tbd/v0.8.md) §8
+
+**Exit criteria:** in `!c` and `!s`, all three Agents stream token by token. A
+follow-up asking for a file edit shows a permission prompt in the Chat Surface;
+Approve writes the file and Deny does not. Hiding the Palette at any moment —
+mid-answer, or with a prompt pending — leaves no process Takyon started.
+
+---
+
 ## v1.0 — Ship
 
 - [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing, `tauri-plugin-updater`
@@ -704,6 +764,7 @@ These block nothing today but should be settled before they become expensive:
   out one option (ADR-0005).
 - **Portable / no-installer mode** — in scope or not.
 - ~~**macOS.**~~ **Settled and scheduled** — it is v0.12, with ADR-0026 to
-  ADR-0030 behind it. What is still open there is *sequencing*: v0.11 to v0.14
+  ADR-0030 behind it. What is still open there is *sequencing*: v0.11 to v0.15
   sit before v1.0 in this file, and whether they genuinely ship before the
-  code-signing certificate and the updater is a call nobody has made.
+  code-signing certificate and the updater is a call nobody has made. Whether
+  v0.15 should come before macOS rather than after v0.14 is the same open call.
