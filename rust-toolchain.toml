@@ -1,0 +1,6 @@
+# One Rust for every machine and every CI job. Clippy runs with `-D warnings`,
+# so an unpinned toolchain let a new Rust release fail CI with no commit.
+# Bump together with the `dtolnay/rust-toolchain@` refs in .github/workflows/.
+[toolchain]
+channel = "1.98.1"
+components = ["clippy"]

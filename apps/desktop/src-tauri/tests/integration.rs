@@ -623,6 +623,9 @@ fn v0_3_measure_windows_dir_path_exes() {
 }
 
 /// After the fix: `explorer` returns File Explorer, and no bare `explorer` row.
+///
+/// By AUMID and `%SystemRoot%`, never by title: "File Explorer" is the English
+/// name, and a German Windows calls it "Datei-Explorer".
 #[test]
 fn v0_3_explorer_is_one_row_not_two() {
     let dir = TempDir::new("explorer-fix");
@@ -637,27 +640,40 @@ fn v0_3_explorer_is_one_row_not_two() {
         eprintln!("  {t:<34} {id}");
     }
     // The bare PATH exe (id is exactly the plain path, no args) must be gone.
+    let sysroot = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    let bare = Path::new(&sysroot).join("explorer.exe").to_string_lossy().to_lowercase();
     assert!(
-        !titles.iter().any(|(_, id)| id == r"c:\windows\explorer.exe"),
+        !titles.iter().any(|(_, id)| *id == bare),
         "the bare explorer.exe row is still here"
     );
     // File Explorer (the shell app) must survive.
     assert!(
-        titles.iter().any(|(t, _)| t.eq_ignore_ascii_case("File Explorer")),
+        titles
+            .iter()
+            .any(|(_, id)| id.eq_ignore_ascii_case("aumid:Microsoft.Windows.Explorer")),
         "File Explorer disappeared"
     );
 }
 
 /// The SDK shortcut left `explorer`'s results but must stay findable by name.
+///
+/// Only where the walk found one. A Windows SDK is a machine fact, and a runner
+/// image or laptop without it is not a regression.
 #[test]
 fn v0_3_the_sdk_shortcut_is_still_reachable_by_its_name() {
+    let is_sdk = |title: &str| title.to_lowercase().contains("software development kit");
+    let (apps, _) = real_apps();
+    if !apps.all().iter().any(|app| is_sdk(&app.title)) {
+        eprintln!("  no Windows SDK shortcut on this machine; skipped");
+        return;
+    }
     let dir = TempDir::new("sdk");
     let p = pipeline_in(&dir);
     let hit = p
         .query("development", 1)
         .entries
         .into_iter()
-        .any(|e| e.title.to_lowercase().contains("software development kit"));
+        .any(|e| is_sdk(&e.title));
     assert!(hit, "the SDK shortcut vanished entirely");
 }
 

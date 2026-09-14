@@ -1,8 +1,8 @@
 name: release
 
-# Dormant until this repo is pushed to GitHub. Cut a release by bumping the
-# version (`bun run bump`), committing, then pushing the commit and its tag
-# together — CI has to have run on the same commit, see `preflight`.
+# Runs on a pushed `v*` tag. Cut a release by bumping the version
+# (`bun run bump`), committing, then pushing the commit and its tag together —
+# CI has to have run on the same commit, see `preflight`.
 #
 # No secrets are needed. There is no updater yet, so nothing here signs an
 # artefact or writes a `latest.json`: `tauri-plugin-updater` is a v1.0 item
@@ -65,7 +65,10 @@ jobs:
           ref: ${{ github.sha }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 30
-          running-workflow-name: preflight
+          # The job's `name:`, not its id. The action skips the check whose name
+          # matches exactly; `preflight` matched nothing, so it waited on itself
+          # until the 40-minute timeout.
+          running-workflow-name: Verify the tag and wait for CI
           allowed-conclusions: success
 
   build-windows:
@@ -75,7 +78,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - uses: dtolnay/rust-toolchain@stable
+      # In step with rust-toolchain.toml and ci.yml.
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
@@ -122,7 +126,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - uses: dtolnay/rust-toolchain@stable
+      # In step with rust-toolchain.toml and ci.yml.
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2

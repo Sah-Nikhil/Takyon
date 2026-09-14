@@ -31,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `bun-version`: setup-bun reads `packageManager` from package.json,
+      # which is the pin for every job here and in release.yml.
       - uses: oven-sh/setup-bun@v2
       - uses: actions/cache@v4
         with:
@@ -48,7 +50,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned, and in step with rust-toolchain.toml. `@stable` let a Rust
+      # release add a clippy lint and fail `-D warnings` with no commit.
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -62,7 +66,13 @@ jobs:
       # `--workspace`: the uiaccess helper is a second crate and has to build.
       # The `--ignored` tests stay out — `web_search` reaches DuckDuckGo for
       # real, and a network flake is not a broken commit.
-      - run: cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml
+      # The two `--skip`s need an installed, signed-in Agent CLI. A runner has
+      # none, so they returned early and read as passes; filtered out, they show
+      # up in the count as not run instead.
+      - run: >-
+          cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml --
+          --skip v0_8_an_installed_agent_reports_its_version
+          --skip v0_8_a_signed_in_agent_lists_models
       - run: cargo clippy --workspace --all-targets --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 
   macos:
@@ -70,7 +80,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2

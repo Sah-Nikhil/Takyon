@@ -345,6 +345,11 @@ the next.
   dark half.
 
 ## Gotchas
+- **Toolchains are pinned: `rust-toolchain.toml` for Rust, `packageManager` in
+  `package.json` for bun** (setup-bun reads it). A Rust bump touches three places
+  together: the toml and the `dtolnay/rust-toolchain@` refs in `ci.yml` and
+  `release.yml`. On `@stable`, a Rust release could add a clippy lint and fail
+  `-D warnings` on CI with no commit.
 - **Never build the release binary with bare `cargo build --release`. Always
   `bun run build`.** A bare cargo build produces a `takyon.exe` that launches,
   registers the hotkey and shows the Palette — with a **completely dead frontend**:
