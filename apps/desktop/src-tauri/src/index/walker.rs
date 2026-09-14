@@ -146,8 +146,16 @@ mod tests {
         std::fs::create_dir_all(dir.join("deep").join("er").join("est")).unwrap();
         std::fs::write(dir.join("README.md"), "x").unwrap();
         std::fs::write(dir.join("src").join("main.rs"), "x").unwrap();
-        std::fs::write(dir.join("node_modules").join("left-pad").join("index.js"), "x").unwrap();
-        std::fs::write(dir.join("deep").join("er").join("est").join("buried.txt"), "x").unwrap();
+        std::fs::write(
+            dir.join("node_modules").join("left-pad").join("index.js"),
+            "x",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("deep").join("er").join("est").join("buried.txt"),
+            "x",
+        )
+        .unwrap();
         dir
     }
 

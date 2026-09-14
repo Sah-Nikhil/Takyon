@@ -71,6 +71,14 @@
   --color-scrim: rgb(0 0 0 / 0.45);
 
   /*
+    Agent health dots, the build's one traffic light. Neither derived nor
+    theme-owned: ready must read green and failed red in every family, and no
+    theme role is green. Tailwind's emerald-400 and red-400, unchanged.
+  */
+  --color-health-ready: oklch(76.5% 0.177 163.223);
+  --color-health-error: oklch(70.4% 0.191 22.216);
+
+  /*
     The Palette's shadow, for the same reason: a near-black panel over a bright
     desktop is already separated by its own value, while a near-white one has
     nothing but this to sit on.

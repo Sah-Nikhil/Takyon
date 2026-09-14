@@ -24,8 +24,7 @@ use takyon_lib::sources::recents::{recent_dir, RecentsSource};
 
 use windows::core::{Interface, HSTRING};
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_INPROC_SERVER,
-    COINIT_APARTMENTTHREADED,
+    CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
 };
 use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 
@@ -52,7 +51,9 @@ impl FakeRecent {
 
         let recent = recent_dir().expect("APPDATA is set");
         std::fs::create_dir_all(&recent).expect("Recent folder");
-        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok().ok();
+        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+            .ok()
+            .ok();
 
         FakeRecent {
             _guard: guard,
@@ -109,7 +110,10 @@ fn v0_3_a_shortcut_in_the_recent_folder_becomes_a_document_entry() {
     source.refresh();
     assert_eq!(source.len(), 1, "the shortcut was not read back");
 
-    let entries = source.query(&Query::new("quarterly"), std::time::Duration::from_millis(20));
+    let entries = source.query(
+        &Query::new("quarterly"),
+        std::time::Duration::from_millis(20),
+    );
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].title, "quarterly report.txt");
     assert_eq!(entries[0].kind, EntryKind::File);
@@ -124,7 +128,10 @@ fn v0_3_a_shortcut_in_the_recent_folder_becomes_a_document_entry() {
         "the entry does not name the document the shortcut points at"
     );
     // The id is still stored lowercased, which is what makes it a stable key.
-    assert_eq!(entries[0].id.as_str(), entries[0].id.as_str().to_lowercase());
+    assert_eq!(
+        entries[0].id.as_str(),
+        entries[0].id.as_str().to_lowercase()
+    );
 }
 
 /// `docs/tbd/v0.3.md` §2, demonstrated rather than deduced from reading code.
@@ -172,7 +179,9 @@ fn v0_3_the_recent_folder_is_read_for_shortcuts_only() {
     std::fs::write(fake.recent.join("desktop.ini"), b"[.ShellClassInfo]").unwrap();
     std::fs::create_dir_all(fake.recent.join("AutomaticDestinations")).unwrap();
     std::fs::write(
-        fake.recent.join("AutomaticDestinations").join("x.automaticDestinations-ms"),
+        fake.recent
+            .join("AutomaticDestinations")
+            .join("x.automaticDestinations-ms"),
         b"\x00\x01binary",
     )
     .unwrap();
@@ -199,11 +208,21 @@ fn v0_3_a_recent_never_outranks_an_application_that_matches_as_well() {
     let icons = Arc::new(takyon_lib::icons::IconStore::new(None));
     let apps = Arc::new(takyon_lib::sources::apps::AppSource::new());
     apps.refresh(&icons);
-    let frecency =
-        Arc::new(takyon_lib::frecency::Frecency::open(Some(dir.to_owned())).unwrap());
+    let frecency = Arc::new(takyon_lib::frecency::Frecency::open(Some(dir.to_owned())).unwrap());
 
-    let p = takyon_lib::query::Pipeline::new(apps, recents, Arc::new(takyon_lib::sources::system::SystemSource::new()), icons, frecency);
-    let kinds: Vec<_> = p.query("notepad", 1).entries.iter().map(|e| e.kind).collect();
+    let p = takyon_lib::query::Pipeline::new(
+        apps,
+        recents,
+        Arc::new(takyon_lib::sources::system::SystemSource::new()),
+        icons,
+        frecency,
+    );
+    let kinds: Vec<_> = p
+        .query("notepad", 1)
+        .entries
+        .iter()
+        .map(|e| e.kind)
+        .collect();
     eprintln!("  notepad -> {kinds:?}");
 
     assert!(kinds.contains(&EntryKind::File), "the recent did not match");

@@ -1,28 +1,15 @@
 //! The main app's half of the UIAccess arrangement.
 //!
-//! **The problem.** Windows gives every process an integrity level. Takyon runs at
-//! Medium; anything started "as Administrator" runs at High. UIPI forbids a
-//! lower-integrity process from taking foreground from a higher-integrity window,
-//! and it refuses *silently*. So with an elevated terminal focused, the Palette
-//! either does not appear or appears behind it and never receives a keystroke.
+//! **Problem.** UIPI silently stops Medium-integrity Takyon taking foreground from
+//! an elevated (High) window, so the Palette lands behind it.
 //!
-//! **The only sanctioned escape** is a manifest carrying `uiAccess="true"`, which
-//! Windows honours only if the binary is Authenticode-signed **and** sits in a
-//! directory a standard user cannot write to (`%ProgramFiles%`, `System32`). This
-//! is the same mechanism screen readers use, and it is why code signing is a v0.1
-//! requirement rather than a shipping-time one, and why a portable build of this
-//! product is impossible.
+//! **Escape.** A `uiAccess="true"` manifest, honoured only when Authenticode-signed
+//! and installed where standard users cannot write (`%ProgramFiles%`): hence
+//! signing as a v0.1 requirement, and no portable build. Plan: `docs/plans/uiaccess-signing.md`.
 //!
-//! **Why a separate executable.** A `uiAccess` process pays real costs — drag and
-//! drop from Explorer breaks on the integrity mismatch, for one — and running the
-//! entire WebView2 surface at a raised privilege to solve a foreground problem is
-//! a bad trade. The helper does exactly one thing and is the only signed-critical
-//! binary in the product.
-//!
-//! **Failure is expected and non-fatal.** Unsigned builds, dev builds, and any
-//! install outside a trusted location simply do not get the helper. The Palette
-//! still works everywhere except over an elevated window, which is precisely the
-//! limitation the plan accepts.
+//! **Separate exe**, since `uiAccess` breaks Explorer drag and drop. **Non-fatal**:
+//! unsigned, dev and untrusted-location installs get no helper, and the Palette
+//! works everywhere except over elevated windows.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -42,11 +29,9 @@ static HELPER_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Where the helper is, if it is anywhere.
 ///
-/// The helper is deliberately **not** a Tauri bundle resource. It is only useful
-/// when signed and installed somewhere a standard user cannot write, which is a
-/// step outside the normal build — so `scripts/install-uiaccess-helper.ps1` puts
-/// it in place, and a build that skipped that step simply has no helper rather
-/// than shipping one that Windows will refuse to start.
+/// Deliberately **not** a bundle resource: useful only signed and installed where
+/// users cannot write. `scripts/dev-sign-uiaccess.ps1` places it for development; a
+/// build without it has no helper rather than one Windows refuses to start.
 fn helper_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     if let Some(explicit) = std::env::var_os(HELPER_ENV) {
         let p = std::path::PathBuf::from(explicit);
@@ -94,10 +79,8 @@ pub fn start(app: &AppHandle) {
 
 /// Ask the helper to bring `win` to the foreground.
 ///
-/// Fire and forget, on its own thread. The show path must not block on a pipe: if
-/// the helper has died or is wedged, the cost of finding that out synchronously
-/// would be paid on the one code path the entire product is optimised around.
-/// Foreground arriving a millisecond late is invisible; a show that stalls is not.
+/// Fire and forget, own thread: a dead or wedged helper must not stall the show
+/// path. Foreground a millisecond late is invisible; a stalled show is not.
 #[cfg(windows)]
 pub fn request_foreground(win: &WebviewWindow) {
     if !HELPER_RUNNING.load(Ordering::Relaxed) {

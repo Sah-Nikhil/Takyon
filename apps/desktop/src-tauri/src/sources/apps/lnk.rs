@@ -96,7 +96,11 @@ pub fn top_level_links(root: &Path) -> Vec<PathBuf> {
     entries
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("lnk")))
+        .filter(|p| {
+            p.extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| x.eq_ignore_ascii_case("lnk"))
+        })
         .collect()
 }
 
@@ -176,7 +180,9 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         return;
     };
     for entry in entries.flatten() {
-        let Ok(kind) = entry.file_type() else { continue };
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if kind.is_dir() {
             walk(&path, depth + 1, out);
@@ -193,12 +199,9 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
 
 /// Is this target inside a Squirrel version directory (`...\\app-1.0.9253\\`)?
 ///
-/// Squirrel installs — Discord, Slack, Teams classic, GitHub Desktop — ship two
-/// Start Menu shortcuts with the same name: one at the versioned executable, one
-/// at an `Update.exe` stub that always launches the current version. The versioned
-/// path is the wrong one to keep: it dies at the next update, and since it is also
-/// the [`crate::entry::EntryId`], everything v0.3 learned about the app dies with
-/// it (§2 requires that id to be stable).
+/// Squirrel apps (Discord, Slack, GitHub Desktop) ship two same-named shortcuts: the
+/// versioned exe and an `Update.exe` stub. The versioned path dies at next update,
+/// and as the [`crate::entry::EntryId`] takes learned Frecency with it (§2).
 pub fn is_versioned_target(target: &Path) -> bool {
     target.components().any(|c| {
         let Some(name) = c.as_os_str().to_str() else {
@@ -217,12 +220,9 @@ pub fn is_versioned_target(target: &Path) -> bool {
 
 /// Collapse shortcuts that share a display name.
 ///
-/// Two `.lnk` files with one name are two rows for one application, and the user
-/// cannot tell which to press. Where the collision is Squirrel's (see
-/// [`is_versioned_target`]) the stable stub wins; otherwise the first found wins,
-/// which is the per-user tree before the machine-wide one.
-///
-/// Pure, so the rule is testable without a Start Menu.
+/// One name, two rows, no way to tell which to press. Squirrel collision
+/// ([`is_versioned_target`]): the stable stub wins; otherwise first found, per-user
+/// tree before machine-wide. Pure, so testable without a Start Menu.
 pub fn collapse_by_name(shortcuts: Vec<Shortcut>) -> Vec<Shortcut> {
     let mut out: Vec<Shortcut> = Vec::new();
     for sc in shortcuts {
@@ -276,7 +276,9 @@ mod com {
             // SLGP_RAWPATH returns what is stored, unexpanded and unresolved. The
             // expansion below is ours; the resolution deliberately never happens.
             let mut buf = [0u16; 1024];
-            shell_link.GetPath(&mut buf, std::ptr::null_mut(), SLGP_RAWPATH.0 as u32).ok()?;
+            shell_link
+                .GetPath(&mut buf, std::ptr::null_mut(), SLGP_RAWPATH.0 as u32)
+                .ok()?;
             let raw = from_wide(&buf);
             if raw.is_empty() {
                 return None;
@@ -317,7 +319,10 @@ mod com {
 
     fn to_wide(path: &Path) -> Vec<u16> {
         use std::os::windows::ffi::OsStrExt;
-        path.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
     fn from_wide(buf: &[u16]) -> String {
@@ -393,10 +398,11 @@ mod tests {
             r"C:\Windows\notepad.exe"
         );
         // A lone percent sign is literal, not the start of anything.
-        assert_eq!(expand_env(r"C:\100% Orange Juice\game.exe", &none), r"C:\100% Orange Juice\game.exe");
+        assert_eq!(
+            expand_env(r"C:\100% Orange Juice\game.exe", &none),
+            r"C:\100% Orange Juice\game.exe"
+        );
     }
-
-
 
     #[test]
     fn v0_2_both_start_menu_roots_are_walked() {
@@ -432,7 +438,10 @@ mod tests {
         let names: Vec<String> = found.iter().filter_map(|p| display_name(p)).collect();
         assert!(names.contains(&"Top".to_string()));
         assert!(names.contains(&"Deep".to_string()));
-        assert!(names.contains(&"Mixed".to_string()), "extension match is case-insensitive");
+        assert!(
+            names.contains(&"Mixed".to_string()),
+            "extension match is case-insensitive"
+        );
         assert!(!names.contains(&"notes".to_string()));
 
         let _ = std::fs::remove_dir_all(&dir);

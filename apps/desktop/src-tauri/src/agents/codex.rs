@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use super::probe::{self, PROBE_TIMEOUT};
 use super::turn::TurnEvent;
-use super::{AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState};
+use super::{
+    AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState,
+};
 
 pub struct CodexDriver;
 
@@ -91,7 +93,14 @@ impl AgentDriver for CodexDriver {
         args.push("-C".into());
         args.push(req.cwd.to_string_lossy().to_string());
         args.push("--sandbox".into());
-        args.push(if req.tools { "workspace-write" } else { "read-only" }.into());
+        args.push(
+            if req.tools {
+                "workspace-write"
+            } else {
+                "read-only"
+            }
+            .into(),
+        );
         if let Some(model) = &req.model {
             args.push("-m".into());
             args.push(model.clone());
@@ -198,7 +207,11 @@ pub fn snapshot_from_login(
         binary: BINARY,
         installed: true,
         version,
-        health: if signed_in { Health::Ready } else { Health::Error },
+        health: if signed_in {
+            Health::Ready
+        } else {
+            Health::Error
+        },
         sign_in: if signed_in {
             SignIn {
                 status: SignInStatus::In,
@@ -226,7 +239,10 @@ mod tests {
             Some("Logged in using ChatGPT"),
         );
         assert_eq!(snap.sign_in.status, SignInStatus::In);
-        assert_eq!(snap.sign_in.label.as_deref(), Some("Logged in using ChatGPT"));
+        assert_eq!(
+            snap.sign_in.label.as_deref(),
+            Some("Logged in using ChatGPT")
+        );
         assert_eq!(snap.health, Health::Ready);
         assert!(snap.message.is_none());
     }
@@ -263,7 +279,10 @@ mod tests {
         assert!(args.contains(&"--skip-git-repo-check".to_string()));
         let cd = args.iter().position(|a| a == "-C").expect("cd flag");
         assert_eq!(args[cd + 1], r"C:\scratch");
-        let sandbox = args.iter().position(|a| a == "--sandbox").expect("sandbox flag");
+        let sandbox = args
+            .iter()
+            .position(|a| a == "--sandbox")
+            .expect("sandbox flag");
         assert_eq!(args[sandbox + 1], "read-only");
         // The prompt is last, after every flag, with the house style ahead of it.
         assert!(args.last().unwrap().ends_with("hi"));
@@ -281,7 +300,10 @@ mod tests {
             tools: true,
         });
         assert_eq!(&args[..3], &["exec", "resume", "th-1"]);
-        let sandbox = args.iter().position(|a| a == "--sandbox").expect("sandbox flag");
+        let sandbox = args
+            .iter()
+            .position(|a| a == "--sandbox")
+            .expect("sandbox flag");
         assert_eq!(args[sandbox + 1], "workspace-write");
     }
 
@@ -289,11 +311,16 @@ mod tests {
     #[test]
     fn v0_8_the_thread_started_event_yields_the_session() {
         let mut state = TurnState::default();
-        let event =
-            CodexDriver.parse_line(r#"{"type":"thread.started","thread_id":"th-1"}"#, &mut state);
+        let event = CodexDriver.parse_line(
+            r#"{"type":"thread.started","thread_id":"th-1"}"#,
+            &mut state,
+        );
         assert_eq!(
             event,
-            Some(TurnEvent::Started { session: Some("th-1".into()), model: None })
+            Some(TurnEvent::Started {
+                session: Some("th-1".into()),
+                model: None
+            })
         );
         assert_eq!(state.session.as_deref(), Some("th-1"));
     }
@@ -306,7 +333,9 @@ mod tests {
             r#"{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"Hello"}}"#;
         assert_eq!(
             CodexDriver.parse_line(message, &mut state),
-            Some(TurnEvent::Text { delta: "Hello".into() })
+            Some(TurnEvent::Text {
+                delta: "Hello".into()
+            })
         );
 
         let reasoning =
@@ -353,11 +382,15 @@ mod tests {
                 r#"{"type":"turn.failed","error":{"message":"rate limited"}}"#,
                 &mut state
             ),
-            Some(TurnEvent::Failed { message: "rate limited".into() })
+            Some(TurnEvent::Failed {
+                message: "rate limited".into()
+            })
         );
         assert_eq!(
             CodexDriver.parse_line(r#"{"type":"error","message":"boom"}"#, &mut state),
-            Some(TurnEvent::Failed { message: "boom".into() })
+            Some(TurnEvent::Failed {
+                message: "boom".into()
+            })
         );
     }
 }

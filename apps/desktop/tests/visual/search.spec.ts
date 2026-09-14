@@ -5,7 +5,7 @@ import { paletteHeight, VIEW_HEIGHT } from "@takyon/shared";
  * v0.9's visual layer: the `!s` row, the answer surface, and the key page.
  *
  * TBC-0007's exposure is total — **provider, pages and summariser are fixtures
- * in `api.mock.ts`.** The real response parses in `search/brave.rs`; the real
+ * in `api.mock.ts`.** Real responses parse in `search/ddg.rs` and `search/exa.rs`; the real
  * network is `tests/web_search.rs`. This catches whether the surfaces draw.
  */
 
@@ -236,6 +236,8 @@ test.describe("the Web Search settings page", () => {
     // The value itself must never come back to the webview.
     await expect(page.getByText("exa-secret-value-4321")).toHaveCount(0);
     await expect(page.getByLabel("Exa key")).toHaveValue("");
+    // The anchor settings search scrolls to; it was `brave-key-clear` until d0.11.10.
+    await expect(page.locator("#setting-exa-key-clear")).toHaveCount(1);
     await expect(page).toHaveScreenshot("settings-web-search-stored.png");
   });
 });

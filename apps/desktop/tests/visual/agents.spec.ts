@@ -147,6 +147,23 @@ test("the agents page shows one card per agent", async ({ page }) => {
   await expect(page).toHaveScreenshot("settings-agents.png");
 });
 
+/**
+ * Search scrolls to `#setting-<id>` from `pages.ts`. The Agents rows are hand-built,
+ * so they write their own anchors, and until d0.11.10 none of them did.
+ */
+test("settings search lands on an agent's own row", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 400 });
+  await page.goto("/?window=settings");
+  await page.getByLabel("Search settings").fill("variant");
+  await page.getByRole("button", { name: /opencode/ }).click();
+
+  for (const id of ["ask-agent", "agent-claude", "agent-codex", "agent-opencode"]) {
+    await expect(page.locator(`#setting-${id}`)).toHaveCount(1);
+  }
+  // Last on the page, so below a 400px window unless the jump scrolled to it.
+  await expect(page.locator("#setting-agent-opencode")).toBeInViewport();
+});
+
 type AgentsMock = {
   setAgentMissing: (k: string) => void;
   setAskOrder: (o: string[]) => void;

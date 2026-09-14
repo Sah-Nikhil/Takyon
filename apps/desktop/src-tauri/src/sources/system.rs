@@ -36,29 +36,77 @@ const SETTINGS_SCHEME: &str = "ms-settings:";
 const SETTINGS: &[(&str, &str, &[&str])] = &[
     ("Bluetooth", "bluetooth", &["bluetooth"]),
     ("Wi-Fi", "network-wifi", &["wifi", "wireless"]),
-    ("Network & internet", "network-status", &["network", "internet", "ethernet"]),
-    ("Display", "display", &["display", "screen", "resolution", "monitor"]),
+    (
+        "Network & internet",
+        "network-status",
+        &["network", "internet", "ethernet"],
+    ),
+    (
+        "Display",
+        "display",
+        &["display", "screen", "resolution", "monitor"],
+    ),
     ("Night light", "nightlight", &["nightlight"]),
-    ("Sound", "sound", &["sound", "audio", "volume", "speakers", "microphone"]),
-    ("Notifications", "notifications", &["notifications", "alerts"]),
+    (
+        "Sound",
+        "sound",
+        &["sound", "audio", "volume", "speakers", "microphone"],
+    ),
+    (
+        "Notifications",
+        "notifications",
+        &["notifications", "alerts"],
+    ),
     ("Focus assist", "quiethours", &["focus"]),
-    ("Power & battery", "powersleep", &["power", "battery", "sleep"]),
+    (
+        "Power & battery",
+        "powersleep",
+        &["power", "battery", "sleep"],
+    ),
     ("Storage", "storagesense", &["storage", "disk"]),
     ("Multitasking", "multitasking", &["multitasking", "snap"]),
-    ("Apps & features", "appsfeatures", &["apps", "uninstall", "programs"]),
+    (
+        "Apps & features",
+        "appsfeatures",
+        &["apps", "uninstall", "programs"],
+    ),
     ("Default apps", "defaultapps", &["default apps"]),
     ("Startup apps", "startupapps", &["startup"]),
-    ("Date & time", "dateandtime", &["date", "time", "clock", "timezone"]),
-    ("Language & region", "regionlanguage", &["language", "region", "locale"]),
+    (
+        "Date & time",
+        "dateandtime",
+        &["date", "time", "clock", "timezone"],
+    ),
+    (
+        "Language & region",
+        "regionlanguage",
+        &["language", "region", "locale"],
+    ),
     ("Typing", "typing", &["typing", "autocorrect"]),
     ("Themes", "themes", &["themes", "theme"]),
-    ("Background", "personalization-background", &["background", "wallpaper"]),
-    ("Colors", "personalization-colors", &["colors", "accent", "dark mode"]),
+    (
+        "Background",
+        "personalization-background",
+        &["background", "wallpaper"],
+    ),
+    (
+        "Colors",
+        "personalization-colors",
+        &["colors", "accent", "dark mode"],
+    ),
     ("Lock screen", "lockscreen", &["lock screen"]),
     ("Taskbar", "taskbar", &["taskbar"]),
     ("Start", "personalization-start", &["start menu"]),
-    ("Windows Update", "windowsupdate", &["update", "updates", "upgrade"]),
-    ("Sign-in options", "signinoptions", &["sign in", "password", "pin", "hello"]),
+    (
+        "Windows Update",
+        "windowsupdate",
+        &["update", "updates", "upgrade"],
+    ),
+    (
+        "Sign-in options",
+        "signinoptions",
+        &["sign in", "password", "pin", "hello"],
+    ),
     ("Your info", "yourinfo", &["account", "accounts"]),
     ("Mouse", "mousetouchpad", &["mouse", "touchpad", "pointer"]),
     ("Accessibility", "easeofaccess", &["accessibility"]),
@@ -68,7 +116,11 @@ const SETTINGS: &[(&str, &str, &[&str])] = &[
     ("Activation", "activation", &["activation", "license"]),
     ("For developers", "developers", &["developer"]),
     ("Clipboard", "clipboard", &["clipboard"]),
-    ("Remote Desktop", "remotedesktop", &["remote desktop", "rdp"]),
+    (
+        "Remote Desktop",
+        "remotedesktop",
+        &["remote desktop", "rdp"],
+    ),
 ];
 
 #[cfg(target_os = "macos")]
@@ -81,34 +133,146 @@ const SETTINGS_SCHEME: &str = "x-apple.systempreferences:";
 /// row 9). A wrong id opens System Settings at its front page, not an error.
 #[cfg(target_os = "macos")]
 const SETTINGS: &[(&str, &str, &[&str])] = &[
-    ("Bluetooth", "com.apple.Bluetooth-Settings.extension", &["bluetooth"]),
-    ("Wi-Fi", "com.apple.wifi-settings-extension", &["wifi", "wireless"]),
-    ("Network", "com.apple.Network-Settings.extension", &["network", "internet", "ethernet"]),
-    ("Displays", "com.apple.Displays-Settings.extension", &["display", "screen", "resolution", "monitor"]),
-    ("Night Shift", "com.apple.NightShift-Settings.extension", &["nightshift", "night shift"]),
-    ("Sound", "com.apple.Sound-Settings.extension", &["sound", "audio", "volume", "speakers", "microphone"]),
-    ("Notifications", "com.apple.Notifications-Settings.extension", &["notifications", "alerts"]),
-    ("Focus", "com.apple.Focus-Settings.extension", &["focus", "do not disturb"]),
-    ("Battery", "com.apple.Battery-Settings.extension", &["power", "battery", "energy"]),
-    ("Login Items", "com.apple.LoginItems-Settings.extension", &["startup", "login items"]),
-    ("Date & Time", "com.apple.Date-Time-Settings.extension", &["date", "time", "clock", "timezone"]),
-    ("Language & Region", "com.apple.Localization-Settings.extension", &["language", "region", "locale"]),
-    ("Keyboard", "com.apple.Keyboard-Settings.extension", &["keyboard", "typing", "shortcuts"]),
-    ("Appearance", "com.apple.Appearance-Settings.extension", &["appearance", "accent", "dark mode"]),
-    ("Wallpaper", "com.apple.Wallpaper-Settings.extension", &["background", "wallpaper", "desktop picture"]),
-    ("Lock Screen", "com.apple.Lock-Screen-Settings.extension", &["lock screen", "screen saver"]),
-    ("Desktop & Dock", "com.apple.Desktop-Settings.extension", &["dock", "mission control", "spaces"]),
-    ("Software Update", "com.apple.Software-Update-Settings.extension", &["update", "updates", "upgrade"]),
-    ("Touch ID & Password", "com.apple.Touch-ID-Settings.extension", &["touch id", "password", "fingerprint"]),
-    ("Users & Groups", "com.apple.Users-Groups-Settings.extension", &["account", "accounts", "users"]),
-    ("Trackpad", "com.apple.Trackpad-Settings.extension", &["trackpad", "gestures"]),
-    ("Mouse", "com.apple.Mouse-Settings.extension", &["mouse", "pointer"]),
-    ("Accessibility", "com.apple.Accessibility-Settings.extension", &["accessibility"]),
-    ("Privacy & Security", "com.apple.settings.PrivacyAndSecurity", &["privacy", "security", "permissions"]),
-    ("Screen Time", "com.apple.Screen-Time-Settings.extension", &["screen time"]),
-    ("Sharing", "com.apple.Sharing-Settings.extension", &["sharing", "screen sharing", "airdrop"]),
-    ("Printers & Scanners", "com.apple.Print-Scan-Settings.extension", &["printer", "printers", "scanner"]),
-    ("Storage", "com.apple.settings.Storage", &["storage", "disk"]),
+    (
+        "Bluetooth",
+        "com.apple.Bluetooth-Settings.extension",
+        &["bluetooth"],
+    ),
+    (
+        "Wi-Fi",
+        "com.apple.wifi-settings-extension",
+        &["wifi", "wireless"],
+    ),
+    (
+        "Network",
+        "com.apple.Network-Settings.extension",
+        &["network", "internet", "ethernet"],
+    ),
+    (
+        "Displays",
+        "com.apple.Displays-Settings.extension",
+        &["display", "screen", "resolution", "monitor"],
+    ),
+    (
+        "Night Shift",
+        "com.apple.NightShift-Settings.extension",
+        &["nightshift", "night shift"],
+    ),
+    (
+        "Sound",
+        "com.apple.Sound-Settings.extension",
+        &["sound", "audio", "volume", "speakers", "microphone"],
+    ),
+    (
+        "Notifications",
+        "com.apple.Notifications-Settings.extension",
+        &["notifications", "alerts"],
+    ),
+    (
+        "Focus",
+        "com.apple.Focus-Settings.extension",
+        &["focus", "do not disturb"],
+    ),
+    (
+        "Battery",
+        "com.apple.Battery-Settings.extension",
+        &["power", "battery", "energy"],
+    ),
+    (
+        "Login Items",
+        "com.apple.LoginItems-Settings.extension",
+        &["startup", "login items"],
+    ),
+    (
+        "Date & Time",
+        "com.apple.Date-Time-Settings.extension",
+        &["date", "time", "clock", "timezone"],
+    ),
+    (
+        "Language & Region",
+        "com.apple.Localization-Settings.extension",
+        &["language", "region", "locale"],
+    ),
+    (
+        "Keyboard",
+        "com.apple.Keyboard-Settings.extension",
+        &["keyboard", "typing", "shortcuts"],
+    ),
+    (
+        "Appearance",
+        "com.apple.Appearance-Settings.extension",
+        &["appearance", "accent", "dark mode"],
+    ),
+    (
+        "Wallpaper",
+        "com.apple.Wallpaper-Settings.extension",
+        &["background", "wallpaper", "desktop picture"],
+    ),
+    (
+        "Lock Screen",
+        "com.apple.Lock-Screen-Settings.extension",
+        &["lock screen", "screen saver"],
+    ),
+    (
+        "Desktop & Dock",
+        "com.apple.Desktop-Settings.extension",
+        &["dock", "mission control", "spaces"],
+    ),
+    (
+        "Software Update",
+        "com.apple.Software-Update-Settings.extension",
+        &["update", "updates", "upgrade"],
+    ),
+    (
+        "Touch ID & Password",
+        "com.apple.Touch-ID-Settings.extension",
+        &["touch id", "password", "fingerprint"],
+    ),
+    (
+        "Users & Groups",
+        "com.apple.Users-Groups-Settings.extension",
+        &["account", "accounts", "users"],
+    ),
+    (
+        "Trackpad",
+        "com.apple.Trackpad-Settings.extension",
+        &["trackpad", "gestures"],
+    ),
+    (
+        "Mouse",
+        "com.apple.Mouse-Settings.extension",
+        &["mouse", "pointer"],
+    ),
+    (
+        "Accessibility",
+        "com.apple.Accessibility-Settings.extension",
+        &["accessibility"],
+    ),
+    (
+        "Privacy & Security",
+        "com.apple.settings.PrivacyAndSecurity",
+        &["privacy", "security", "permissions"],
+    ),
+    (
+        "Screen Time",
+        "com.apple.Screen-Time-Settings.extension",
+        &["screen time"],
+    ),
+    (
+        "Sharing",
+        "com.apple.Sharing-Settings.extension",
+        &["sharing", "screen sharing", "airdrop"],
+    ),
+    (
+        "Printers & Scanners",
+        "com.apple.Print-Scan-Settings.extension",
+        &["printer", "printers", "scanner"],
+    ),
+    (
+        "Storage",
+        "com.apple.settings.Storage",
+        &["storage", "disk"],
+    ),
 ];
 
 /// No settings surface anywhere else, so the catalog is empty rather than wrong.
@@ -227,7 +391,12 @@ impl SystemSource {
 
     /// Look up one system entry by id, for launching.
     pub fn find(&self, id: &EntryId) -> Option<SystemEntry> {
-        self.items.read().ok()?.iter().find(|s| &s.id == id).cloned()
+        self.items
+            .read()
+            .ok()?
+            .iter()
+            .find(|s| &s.id == id)
+            .cloned()
     }
 
     /// Populate without touching the shell. The seam the tests use.
@@ -306,19 +475,17 @@ mod com {
     use windows::Win32::System::Com::{CoTaskMemFree, IBindCtx};
     use windows::Win32::UI::Shell::Common::ITEMIDLIST;
     use windows::Win32::UI::Shell::{
-        IEnumShellItems, IShellItem, ILGetSize, SHCreateItemFromParsingName,
-        SHGetIDListFromObject, BHID_EnumItems, SIGDN_NORMALDISPLAY,
+        BHID_EnumItems, IEnumShellItems, ILGetSize, IShellItem, SHCreateItemFromParsingName,
+        SHGetIDListFromObject, SIGDN_NORMALDISPLAY,
     };
 
     pub fn discover() -> Vec<SystemEntry> {
         unsafe {
-            let folder: IShellItem = match SHCreateItemFromParsingName(
-                &HSTRING::from(ALL_TASKS_FOLDER),
-                None,
-            ) {
-                Ok(f) => f,
-                Err(_) => return Vec::new(),
-            };
+            let folder: IShellItem =
+                match SHCreateItemFromParsingName(&HSTRING::from(ALL_TASKS_FOLDER), None) {
+                    Ok(f) => f,
+                    Err(_) => return Vec::new(),
+                };
             let Ok(items) =
                 folder.BindToHandler::<Option<&IBindCtx>, IEnumShellItems>(None, &BHID_EnumItems)
             else {

@@ -87,7 +87,8 @@ export function Agents() {
   return (
     <>
       <Group>
-        <div className="flex items-start justify-between px-3.5 py-3">
+        {/* Hand-built rows, so they write `pages.ts`'s anchor ids themselves. */}
+        <div id="setting-ask-agent" className="flex items-start justify-between px-3.5 py-3">
           <div className="min-w-0 flex-1 basis-64">
             <span className="text-[14px] text-fg">Ask !c with</span>
             <p className="mt-1 text-[12.5px] leading-snug text-fg/60">
@@ -203,7 +204,7 @@ function AgentRow({
   }, [agent, usable]);
 
   return (
-    <div className="px-3.5 py-3">
+    <div id={`setting-agent-${agent}`} className="px-3.5 py-3">
       {/*
         Two lines, not one wrapping row: the pickers are wider than the space
         left beside the status text, and letting them share it dropped the

@@ -318,28 +318,28 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
-        push(&mut apps, &mut seen, icons, App {
-            id: EntryId::for_launch(&target),
-            origin: AppOrigin::Installed,
-            hay: Haystack::new(&sc.name, stem.as_deref()),
-            title: sc.name,
-            subtitle: Some(sc.target.to_string_lossy().to_string()),
-            target,
-            icon_source: Some(sc.link),
-            icon: None,
-            version: None,
-        });
+        push(
+            &mut apps,
+            &mut seen,
+            icons,
+            App {
+                id: EntryId::for_launch(&target),
+                origin: AppOrigin::Installed,
+                hay: Haystack::new(&sc.name, stem.as_deref()),
+                title: sc.name,
+                subtitle: Some(sc.target.to_string_lossy().to_string()),
+                target,
+                icon_source: Some(sc.link),
+                icon: None,
+                version: None,
+            },
+        );
     }
 
-    // 2. Packaged apps.
-    //
-    // Skipped by *title* where the Start Menu already produced one. `AppsFolder`
-    // hands back an AUMID for Win32 apps that register one for taskbar pinning —
-    // Visual Studio Code appeared twice, with two EntryIds, which from v0.3 would
-    // split its Frecency. `SIGDN_FILESYSPATH` cannot tell them apart (an
-    // AppsFolder item is virtual, so it fails for both), and the id sets are
-    // disjoint by construction, so the name is the only handle. The Start Menu
-    // copy wins because it has a path, and so supports reveal, elevate and copy.
+    // 2. Packaged apps, skipped by *title* where the Start Menu has one. `AppsFolder`
+    // also lists AUMIDs of pinnable Win32 apps (VS Code twice, split Frecency). Ids
+    // are disjoint and `SIGDN_FILESYSPATH` fails on virtual items, so name is the
+    // only handle; the Start Menu copy wins, its path allowing reveal and elevate.
     let win32_titles: std::collections::HashSet<String> =
         apps.iter().map(|a| a.title.to_lowercase()).collect();
     for app in appsfolder::discover() {
@@ -347,19 +347,24 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             continue;
         }
         let target = LaunchTarget::Aumid(app.aumid.clone());
-        push(&mut apps, &mut seen, icons, App {
-            id: EntryId::for_launch(&target),
-            hay: Haystack::new(&app.name, None),
-            title: app.name,
-            origin: AppOrigin::Store,
-            // Detected, not assumed: 74 of 112 AUMIDs here are Win32, and calling
-            // File Explorer a Store app is the v0.2 defect this closes.
-            subtitle: appsfolder::subtitle(&app.aumid),
-            target,
-            icon_source: None,
-            icon: None,
-            version: None,
-        });
+        push(
+            &mut apps,
+            &mut seen,
+            icons,
+            App {
+                id: EntryId::for_launch(&target),
+                hay: Haystack::new(&app.name, None),
+                title: app.name,
+                origin: AppOrigin::Store,
+                // Detected, not assumed: 74 of 112 AUMIDs here are Win32, and calling
+                // File Explorer a Store app is the v0.2 defect this closes.
+                subtitle: appsfolder::subtitle(&app.aumid),
+                target,
+                icon_source: None,
+                icon: None,
+                version: None,
+            },
+        );
     }
 
     // 3. Games, each through its own launcher. Also pathless as far as identity
@@ -371,30 +376,29 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
                 launcher: game.launcher,
                 id: game.id,
             };
-            push(&mut apps, &mut seen, icons, App {
-                id: EntryId::for_launch(&target),
-                hay: Haystack::new(&game.name, None),
-                title: game.name,
-                origin: AppOrigin::Game,
-                subtitle: Some(game.launcher.label().to_string()),
-                target,
-                icon_source: None,
-                icon: None,
-                version: None,
-            });
+            push(
+                &mut apps,
+                &mut seen,
+                icons,
+                App {
+                    id: EntryId::for_launch(&target),
+                    hay: Haystack::new(&game.name, None),
+                    title: game.name,
+                    origin: AppOrigin::Game,
+                    subtitle: Some(game.launcher.label().to_string()),
+                    target,
+                    icon_source: None,
+                    icon: None,
+                    version: None,
+                },
+            );
         }
     }
 
-    // 4. Bare executables on PATH — least metadata, so last. Anything already
-    // found through a shortcut is dropped by the `seen` set, which is why this
-    // ordering is not cosmetic: reversed, `code` would be titled "code" rather
-    // than "Visual Studio Code".
-    //
-    // Skipped by title where an application of that name is already known. The
-    // `WindowsApps` aliases are the case that needs it: `notepad.exe` there is a
-    // 0-byte reparse point into the same packaged Notepad that `AppsFolder`
-    // already listed. Matching the *whole* name keeps every CLI tool — `winget`,
-    // `wt`, `python` and `bash` name no application, so none of them collides.
+    // 4. Bare executables on PATH, last: least metadata, and `seen` drops what a
+    // shortcut found (reversed, `code` is titled "code"). Also skipped by whole title
+    // where an app is known: `WindowsApps` aliases like `notepad.exe` reparse into
+    // apps already listed, while CLI tools (`winget`, `wt`, `python`) name none.
     let known_titles: std::collections::HashSet<String> =
         apps.iter().map(|a| a.title.to_lowercase()).collect();
     for exe in path::discover() {
@@ -406,21 +410,26 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             args: None,
             working_dir: None,
         };
-        push(&mut apps, &mut seen, icons, App {
-            id: EntryId::for_launch(&target),
-            // `for_executable`, not `new(stem, Some(stem))`. A bare PATH entry has
-            // no display name, and pretending its basename is one lets `code`
-            // match `code.cmd` at the exact-name rung and outrank Visual Studio
-            // Code. See the constructor for the whole story.
-            hay: Haystack::for_executable(&exe.stem),
-            title: exe.stem,
-            origin: AppOrigin::CommandLine,
-            subtitle: Some(exe.path.to_string_lossy().to_string()),
-            target,
-            icon_source: Some(exe.path),
-            icon: None,
-            version: None,
-        });
+        push(
+            &mut apps,
+            &mut seen,
+            icons,
+            App {
+                id: EntryId::for_launch(&target),
+                // `for_executable`, not `new(stem, Some(stem))`. A bare PATH entry has
+                // no display name, and pretending its basename is one lets `code`
+                // match `code.cmd` at the exact-name rung and outrank Visual Studio
+                // Code. See the constructor for the whole story.
+                hay: Haystack::for_executable(&exe.stem),
+                title: exe.stem,
+                origin: AppOrigin::CommandLine,
+                subtitle: Some(exe.path.to_string_lossy().to_string()),
+                target,
+                icon_source: Some(exe.path),
+                icon: None,
+                version: None,
+            },
+        );
     }
 
     // 5. Desktop shortcuts, last and least. Almost every one duplicates something
@@ -443,17 +452,22 @@ fn discover_all(icons: &IconStore) -> Vec<App> {
             .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
-        push(&mut apps, &mut seen, icons, App {
-            id: EntryId::for_launch(&target),
-            origin: AppOrigin::Installed,
-            hay: Haystack::new(&sc.name, stem.as_deref()),
-            title: sc.name,
-            subtitle: Some(sc.target.to_string_lossy().to_string()),
-            target,
-            icon_source: Some(sc.link),
-            icon: None,
-            version: None,
-        });
+        push(
+            &mut apps,
+            &mut seen,
+            icons,
+            App {
+                id: EntryId::for_launch(&target),
+                origin: AppOrigin::Installed,
+                hay: Haystack::new(&sc.name, stem.as_deref()),
+                title: sc.name,
+                subtitle: Some(sc.target.to_string_lossy().to_string()),
+                target,
+                icon_source: Some(sc.link),
+                icon: None,
+                version: None,
+            },
+        );
     }
 
     attach_versions(&mut apps, crate::version::of);
@@ -607,7 +621,6 @@ pub fn icon_source_for(app: &App) -> Option<IconSource> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,8 +677,16 @@ mod tests {
     #[test]
     fn v0_3_identical_versions_are_not_shown_at_all() {
         let mut apps = vec![
-            exe_app("Windows PowerShell", r"C:\windows\system32\powershell.exe", None),
-            exe_app("Windows PowerShell (x86)", r"C:\windows\syswow64\powershell.exe", None),
+            exe_app(
+                "Windows PowerShell",
+                r"C:\windows\system32\powershell.exe",
+                None,
+            ),
+            exe_app(
+                "Windows PowerShell (x86)",
+                r"C:\windows\syswow64\powershell.exe",
+                None,
+            ),
         ];
         attach_versions(&mut apps, |_| Some("6.2.26100.8875".into()));
         assert!(apps.iter().all(|a| a.version.is_none()));
@@ -691,14 +712,22 @@ mod tests {
     fn v0_3_a_name_match_hides_rows_that_only_matched_a_binary_name() {
         let source = source_with(vec![
             exe_app("Google Chrome", r"C:\chrome\chrome.exe", Some("chrome")),
-            exe_app("Helium", r"C:\imput\helium\application\chrome.exe", Some("chrome")),
+            exe_app(
+                "Helium",
+                r"C:\imput\helium\application\chrome.exe",
+                Some("chrome"),
+            ),
         ]);
         let titles: Vec<String> = source
             .query(&Query::new("chrome"), Duration::from_millis(20))
             .into_iter()
             .map(|e| e.title)
             .collect();
-        assert_eq!(titles, vec!["Google Chrome"], "Helium is a different product");
+        assert_eq!(
+            titles,
+            vec!["Google Chrome"],
+            "Helium is a different product"
+        );
 
         // And it is still reachable by its own name.
         let by_name = source.query(&Query::new("helium"), Duration::from_millis(20));
@@ -751,7 +780,11 @@ mod tests {
         let photoshop = exe_app("Adobe Photoshop", r"C:\ps\Photoshop.exe", Some("Photoshop"));
         let source = source_with(vec![
             photoshop.clone(),
-            exe_app("PS Remote Play", r"C:\sony\RemotePlay.exe", Some("RemotePlay")),
+            exe_app(
+                "PS Remote Play",
+                r"C:\sony\RemotePlay.exe",
+                Some("RemotePlay"),
+            ),
         ]);
 
         let store = crate::aliases::AliasStore::open(None).unwrap();
@@ -772,17 +805,26 @@ mod tests {
 
         store.set("zz", &photoshop.id).unwrap();
         source.apply_aliases(&store);
-        assert_eq!(source.query(&Query::new("zz"), Duration::from_millis(20)).len(), 1);
+        assert_eq!(
+            source
+                .query(&Query::new("zz"), Duration::from_millis(20))
+                .len(),
+            1
+        );
 
         store.remove("zz").unwrap();
         source.apply_aliases(&store);
-        assert!(source.query(&Query::new("zz"), Duration::from_millis(20)).is_empty());
+        assert!(source
+            .query(&Query::new("zz"), Duration::from_millis(20))
+            .is_empty());
     }
 
     #[test]
     fn v0_2_an_empty_query_returns_no_entries() {
         let source = source_with(vec![exe_app("Notepad", r"C:\n.exe", Some("n"))]);
-        assert!(source.query(&Query::new(""), Duration::from_millis(20)).is_empty());
+        assert!(source
+            .query(&Query::new(""), Duration::from_millis(20))
+            .is_empty());
     }
 
     /// A UWP Entry must not offer actions that need a file. Checked here because
@@ -846,10 +888,10 @@ mod tests {
     }
 
     /// Run the real discovery walk on this machine and report what it found.
-        ///
-        /// `#[ignore]`d: depends on what is installed, so it can never assert. It is
-        /// the measurement ADR-0012 rests on, kept beside the code so re-checking is
-        /// one command. Debug build, so treat the number as an upper bound.
+    ///
+    /// `#[ignore]`d: depends on what is installed, so it can never assert. It is
+    /// the measurement ADR-0012 rests on, kept beside the code so re-checking is
+    /// one command. Debug build, so treat the number as an upper bound.
     #[test]
     #[ignore = "measures the host machine; run explicitly with --ignored"]
     fn v0_2_measure_the_real_walk() {
@@ -878,7 +920,10 @@ mod tests {
 
         // v0.3 task 0: applications that exist only because arguments joined the
         // id. Fifteen were being dropped by `seen.insert` before it (tbd §9).
-        let with_args: Vec<&App> = apps.iter().filter(|a| a.id.as_str().contains('|')).collect();
+        let with_args: Vec<&App> = apps
+            .iter()
+            .filter(|a| a.id.as_str().contains('|'))
+            .collect();
         println!("  argument ids   {:>6}", with_args.len());
         for host in ["cmd.exe", "javacpl.exe", "powershell.exe"] {
             let sharing: Vec<&str> = with_args
@@ -905,14 +950,19 @@ mod tests {
             println!("    {title:<28} {subs:?}");
         }
 
-        assert!(!source.is_indexing(), "a completed walk is not still indexing");
+        assert!(
+            !source.is_indexing(),
+            "a completed walk is not still indexing"
+        );
     }
 
     #[test]
     fn v0_2_find_returns_the_app_behind_an_entry_id() {
         let source = source_with(vec![exe_app("Notepad", r"C:\Windows\notepad.exe", None)]);
         let entries = source.query(&Query::new("note"), Duration::from_millis(20));
-        let found = source.find(&entries[0].id).expect("the id came from this Source");
+        let found = source
+            .find(&entries[0].id)
+            .expect("the id came from this Source");
         assert_eq!(found.title, "Notepad");
         assert!(source.find(&EntryId("nothing".into())).is_none());
     }

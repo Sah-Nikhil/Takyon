@@ -114,8 +114,8 @@ pub fn spawn(_store: Arc<ClipStore>, _blocklist: Arc<Blocklist>) {}
 fn run() {
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::DataExchange::AddClipboardFormatListener;
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
         TranslateMessage, HWND_MESSAGE, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW,
@@ -343,7 +343,11 @@ mod tests {
     fn v0_5_a_blocklisted_exe_stops_capture_without_the_format() {
         let list = blocklist();
         list.add("notepad.exe").unwrap();
-        assert!(!should_capture(false, Some(r"C:\Windows\notepad.exe"), &list));
+        assert!(!should_capture(
+            false,
+            Some(r"C:\Windows\notepad.exe"),
+            &list
+        ));
         assert!(should_capture(false, Some(r"C:\Windows\write.exe"), &list));
     }
 
@@ -378,7 +382,9 @@ mod tests {
     #[test]
     fn v0_5_blank_wide_text_is_not_a_clip() {
         let blank: Vec<u16> = "   
- ".encode_utf16().collect();
+ "
+        .encode_utf16()
+        .collect();
         assert!(text_within_cap(&blank).is_none());
         let real: Vec<u16> = "hello".encode_utf16().collect();
         assert_eq!(text_within_cap(&real).as_deref(), Some("hello"));

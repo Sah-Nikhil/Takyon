@@ -42,12 +42,9 @@ const kind = new URLSearchParams(window.location.search).get("window") ?? "palet
 // hidden, so the read lands long before any show could paint a frame.
 void load();
 
-// Outside Tauri there is no hotkey to press, so the show event would never fire
-// and the Palette would sit unfocused forever. Playwright and the browser console
-// drive it through here instead. Never exposed in the real app.
-// `setIndexing` joins them for the same reason: the window between login and the
-// application walk finishing is a few hundred milliseconds long, which no test
-// could catch by timing, and it has its own row in the Palette.
+// Outside Tauri no hotkey fires the show event, so Playwright and the console drive
+// it here; never exposed in the real app. `setIndexing` too: the login-to-walk-done
+// window is too short for any test to catch by timing, and it has its own row.
 if (!inTauri) {
   (window as unknown as Record<string, unknown>).__takyon_mock = {
     emitShow,

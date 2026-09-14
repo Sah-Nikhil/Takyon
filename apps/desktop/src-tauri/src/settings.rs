@@ -126,11 +126,10 @@ impl Snapshot {
             recents: prefs::flag(prefs, prefs::RECENTS, true),
             tray: prefs::flag(prefs, prefs::TRAY, true),
             placement: placement(prefs),
-            clip_retention: prefs
-                .get(prefs::CLIPS_RETENTION)
-                .map_or_else(|| crate::clips::Retention::default().as_str().to_string(), |v| {
-                    crate::clips::Retention::parse(&v).as_str().to_string()
-                }),
+            clip_retention: prefs.get(prefs::CLIPS_RETENTION).map_or_else(
+                || crate::clips::Retention::default().as_str().to_string(),
+                |v| crate::clips::Retention::parse(&v).as_str().to_string(),
+            ),
             clip_bang: prefs::flag(prefs, prefs::CLIPS_BANG, true),
             appearance: appearance(prefs),
             theme_dark: theme_family(prefs, prefs::THEME_DARK),
@@ -461,7 +460,9 @@ pub fn set_ui_size(
         "small" | "default" | "large" => value,
         other => return Err(format!("{other} is not an interface size")),
     };
-    prefs.set(prefs::UI_SIZE, &value).map_err(|e| e.to_string())?;
+    prefs
+        .set(prefs::UI_SIZE, &value)
+        .map_err(|e| e.to_string())?;
     // The window is sized in Rust and zoomed in CSS. Both have to move together
     // or the Palette is exactly the zoom too short.
     crate::window::cache_layout_prefs(&prefs);
@@ -573,7 +574,10 @@ mod tests {
             ],
             "SettingsSnapshot drifted from ipc.ts"
         );
-        assert!(v.get("reduce_motion").is_none(), "camelCase, not snake_case");
+        assert!(
+            v.get("reduce_motion").is_none(),
+            "camelCase, not snake_case"
+        );
     }
 
     /// Defaults are the shape a first launch reports: motion on, calculator
@@ -617,8 +621,7 @@ mod tests {
     fn v0_1_the_settings_capability_is_scoped_to_this_label() {
         let cap: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("capabilities/settings.json"),
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities/settings.json"),
             )
             .unwrap(),
         )

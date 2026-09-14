@@ -60,13 +60,13 @@ mod imp {
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_LWIN, VK_RWIN,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        VIRTUAL_KEY, VK_LWIN, VK_RWIN,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
-        UnhookWindowsHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL,
-        WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
+        KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_QUIT,
+        WM_SYSKEYDOWN, WM_SYSKEYUP,
     };
 
     /// The key injected to make a Windows-key tap look like a chord.
@@ -162,8 +162,7 @@ mod imp {
             return;
         };
 
-        *THREAD.lock().unwrap_or_else(|e| e.into_inner()) =
-            Some(unsafe { GetCurrentThreadId() });
+        *THREAD.lock().unwrap_or_else(|e| e.into_inner()) = Some(unsafe { GetCurrentThreadId() });
         ARMED.store(true, Relaxed);
         let _ = ready.send(true);
 

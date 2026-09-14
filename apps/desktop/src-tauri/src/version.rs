@@ -137,6 +137,9 @@ mod tests {
     /// A file with no version resource has none, and that is not an error.
     #[test]
     fn v0_3_something_without_a_version_resource_reports_none() {
-        assert_eq!(of(std::path::Path::new(r"C:\this\does\not\exist.exe")), None);
+        assert_eq!(
+            of(std::path::Path::new(r"C:\this\does\not\exist.exe")),
+            None
+        );
     }
 }

@@ -334,10 +334,8 @@ export interface QueryResult {
   /**
    * Reserve one row in the window for a status line.
    *
-   * **Not "the application walk is running".** It meant both until v0.9, and
-   * `!s` inherited the second meaning: two rows rendered in a window sized for
-   * one, so the list scrolled and the scrollbar covered the message. The walk
-   * reports in Settings and the tray now.
+   * **Not "the application walk is running".** Both meanings until v0.9 put two rows
+   * in a one-row window for `!s`; the walk reports in Settings and the tray now.
    */
   statusRow: boolean;
   /**

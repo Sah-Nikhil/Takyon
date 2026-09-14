@@ -14,9 +14,7 @@ use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 use crate::actions;
-use crate::entry::{
-    Action, Entry, EntryId, EntryKind, Query, Source, SourceId, SOURCE_SHORTLIST,
-};
+use crate::entry::{Action, Entry, EntryId, EntryKind, Query, Source, SourceId, SOURCE_SHORTLIST};
 use crate::rank::{self, Haystack};
 use crate::sources::apps::lnk;
 
@@ -132,12 +130,21 @@ impl RecentsSource {
 
     /// Look up one recent file by id, for launching.
     pub fn find(&self, id: &EntryId) -> Option<Recent> {
-        self.items.read().ok()?.iter().find(|r| &r.id == id).cloned()
+        self.items
+            .read()
+            .ok()?
+            .iter()
+            .find(|r| &r.id == id)
+            .cloned()
     }
 
     /// How long ago the snapshot was taken, for diagnostics.
     pub fn age(&self) -> Option<Duration> {
-        self.read_at.read().ok().and_then(|g| *g).map(|at| at.elapsed())
+        self.read_at
+            .read()
+            .ok()
+            .and_then(|g| *g)
+            .map(|at| at.elapsed())
     }
 
     /// Populate without touching the shell. The seam the tests use.
@@ -195,11 +202,9 @@ impl Source for RecentsSource {
 
 /// Read every shortcut in the Recent folder.
 ///
-/// **Files only, for now.** `lnk::read` drops any target that is not a file
-/// (ADR-0013's existence check), so a recently-opened *folder* never arrives
-/// here even though [`recent_from`] would classify one. Recorded in
-/// `docs/tbd/v0.3.md` rather than fixed blind — this machine has recent-items
-/// tracking switched off, so neither branch can be observed.
+/// **Files only, for now.** `lnk::read` drops non-file targets (ADR-0013), so a recent
+/// *folder* never arrives, though [`recent_from`] classifies one. Unobservable here
+/// (tracking off), so recorded in `docs/tbd/v0.3.md` rather than fixed blind.
 fn discover() -> Vec<Recent> {
     let Some(dir) = recent_dir() else {
         return Vec::new();
@@ -297,6 +302,8 @@ mod tests {
     fn v0_3_an_empty_query_returns_no_recents() {
         let source = RecentsSource::new();
         source.set_for_test(vec![recent_from(Path::new(r"C:\docs\notes.txt")).unwrap()]);
-        assert!(source.query(&Query::new(""), Duration::from_millis(20)).is_empty());
+        assert!(source
+            .query(&Query::new(""), Duration::from_millis(20))
+            .is_empty());
     }
 }

@@ -660,14 +660,9 @@ function expandedSuggestions(): Entry[] {
 /**
  * Whether the browser build reports autostart as registered.
  *
- * Seeded from `__takyon_autostart` where a test set one before the page loaded:
- * the switch reads this on mount, so a value set afterwards is a value the
- * mounted switch has already missed.
- *
- * **True by default, because that is what a real install has**: `firstrun::maybe_enable`
- * turns it on and it stopped being a question at v0.6. The OS owns the answer
- * (ADR-0015) and a browser has no OS, so a false default here drew every
- * baseline showing a switch the product ships turned on.
+ * Seeded from `__takyon_autostart` set before page load: the switch reads it on mount.
+ * **True by default, as on a real install** (`firstrun::maybe_enable`, ADR-0015); a
+ * false default drew every baseline with a switch the product ships turned on.
  */
 let lastAutostart =
   (globalThis as { __takyon_autostart?: boolean }).__takyon_autostart ?? true;

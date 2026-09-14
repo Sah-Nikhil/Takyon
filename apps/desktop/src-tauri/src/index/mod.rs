@@ -44,7 +44,9 @@ pub struct FileHit {
 pub enum IndexStatus {
     Ready,
     /// First walk in progress. `pct` is for a progress row, not a guarantee.
-    Building { pct: u8 },
+    Building {
+        pct: u8,
+    },
     /// Events were dropped and a rescan is pending. Results may be missing, and
     /// the user is told so rather than left to discover it.
     Stale,
@@ -68,9 +70,7 @@ pub struct IndexReport {
 /// walk's schedule, not the user's, so riding the keystroke path would ship the
 /// same three words on every keypress.
 #[tauri::command]
-pub fn file_index_status(
-    index: tauri::State<'_, std::sync::Arc<live::WalkIndex>>,
-) -> IndexReport {
+pub fn file_index_status(index: tauri::State<'_, std::sync::Arc<live::WalkIndex>>) -> IndexReport {
     IndexReport {
         status: index.status(),
         entries: index.entry_count(),

@@ -156,7 +156,10 @@ mod tests {
     /// halves of this file disagree the day no browser is registered.
     #[test]
     fn v0_9_the_fallback_search_url_is_one_takyon_would_open() {
-        let url = format!("{FALLBACK_SEARCH}{}", super::super::fetch::percent_encode("a b"));
+        let url = format!(
+            "{FALLBACK_SEARCH}{}",
+            super::super::fetch::percent_encode("a b")
+        );
         assert_eq!(url, "https://search.brave.com/search?q=a%20b");
         assert!(super::super::fetch::parse_url(&url).is_some());
     }

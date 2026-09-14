@@ -13,14 +13,13 @@ import type { AgentHealth, AgentKind, AgentSnapshot, PathReport } from "@takyon/
 /**
  * The dot beside an Agent's name. T3 Code's treatment, Takyon's palette.
  *
- * Green for ready, against amber and red: the three read as a traffic light and
- * the accent could not, being the same colour as the selected row. The one place
- * in the build that uses green, and only for "signed in and answering".
+ * Green, amber, red read as a traffic light; the accent could not, matching the
+ * selected row. Green and red are fixed tokens in `styles.css`, not theme roles.
  */
 export const HEALTH_DOT: Record<AgentHealth, string> = {
-  ready: "bg-emerald-400",
+  ready: "bg-health-ready",
   warning: "bg-warning",
-  error: "bg-red-400",
+  error: "bg-health-error",
 };
 
 /**

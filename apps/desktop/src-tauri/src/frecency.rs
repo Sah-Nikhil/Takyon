@@ -192,8 +192,8 @@ impl Frecency {
             return Vec::new();
         };
         let wanted: Vec<&str> = kinds.iter().map(|k| kind_name(*k)).collect();
-        let Ok(mut stmt) =
-            conn.prepare("SELECT entry_id, path, kind, opened_at FROM opened ORDER BY opened_at DESC")
+        let Ok(mut stmt) = conn
+            .prepare("SELECT entry_id, path, kind, opened_at FROM opened ORDER BY opened_at DESC")
         else {
             return Vec::new();
         };
@@ -368,10 +368,20 @@ mod tests {
     fn v0_7_the_opened_list_is_chronological_newest_first() {
         let f = Frecency::open(None).unwrap();
         let (a, b) = (a_real_file("first"), a_real_file("second"));
-        f.record_opened_at(&EntryId("a".into()), &a.to_string_lossy(), EntryKind::File, 100)
-            .unwrap();
-        f.record_opened_at(&EntryId("b".into()), &b.to_string_lossy(), EntryKind::File, 200)
-            .unwrap();
+        f.record_opened_at(
+            &EntryId("a".into()),
+            &a.to_string_lossy(),
+            EntryKind::File,
+            100,
+        )
+        .unwrap();
+        f.record_opened_at(
+            &EntryId("b".into()),
+            &b.to_string_lossy(),
+            EntryKind::File,
+            200,
+        )
+        .unwrap();
 
         let rows = f.opened(&[], 10);
         assert_eq!(rows.len(), 2);
@@ -385,8 +395,10 @@ mod tests {
         let f = Frecency::open(None).unwrap();
         let a = a_real_file("again");
         let id = EntryId("a".into());
-        f.record_opened_at(&id, &a.to_string_lossy(), EntryKind::File, 100).unwrap();
-        f.record_opened_at(&id, &a.to_string_lossy(), EntryKind::File, 300).unwrap();
+        f.record_opened_at(&id, &a.to_string_lossy(), EntryKind::File, 100)
+            .unwrap();
+        f.record_opened_at(&id, &a.to_string_lossy(), EntryKind::File, 300)
+            .unwrap();
 
         let rows = f.opened(&[], 10);
         assert_eq!(rows.len(), 1);
@@ -421,10 +433,20 @@ mod tests {
     fn v0_7_the_opened_list_filters_by_kind() {
         let f = Frecency::open(None).unwrap();
         let (file, app) = (a_real_file("doc"), a_real_file("app"));
-        f.record_opened_at(&EntryId("f".into()), &file.to_string_lossy(), EntryKind::File, 100)
-            .unwrap();
-        f.record_opened_at(&EntryId("a".into()), &app.to_string_lossy(), EntryKind::App, 200)
-            .unwrap();
+        f.record_opened_at(
+            &EntryId("f".into()),
+            &file.to_string_lossy(),
+            EntryKind::File,
+            100,
+        )
+        .unwrap();
+        f.record_opened_at(
+            &EntryId("a".into()),
+            &app.to_string_lossy(),
+            EntryKind::App,
+            200,
+        )
+        .unwrap();
 
         let files = f.opened(&[EntryKind::File, EntryKind::Folder], 10);
         assert_eq!(files.len(), 1);
@@ -458,8 +480,13 @@ mod tests {
     fn v0_7_the_opened_list_can_be_cleared_in_one_call() {
         let f = Frecency::open(None).unwrap();
         let path = a_real_file("clearable");
-        f.record_opened_at(&EntryId("x".into()), &path.to_string_lossy(), EntryKind::File, 1)
-            .unwrap();
+        f.record_opened_at(
+            &EntryId("x".into()),
+            &path.to_string_lossy(),
+            EntryKind::File,
+            1,
+        )
+        .unwrap();
         assert_eq!(f.clear_opened().unwrap(), 1);
         assert_eq!(f.opened_count(), 0);
     }
@@ -472,7 +499,8 @@ mod tests {
         let path = a_real_file("both");
         let id = EntryId("shared".into());
         f.record_at(&id, EntryKind::File, 100).unwrap();
-        f.record_opened_at(&id, &path.to_string_lossy(), EntryKind::File, 100).unwrap();
+        f.record_opened_at(&id, &path.to_string_lossy(), EntryKind::File, 100)
+            .unwrap();
 
         f.clear_opened().unwrap();
         assert!(f.weight_at(&id, 100) > 0.0, "Frecency lost its row");

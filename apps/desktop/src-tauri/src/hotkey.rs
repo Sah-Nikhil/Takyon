@@ -22,17 +22,9 @@ pub const DEFAULT_ACCELERATOR: &str = "Alt+Space";
 
 /// Override the accelerator for one run.
 ///
-/// **Not the v0.6 rebinding feature**, which needs a settings UI and persistence.
-/// This is a debug affordance in the same spirit as [`crate::window::NO_FOCUS_STEAL_ENV`]:
-/// something that makes the app measurable on a machine whose state would
-/// otherwise prevent it.
-///
-/// The specific need is `bun run bench`. Every span that harness measures starts
-/// at a hotkey press, so on any machine already running PowerToys Run or Raycast —
-/// both of which take `Alt+Space` by default — the benchmark cannot produce a
-/// single number. That is most machines this will ever be developed on, and a
-/// performance harness that only runs somewhere else is a performance harness
-/// nobody runs.
+/// **Not v0.6 rebinding**: a debug affordance like [`crate::window::NO_FOCUS_STEAL_ENV`].
+/// For `bun run bench`, whose spans all start at a hotkey press, on machines where
+/// PowerToys Run or Raycast already holds `Alt+Space`.
 pub const ACCELERATOR_ENV: &str = "TAKYON_HOTKEY";
 
 /// What the Keyboard page offers, in the order it draws them.
@@ -93,10 +85,8 @@ impl HotkeyState {
 
 /// Register the hotkey and record what happened.
 ///
-/// Runs as early as possible in `setup` — before the tray, before autostart
-/// self-heal, before anything touching disk. The "login -> hotkey responsive
-/// < 500 ms" budget is met by ordering, not by speed: everything that is not this
-/// is deferred behind it.
+/// First in `setup`, before tray, autostart self-heal or any disk. "Login -> hotkey
+/// responsive < 500 ms" is met by ordering, not speed: everything else defers.
 pub fn register(app: &AppHandle, accelerator: String) {
     let status = attempt(app, accelerator);
     if !status.registered {
@@ -109,16 +99,19 @@ pub fn register(app: &AppHandle, accelerator: String) {
 fn attempt(app: &AppHandle, accelerator: String) -> HotkeyStatus {
     match accelerator.parse::<Shortcut>() {
         Ok(shortcut) => {
-            let handler = |app: &AppHandle, _shortcut: &Shortcut, event: tauri_plugin_global_shortcut::ShortcutEvent| {
-                // The handler fires for press *and* release. Without this filter
-                // the Palette opens on the way down and closes on the way up,
-                // which reads as the hotkey not working at all.
-                if event.state() != ShortcutState::Pressed {
-                    return;
-                }
-                let bench = app.state::<crate::bench::Bench>();
-                crate::window::toggle(app, &bench);
-            };
+            let handler =
+                |app: &AppHandle,
+                 _shortcut: &Shortcut,
+                 event: tauri_plugin_global_shortcut::ShortcutEvent| {
+                    // The handler fires for press *and* release. Without this filter
+                    // the Palette opens on the way down and closes on the way up,
+                    // which reads as the hotkey not working at all.
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let bench = app.state::<crate::bench::Bench>();
+                    crate::window::toggle(app, &bench);
+                };
 
             match app.global_shortcut().on_shortcut(shortcut, handler) {
                 Ok(()) => HotkeyStatus {
@@ -182,10 +175,8 @@ pub fn rebind(app: &AppHandle, accelerator: &str, prefs: &crate::prefs::Prefs) -
 
 /// Turn the plugin's error into something worth reading.
 ///
-/// Pure and string-in/string-out so it can be tested without registering
-/// anything. The default case passes the original through verbatim rather than
-/// flattening it into a friendly lie — an unrecognised failure the user can quote
-/// in a bug report beats a reassuring sentence that says nothing.
+/// Pure, string in and out, testable without registering. Unknown errors pass
+/// through verbatim: quotable in a bug report beats a friendly lie.
 pub fn explain(err: &str) -> String {
     let lower = err.to_lowercase();
     if lower.contains("already") || lower.contains("registered") || lower.contains("hot key") {
@@ -198,18 +189,11 @@ pub fn explain(err: &str) -> String {
     }
 }
 
-/// Say so, in a dialog.
+/// Say so, in a native dialog: with the hotkey dead, nobody can open the Palette to
+/// read its banner (that one is for arrivals via the tray).
 ///
-/// It has to be a native dialog and not something drawn in the Palette: if the
-/// hotkey is dead the user has no way to open the Palette to read the message,
-/// which is precisely the state being reported. The Palette also carries a banner
-/// (for whoever arrives via the tray), but this is the one that reaches someone
-/// who does not yet know anything is wrong.
-///
-/// On its own thread, and not for tidiness: `blocking_show` waits on a channel the
-/// event loop is responsible for feeding, so calling it from `setup` would
-/// deadlock the app at startup — with a dialog that never appears, reporting a
-/// hotkey that never worked.
+/// Own thread: `blocking_show` waits on a channel the event loop feeds, so from
+/// `setup` it deadlocks startup behind a dialog that never appears.
 fn report(app: &AppHandle, status: &HotkeyStatus) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
@@ -240,8 +224,12 @@ pub trait Hotkey: Send + Sync {
     fn register(&self, app: &AppHandle, accelerator: String);
 
     /// Rebind, keeping the old accelerator when the new one is refused.
-    fn rebind(&self, app: &AppHandle, accelerator: &str, prefs: &crate::prefs::Prefs)
-        -> HotkeyStatus;
+    fn rebind(
+        &self,
+        app: &AppHandle,
+        accelerator: &str,
+        prefs: &crate::prefs::Prefs,
+    ) -> HotkeyStatus;
 
     /// The extra key this platform can bind, or `None` where there is none.
     ///
@@ -316,7 +304,10 @@ mod tests {
     fn v0_6_every_offered_binding_parses() {
         assert!(CHOICES.contains(&DEFAULT_ACCELERATOR));
         for choice in CHOICES {
-            assert!(choice.parse::<Shortcut>().is_ok(), "{choice} does not parse");
+            assert!(
+                choice.parse::<Shortcut>().is_ok(),
+                "{choice} does not parse"
+            );
         }
     }
 
@@ -330,7 +321,10 @@ mod tests {
         assert_eq!(resolve(None, None), DEFAULT_ACCELERATOR);
         assert_eq!(resolve(Some("Ctrl+Space"), None), "Ctrl+Space");
         assert_eq!(resolve(None, Some("Ctrl+Alt+F9")), "Ctrl+Alt+F9");
-        assert_eq!(resolve(Some("Ctrl+Space"), Some("Ctrl+Alt+F9")), "Ctrl+Alt+F9");
+        assert_eq!(
+            resolve(Some("Ctrl+Space"), Some("Ctrl+Alt+F9")),
+            "Ctrl+Alt+F9"
+        );
     }
 
     /// A binding that no longer parses must not leave the launcher with no hotkey
@@ -364,7 +358,10 @@ mod tests {
     /// would turn a real failure into a shrug.
     #[test]
     fn v0_1_an_unknown_failure_is_quoted_verbatim() {
-        assert_eq!(explain("XGrabKey returned BadAccess"), "XGrabKey returned BadAccess");
+        assert_eq!(
+            explain("XGrabKey returned BadAccess"),
+            "XGrabKey returned BadAccess"
+        );
     }
 
     /// The status serialises to the shape `packages/shared/src/ipc.ts` declares:

@@ -85,7 +85,7 @@ pub fn is_interesting(name: &str) -> bool {
 mod com {
     use super::*;
     use windows::Win32::UI::Shell::{
-        IEnumShellItems, IShellItem, SHGetKnownFolderItem, BHID_EnumItems, FOLDERID_AppsFolder,
+        BHID_EnumItems, FOLDERID_AppsFolder, IEnumShellItems, IShellItem, SHGetKnownFolderItem,
         KF_FLAG_DEFAULT, SIGDN_DESKTOPABSOLUTEPARSING, SIGDN_NORMALDISPLAY,
     };
 
@@ -99,10 +99,12 @@ mod com {
             else {
                 return Vec::new();
             };
-            let Ok(items) = folder.BindToHandler::<Option<&windows::Win32::System::Com::IBindCtx>, IEnumShellItems>(
-                None,
-                &BHID_EnumItems,
-            ) else {
+            let Ok(items) = folder
+                .BindToHandler::<Option<&windows::Win32::System::Com::IBindCtx>, IEnumShellItems>(
+                    None,
+                    &BHID_EnumItems,
+                )
+            else {
                 return Vec::new();
             };
 
@@ -140,10 +142,10 @@ mod com {
     }
 
     /// Read one of an item's names, freeing the shell's buffer.
-        ///
-        /// `GetDisplayName` allocates with the COM task allocator and the caller must
-        /// release it. Two names for ~200 items is 400 calls per pass, so a leak here
-        /// only shows up on a machine with a lot of apps.
+    ///
+    /// `GetDisplayName` allocates with the COM task allocator and the caller must
+    /// release it. Two names for ~200 items is 400 calls per pass, so a leak here
+    /// only shows up on a machine with a lot of apps.
     unsafe fn display_name(
         item: &IShellItem,
         kind: windows::Win32::UI::Shell::SIGDN,
@@ -269,7 +271,10 @@ mod tests {
     fn v0_3_an_exclamation_mark_alone_does_not_make_a_package() {
         assert!(!is_packaged("664~fWx6w8A2!1wg'A4D>(FpPBCfr_+uUuDiMG4YH"));
         assert!(!is_packaged("Thing_short!App"));
-        assert!(!is_packaged("Thing_8WEKYB3D8BBWE!App"), "publisher ids are lowercase");
+        assert!(
+            !is_packaged("Thing_8WEKYB3D8BBWE!App"),
+            "publisher ids are lowercase"
+        );
         assert!(!is_packaged("NoBang_8wekyb3d8bbwe"));
     }
 

@@ -15,13 +15,10 @@ use crate::identity::DISPLAY_NAME;
 
 const TRAY_ID: &str = "main";
 
-/// Both polarities, compiled in.
+/// Both polarities, compiled in: the startup budget has no room for file reads, or a
+/// resource path that resolves differently in dev and release.
 ///
-/// Embedded rather than resolved from the resource directory because the tray is
-/// built during startup, and the login-to-responsive budget has no room for two
-/// file reads and a path resolution that can fail differently in dev and release.
-/// The names describe the *taskbar* they are drawn on, not the glyph: `tray-dark`
-/// is the light glyph that goes on a dark taskbar.
+/// Named for the *taskbar*: `tray-dark` is the light glyph for a dark taskbar.
 const TRAY_DARK: &[u8] = include_bytes!("../icons/tray-dark.png");
 const TRAY_LIGHT: &[u8] = include_bytes!("../icons/tray-light.png");
 
@@ -70,12 +67,29 @@ pub fn set_indexing(app: &AppHandle, indexing: bool) {
 }
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "tray_open", format!("Open {DISPLAY_NAME}"), true, None::<&str>)?;
+    let open = MenuItem::with_id(
+        app,
+        "tray_open",
+        format!("Open {DISPLAY_NAME}"),
+        true,
+        None::<&str>,
+    )?;
     let settings = MenuItem::with_id(app, "tray_settings", "Settings", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "tray_quit", format!("Quit {DISPLAY_NAME}"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(
+        app,
+        "tray_quit",
+        format!("Quit {DISPLAY_NAME}"),
+        true,
+        None::<&str>,
+    )?;
     let menu = Menu::with_items(
         app,
-        &[&open, &settings, &PredefinedMenuItem::separator(app)?, &quit],
+        &[
+            &open,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
     )?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -120,23 +134,25 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn current_icon() -> tauri::Result<Image<'static>> {
-    let bytes = if taskbar_is_light() { TRAY_LIGHT } else { TRAY_DARK };
+    let bytes = if taskbar_is_light() {
+        TRAY_LIGHT
+    } else {
+        TRAY_DARK
+    };
     Image::from_bytes(bytes)
 }
 
 /// Is the *taskbar* light?
 ///
-/// Deliberately `SystemUsesLightTheme` and not `AppsUseLightTheme`, and not
-/// Tauri's window theme either. Windows lets those disagree — "Choose your mode:
-/// Custom" is a supported setting — and the notification area follows the system
-/// one. Reading the app theme would give a monochrome glyph that vanishes into
-/// the taskbar for everyone running the mixed mode.
+/// `SystemUsesLightTheme`, not `AppsUseLightTheme` or Tauri's window theme: "Custom"
+/// mode lets them disagree, and the notification area follows the system one.
 #[cfg(windows)]
 fn taskbar_is_light() -> bool {
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_DWORD,
+        RegCloseKey, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
+        RRF_RT_REG_DWORD,
     };
 
     unsafe {
@@ -178,13 +194,9 @@ fn taskbar_is_light() -> bool {
 
 /// Swap the glyph when the system theme changes, without polling.
 ///
-/// `RegNotifyChangeKeyValue` in its synchronous form blocks the calling thread
-/// until the key changes, which is exactly what a dedicated thread wants. A timer
-/// would burn a wakeup every interval forever to catch an event that happens a
-/// handful of times in a machine's life, on a process whose whole argument is that
-/// it costs nothing while idle.
-///
-/// The notification is one-shot, so it is re-armed each iteration.
+/// Synchronous `RegNotifyChangeKeyValue` blocks this dedicated thread until the key
+/// changes; a timer would wake forever, on an app that must cost nothing idle.
+/// One-shot notification, so re-armed each iteration.
 #[cfg(windows)]
 fn watch_taskbar_theme(app: AppHandle) {
     use windows::core::w;
@@ -224,19 +236,9 @@ fn watch_taskbar_theme(app: AppHandle) {
 
 /// Re-register the login entry against the *current* executable path.
 ///
-/// An update, or a per-user to per-machine reinstall, can leave the `Run` value
-/// pointing at a path that no longer exists — and it fails *silently at boot*, the
-/// one place nobody is watching. Ported from tesseract, where this was learned.
-///
-/// Re-registers rather than comparing first: `AutoLaunchManager` wraps the
-/// registered target in a private field with no getter, so there is nothing to
-/// compare against without re-deriving the registry layout ourselves. `enable()`
-/// is idempotent and writes `current_exe()`, so the write *is* the comparison.
-///
-/// It only ever runs when `is_enabled()` already says on, so it corrects a stale
-/// path and never re-enables something the user turned off. That also makes it
-/// safe against Windows' `StartupApproved` flag: `auto-launch` reads that flag, so
-/// an entry disabled from Task Manager reports `false` here and is left alone.
+/// An update can strand `Run` at a dead path, failing silently at boot (tesseract).
+/// No getter for the stored target, so idempotent `enable()` is the comparison.
+/// Only when `is_enabled()`, which honours `StartupApproved`: never re-enables.
 #[cfg(not(debug_assertions))]
 pub fn self_heal_autostart(app: &AppHandle) {
     use tauri_plugin_autostart::ManagerExt;
@@ -280,8 +282,14 @@ mod tests {
     #[test]
     fn v0_1_both_tray_polarities_are_embedded_pngs() {
         const PNG_MAGIC: &[u8] = &[0x89, b'P', b'N', b'G'];
-        assert!(TRAY_DARK.starts_with(PNG_MAGIC), "tray-dark.png is not a PNG");
-        assert!(TRAY_LIGHT.starts_with(PNG_MAGIC), "tray-light.png is not a PNG");
+        assert!(
+            TRAY_DARK.starts_with(PNG_MAGIC),
+            "tray-dark.png is not a PNG"
+        );
+        assert!(
+            TRAY_LIGHT.starts_with(PNG_MAGIC),
+            "tray-light.png is not a PNG"
+        );
         assert_ne!(
             TRAY_DARK, TRAY_LIGHT,
             "the two polarities are identical; one taskbar theme will show nothing"

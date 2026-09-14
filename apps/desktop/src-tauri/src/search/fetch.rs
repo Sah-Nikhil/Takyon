@@ -99,7 +99,11 @@ pub fn parse_url(url: &str) -> Option<(String, String, bool)> {
     }
     Some((
         host.to_string(),
-        if path.is_empty() { "/".into() } else { path.into() },
+        if path.is_empty() {
+            "/".into()
+        } else {
+            path.into()
+        },
         secure,
     ))
 }
@@ -154,7 +158,15 @@ pub fn post(
         .iter()
         .map(|(name, value)| format!("{name}: {value}\r\n"))
         .collect();
-    send(host, path, &joined, true, "POST", Some(body.as_bytes()), MAX_BODY)
+    send(
+        host,
+        path,
+        &joined,
+        true,
+        "POST",
+        Some(body.as_bytes()),
+        MAX_BODY,
+    )
 }
 
 /// Most bytes read from one favicon. A site serving a megabyte PNG as its icon
@@ -177,7 +189,15 @@ pub fn get_icon(url: &str) -> Result<Response, SearchError> {
 }
 
 fn plain(host: &str, path: &str) -> Result<Response, SearchError> {
-    send(host, path, "Accept: text/html\r\n", false, "GET", None, MAX_BODY)
+    send(
+        host,
+        path,
+        "Accept: text/html\r\n",
+        false,
+        "GET",
+        None,
+        MAX_BODY,
+    )
 }
 
 fn request(host: &str, path: &str, headers: &str) -> Result<Response, SearchError> {
@@ -304,10 +324,7 @@ fn send(
 
 /// Read the body, stopping at `cap`.
 #[cfg(windows)]
-unsafe fn read_bytes(
-    request: *mut core::ffi::c_void,
-    cap: usize,
-) -> Result<Vec<u8>, SearchError> {
+unsafe fn read_bytes(request: *mut core::ffi::c_void, cap: usize) -> Result<Vec<u8>, SearchError> {
     let mut body: Vec<u8> = Vec::new();
     loop {
         let mut available: u32 = 0;

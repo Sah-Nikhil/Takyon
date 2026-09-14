@@ -77,7 +77,9 @@ pub fn parse_hits(body: &str) -> Result<Vec<Hit>, SearchError> {
                 title: strip_markup(hit.get("title").and_then(|t| t.as_str()).unwrap_or(url)),
                 url: url.to_string(),
                 description: strip_markup(
-                    hit.get("description").and_then(|d| d.as_str()).unwrap_or(""),
+                    hit.get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or(""),
                 ),
             })
         })
@@ -148,7 +150,8 @@ mod tests {
     /// than rendered as a row that does nothing.
     #[test]
     fn v0_9_a_hit_without_a_url_is_dropped() {
-        let body = r#"{"web":{"results":[{"title":"No link"},{"title":"Real","url":"https://a.b"}]}}"#;
+        let body =
+            r#"{"web":{"results":[{"title":"No link"},{"title":"Real","url":"https://a.b"}]}}"#;
         let hits = parse_hits(body).expect("parses");
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].url, "https://a.b");

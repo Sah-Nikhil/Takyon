@@ -78,11 +78,7 @@ impl Turns {
 
     /// Kill a running Turn. Silent when it has already finished.
     pub fn cancel(&self, turn_id: u64) {
-        let child = self
-            .running
-            .lock()
-            .expect("turns mutex")
-            .remove(&turn_id);
+        let child = self.running.lock().expect("turns mutex").remove(&turn_id);
         if let Some(child) = child {
             let _ = child.lock().expect("child mutex").kill();
         }
@@ -189,10 +185,7 @@ mod tests {
     /// The wire shape the frontend switches on. A rename here is an IPC break.
     #[test]
     fn v0_8_turn_events_serialise_with_a_kind_tag() {
-        let json = serde_json::to_string(&TurnEvent::Text {
-            delta: "hi".into(),
-        })
-        .unwrap();
+        let json = serde_json::to_string(&TurnEvent::Text { delta: "hi".into() }).unwrap();
         assert_eq!(json, r#"{"kind":"text","delta":"hi"}"#);
 
         let started = serde_json::to_string(&TurnEvent::Started {

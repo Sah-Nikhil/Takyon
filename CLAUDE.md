@@ -70,7 +70,8 @@ checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port in
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
-see ADR-0005).
+see ADR-0005). `bun run check:licences` enforces it over every crate and JS
+package, LGPL included, and runs in `lint` and CI.
 
 ## Communication
 **Always use the `/homonid` skill in this repo at max setting.** Invoke it at the start of every
@@ -94,9 +95,8 @@ tradeoff), `docs/tbc/` (one we expect to revisit) or `IMPLEMENTATION_PLAN.md`,
 with a one-line pointer left at the code. A file where the prose outweighs the
 logic is a file nobody reads either half of.
 
-`bun run check:comments` finds every comment over the ceiling. **Not yet part of
-`lint`**: v0.1's files predate the rule and still fail it. Fold it into `lint`
-once they are brought across, and treat it as blocking from then on.
+`bun run check:comments` finds every comment over the ceiling. **Part of `lint`
+and of CI**, and blocking: every file was brought under the ceiling during v0.11.
 
 ```rust
 // No: six lines of essay for one guard.
@@ -134,10 +134,13 @@ under `docs/`.
   interpreting it. **A half states seven roles and nothing else**; every other
   token is a `color-mix(in oklab, …)` over `plate` and `fg` in `styles.css`, so
   adding a theme is seven numbers per half and touches no component.
-  **No file under `apps/desktop/src` may name a colour** — the one exception is
-  Windows' close-button red in `TitleBar.tsx`, and it is commented as such. That
-  rule is not style: white-at-10% borders in `palette/` were invisible on a light
-  plate and shipped that way for four phases.
+  **No file under `apps/desktop/src` may name a colour** outside `theme/themes.ts`
+  and `styles.css`. Two exceptions: Windows' close-button red in `TitleBar.tsx`,
+  and `ThemeOrb.tsx`'s lighting, which previews themes other than the active one
+  so no token can describe it. Fixed status colours (the Agent health dots) are
+  tokens in `styles.css`, like `--color-scrim`. `bun run check:colours` enforces
+  it and lists the exceptions per literal. That rule is not style: white-at-10%
+  borders in `palette/` were invisible on a light plate for four phases.
   Values are authored in **oklch** so equal lightness across families is stated
   rather than hoped for. `--color-scrim` is the one role that is neither derived
   nor theme-owned: it must darken in *both* appearances.
@@ -179,8 +182,9 @@ under `docs/`.
 
 ## Commands
 - dev: `bun run dev`
-- check before "done": `bun run typecheck && bun run lint` (lint covers both TS and
-  `cargo clippy`)
+- check before "done": `bun run typecheck && bun run lint` (lint covers ESLint,
+  `cargo fmt --check`, `cargo clippy`, and the comment, colour and licence checks)
+- format Rust: `bun run fmt`
 - test: `bun run test` — **every layer**: Rust unit and integration, TypeScript,
   then Playwright.
   `test:visual` was added to it at v0.3, because a suite that has to be remembered

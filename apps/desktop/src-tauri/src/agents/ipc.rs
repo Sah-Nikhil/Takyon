@@ -139,7 +139,10 @@ pub fn set_ask_enabled(
     pipeline: tauri::State<'_, Arc<crate::query::Pipeline>>,
 ) -> Result<(), String> {
     prefs
-        .set(&prefs::ask_enabled_key(agent), if enabled { "1" } else { "0" })
+        .set(
+            &prefs::ask_enabled_key(agent),
+            if enabled { "1" } else { "0" },
+        )
         .map_err(|e| e.to_string())?;
     pipeline.set_ask_order(super::route(&prefs));
     Ok(())
@@ -176,11 +179,12 @@ pub fn set_ask_effort(
     prefs: tauri::State<'_, Arc<Prefs>>,
 ) -> Result<(), String> {
     let effort = effort.trim();
-    let accepted = super::driver_for(agent).is_some_and(|driver| {
-        effort.is_empty() || driver.efforts().contains(&effort)
-    });
+    let accepted = super::driver_for(agent)
+        .is_some_and(|driver| effort.is_empty() || driver.efforts().contains(&effort));
     if !accepted {
-        return Err(format!("{effort} is not an effort level that agent accepts."));
+        return Err(format!(
+            "{effort} is not an effort level that agent accepts."
+        ));
     }
     prefs
         .set(&prefs::ask_effort_key(agent), effort)

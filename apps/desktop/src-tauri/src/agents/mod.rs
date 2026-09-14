@@ -163,10 +163,8 @@ impl Snapshot {
 
 /// The house style every Turn answers in.
 ///
-/// A launcher answer is read in a 560px box, one keystroke from whatever the
-/// user was doing. Three paragraphs of preamble is the wrong shape for that, and
-/// no Agent's default is this terse. Sent as a system prompt where the CLI has
-/// one and prepended to the first Turn's prompt where it does not.
+/// Read in a 560px box one keystroke from other work; no Agent's default is this
+/// terse. System prompt where the CLI has one, else prepended to the first Turn.
 pub const ANSWER_STYLE: &str = "Answer in as few words as the question allows. No preamble, no restatement of the question, no closing offer, no summary of what you just said. Drop articles and filler; fragments are fine. One line when one line answers it. Prose, not bullets, unless the answer is genuinely a list. Never abbreviate identifiers, API names, file paths, error strings, names or numbers, and never drop a caveat that changes the answer.";
 
 /// The prompt for an Agent with no system-prompt flag of its own.
@@ -176,9 +174,12 @@ pub const ANSWER_STYLE: &str = "Answer in as few words as the question allows. N
 pub fn styled_prompt(req: &TurnRequest) -> String {
     match req.session {
         Some(_) => req.prompt.clone(),
-        None => format!("{ANSWER_STYLE}
+        None => format!(
+            "{ANSWER_STYLE}
 
-{}", req.prompt),
+{}",
+            req.prompt
+        ),
     }
 }
 
@@ -313,7 +314,12 @@ pub fn parse_order(stored: Option<&str>) -> Vec<AgentKind> {
     let named = stored
         .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
         .unwrap_or_default();
-    normalise_order(named.iter().filter_map(|n| AgentKind::from_wire(n)).collect())
+    normalise_order(
+        named
+            .iter()
+            .filter_map(|n| AgentKind::from_wire(n))
+            .collect(),
+    )
 }
 
 /// Dedupe an order and back-fill it. The only shape allowed to be stored.
@@ -338,14 +344,15 @@ pub fn route(prefs: &crate::prefs::Prefs) -> Vec<AgentKind> {
         // Seeded from the older single-choice key, so an install made before
         // the order existed keeps its Agent first.
         None => normalise_order(vec![AgentKind::parse(
-            prefs.get(crate::prefs::ASK_AGENT).unwrap_or_default().as_str(),
+            prefs
+                .get(crate::prefs::ASK_AGENT)
+                .unwrap_or_default()
+                .as_str(),
         )]),
     };
     stored
         .into_iter()
-        .filter(|kind| {
-            crate::prefs::flag(prefs, &crate::prefs::ask_enabled_key(*kind), true)
-        })
+        .filter(|kind| crate::prefs::flag(prefs, &crate::prefs::ask_enabled_key(*kind), true))
         .collect()
 }
 
@@ -496,7 +503,12 @@ mod tests {
             assert!(!efforts.is_empty(), "{} offers no effort", driver.label());
             for effort in efforts {
                 assert!(!effort.is_empty());
-                assert_eq!(*effort, effort.to_lowercase(), "{} is not a wire value", effort);
+                assert_eq!(
+                    *effort,
+                    effort.to_lowercase(),
+                    "{} is not a wire value",
+                    effort
+                );
             }
         }
     }
@@ -564,7 +576,9 @@ mod tests {
     fn v0_8_switching_every_agent_off_leaves_nothing_to_ask() {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         for kind in AgentKind::ALL {
-            prefs.set(&crate::prefs::ask_enabled_key(kind), "0").unwrap();
+            prefs
+                .set(&crate::prefs::ask_enabled_key(kind), "0")
+                .unwrap();
         }
         assert!(route(&prefs).is_empty());
     }
@@ -620,7 +634,11 @@ mod tests {
             tools: true,
         };
         assert_eq!(styled_prompt(&resumed), "and the producer");
-        assert!(styled_prompt(&TurnRequest { session: None, ..resumed }).contains(ANSWER_STYLE));
+        assert!(styled_prompt(&TurnRequest {
+            session: None,
+            ..resumed
+        })
+        .contains(ANSWER_STYLE));
     }
 
     /// The style has to actually ask for brevity, or it is decoration that costs
@@ -675,7 +693,10 @@ mod tests {
             .set(&crate::prefs::ask_enabled_key(AgentKind::Codex), "0")
             .unwrap();
         assert!(!lead_sole_agent(&switched, &only_codex));
-        assert_eq!(route(&switched), vec![AgentKind::Claude, AgentKind::OpenCode]);
+        assert_eq!(
+            route(&switched),
+            vec![AgentKind::Claude, AgentKind::OpenCode]
+        );
 
         let legacy = crate::prefs::Prefs::open(None).unwrap();
         legacy.set(crate::prefs::ASK_AGENT, "opencode").unwrap();
@@ -703,7 +724,10 @@ mod tests {
     fn v0_11_no_sole_agent_leaves_the_first_run_unspent() {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         assert!(!lead_sole_agent(&prefs, &probed(&[])));
-        assert!(!lead_sole_agent(&prefs, &probed(&[AgentKind::Claude, AgentKind::OpenCode])));
+        assert!(!lead_sole_agent(
+            &prefs,
+            &probed(&[AgentKind::Claude, AgentKind::OpenCode])
+        ));
         assert_eq!(route(&prefs), AgentKind::ALL.to_vec());
 
         assert!(lead_sole_agent(&prefs, &probed(&[AgentKind::OpenCode])));

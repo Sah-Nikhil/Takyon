@@ -12,9 +12,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::entry::{
-    Action, Entry, EntryId, EntryKind, Query, Source, SourceId, SOURCE_SHORTLIST,
-};
+use crate::entry::{Action, Entry, EntryId, EntryKind, Query, Source, SourceId, SOURCE_SHORTLIST};
 use crate::rank::{self, Haystack};
 
 /// EntryId namespace. Frozen: it is the Frecency key.

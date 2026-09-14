@@ -250,14 +250,20 @@ pub fn extract_between_sentinels(stdout: &str) -> Option<String> {
 /// `$SHELL`, then the account record, then a hard fallback. Anything not
 /// starting `/` drops: resolving whatever `sh` names would defeat the point of
 /// asking. The leading slash is the test, not host-dependent `is_absolute`.
-pub fn login_shell_candidates(env_shell: Option<&str>, account_shell: Option<&str>) -> Vec<PathBuf> {
+pub fn login_shell_candidates(
+    env_shell: Option<&str>,
+    account_shell: Option<&str>,
+) -> Vec<PathBuf> {
     let fallback = if cfg!(target_os = "macos") {
         "/bin/zsh"
     } else {
         "/bin/bash"
     };
     let mut out: Vec<PathBuf> = Vec::new();
-    for raw in [env_shell, account_shell, Some(fallback)].into_iter().flatten() {
+    for raw in [env_shell, account_shell, Some(fallback)]
+        .into_iter()
+        .flatten()
+    {
         let trimmed = raw.trim();
         let path = PathBuf::from(trimmed);
         if !trimmed.starts_with('/') || out.contains(&path) {
@@ -381,7 +387,11 @@ fn discover(deep: bool) -> (Option<OsString>, Option<String>) {
         w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"),
     );
     // Below the registry, so a profile can add a directory but never reorder one.
-    let profile = if deep { path_from_powershell_profile() } else { None };
+    let profile = if deep {
+        path_from_powershell_profile()
+    } else {
+        None
+    };
     if user.is_none() && machine.is_none() && profile.is_none() {
         return (None, None);
     }
@@ -428,11 +438,14 @@ const PROFILE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// `RegGetValueW` expand: the flag combination that restricts the type to
 /// `REG_EXPAND_SZ` is only legal alongside `RRF_NOEXPAND`.
 #[cfg(windows)]
-fn registry_path(root: windows::Win32::System::Registry::HKEY, subkey: windows::core::PCWSTR) -> Option<OsString> {
+fn registry_path(
+    root: windows::Win32::System::Registry::HKEY,
+    subkey: windows::core::PCWSTR,
+) -> Option<OsString> {
     use windows::core::w;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegGetValueW, RegOpenKeyExW, HKEY, KEY_READ, RRF_NOEXPAND, RRF_RT_REG_EXPAND_SZ,
-        RRF_RT_REG_SZ,
+        RegCloseKey, RegGetValueW, RegOpenKeyExW, HKEY, KEY_READ, RRF_NOEXPAND,
+        RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ,
     };
 
     unsafe {

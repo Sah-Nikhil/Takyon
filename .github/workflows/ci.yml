@@ -67,6 +67,33 @@ jobs:
       # `tests/visual`, whose specs import Playwright and are not bun tests.
       - run: bun test apps/desktop/src packages/shared/src
 
+  # The rules CLAUDE.md states and nothing else checks. Linux: none of them
+  # compiles anything, and `cargo metadata` resolves Windows-only crates anyway.
+  hygiene:
+    name: Format, comments, colours and licences
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: rustfmt
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: cargo fmt --all --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
+      # `success() || failure()` on each: every check reports, so one failure
+      # cannot hide the next the way a failed `cargo test` once hid clippy.
+      - if: success() || failure()
+        run: bun run check:comments
+      - if: success() || failure()
+        run: bun run check:colours
+      - if: success() || failure()
+        run: bun run check:licences
+
   rust-test:
     name: cargo test (Windows)
     runs-on: windows-latest

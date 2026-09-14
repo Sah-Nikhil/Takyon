@@ -9,9 +9,8 @@
 //! raw query, never a ranked search. That is what makes ADR-0002 checkable by
 //! reading — a line with no Bang cannot reach the network.
 //!
-//! Four Bangs: `!v` at v0.5, `!e` at v0.7, `!c` at v0.8, `!s` at v0.9. Registry,
-//! `!` picker and user-defined Bangs are `docs/plans/bang-registry.md`,
-//! part-resumed at v0.8.
+//! Four Bangs: `!v` v0.5, `!e` v0.7, `!c` v0.8, `!s` v0.9. Registry, `!` picker and
+//! user-defined Bangs: `docs/plans/bang-registry.md` (part-resumed at v0.8).
 
 /// Where a line of input goes, and what that Mode sees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,7 +116,10 @@ mod tests {
     #[test]
     fn v0_8_the_agent_bang_routes_to_the_ask_mode() {
         assert_eq!(parse("!c"), Route::Ask(""));
-        assert_eq!(parse("!c why is the sky blue"), Route::Ask("why is the sky blue"));
+        assert_eq!(
+            parse("!c why is the sky blue"),
+            Route::Ask("why is the sky blue")
+        );
         assert_eq!(parse("!C  trimmed  "), Route::Ask("trimmed"));
         // Position 0 only, and the ident ends at whitespace, exactly as `!v`.
         assert_eq!(parse("ask !c thing"), Route::Bangless("ask !c thing"));
