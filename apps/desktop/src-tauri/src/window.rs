@@ -463,6 +463,9 @@ pub fn show(app: &AppHandle, bench: &Bench) {
         eprintln!("[takyon] could not show the Palette: {e}");
         return;
     }
+    if let Some(turns) = app.try_state::<std::sync::Arc<crate::agents::turn::Turns>>() {
+        turns.set_visible(true);
+    }
 
     if !no_focus_steal() {
         let _ = win.set_focus();
@@ -496,6 +499,9 @@ pub fn hide(app: &AppHandle, reason: &str) {
     let _ = reason;
 
     let Some(win) = palette(app) else { return };
+    // Every Agent process dies with the Palette, in Rust, before React hears of
+    // it (ADR-0033). Terminate only: each Turn's own thread reaps.
+    stop_agents(app);
     if let Err(e) = win.hide() {
         eprintln!("[takyon] could not hide the Palette: {e}");
         return;
@@ -511,6 +517,16 @@ pub fn hide(app: &AppHandle, reason: &str) {
 
     #[cfg(windows)]
     trim_working_set_async();
+}
+
+/// Close the Turn gate, stop every `!s`, kill every Agent tree. Never blocks.
+fn stop_agents(app: &AppHandle) {
+    if let Some(turns) = app.try_state::<std::sync::Arc<crate::agents::turn::Turns>>() {
+        turns.set_visible(false);
+    }
+    if let Some(searches) = app.try_state::<std::sync::Arc<crate::search::ipc::Searches>>() {
+        searches.cancel_all();
+    }
 }
 
 /// The hotkey toggles: it opens the Palette and closes it again.

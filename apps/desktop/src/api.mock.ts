@@ -20,6 +20,7 @@ import type {
   PathReport,
   AliasRow,
   AppAliasRow,
+  TurnFailure,
   TurnMessage,
   CalcPolicy,
   ClipRetention,
@@ -201,6 +202,13 @@ export function holdSearchAtReading(on: boolean) {
     releaseReading();
     releaseReading = null;
   }
+}
+
+let turnFailure: TurnFailure | null = null;
+
+/** Fail every Turn with these facts, as Rust's `TurnFailure`. Null restores. */
+export function failTurns(failure: TurnFailure | null) {
+  turnFailure = failure;
 }
 
 /** Make the next search fail with this message. Null restores success. */
@@ -1070,6 +1078,11 @@ export const mock = {
   agentAsk: async (args: { agent: AgentKind; prompt: string; session?: string }) => {
     const turnId = nextTurnId++;
     const session = args.session ?? `mock-session-${turnId}`;
+    if (turnFailure !== null) {
+      const failure = turnFailure;
+      setTimeout(() => emitTurn({ turnId, kind: "failed", ...failure }), 10);
+      return turnId;
+    }
     // Three ticks rather than one: a single event would never catch a renderer
     // that overwrites the answer instead of appending to it.
     emitTurn({ turnId, kind: "started", session, model: "mock-model" });

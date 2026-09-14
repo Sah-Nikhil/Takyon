@@ -19,6 +19,7 @@ import {
   failAutostart,
   failPreferenceWrite,
   menuRequest,
+  failTurns,
   failWebSearch,
   holdSearchAtReading,
   openedUrls,
@@ -77,6 +78,8 @@ if (!inTauri) {
     // browser cannot reach, so the no-key state is unreachable without this.
     setWebKeyStored,
     failWebSearch,
+    // A Turn failing with a given reason. Real failures need a broken install.
+    failTurns,
     // Hold a search at its reading phase, which otherwise lasts 20ms.
     holdSearchAtReading,
     // What the mock Agent answers, so the renderer can be driven with markdown.

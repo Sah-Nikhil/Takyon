@@ -5,7 +5,9 @@
  * through it, Tauri. The hook is the wiring; this is the rule.
  */
 
-import type { TurnMessage } from "@takyon/shared";
+import type { TurnFailure, TurnMessage } from "@takyon/shared";
+
+import { turnFailureCopy } from "./status";
 
 export type TurnPhase = "idle" | "asking" | "answering" | "done" | "failed";
 
@@ -15,10 +17,19 @@ export interface TurnState {
   answer: string;
   /** The Agent's session, once it has one. What a follow-up resumes. */
   session?: string;
+  /** A failure's headline, worded by `turnFailureCopy`. */
   error?: string;
+  /** The line under it: stderr's tail, the missing command, or nothing. */
+  errorDetail?: string;
 }
 
 export const IDLE: TurnState = { phase: "idle", answer: "" };
+
+/** `error` and `errorDetail` for a failed Turn. Shared with `searchState.ts`. */
+export function failureFields(failure: TurnFailure) {
+  const copy = turnFailureCopy(failure);
+  return { error: copy.headline, errorDetail: copy.detail ?? undefined };
+}
 
 export function reduce(previous: TurnState, message: TurnMessage): TurnState {
   switch (message.kind) {
@@ -33,6 +44,6 @@ export function reduce(previous: TurnState, message: TurnMessage): TurnState {
     case "failed":
       // The answer so far is kept too. A Turn that failed halfway has still said
       // something, and throwing it away hides what went wrong.
-      return { ...previous, phase: "failed", error: message.message };
+      return { ...previous, phase: "failed", ...failureFields(message) };
   }
 }

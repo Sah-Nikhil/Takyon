@@ -524,6 +524,18 @@ a cycle. It runs on a background thread so hide stays instant.
 Deferred init: the hotkey is live within ~50 ms of launch; index, icons and
 databases open afterward.
 
+**Agent processes live one summon (v0.11.1, ADR-0033).** Every Agent spawn, Turn
+or probe, goes through `agents::job::spawn`: one Job Object with
+`KILL_ON_JOB_CLOSE`, the child created suspended, assigned, then resumed. On unix
+it is a process group (`setsid`, `kill(-pgid)`) with no crash cover. `Turns`
+carries a visibility gate that defaults to closed. `window::show` opens it;
+`window::hide` closes it (which cancels every Turn) and calls
+`Searches::cancel_all`, both before `EVENT_HIDE`, so dismissal never waits on the
+webview. `start` refuses while the gate is closed, registers the Turn before
+spawning, and `run` re-checks the gate after attaching the job. Termination never
+blocks; each Turn's own thread reaps. The prompt goes on stdin, never argv
+(ADR-0032), and `turn::spawn` is the only Turn spawn path.
+
 ---
 
 ## 8. The IPC contract
@@ -595,6 +607,27 @@ export const agentPathReport = () => invoke<PathReport | null>("agent_path_repor
 `null` means hydration has not answered yet. It is asked alongside `agent_snapshots`
 and nowhere else, because the only moment the answer matters is when someone is
 looking at an Agent that was not found.
+
+v0.11.1 changes the shape of a failed Turn on `takyon://turn`. Rust sends facts
+and `status.ts`'s `turnFailureCopy` words them, the split `Snapshot` already
+follows. `TurnEvent::Failed { failure }` flattens beside `kind`:
+
+```ts
+type TurnFailure = {
+  reason: "notFound" | "launcherBroken" | "spawnFailed" | "agentError" | "exited" | "silent";
+  agent: string;      // display label
+  binary?: string;    // notFound: the command; launcherBroken: the shim's path
+  code?: number;      // exited, absent when killed
+  detail?: string;    // stderr's tail or the io::Error, at most 2,000 characters
+  message?: string;   // agentError: the Agent's own words
+};
+// { turnId, kind: "failed", ...TurnFailure }
+```
+
+`launcherBroken` is exit 9009 or t3code's six localised "is not recognized"
+sentences. `silent` is a clean exit with no text. When the parser already emitted
+the Agent's own `agentError`, the exit adds nothing, and a cancelled Turn emits
+nothing at all.
 
 **`file_index_status` is not a field on `QueryResult`.** The state changes on the
 walk's schedule rather than the user's, so riding the keystroke path would ship

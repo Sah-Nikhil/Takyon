@@ -72,12 +72,14 @@ impl AgentDriver for ClaudeDriver {
 
     fn turn_args(&self, req: &TurnRequest) -> Vec<String> {
         let mut args = vec![
+            // No positional prompt: `-p` reads it from stdin (ADR-0032).
             "-p".into(),
-            req.prompt.clone(),
             "--output-format".into(),
             "stream-json".into(),
             // stream-json refuses to emit without it, rather than warning.
             "--verbose".into(),
+            // Token deltas as `stream_event` lines, whole messages still after.
+            "--include-partial-messages".into(),
             // Nobody is there to answer a permission prompt: a Turn that waits on
             // one waits forever. Denying is the only honest setting until v1.0
             // gives follow-up Turns a permission UI (docs/tbd/v0.8.md).
@@ -109,6 +111,11 @@ impl AgentDriver for ClaudeDriver {
         args
     }
 
+    /// The bare prompt: the style already travels in `--append-system-prompt`.
+    fn turn_input(&self, req: &TurnRequest) -> String {
+        req.prompt.clone()
+    }
+
     /// Claude has no working-directory flag; it uses the process cwd.
     fn cwd_is_process_cwd(&self) -> bool {
         true
@@ -124,8 +131,31 @@ impl AgentDriver for ClaudeDriver {
                     model: text_at(&json, "model"),
                 })
             }
-            // Text blocks arrive whole, one per assistant message. Thinking
-            // blocks are in the same array and are deliberately dropped.
+            // Partial messages. A text delta renders now; `message_start` resets
+            // `streamed` so the next whole message knows whether it is news.
+            "stream_event" => {
+                let event = json.get("event")?;
+                match event.get("type").and_then(Value::as_str)? {
+                    "message_start" => {
+                        state.streamed = false;
+                        None
+                    }
+                    "content_block_delta" => {
+                        let delta = event.get("delta")?;
+                        if delta.get("type").and_then(Value::as_str) != Some("text_delta") {
+                            return None;
+                        }
+                        let text = text_at(delta, "text")?;
+                        state.streamed = true;
+                        Some(TurnEvent::Text { delta: text })
+                    }
+                    _ => None,
+                }
+            }
+            // Text blocks arrive whole, one per assistant message: rendered only
+            // when no delta streamed them, else the answer doubles. Thinking
+            // blocks sit in the same array and are dropped.
+            "assistant" if state.streamed => None,
             "assistant" => {
                 let blocks = json.pointer("/message/content")?.as_array()?;
                 let delta: String = blocks
@@ -138,10 +168,11 @@ impl AgentDriver for ClaudeDriver {
             // The result line repeats the whole answer, which is already on
             // screen. Only its error form is news.
             "result" if json.get("is_error").and_then(Value::as_bool) == Some(true) => {
-                Some(TurnEvent::Failed {
-                    message: text_at(&json, "result")
+                Some(TurnEvent::agent_error(
+                    LABEL,
+                    text_at(&json, "result")
                         .unwrap_or_else(|| "Claude Code stopped with an error.".into()),
-                })
+                ))
             }
             _ => None,
         }
@@ -395,6 +426,71 @@ mod tests {
         assert_eq!(ClaudeDriver.parse_line(thinking_only, &mut state), None);
     }
 
+    /// `--include-partial-messages` on Claude 2.1, haiku, trimmed to the fields
+    /// read: thinking block, two text deltas, then the whole text message.
+    const PARTIAL_RUN: [&str; 8] = [
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[]}},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"","estimated_tokens":null}},"session_id":"s-1"}"#,
+        r#"{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"thinking","thinking":"","signature":"Er"}]},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ok"}},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" then"}},"session_id":"s-1"}"#,
+        r#"{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"ok then"}]},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"},"session_id":"s-1"}"#,
+    ];
+
+    fn texts(lines: &[&str], state: &mut TurnState) -> Vec<String> {
+        lines
+            .iter()
+            .filter_map(|line| match ClaudeDriver.parse_line(line, state) {
+                Some(TurnEvent::Text { delta }) => Some(delta),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Deltas stream, and the whole message after them does not repeat them.
+    #[test]
+    fn v0_11_1_claude_deltas_stream_and_render_once() {
+        let mut state = TurnState::default();
+        assert_eq!(texts(&PARTIAL_RUN, &mut state), ["ok", " then"]);
+    }
+
+    /// A message with no deltas, a Claude ignoring the flag, still renders whole.
+    #[test]
+    fn v0_11_1_a_claude_message_without_deltas_falls_back_to_its_text() {
+        let mut state = TurnState::default();
+        let whole = [PARTIAL_RUN[0], PARTIAL_RUN[6]];
+        assert_eq!(texts(&whole, &mut state), ["ok then"]);
+    }
+
+    /// `message_start` resets: a second message with no deltas is still news.
+    #[test]
+    fn v0_11_1_each_claude_message_decides_for_itself() {
+        let mut state = TurnState::default();
+        let second =
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"more"}]}}"#;
+        let lines = [PARTIAL_RUN.as_slice(), &[PARTIAL_RUN[0], second]].concat();
+        assert_eq!(texts(&lines, &mut state), ["ok", " then", "more"]);
+    }
+
+    /// The prompt is stdin, bare: the style is already the system prompt.
+    #[test]
+    fn v0_11_1_claude_reads_the_bare_prompt_from_stdin() {
+        let req = TurnRequest {
+            prompt: "line one\nline two".into(),
+            cwd: std::path::PathBuf::from("."),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        assert_eq!(ClaudeDriver.turn_input(&req), "line one\nline two");
+        let args = ClaudeDriver.turn_args(&req);
+        assert_eq!(args[0], "-p");
+        assert!(args.contains(&"--include-partial-messages".to_string()));
+    }
+
     /// The result line repeats the answer, so only its error form is news.
     #[test]
     fn v0_8_a_successful_result_line_is_not_re_rendered() {
@@ -405,9 +501,7 @@ mod tests {
         let bad = r#"{"type":"result","is_error":true,"result":"Credit balance too low"}"#;
         assert_eq!(
             ClaudeDriver.parse_line(bad, &mut state),
-            Some(TurnEvent::Failed {
-                message: "Credit balance too low".into()
-            })
+            Some(TurnEvent::agent_error(LABEL, "Credit balance too low"))
         );
     }
 

@@ -8,7 +8,13 @@
  * about the same Agent.
  */
 
-import type { AgentHealth, AgentKind, AgentSnapshot, PathReport } from "@takyon/shared";
+import type {
+  AgentHealth,
+  AgentKind,
+  AgentSnapshot,
+  PathReport,
+  TurnFailure,
+} from "@takyon/shared";
 
 /**
  * The dot beside an Agent's name. T3 Code's treatment, Takyon's palette.
@@ -85,6 +91,55 @@ export function agentSummary(snapshot: AgentSnapshot | undefined): AgentSummary 
     headline: "Available",
     detail: snapshot.message ?? "Installed and ready, but sign-in could not be verified.",
   };
+}
+
+/** First non-blank line of a stderr tail, or null. The line that names the fault. */
+function firstLine(text: string | undefined): string | null {
+  return (
+    text
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? null
+  );
+}
+
+/**
+ * What a failed Turn reads as (v0.11.1). Rust sends the reason, this words it.
+ *
+ * `agentError` is the Agent's own sentence, shown unedited. A broken launcher
+ * gets its fix named, because 9009 noise reads as nothing at all.
+ */
+export function turnFailureCopy(failure: TurnFailure): AgentSummary {
+  const { agent } = failure;
+  switch (failure.reason) {
+    case "notFound":
+      return {
+        headline: `${agent} (\`${failure.binary ?? agent}\`) was not found on PATH.`,
+        detail: "Install it, or open Settings → Agents to check where Takyon looked.",
+      };
+    case "launcherBroken":
+      return {
+        headline: `${agent}'s launcher needs a program that is not installed. Reinstall Node.js, then ${agent}.`,
+        detail: firstLine(failure.detail) ?? failure.binary ?? null,
+      };
+    case "spawnFailed":
+      return { headline: `Could not start ${agent}.`, detail: failure.detail ?? null };
+    case "agentError":
+      return {
+        headline: failure.message ?? `${agent} stopped with an error.`,
+        detail: null,
+      };
+    case "exited":
+      return {
+        headline:
+          failure.code === undefined
+            ? `${agent} stopped before answering.`
+            : `${agent} stopped with exit code ${failure.code}.`,
+        detail: failure.detail?.trim() || null,
+      };
+    case "silent":
+      return { headline: `${agent} ended without answering.`, detail: null };
+  }
 }
 
 /**

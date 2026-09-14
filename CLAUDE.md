@@ -68,13 +68,15 @@ and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
 checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port into
 15 agent-sized units with the files each one needs.
 
-**Two Agent phases are planned and not built.** **v0.11.1**
-(`docs/plans/v0.11.1-agent-spawning.md`) fixes `!c` and `!s` for npm-installed
-Agents — the prompt goes in argv, and a `.cmd` shim refuses a line break there
-with `batch file arguments are invalid` — and makes every process they start die
-the moment the Palette hides; today a cancel kills `cmd.exe` and leaves the Agent
-running. **v0.15** (`docs/plans/v0.15-agent-streaming.md`) moves each Agent to a
-live two-way process, t3code's chat path, for token streaming and a permission UI,
+**v0.11.1 Agent spawning is in, and one Agent phase is still planned.**
+v0.11.1 fixed `!c` and `!s` for npm-installed Agents: the prompt now travels on
+stdin (**ADR-0032**), because a `.cmd` shim refuses a line break in argv with
+`batch file arguments are invalid`, and every Agent process runs in a Job Object
+that dies with the Palette (**ADR-0033**). Proven here against forwarding `.cmd`
+shims; the real npm shape still only exists on the laptop that reported it, so
+`docs/verify/v0.11.1.md` section A is unrun. **v0.15**
+(`docs/plans/v0.15-agent-streaming.md`) moves each Agent to a live two-way
+process, t3code's chat path, for token streaming and a permission UI,
 superseding v0.8's fresh process per Turn.
 
 Distribution is undecided — open source vs proprietary is an open question, so
@@ -378,6 +380,22 @@ the next.
   in the one way that looks like a Rust bug. `tauri build` runs
   `beforeBuildCommand` and sets the `TAURI_ENV_*` the asset embedding depends on;
   cargo alone does neither. Cost an hour of chasing a phantom regression once.
+- **An Agent's prompt never goes in argv, and nothing with a line break may.**
+  Rust routes a `.bat`/`.cmd` through `cmd.exe` and, since CVE-2024-24576,
+  refuses any argument holding `` or `
+` with
+  `batch file arguments are invalid` — so an npm-installed Agent failed every
+  Turn while Settings still read Ready, because the probes are all one-liners.
+  The prompt goes on stdin, which stdin must then be **closed** or the Agent
+  waits for EOF forever (ADR-0032). `cargo test --lib agents` forbids the
+  first; `tests/agents_cli.rs`'s fake `echo.cmd` Agent catches the rest.
+- **Every Agent process is spawned through `agents::job`, and dies with the
+  Palette.** One Job Object per spawn with `KILL_ON_JOB_CLOSE`, the child
+  created suspended and resumed only once assigned — `TerminateProcess` on a
+  `.cmd` kills `cmd.exe` and leaves `node` and the Agent spending tokens.
+  `Turns` has a visibility gate that defaults to closed, so a test that starts a
+  Turn must call `set_visible(true)` first or read the refusal as a regression
+  (ADR-0033).
 - **Never create a window from the main thread.** A synchronous `#[tauri::command]`
   and a tray menu handler both run on the main thread, and
   `WebviewWindowBuilder::build()` dispatches creation to the event loop and blocks

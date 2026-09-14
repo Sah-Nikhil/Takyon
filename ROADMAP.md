@@ -608,20 +608,30 @@ and Rust's standard library refuses a line break in a `.cmd`'s arguments
 (the CVE-2024-24576 hardening). This machine's Agents are all real executables,
 so it never ran here. Auditing the spawn path found the worse defect beside it:
 cancelling a Turn kills `cmd.exe` and leaves `node` and the Agent running.
-Planned, not built.
+Built.
 
-- [ ] **The prompt travels on stdin**, never in argv — `turn_input` on `AgentDriver`, `-p` with no positional for Claude, a trailing `-` for Codex, no message for opencode. Also clears argv's 32,767 and `cmd.exe`'s 8,191-character ceilings, which `!s`'s prompt is past
-- [ ] **Agent processes die with the Palette** — one Job Object per spawn (suspended, assigned, resumed; `KILL_ON_JOB_CLOSE`), a visibility gate on `Turns`, and `cancel_all` in `window::hide` before `EVENT_HIDE`. Closes the in-flight `agent_ask` race, the late `!s` Turn and the spawn-to-registration window, and makes a Takyon crash take its children with it
-- [ ] **Failures are facts** — `TurnFailure` (`notFound`, `launcherBroken`, `spawnFailed`, `agentError`, `exited`, `silent`) on the wire, copy in `status.ts`. Exit 9009 from a shim whose `node` is missing reads as that, not as a stderr tail
-- [ ] **Resolution from `PATHEXT`**, which drops the unspawnable `.ps1`, plus Volta, `Programs\nodejs` and scoop in `extra_dirs` — both from t3code's `shell.ts`
-- [ ] **Claude streams token by token** — `--include-partial-messages`, without rendering the final `assistant` message a second time
-- [ ] A `.cmd` fake-Agent integration test that fails today with the reported error, and a job test asserting no process survives a cancel
-- [ ] ADR-0031 (an Agent's prompt travels on stdin) and ADR-0032 (Agent processes die with the Palette), written with the code
+- [x] **The prompt travels on stdin**, never in argv — `turn_input` on `AgentDriver`, `-p` with no positional for Claude, a trailing `-` for Codex, no message for opencode. Also clears argv's 32,767 and `cmd.exe`'s 8,191-character ceilings, which `!s`'s prompt is past
+- [x] **Agent processes die with the Palette** — one Job Object per spawn (suspended, assigned, resumed; `KILL_ON_JOB_CLOSE`), a visibility gate on `Turns`, and `cancel_all` in `window::hide` before `EVENT_HIDE`. Closes the in-flight `agent_ask` race, the late `!s` Turn and the spawn-to-registration window, and makes a Takyon crash take its children with it
+- [x] **Failures are facts** — `TurnFailure` (`notFound`, `launcherBroken`, `spawnFailed`, `agentError`, `exited`, `silent`) on the wire, copy in `status.ts`. Exit 9009 from a shim whose `node` is missing reads as that, not as a stderr tail
+- [x] **Resolution from `PATHEXT`**, which drops the unspawnable `.ps1`, plus Volta, `Programs\nodejs` and scoop in `extra_dirs` — both from t3code's `shell.ts`
+- [x] **Claude streams token by token** — `--include-partial-messages`, without rendering the final `assistant` message a second time
+- [x] A `.cmd` fake-Agent integration test that fails today with the reported error, and a job test asserting no process survives a cancel
+- [x] **One Agent probe in flight at a time** - found by driving the build: `ask` is a fresh object per keystroke, so a typed question fired one three-spawn probe per character
+- [x] ADR-0032 (an Agent's prompt travels on stdin) and ADR-0033 (Agent processes die with the Palette), written with the code
 
 **Exit criteria:** on a machine whose Agents are npm `.cmd` installs, `!c` and
 `!s` answer with each of the three, including a multi-line question. Dismissing
 the Palette mid-answer — by hotkey, by Escape and by clicking away — leaves no
 process Takyon started.
+
+**Where it stands:** the reported error is gone, and the fix is proven against
+real Agents here: the ignored live test wraps each installed CLI in a forwarding
+`.cmd` and all three answered through it. The npm shape itself has still only
+been faked, because every Agent on this machine is a real executable, so
+`docs/verify/v0.11.1.md` section A can only be run on the laptop that reported
+it. Section C, nothing surviving a dismissal, is driven by
+`scripts/verify-drive-v0.11.1.ps1`, which passes all five routes against the
+release build: hotkey, Escape, focus loss, `!s`, and killing Takyon outright.
 
 ---
 

@@ -49,3 +49,10 @@ it.
 | [`v0.4.md`](./v0.4.md) | v0.4 calculator | [`../plans/v0.4-calculator.md`](../plans/v0.4-calculator.md) |
 | [`v0.4.5.md`](./v0.4.5.md) | v0.4.5 presentation | [`../plans/v0.4.5-presentation.md`](../plans/v0.4.5-presentation.md) |
 | [`v0.5.md`](./v0.5.md) | v0.5 clipboard history | [`../plans/v0.5-clipboard.md`](../plans/v0.5-clipboard.md) |
+| [`v0.6.md`](./v0.6.md) | v0.6 settings | [`../plans/v0.6-settings.md`](../plans/v0.6-settings.md) |
+| [`v0.7.md`](./v0.7.md) | v0.7 file search | [`../plans/v0.7-file-search.md`](../plans/v0.7-file-search.md) |
+| [`v0.8.md`](./v0.8.md) | v0.8 Agents | [`../plans/v0.8-agents.md`](../plans/v0.8-agents.md) |
+| [`v0.9.md`](./v0.9.md) | v0.9 web search | [`../plans/v0.9-web-search.md`](../plans/v0.9-web-search.md) |
+| [`v0.10.md`](./v0.10.md) | v0.10 appearance | [`../plans/v0.10-appearance.md`](../plans/v0.10-appearance.md) |
+| [`v0.11.md`](./v0.11.md) | v0.11 PATH hydration | [`../plans/v0.11-path-hydration.md`](../plans/v0.11-path-hydration.md) |
+| [`v0.11.1.md`](./v0.11.1.md) | v0.11.1 Agent spawning | [`../plans/v0.11.1-agent-spawning.md`](../plans/v0.11.1-agent-spawning.md) |

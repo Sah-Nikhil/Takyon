@@ -94,7 +94,8 @@ describe("reduceTurn", () => {
     const state = reduceTurn(answering(), {
       turnId: 7,
       kind: "failed",
-      message: "Claude Code ended without answering.",
+      reason: "silent",
+      agent: "Claude Code",
     });
     expect(state.phase).toBe("failed");
     expect(state.error).toBe("Claude Code ended without answering.");

@@ -12,6 +12,7 @@
 pub mod claude;
 pub mod codex;
 pub mod ipc;
+pub mod job;
 pub mod opencode;
 pub mod probe;
 pub mod scratch;
@@ -210,6 +211,9 @@ pub struct TurnState {
     /// opencode re-emits a growing part rather than appending; without this the
     /// answer arrives as "o", "ok", "okay" concatenated.
     pub emitted: std::collections::HashMap<String, usize>,
+    /// Claude only: a token delta arrived since the last `message_start`, so the
+    /// whole `assistant` message that follows is already on screen.
+    pub streamed: bool,
 }
 
 impl TurnState {
@@ -227,9 +231,8 @@ impl TurnState {
 
 /// One Agent, as far as the rest of Takyon is concerned.
 ///
-/// `probe` and `turn_args` are the whole SPI: everything else — spawning,
-/// timeouts, line buffering, cancellation — is shared and lives in `probe.rs`
-/// and `turn.rs`.
+/// `probe`, `turn_args` and `turn_input` are the whole SPI: spawning, timeouts,
+/// line buffering, cancellation are shared, in `probe.rs`, `job.rs`, `turn.rs`.
 pub trait AgentDriver: Send + Sync {
     fn kind(&self) -> AgentKind;
 
@@ -257,10 +260,15 @@ pub trait AgentDriver: Send + Sync {
     /// An Agent that will not say returns empty, and the picker says so.
     fn models(&self, exe: &std::path::Path) -> Vec<String>;
 
-    /// The arguments for one Turn. The prompt is included; the cwd is not,
-    /// because two of the three take it as a flag and one takes it as the
-    /// process cwd.
+    /// The arguments for one Turn. **Never** the prompt: a `.cmd` refuses a line
+    /// break in argv, and `!s`'s prompt is past `cmd.exe`'s length limit
+    /// (ADR-0032). No cwd either: two take it as a flag, one as process cwd.
     fn turn_args(&self, req: &TurnRequest) -> Vec<String>;
+
+    /// What the Turn writes to the Agent's stdin before closing it.
+    fn turn_input(&self, req: &TurnRequest) -> String {
+        styled_prompt(req)
+    }
 
     /// Whether this Agent wants the cwd as the spawned process's directory
     /// rather than as a flag. Only Claude does.
@@ -607,17 +615,68 @@ mod tests {
         };
         for driver in drivers() {
             let args = driver.turn_args(&base);
+            let input = driver.turn_input(&base);
             assert!(
-                args.iter().any(|a| a.contains(ANSWER_STYLE)),
+                args.iter().any(|a| a.contains(ANSWER_STYLE)) || input.contains(ANSWER_STYLE),
                 "{} sent no answer style",
                 driver.label()
             );
             // Never instead of the question.
             assert!(
-                args.iter().any(|a| a.contains("who directed fast five")),
+                input.contains("who directed fast five"),
                 "{} lost the question",
                 driver.label()
             );
+        }
+    }
+
+    /// No argument holds a line break or the prompt, for any driver or Turn shape.
+    /// A `.cmd` Agent refuses the first with `batch file arguments are invalid`.
+    #[test]
+    fn v0_11_1_no_driver_puts_the_prompt_or_a_line_break_in_argv() {
+        let prompt = "first line\r\n\nsecond line %PATH% \"quoted\" &|^";
+        let first = TurnRequest {
+            prompt: prompt.into(),
+            cwd: std::path::PathBuf::from(r"C:\Users\some one\scratch dir"),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        let shapes = [
+            first.clone(),
+            TurnRequest {
+                session: Some("s-1".into()),
+                tools: true,
+                ..first.clone()
+            },
+            TurnRequest {
+                model: Some("sonnet".into()),
+                effort: Some("high".into()),
+                ..first.clone()
+            },
+        ];
+        for driver in drivers() {
+            for req in &shapes {
+                let args = driver.turn_args(req);
+                for arg in &args {
+                    assert!(
+                        !arg.contains('\r') && !arg.contains('\n'),
+                        "{} put a line break in {arg:?}",
+                        driver.label()
+                    );
+                    assert!(
+                        !arg.contains("second line"),
+                        "{} put the prompt in argv",
+                        driver.label()
+                    );
+                }
+                assert!(
+                    driver.turn_input(req).contains(prompt),
+                    "{} dropped the prompt from stdin",
+                    driver.label()
+                );
+            }
         }
     }
 

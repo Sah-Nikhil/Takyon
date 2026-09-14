@@ -198,6 +198,11 @@ export function SearchView({
         {state.phase === "failed" && (
           <p className="mt-4 text-[13px] text-warning" role="alert">
             {state.error ?? "The search stopped without an answer."}
+            {state.errorDetail && (
+              <span className="mt-1 block break-words font-mono text-[12px] text-fg/60">
+                {state.errorDetail}
+              </span>
+            )}
           </p>
         )}
 

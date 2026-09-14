@@ -108,8 +108,8 @@ impl AgentDriver for OpenCodeDriver {
             args.push("-s".into());
             args.push(session.clone());
         }
-        // Same as Codex: no system prompt to append to, so it leads the prompt.
-        args.push(super::styled_prompt(req));
+        // No message argument: `run` reads stdin when it is not a TTY (ADR-0032).
+        // Style leads the default `turn_input`, no system prompt to append to.
         args
     }
 
@@ -140,15 +140,16 @@ impl AgentDriver for OpenCodeDriver {
                     .delta(&id, text)
                     .map(|delta| TurnEvent::Text { delta })
             }
-            "error" => Some(TurnEvent::Failed {
-                message: text_at(&json, "message")
+            "error" => Some(TurnEvent::agent_error(
+                LABEL,
+                text_at(&json, "message")
                     .or_else(|| {
                         json.pointer("/error/message")
                             .and_then(Value::as_str)
                             .map(str::to_string)
                     })
                     .unwrap_or_else(|| "opencode stopped with an error.".into()),
-            }),
+            )),
             _ => None,
         }
     }
@@ -262,8 +263,9 @@ mod tests {
         assert_eq!(args[agent + 1], READ_ONLY_AGENT);
         let dir = args.iter().position(|a| a == "--dir").expect("dir flag");
         assert_eq!(args[dir + 1], r"C:\scratch");
-        // The prompt is last, after every flag, with the house style ahead of it.
-        assert!(args.last().unwrap().ends_with("hi"));
+        // The prompt travels on stdin, house style ahead of it.
+        assert!(!args.iter().any(|a| a.ends_with("hi")));
+        assert!(OpenCodeDriver.turn_input(&base).ends_with("hi"));
 
         let with_tools = OpenCodeDriver.turn_args(&TurnRequest {
             tools: true,

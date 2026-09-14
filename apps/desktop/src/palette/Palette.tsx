@@ -107,6 +107,8 @@ export function Palette() {
     three process spawns (v0.8 Traps).
    */
   const [agents, setAgents] = useState<AgentSnapshot[] | null>(null);
+  /** Whether a probe is in flight, so a typed question fires exactly one. */
+  const probing = useRef(false);
   /**
    * The question the Ask view is answering, and who is answering it. Null when
    * the view is closed. Resolved at Enter, so a later probe cannot move it.
@@ -192,11 +194,20 @@ export function Palette() {
     user runs a CLI command, not while they type.
    */
   useEffect(() => {
-    if (ask === null || agents !== null) return;
+    if (ask === null || agents !== null || probing.current) return;
+    // One probe in flight, ever. `ask` is a fresh object per keystroke and the
+    // probe takes seconds, so without the ref a typed question fires one probe
+    // per character — 30 `opencode` processes for a sentence (v0.11.1).
+    probing.current = true;
     let live = true;
-    void api.agentSnapshots().then((all) => {
-      if (live) setAgents(all);
-    });
+    void api
+      .agentSnapshots()
+      .then((all) => {
+        if (live) setAgents(all);
+      })
+      .finally(() => {
+        probing.current = false;
+      });
     return () => {
       live = false;
     };

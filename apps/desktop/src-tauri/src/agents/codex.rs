@@ -110,8 +110,10 @@ impl AgentDriver for CodexDriver {
             args.push("-c".into());
             args.push(format!("model_reasoning_effort=\"{effort}\""));
         }
-        // No system-prompt flag, so the style leads the first Turn's prompt.
-        args.push(super::styled_prompt(req));
+        // Prompt on stdin (ADR-0032). `exec` reads it when the prompt is
+        // omitted; `exec resume` only with an explicit `-`, so both get one.
+        // The default `turn_input` leads with the style: Codex has no flag for it.
+        args.push("-".into());
         args
     }
 
@@ -133,17 +135,16 @@ impl AgentDriver for CodexDriver {
                 let delta = is_message.then(|| text_at(item, "text")).flatten()?;
                 Some(TurnEvent::Text { delta })
             }
-            "turn.failed" => Some(TurnEvent::Failed {
-                message: json
-                    .pointer("/error/message")
+            "turn.failed" => Some(TurnEvent::agent_error(
+                LABEL,
+                json.pointer("/error/message")
                     .and_then(Value::as_str)
-                    .unwrap_or("Codex stopped with an error.")
-                    .to_string(),
-            }),
-            "error" => Some(TurnEvent::Failed {
-                message: text_at(&json, "message")
-                    .unwrap_or_else(|| "Codex stopped with an error.".into()),
-            }),
+                    .unwrap_or("Codex stopped with an error."),
+            )),
+            "error" => Some(TurnEvent::agent_error(
+                LABEL,
+                text_at(&json, "message").unwrap_or_else(|| "Codex stopped with an error.".into()),
+            )),
             _ => None,
         }
     }
@@ -284,8 +285,17 @@ mod tests {
             .position(|a| a == "--sandbox")
             .expect("sandbox flag");
         assert_eq!(args[sandbox + 1], "read-only");
-        // The prompt is last, after every flag, with the house style ahead of it.
-        assert!(args.last().unwrap().ends_with("hi"));
+        // `-` last: the prompt is on stdin, house style ahead of it.
+        assert_eq!(args.last().unwrap(), "-");
+        let req = TurnRequest {
+            prompt: "hi".into(),
+            cwd: std::path::PathBuf::from(r"C:\scratch"),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        assert!(CodexDriver.turn_input(&req).ends_with("hi"));
     }
 
     /// A follow-up is `exec resume <id>`, and the id comes right after `resume`.
@@ -300,6 +310,8 @@ mod tests {
             tools: true,
         });
         assert_eq!(&args[..3], &["exec", "resume", "th-1"]);
+        // `resume` reads stdin only with an explicit `-`.
+        assert_eq!(args.last().unwrap(), "-");
         let sandbox = args
             .iter()
             .position(|a| a == "--sandbox")
@@ -382,15 +394,11 @@ mod tests {
                 r#"{"type":"turn.failed","error":{"message":"rate limited"}}"#,
                 &mut state
             ),
-            Some(TurnEvent::Failed {
-                message: "rate limited".into()
-            })
+            Some(TurnEvent::agent_error(LABEL, "rate limited"))
         );
         assert_eq!(
             CodexDriver.parse_line(r#"{"type":"error","message":"boom"}"#, &mut state),
-            Some(TurnEvent::Failed {
-                message: "boom".into()
-            })
+            Some(TurnEvent::agent_error(LABEL, "boom"))
         );
     }
 }

@@ -1,6 +1,5 @@
-//! TEMP diagnostic: replicate turn.rs's spawn + read loop against real claude.
+//! TEMP diagnostic: a real Claude Turn through `turn::spawn`, every line printed.
 use std::io::{BufRead, BufReader};
-use std::process::Stdio;
 use std::time::Instant;
 
 use takyon_lib::agents::{self, AgentKind, TurnRequest, TurnState};
@@ -26,18 +25,10 @@ fn live_turn_prints_events() {
     eprintln!("args: {:?}", driver.turn_args(&req));
 
     let t0 = Instant::now();
-    let mut command = agents::probe::command(&exe);
-    command
-        .args(driver.turn_args(&req))
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if driver.cwd_is_process_cwd() {
-        command.current_dir(&req.cwd);
-    }
-    let mut child = command.spawn().expect("spawn");
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
+    // The real spawn: job, prompt on stdin, stdin closed.
+    let mut spawned = agents::turn::spawn(driver.as_ref(), &exe, &req).expect("spawn");
+    let stdout = spawned.child.stdout.take().unwrap();
+    let stderr = spawned.child.stderr.take().unwrap();
     std::thread::spawn(move || {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
             eprintln!("STDERR: {line}");
@@ -56,6 +47,6 @@ fn live_turn_prints_events() {
         }
     }
     eprintln!("[{:>6.2}s] stdout EOF", t0.elapsed().as_secs_f32());
-    let status = child.wait().expect("wait");
+    let status = spawned.child.wait().expect("wait");
     eprintln!("[{:>6.2}s] exit {status:?}", t0.elapsed().as_secs_f32());
 }

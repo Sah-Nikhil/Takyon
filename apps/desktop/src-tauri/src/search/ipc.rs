@@ -80,6 +80,14 @@ impl Searches {
             flag.store(true, Ordering::Relaxed);
         }
     }
+
+    /// Stop every search. `window::hide` calls it: nothing `!s` started outlives
+    /// the Palette, and the Turn gate refuses the answer a late one would start.
+    pub fn cancel_all(&self) {
+        for (_, flag) in self.running.lock().expect("searches mutex").drain() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 /// What Settings shows for web search. The key itself never crosses IPC.
@@ -342,6 +350,16 @@ mod tests {
         let flag = searches.register(1);
         searches.cancel(1);
         assert!(flag.load(Ordering::Relaxed));
+        assert!(searches.running.lock().unwrap().is_empty());
+    }
+
+    /// Dismissal stops every search at once and forgets them all.
+    #[test]
+    fn v0_11_1_cancel_all_stops_every_search() {
+        let searches = Searches::default();
+        let (a, b) = (searches.register(1), searches.register(2));
+        searches.cancel_all();
+        assert!(a.load(Ordering::Relaxed) && b.load(Ordering::Relaxed));
         assert!(searches.running.lock().unwrap().is_empty());
     }
 }

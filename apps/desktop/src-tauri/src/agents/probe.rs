@@ -5,7 +5,7 @@
 //! promises tens of milliseconds blinks a console on each probe, and a probe with
 //! no timeout is a hang wearing a status card.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 /// No console window for any child. `CREATE_NO_WINDOW` from `processthreadsapi`.
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Long enough for a cold Node start on a busy machine, short enough that a wedged
 /// CLI still yields a card. Nothing on the keystroke path waits on this.
@@ -44,14 +44,30 @@ impl Output {
     }
 }
 
-/// Executable extensions to try, most likely first.
+/// What `CreateProcessW` can start, directly or through `cmd.exe`.
 ///
-/// `.cmd` is not an afterthought: an `npm i -g` install is a `.cmd` shim on
-/// Windows, so half the installs in the wild have no `.exe` at all.
+/// `.cmd` matters: `npm i -g` writes only a `.cmd` shim, no `.exe`. `.ps1`
+/// is absent on purpose: spawning one fails with os error 193.
 #[cfg(windows)]
-const EXTS: [&str; 4] = ["exe", "cmd", "bat", "ps1"];
-#[cfg(not(windows))]
-const EXTS: [&str; 1] = [""];
+const SPAWNABLE: [&str; 4] = [".com", ".exe", ".bat", ".cmd"];
+
+/// Extensions to try, in `PATHEXT` order, filtered to what can be spawned.
+///
+/// Unset or nothing spawnable listed: t3code's fallback, `.COM .EXE .BAT .CMD`.
+#[cfg(windows)]
+pub fn candidate_exts(pathext: Option<&str>) -> Vec<String> {
+    let mut listed: Vec<String> = Vec::new();
+    for ext in pathext.unwrap_or_default().split(';') {
+        let ext = ext.trim().to_ascii_lowercase();
+        if SPAWNABLE.contains(&ext.as_str()) && !listed.contains(&ext) {
+            listed.push(ext);
+        }
+    }
+    if listed.is_empty() {
+        return SPAWNABLE.iter().map(|ext| ext.to_string()).collect();
+    }
+    listed
+}
 
 /// Locate `binary`, searching three `PATH`s in decreasing trustworthiness.
 ///
@@ -66,8 +82,12 @@ pub fn resolve(binary: &str) -> Option<PathBuf> {
     };
     let hydrated = dirs(super::shellenv::hydrated_path());
     let inherited = dirs(std::env::var_os("PATH"));
+    #[cfg(windows)]
+    let exts = candidate_exts(std::env::var("PATHEXT").ok().as_deref());
+    #[cfg(not(windows))]
+    let exts = vec![String::new()];
     for dir in hydrated.into_iter().chain(inherited).chain(extra_dirs()) {
-        if let Some(hit) = in_dir(&dir, binary) {
+        if let Some(hit) = in_dir(&dir, binary, &exts) {
             return Some(hit);
         }
     }
@@ -88,8 +108,11 @@ fn extra_dirs() -> Vec<PathBuf> {
         home.as_ref().map(|h| h.join(".local").join("bin")),
         home.as_ref().map(|h| h.join(".bun").join("bin")),
         home.as_ref().map(|h| h.join(".cargo").join("bin")),
+        home.as_ref().map(|h| h.join("scoop").join("shims")),
         appdata.map(|a| a.join("npm")),
-        local.map(|l| l.join("pnpm")),
+        local.as_ref().map(|l| l.join("pnpm")),
+        local.as_ref().map(|l| l.join("Volta").join("bin")),
+        local.as_ref().map(|l| l.join("Programs").join("nodejs")),
     ]
     .into_iter()
     .flatten()
@@ -101,13 +124,9 @@ fn extra_dirs() -> Vec<PathBuf> {
     Vec::new()
 }
 
-fn in_dir(dir: &Path, binary: &str) -> Option<PathBuf> {
-    for ext in EXTS {
-        let candidate = if ext.is_empty() {
-            dir.join(binary)
-        } else {
-            dir.join(format!("{binary}.{ext}"))
-        };
+fn in_dir(dir: &Path, binary: &str, exts: &[String]) -> Option<PathBuf> {
+    for ext in exts {
+        let candidate = dir.join(format!("{binary}{ext}"));
         if candidate.is_file() {
             return Some(candidate);
         }
@@ -122,37 +141,23 @@ fn in_dir(dir: &Path, binary: &str) -> Option<PathBuf> {
 pub fn run(exe: &Path, args: &[&str], timeout: Duration) -> std::io::Result<Output> {
     let mut cmd = command(exe);
     cmd.args(args);
-    run_command(cmd, timeout, false)
+    run_command(cmd, timeout)
 }
 
 /// Run a prebuilt command, killing it and whatever it spawned at `timeout`.
 ///
 /// For `shellenv`'s probe: the environment is the caller's, so `command`'s
-/// hydrated `PATH` is deliberately absent, and the child gets its own process
-/// group — an rc's grandchildren otherwise hold our pipes open after it dies.
+/// hydrated `PATH` is deliberately absent. Same `job` as every spawn: an rc's
+/// grandchildren otherwise hold our pipes open after it dies.
 pub fn run_isolated(cmd: Command, timeout: Duration) -> std::io::Result<Output> {
-    run_command(cmd, timeout, true)
+    run_command(cmd, timeout)
 }
 
-fn run_command(mut cmd: Command, timeout: Duration, own_group: bool) -> std::io::Result<Output> {
-    #[cfg(not(unix))]
-    let _ = own_group;
-    #[cfg(unix)]
-    if own_group {
-        use std::os::unix::process::CommandExt;
-        // Already-a-leader is the only failure and is harmless, so it is ignored.
-        unsafe {
-            cmd.pre_exec(|| {
-                libc::setsid();
-                Ok(())
-            });
-        }
-    }
-    let mut child = cmd
-        .stdin(Stdio::null())
+fn run_command(mut cmd: Command, timeout: Duration) -> std::io::Result<Output> {
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        .stderr(Stdio::piped());
+    let (mut child, job) = super::job::spawn(&mut cmd)?;
 
     let (tx, rx) = mpsc::channel::<(bool, String)>();
     for (is_out, pipe) in [
@@ -172,12 +177,9 @@ fn run_command(mut cmd: Command, timeout: Duration, own_group: bool) -> std::io:
         match child.try_wait()? {
             Some(status) => break status.code(),
             None if Instant::now() >= deadline => {
-                // The group first: killing only the shell leaves whatever its rc
+                // The whole tree: killing only the shell leaves whatever its rc
                 // spawned holding our pipes, and the drain below never returns.
-                #[cfg(unix)]
-                if own_group {
-                    unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
-                }
+                job.terminate();
                 let _ = child.kill();
                 let _ = child.wait();
                 break None;
@@ -186,6 +188,8 @@ fn run_command(mut cmd: Command, timeout: Duration, own_group: bool) -> std::io:
         }
     };
 
+    // Exited, but a descendant may still hold the pipes open. It dies too.
+    job.terminate();
     let (mut stdout, mut stderr) = (String::new(), String::new());
     while let Ok((is_out, text)) = rx.recv() {
         if is_out {
@@ -199,6 +203,18 @@ fn run_command(mut cmd: Command, timeout: Duration, own_group: bool) -> std::io:
         stdout,
         stderr,
     })
+}
+
+/// Write `input` as UTF-8 on its own thread, then close stdin.
+///
+/// Own thread: a big prompt fills the pipe while nobody reads stdout. Closed:
+/// Claude and opencode read to EOF before starting, a held handle hangs them.
+pub fn write_input(mut stdin: std::process::ChildStdin, input: String) {
+    std::thread::spawn(move || {
+        // A child that exits early breaks the pipe. Its exit says why, not this.
+        let _ = stdin.write_all(input.as_bytes());
+        drop(stdin);
+    });
 }
 
 /// A `Command` with the window suppressed and the hydrated `PATH` on it.
@@ -324,6 +340,23 @@ mod tests {
             stderr: String::new(),
         };
         assert_eq!(quiet.first_line(), Some("ready"));
+    }
+
+    /// `.ps1` never becomes a candidate, and `PATHEXT`'s order wins.
+    #[cfg(windows)]
+    #[test]
+    fn v0_11_1_candidates_follow_pathext_and_drop_what_cannot_spawn() {
+        let default = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1";
+        assert_eq!(
+            candidate_exts(Some(default)),
+            [".com", ".exe", ".bat", ".cmd"]
+        );
+        assert_eq!(candidate_exts(Some(".CMD;.exe;.CMD")), [".cmd", ".exe"]);
+        assert_eq!(candidate_exts(None), [".com", ".exe", ".bat", ".cmd"]);
+        assert_eq!(
+            candidate_exts(Some(".PS1;.JS")),
+            [".com", ".exe", ".bat", ".cmd"]
+        );
     }
 
     /// Nothing is resolvable under a name no installer uses. Guards the negative

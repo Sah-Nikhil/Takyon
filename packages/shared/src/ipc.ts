@@ -580,12 +580,37 @@ export interface AgentSettings {
   efforts: Partial<Record<AgentKind, string>>;
 }
 
+/** Why a Turn failed. Rust's `TurnFailure`; the copy is `turnFailureCopy`. */
+export type TurnFailureReason =
+  | "notFound"
+  | "launcherBroken"
+  | "spawnFailed"
+  | "agentError"
+  | "exited"
+  | "silent";
+
+/**
+ * A failed Turn's facts, flattened beside `kind`. `agent` is the display label.
+ * `binary` on notFound (the command) and launcherBroken (the shim's path).
+ */
+export interface TurnFailure {
+  reason: TurnFailureReason;
+  agent: string;
+  binary?: string;
+  /** Exit code, on `exited`. Absent when the process was killed. */
+  code?: number;
+  /** stderr's tail or the `io::Error`, capped at 2,000 characters. */
+  detail?: string;
+  /** The Agent's own words, on `agentError`. */
+  message?: string;
+}
+
 /** One thing that happened during a Turn, as Rust tags it. */
 export type TurnEvent =
   | { kind: "started"; session?: string; model?: string }
   | { kind: "text"; delta: string }
   | { kind: "done"; session?: string }
-  | { kind: "failed"; message: string };
+  | ({ kind: "failed" } & TurnFailure);
 
 /** A `TurnEvent` with the Turn it belongs to. Rust flattens the two together. */
 export type TurnMessage = TurnEvent & { turnId: number };

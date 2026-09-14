@@ -32,11 +32,33 @@ describe("reduce", () => {
   // what went wrong.
   it("v0.8 keeps a partial answer when the turn fails", () => {
     let state = reduce(idle, { turnId: 1, kind: "text", delta: "Half an " });
-    state = reduce(state, { turnId: 1, kind: "failed", message: "rate limited" });
+    state = reduce(state, {
+      turnId: 1,
+      kind: "failed",
+      reason: "agentError",
+      agent: "Codex",
+      message: "rate limited",
+    });
     expect(state).toMatchObject({
       phase: "failed",
       answer: "Half an ",
       error: "rate limited",
     });
+  });
+
+  // v0.11.1: the reducer words a failure through `turnFailureCopy`, and keeps
+  // the line under the headline apart so the view can set it smaller.
+  it("v0.11.1 words a failure reason and keeps its detail", () => {
+    const state = reduce(idle, {
+      turnId: 1,
+      kind: "failed",
+      reason: "launcherBroken",
+      agent: "opencode",
+      binary: String.raw`C:\npm\opencode.cmd`,
+      detail: "'node' is not recognized as an internal or external command,\noperable program",
+    });
+    expect(state.phase).toBe("failed");
+    expect(state.error).toContain("Reinstall Node.js, then opencode.");
+    expect(state.errorDetail).toBe("'node' is not recognized as an internal or external command,");
   });
 });

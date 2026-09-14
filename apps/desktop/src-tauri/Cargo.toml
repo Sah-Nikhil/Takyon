@@ -118,6 +118,10 @@ windows = { version = "0.61", features = [
   # registry's `Path` is a `REG_EXPAND_SZ` full of `%SystemRoot%` references, and
   # an unexpanded one names no directory that exists.
   "Win32_System_Environment",
+  # v0.11.1. One Job Object per Agent spawn, `KILL_ON_JOB_CLOSE`: a `.cmd`
+  # Agent is `cmd.exe` → `node` → the CLI, and killing the first leaves the
+  # other two running (ADR-0033). Toolhelp above resumes the suspended child.
+  "Win32_System_JobObjects",
 ] }
 
 [target.'cfg(unix)'.dependencies]

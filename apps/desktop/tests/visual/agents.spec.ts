@@ -358,3 +358,31 @@ test("model and effort are locked from a list, per authenticated agent", async (
 
   await expect(page).toHaveScreenshot("settings-agents-locked.png");
 });
+
+/**
+ * v0.11.1: an npm `.cmd` Agent whose Node is gone. The reason arrives as a
+ * fact; the Palette names the fix and shows the line that proves it.
+ */
+test("a broken launcher names its fix", async ({ page }) => {
+  const input = await open(page);
+  await page.evaluate(() => {
+    (
+      window as unknown as { __takyon_mock: { failTurns: (f: object) => void } }
+    ).__takyon_mock.failTurns({
+      reason: "launcherBroken",
+      agent: "Claude Code",
+      binary: String.raw`C:\Users\you\AppData\Roaming\npm\claude.cmd`,
+      detail:
+        "'node' is not recognized as an internal or external command,\noperable program or batch file.",
+    });
+  });
+  await input.fill("!c who directed titanic");
+  await input.press("Enter");
+
+  await expect(page.getByRole("status")).toHaveText("Stopped");
+  await expect(page.getByRole("alert")).toContainText("Reinstall Node.js, then Claude Code.");
+  await expect(page.getByRole("alert")).toContainText("'node' is not recognized");
+
+  await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
+  await expect(page).toHaveScreenshot("palette-ask-launcher-broken.png");
+});
