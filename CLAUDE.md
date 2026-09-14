@@ -57,7 +57,7 @@ Every architectural decision is now made and none of them is open: **ADR-0026**
 amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
 ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
 
-**Four phases sit between v0.10.1 and v1.0, and the first of them is built.**
+**Six phases sit between v0.10.1 and v1.0, and the first of them is built.**
 **v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
 (unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
 caches it off the startup path, and hands it to `probe::resolve`, to every
@@ -67,6 +67,15 @@ and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
 `v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc with a task
 checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port into
 15 agent-sized units with the files each one needs.
+
+**Two Agent phases are planned and not built.** **v0.11.1**
+(`docs/plans/v0.11.1-agent-spawning.md`) fixes `!c` and `!s` for npm-installed
+Agents — the prompt goes in argv, and a `.cmd` shim refuses a line break there
+with `batch file arguments are invalid` — and makes every process they start die
+the moment the Palette hides; today a cancel kills `cmd.exe` and leaves the Agent
+running. **v0.15** (`docs/plans/v0.15-agent-streaming.md`) moves each Agent to a
+live two-way process, t3code's chat path, for token streaming and a permission UI,
+superseding v0.8's fresh process per Turn.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
@@ -201,10 +210,14 @@ under `docs/`.
   `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
   build unpacked locally, which not every machine has. Run it after touching
   anything with a `cfg(windows)` arm.
-- release: `bun run release` — preflight (typecheck, lint, test), `tauri build`,
-  then the installer into `releases/v{version}/` with its SHA-256. Same layout as
-  tesseract's `releases/`, and `releases/` is gitignored. No `latest.json` or
-  `.sig` yet; the updater is a v1.0 item.
+- release, local: `bun run release --local` — preflight (typecheck, lint, test),
+  `tauri build`, then the installer into `releases/v{version}/` with its SHA-256.
+  Same layout as tesseract's `releases/`, and `releases/` is gitignored. No
+  `latest.json` or `.sig` yet; the updater is a v1.0 item.
+- release, GitHub: `bun run release --git <version>` — on a `main` level with
+  `origin/main`: bump, preflight, commit the version files and `Cargo.lock` as
+  `UPDATE d<phase>.<n> version <version>`, push, wait for CI to register, then tag
+  `v<version>` and push it. `release.yml` publishes. Bare `bun run release` refuses.
 
 ## Testing
 Use the **`/tdd` skill** for writing and running tests — test-first, not
@@ -296,7 +309,8 @@ reply and stop. Committing is a manual step, always.
 
 **Forbidden outright:** `git commit`, `git push` in any form (including
 `git push -u origin <branch>` for a brand-new branch), `git merge`, `git rebase`,
-and anything that rewrites history. Staging and inspection are fine.
+and anything that rewrites history. So is `bun run release --git`, which commits,
+tags and pushes: it is the user's command to run. Staging and inspection are fine.
 
 **Format.** `<VERB> d<phase>.<n> <subject>` — one line, extremely short, no body
 unless something genuinely needs explaining.

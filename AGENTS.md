@@ -56,7 +56,7 @@ Every architectural decision is now made and none of them is open: **ADR-0026**
 amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
 ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
 
-**Four phases sit between v0.10.1 and v1.0, and the first of them is built.**
+**Six phases sit between v0.10.1 and v1.0, and the first of them is built.**
 **v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
 (unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
 caches it off the startup path, and hands it to `probe::resolve`, to every
@@ -66,6 +66,15 @@ and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
 `v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc with a task
 checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port into
 15 agent-sized units with the files each one needs.
+
+**Two Agent phases are planned and not built.** **v0.11.1**
+(`docs/plans/v0.11.1-agent-spawning.md`) fixes `!c` and `!s` for npm-installed
+Agents — the prompt goes in argv, and a `.cmd` shim refuses a line break there
+with `batch file arguments are invalid` — and makes every process they start die
+the moment the Palette hides; today a cancel kills `cmd.exe` and leaves the Agent
+running. **v0.15** (`docs/plans/v0.15-agent-streaming.md`) moves each Agent to a
+live two-way process, t3code's chat path, for token streaming and a permission UI,
+superseding v0.8's fresh process per Turn.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

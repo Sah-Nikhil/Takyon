@@ -22,7 +22,7 @@
     "check:macos": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-macos.ps1",
     "test": "bun run test:rust && bun run test:ts && bun run test:visual",
     "test:rust": "cargo test --workspace --manifest-path apps/desktop/src-tauri/Cargo.toml",
-    "test:ts": "bun test apps/desktop/src packages/shared/src",
+    "test:ts": "bun test apps/desktop/src packages/shared/src scripts",
     "test:visual": "bun --cwd=apps/desktop run test:visual",
     "bench": "bun scripts/bench.ts",
     "bump": "bun scripts/bump-version.ts",

@@ -65,7 +65,7 @@ jobs:
       - run: bun run lint:ts
       # The root script's own scope. Not `bun test` bare: that would sweep
       # `tests/visual`, whose specs import Playwright and are not bun tests.
-      - run: bun test apps/desktop/src packages/shared/src
+      - run: bun test apps/desktop/src packages/shared/src scripts
 
   # The rules CLAUDE.md states and nothing else checks. Linux: none of them
   # compiles anything, and `cargo metadata` resolves Windows-only crates anyway.
