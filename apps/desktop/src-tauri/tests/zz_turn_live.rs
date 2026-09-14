@@ -5,7 +5,11 @@ use std::time::Instant;
 
 use takyon_lib::agents::{self, AgentKind, TurnRequest, TurnState};
 
+/// Runs a real Claude Turn: needs `claude` signed in, spends real usage.
+/// `#[ignore]` so CI, which has no `claude`, and `bun run test` skip it. By hand:
+/// `cargo test --test zz_turn_live -- --ignored --nocapture`.
 #[test]
+#[ignore]
 fn live_turn_prints_events() {
     let driver = agents::driver_for(AgentKind::Claude).expect("claude driver");
     let req = TurnRequest {
