@@ -59,9 +59,9 @@ jobs:
           echo "No CI run on ${GITHUB_SHA}. Push the commit to main first, then the tag."
           exit 1
 
-      # Every CI job, so the live web search tests and the bench gate a release
-      # too — CLAUDE.md asks for the first before every one. 60 minutes: a cold
-      # bench job is a full release build.
+      # Every CI job but the bench, so the live web search tests gate a release
+      # too, as CLAUDE.md asks. 60 minutes: CI's bench job is a full release
+      # build, and the run it belongs to finishes with it.
       - name: Wait for CI to pass on this commit
         timeout-minutes: 60
         uses: lewagon/wait-on-check-action@1d57e2c51a58d812d2765e036a028b6bdb5a6154 # v1.8.1
@@ -73,6 +73,9 @@ jobs:
           # matches exactly; `preflight` matched nothing, so it waited on itself
           # until the step timed out.
           running-workflow-name: Verify the tag and wait for CI
+          # Not gating yet: the bench has never passed on a hosted runner
+          # (TBC-0015). Drop this line once it has.
+          ignore-checks: Performance bench (Windows)
           allowed-conclusions: success
 
   build-windows:

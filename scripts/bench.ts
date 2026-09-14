@@ -78,7 +78,15 @@ function readLog(path: string): Record_[] {
     .map((l) => JSON.parse(l) as Record_);
 }
 
-/** Wait until `predicate` holds over the log, or give up. */
+/** The measured process, once spawned. Read by `waitFor` so a crash is not a timeout. */
+let app: { exitCode: number | null } | null = null;
+
+/**
+ * Wait until `predicate` holds over the log, or give up.
+ *
+ * Says whether takyon.exe exited or is still running: a bare timeout hid which on
+ * the first CI run. 0xC0000409 is Rust's abort, so a panic; see `logs\panic.log`.
+ */
 async function waitFor(
   path: string,
   predicate: (rows: Record_[]) => boolean,
@@ -89,7 +97,14 @@ async function waitFor(
   for (;;) {
     const rows = readLog(path);
     if (predicate(rows)) return rows;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    const code = app?.exitCode;
+    if (code != null) {
+      const hex = `0x${(code >>> 0).toString(16).toUpperCase()}`;
+      throw new Error(`takyon.exe exited with code ${code} (${hex}) while waiting for ${what}`);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}; takyon.exe is still running (hung, not crashed)`);
+    }
     await sleep(20);
   }
 }
@@ -152,6 +167,7 @@ async function main() {
     stdout: "inherit",
     stderr: "inherit",
   });
+  app = child;
 
   let failed = false;
   let entryFailed = false;

@@ -215,6 +215,9 @@ jobs:
     name: Performance bench (Windows)
     runs-on: windows-latest
     timeout-minutes: 60
+    # Until it has passed once on a hosted runner. Its first run never reached
+    # `setup` (TBC-0015); the diagnose step below says why on the next failure.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.98.1
@@ -246,6 +249,22 @@ jobs:
             exit 0
           fi
           exit "$code"
+      # Crash, hang, or no WebView2 or desktop to draw on. The process is gone by
+      # now, so this reads what it left behind and what the runner offers.
+      - name: Diagnose a failed bench
+        if: failure()
+        shell: pwsh
+        run: |
+          "UserInteractive: $([Environment]::UserInteractive)  SessionId: $((Get-Process -Id $PID).SessionId)"
+          $client = 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          "WebView2 runtime (machine): $((Get-ItemProperty "HKLM:\$client" -ErrorAction SilentlyContinue).pv)"
+          "WebView2 runtime (user): $((Get-ItemProperty "HKCU:\$($client -replace 'WOW6432Node\\', '')" -ErrorAction SilentlyContinue).pv)"
+          $data = Join-Path $env:LOCALAPPDATA 'v3sper\takyon'
+          $panic = Join-Path $data 'logs\panic.log'
+          if (Test-Path $panic) { Get-Content $panic } else { "no panic.log at $panic" }
+          Get-ChildItem $data -Recurse -ErrorAction SilentlyContinue | Select-Object -First 40 FullName, Length | Format-Table -AutoSize
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = (Get-Date).AddMinutes(-15) } -ErrorAction SilentlyContinue |
+            Select-Object -First 10 TimeCreated, ProviderName, Message | Format-List
       - uses: actions/upload-artifact@v7
         if: always()
         with:
