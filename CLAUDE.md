@@ -18,9 +18,10 @@ an optional second binding.
 
 **CI runs.** The remote is `github.com/Sah-Nikhil/Takyon`, and `ci.yml`
 (typecheck, lint, every test layer) has executed — v0.10.1 merged through a pull
-request. Two jobs are on `windows-latest` deliberately: the product is Windows,
-and the screenshot baselines were rasterised by Windows. A third, `macos`, is a
-compile gate only.
+request. The Rust, visual, live web search and bench jobs are on `windows-latest`
+deliberately: the product is Windows, and the screenshot baselines were
+rasterised by Windows. `macos` is a compile gate only. CI also runs daily, for
+what breaks with no commit, and release.yml waits on every job.
 
 **Two verification scripts are unrun, and they are the two newest.**
 `docs/verify/v0.10.md` section E has never been executed by anyone — the
@@ -165,9 +166,9 @@ under `docs/`.
   retrieval only (**ADR-0021**, amending ADR-0005's choice of Brave). Exa is asked
   first when a key is stored and **any failure falls silently through to
   DuckDuckGo** — `!s` is never a dead end, at the cost of a wrong key never
-  announcing itself. `ddg.rs` parses HTML, so run
-  `cargo test --test web_search -- --ignored` before a release: a class rename
-  there breaks `!s` and only that test notices. Plus the user's own **Agent
+  announcing itself. `ddg.rs` parses HTML, so a class rename there breaks `!s`
+  and only `cargo test --test web_search -- --ignored` notices. CI's `web-search`
+  job runs it daily and on every PR, and a release waits on it. Plus the user's own **Agent
   CLIs** — `claude`, `codex`, `opencode` — as subprocesses for `!c`. Takyon never
   holds an LLM account or key of its own, and never runs an Agent's login
   (**ADR-0017**; the terminal path is `docs/tbc/0012`). The one key it does hold
@@ -189,7 +190,9 @@ under `docs/`.
   and the limit**: it cannot reach ranking, Frecency or anything else in Rust.
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
   as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
-  already owns `Alt+Space`, which is most machines.
+  already owns `Alt+Space`, which is most machines. Exits 2 on a missed budget
+  and 1 when it measured nothing; CI's `bench` job warns on 2 and fails on 1
+  (TBC-0015).
 - macOS compile gate: `bun run check:macos` — cross-compiles and lints for
   `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
   build unpacked locally, which not every machine has. Run it after touching
