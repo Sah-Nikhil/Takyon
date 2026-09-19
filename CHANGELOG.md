@@ -7,6 +7,79 @@ survives.
 Phase numbers in `ROADMAP.md` and release versions are the same number. The one
 exception is recorded under v0.8 below.
 
+## v0.11.1 — Agents that npm installed
+
+Two defects behind one symptom: an Agent that Settings called Ready failed every
+Turn, and a cancelled Turn kept spending tokens. Both appear only when the Agent
+was installed with npm, which is how the test laptop had opencode.
+
+- **An Agent's prompt travels on stdin** (ADR-0032). npm installs a batch file,
+  not an executable, and since CVE-2024-24576 Rust refuses to pass any argument
+  holding a carriage return or line feed through `cmd.exe`. `styled_prompt`
+  always holds a blank line, so every first Turn to Codex or opencode died with
+  `batch file arguments are invalid`, and every `!s` with it, because `!s` writes
+  its answer through the same path. Settings still read Ready, because the probes
+  are all one-liners. The prompt now goes on stdin, and stdin is closed
+  afterwards, or the Agent waits for EOF forever.
+- **Every Agent process dies with the Palette** (ADR-0033). `Child::kill` calls
+  `TerminateProcess` on the one process Takyon started, which for an npm Agent is
+  `cmd.exe` — leaving `node` and the real CLI running, reading nothing and still
+  billing. Each spawn now gets its own Job Object with `KILL_ON_JOB_CLOSE`, and
+  the child is created suspended and resumed only once it has been assigned, so
+  there is no window it could escape through.
+
+**Unverified.** Neither fix has run against a genuine `npm i -g` install. The
+`.cmd` path is covered here by fake Agents (`echo.cmd`, `hang.cmd`, `nonode.cmd`)
+and by an ignored live test that wraps each real CLI in a forwarding `.cmd`, but
+the real shape, with a `node` hop in the middle, exists only on the laptop that
+reported it. `docs/verify/v0.11.1.md` section A is the script.
+
+## v0.11 — PATH hydration
+
+A GUI process on Windows inherits the `PATH` that existed when Explorer started,
+and on macOS inherits almost nothing. An Agent CLI installed since the last login
+was therefore invisible to Takyon while being perfectly findable in any terminal
+— the kind of failure that makes a launcher look broken for a reason the user
+cannot see.
+
+- **Takyon asks the system for the real `PATH`.** `agents/shellenv.rs` reads
+  `HKCU\Environment` and the machine `Path` on Windows, and asks the login shell
+  on unix. The result is cached off the startup path and handed to
+  `probe::resolve`, to every spawned Agent, and to the `PATH` walk that finds
+  command-line applications. Settings, Agents states what it found: *PATH read
+  from the registry: 42 folders, 3 more than Takyon was launched with.*
+- **A second, deeper pass for per-session version managers.** `fnm` sets `PATH`
+  from a PowerShell profile into a per-session directory the registry cannot see
+  by construction. `hydrate_deep` loads the profile and captures it, but only
+  when the first probe found nothing at all, once per process, because it costs
+  1.46 s against the registry read's 1.2 ms. nvm-for-Windows, Volta and scoop do
+  not need it: each adds one fixed shim directory at install, so the registry
+  read already sees them.
+- **A sole installed Agent leads on a first run** (ADR-0031). Someone with only
+  Codex installed used to open Settings and find it ranked second, under a Claude
+  Code row reading "Not found". `!c` reached it anyway, but the page made Takyon
+  look as though it had chosen wrong. When the probe finds exactly one Agent and
+  no choice is stored, that Agent is ranked first and switched on, once.
+- **CI ran for the first time.** v0.10.1 shipped the workflows and recorded that
+  neither had ever executed, because there was no remote. There is one now:
+  typecheck, lint and every test layer on each push, the live DuckDuckGo test and
+  the bench harness on a schedule, with per-job timeouts and pinned toolchains.
+  `lint` also gained the comment, colour and licence checks, so all three block.
+- **`bun run release`**, in `--local` and `--git` shapes: preflight, build, then
+  the installer and its SHA-256 into `releases/`; `--git` adds the version bump,
+  the tag and the push that makes `release.yml` publish. Bare `bun run release`
+  refuses.
+
+**What it does not do.** The whole unix arm compiles for `aarch64-apple-darwin`
+and has never executed — every claim about it is reasoning rather than
+observation, and `docs/verify/v0.11.md` section B is unrun. The deep pass has
+never been watched actually recovering a folder, because this machine has no
+`fnm`. A `Restricted` execution policy stops the profile loading at all,
+silently, and is deliberately not worked around: forcing a profile the machine's
+own policy refuses is not Takyon's call. And a CLI installed after launch still
+needs a restart before it appears as an Entry, though `!c` finds it immediately;
+v0.13 owns that.
+
 ## v0.10.1 — What driving the release found
 
 Four defects in v0.10.0, every one of them found by using the installed build

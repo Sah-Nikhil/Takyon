@@ -10,11 +10,15 @@ character to the front of the line and the same box reaches further: `!s` answer
 a question from the live web with every source cited, and `!c` hands it to the AI
 CLI you are already signed in to.
 
-Windows only, built on Tauri 2. Current release is **0.10.0**.
+Windows only, built on Tauri 2. Current release is **0.11.1**.
 
 <video src="https://raw.githubusercontent.com/Sah-Nikhil/Takyon/main/demo_vid.mp4" controls muted playsinline width="100%">
   <a href="https://raw.githubusercontent.com/Sah-Nikhil/Takyon/main/demo_vid.mp4">Watch the demo (33 seconds)</a>
 </video>
+
+*Thirty-three seconds: the hotkey, an app, a calculation, clipboard history, the
+file index, a Windows setting, `!c` handing a line to Claude Code, and `!s`
+reading four pages and citing them.*
 
 ![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png)
 
@@ -80,7 +84,7 @@ Download `Takyon_{version}_x64-setup.exe` from the release you want and run it.
 Verify it first if you like: the SHA-256 sits beside it in `SHA256SUMS.txt`.
 
 ```powershell
-Get-FileHash .\Takyon_0.9.5_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Takyon_0.11.1_x64-setup.exe -Algorithm SHA256
 ```
 
 The installer is about 2.5 MB. Takyon starts with Windows by default, which you
@@ -132,7 +136,7 @@ Examples:
 
 ```
 chrome                          launch Chrome
-2+2*3                           14, in the first row
+2+2*3                           8, in the first row
 bluetooth                       the Windows Bluetooth page
 !e invoice                      find a file called invoice
 !v                              browse everything you have copied
@@ -147,7 +151,8 @@ bluetooth                       the Windows Bluetooth page
 Two things worth knowing about the outbound bangs. Nothing is sent while you
 type, only when you press Enter, so there is no debounce because there is no
 request to debounce. And the header of an outbound answer turns amber and says
-so, which is the only place colour appears in the Palette.
+so. Warm means it left the machine, and nothing on the Bangless path is
+ever amber.
 
 On `!s`, pressing Enter on the query row opens your own browser with the query
 instead, using that browser's default search engine, for when you would rather
@@ -220,7 +225,8 @@ own search box.
 
 | Page | What is there |
 | --- | --- |
-| General | Start at login, appearance, interface size, turn off animations |
+| General | Start at login |
+| Appearance | A theme family for each half, follow system appearance, window mode, interface size, turn off animations |
 | Launcher | Which monitor the Palette opens on, the tray icon, whether recent files are included |
 | Keyboard | The global hotkey |
 | Applications | The application walk, its status, and your aliases |
@@ -423,8 +429,8 @@ Four layers, because a launcher cannot be checked by one.
 | Visual regression | The React interface in a plain Vite server with the bridge mocked, driven by Playwright | `bun run test:visual` |
 | Manual scripts | Global hotkey, focus loss, tray, multi monitor, elevated windows | `docs/verify/` |
 
-Current counts: 565 Rust unit, 53 Rust integration across 7 binaries, 60
-TypeScript, 108 Playwright screenshots.
+Current counts: 633 Rust unit, 88 Rust integration across 9 binaries, 98
+TypeScript, and 48 screenshot baselines across 119 Playwright tests.
 
 The screenshot budget is a flat 150 pixels, not a percentage. The percentage it
 replaced allowed 5,702 pixels on this window, which was enough to pass a wrong
@@ -452,9 +458,9 @@ version number and two missing rows for two releases.
 
 ## Status and known limits
 
-Ten phases are built and shipped: the warm shell, applications, ranking,
+Eleven phases are built and shipped: the warm shell, applications, ranking,
 calculator, clipboard history, settings, file search, agents, web search,
-appearance.
+appearance, PATH hydration.
 
 - **The Palette will not appear over elevated windows.** That needs a signed
   UIAccess helper. The helper, its manifest and the protocol all exist and work
