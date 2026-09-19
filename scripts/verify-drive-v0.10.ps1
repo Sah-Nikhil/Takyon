@@ -142,8 +142,8 @@ try {
     $plate = Get-PlatePixel $rect
     Write-Host "  plate pixel: R$($plate.R) G$($plate.G) B$($plate.B)" -ForegroundColor DarkGray
     <#
-      Graphite's dark plate is oklch(0.1905 0.0045 286), which resolves to about
-      R20 G20 B22 - a near-neutral dark. Asserted as "dark and near-neutral"
+      Vela's dark plate is oklch(0.196 0.0255 293), which resolves to about
+      R22 G19 B32 - a dark indigo, channel spread 13. Asserted as a bounded range
       rather than as three exact numbers, because the panel is 95% opaque over a
       backdrop blur, so the wallpaper shifts it by a point or two.
 
@@ -155,7 +155,7 @@ try {
     $spread = ([int[]]@($plate.R, $plate.G, $plate.B) | Measure-Object -Maximum).Maximum -
               ([int[]]@($plate.R, $plate.G, $plate.B) | Measure-Object -Minimum).Minimum
     $painted = ($sum -gt 10) -and ($sum -lt 180) -and ($spread -lt 24)
-    Step "A-oklch" $painted "plate is dark and near-neutral (sum $sum, spread $spread), so oklch resolved"
+    Step "A-oklch" $painted "plate is dark and bounded (sum $sum, spread $spread), so oklch resolved"
 
     $shot = Save-Shot "palette-compact" $rect
     Write-Host "  $shot" -ForegroundColor DarkGray

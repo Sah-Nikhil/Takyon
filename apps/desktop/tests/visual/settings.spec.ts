@@ -458,12 +458,12 @@ test("a theme family is chosen per half", async ({ page }) => {
   await expect(dark.getByRole("radio")).toHaveCount(5);
   await expect(light.getByRole("radio")).toHaveCount(5);
 
-  await dark.getByRole("radio", { name: "Vela" }).click();
-  await expect(dark.getByRole("radio", { name: "Vela" })).toHaveAttribute(
+  await dark.getByRole("radio", { name: "Graphite" }).click();
+  await expect(dark.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
     "aria-checked",
     "true",
   );
-  await expect(light.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
+  await expect(light.getByRole("radio", { name: "Vela" })).toHaveAttribute(
     "aria-checked",
     "true",
   );

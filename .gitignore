@@ -47,6 +47,10 @@ signing.secrets.ps1*
 # Release artifacts
 releases/
 
+# Generated launch video: the render, its poster, and the Hyperframes
+# composition with its bundled music and SFX. Megabytes of binary, rebuildable.
+/brag-output
+
 # TypeScript incremental build state — machine-local
 *.tsbuildinfo
 
