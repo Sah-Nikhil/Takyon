@@ -12,6 +12,10 @@ CLI you are already signed in to.
 
 Windows only, built on Tauri 2. Current release is **0.10.0**.
 
+<video src="https://raw.githubusercontent.com/Sah-Nikhil/Takyon/main/demo_vid.mp4" controls muted playsinline width="100%">
+  <a href="https://raw.githubusercontent.com/Sah-Nikhil/Takyon/main/demo_vid.mp4">Watch the demo (33 seconds)</a>
+</video>
+
 ![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png)
 
 ---
