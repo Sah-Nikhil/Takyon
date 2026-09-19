@@ -593,8 +593,8 @@ let snapshot: SettingsSnapshot = {
   // `colorScheme: "dark"`, so what "system" resolves to is fixed by the harness
   // rather than by whatever the machine running the suite happens to be set to.
   appearance: "system",
-  themeDark: "graphite",
-  themeLight: "graphite",
+  themeDark: "vela",
+  themeLight: "vela",
   windowMode: "compact",
   uiSize: "default",
   superHotkey: false,

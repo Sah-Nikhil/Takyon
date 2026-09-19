@@ -80,8 +80,10 @@ hex hides. The mix space matters for the same reason: blending a hue-tinted
 near-black toward a near-white through sRGB desaturates in the middle, which is
 exactly the milky failure v0.6's two rules exist to prevent.
 
-**Five families ship**: Graphite (the default, both halves), Vela, Cherenkov,
-Aurora, Halide. Three is not a library and twelve is a page nobody reads.
+**Five families ship**: Graphite, Vela, Cherenkov, Aurora, Halide. Three is not a
+library and twelve is a page nobody reads. Graphite was the default when this was
+written; it is Vela now, and the paragraph below is the reasoning that change
+overruled — see [ADR-0034](./0034-vela-is-the-default-family.md).
 
 **Cherenkov is no longer the default.** It stays in the set — it is the mark's
 own hue and it is what shipped through v0.9 — but a launcher opens over whatever

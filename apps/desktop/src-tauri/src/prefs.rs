@@ -133,7 +133,7 @@ pub const THEME_DARK: &str = "ui.theme.dark";
 pub const THEME_LIGHT: &str = "ui.theme.light";
 
 /// The family a fresh install gets. Must match `DEFAULT_THEME` in `themes.ts`.
-pub const DEFAULT_THEME: &str = "graphite";
+pub const DEFAULT_THEME: &str = "vela";
 
 /// The Palette's shape: `"compact"` (default) or `"expanded"`.
 pub const WINDOW_MODE: &str = "ui.window-mode";
