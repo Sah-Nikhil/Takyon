@@ -12,9 +12,7 @@ CLI you are already signed in to.
 
 Windows only, built on Tauri 2. Current release is **0.11.1**.
 
-<video src="https://raw.githubusercontent.com/Sah-Nikhil/Takyon/main/demo_vid.mp4" controls muted playsinline width="100%">
-  <a href="https://raw.githubusercontent.com/Sah-Nikhil/Takyon/main/demo_vid.mp4">Watch the demo (33 seconds)</a>
-</video>
+https://github.com/user-attachments/assets/09e3139d-1733-439d-9d12-37144a444d52
 
 *Thirty-three seconds: the hotkey, an app, a calculation, clipboard history, the
 file index, a Windows setting, `!c` handing a line to Claude Code, and `!s`
