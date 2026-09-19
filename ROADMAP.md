@@ -462,13 +462,15 @@ it needs a key on this machine.*
   selection. Thirty-one occurrences across seven files, now zero: no file under
   `apps/desktop/src` names a colour, bar Windows' own close-button red
 - [x] **Five themes, each carrying both halves** ([ADR-0023](./docs/adr/0023-themes-are-families-with-both-halves.md)):
-  Graphite (default), Vela, Cherenkov, Aurora, Halide. The model is
+  Graphite, Vela, Cherenkov, Aurora, Halide. The model is
   [t3code](https://github.com/pingdotgg/t3code)'s `themePalettes.ts` and so is the
   picker — a grid of cards, each a lit sphere of that family's own colours,
   because five near-black rectangles are five identical rectangles. **This closes
   the colour question `docs/brand.md` left open**, and Cherenkov stops being the
   default: a launcher opens over whatever wallpaper you have, and only a neutral
-  plate never argues with it
+  plate never argues with it. That last reasoning handed the default to Graphite
+  and was later overruled — the default is **Vela**
+  ([ADR-0034](./docs/adr/0034-vela-is-the-default-family.md))
 - [x] **Seven roles per half, everything else derived.** v0.6's two rules survive
   — surfaces raised rather than grey, every separation an alpha of the foreground
   — so `--color-hairline`, `--color-edge`, `--color-seam`, `--color-key`,
