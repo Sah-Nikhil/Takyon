@@ -146,10 +146,14 @@ mod imp {
             pump(Duration::from_millis(250));
             let now = now_ms();
             if let Some(outcome) = focus.tick(now) {
-                ended(&focus, &prefs, &emit, &mut st, window.as_ref(), now);
                 emit(Signal::Ended { outcome });
             }
             let view = focus.view(now);
+            // Any end, expiry or an early Complete from IPC: both reach here
+            // as running turning false, so restores run for both.
+            if st.last_view.as_ref().is_some_and(|v| v.running) && !view.running {
+                ended(&focus, &prefs, &emit, &mut st, window.as_ref(), now);
+            }
             // On change only: the frontend counts down from `endsAt` itself.
             // Whole minutes do count, for the tray's "23 min left".
             let shape = crate::focus::service::View {
