@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FocusCategory, FocusStats as Stats } from "@takyon/shared";
 import * as api from "@/api";
-import { Chips } from "../controls";
+import { Chips, Confirm } from "../controls";
 import { FocusIcon } from "@/focus/icons";
 import { keyLabel } from "@/focus/format";
 
@@ -121,6 +121,7 @@ export function FocusStats() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [categories, setCategories] = useState<FocusCategory[]>([]);
   const [table, setTable] = useState<"blocked" | "days">("blocked");
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     void api.focusStats(Number(range)).then(setStats);
@@ -229,6 +230,28 @@ export function FocusStats() {
             </table>
           </div>
         </>
+      )}
+
+      <div id="setting-focus-clear" className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setClearing(true)}
+          className="rounded-control px-2.5 py-1 text-[12.5px] text-fg/60 transition-colors hover:bg-row-hover hover:text-fg"
+        >
+          Clear Focus history…
+        </button>
+      </div>
+      {clearing && (
+        <Confirm
+          title="Clear Focus history?"
+          consequence={`${stats.sessions} finished sessions in this range, and every other finished session, are deleted with what they blocked. A running session stays.`}
+          confirmLabel="Clear history"
+          onConfirm={() => {
+            setClearing(false);
+            void api.focusClearHistory().then(() => api.focusStats(Number(range)).then(setStats));
+          }}
+          onCancel={() => setClearing(false)}
+        />
       )}
     </div>
   );

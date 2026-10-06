@@ -1,10 +1,8 @@
 /**
- * Settings → Focus (v0.16): session preferences, the Strict hurdles, Focus
- * categories (built-ins duplicated, custom ones edited, imported, exported),
- * clearing history, and two Coming soon rows.
- *
- * Coming soon is static text inside a working page, never a disabled control:
- * the rule `pages.ts` states, amended for v0.16 by the user's choice.
+ * Settings → Focus (v0.16): session preferences, Strict hurdles, Focus
+ * categories. Raycast's shape: one line per setting, a dropdown on the right,
+ * row actions on hover. Coming soon is static text, never a disabled control
+ * (`pages.ts`). Clearing history lives on Focus Stats, beside the history.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,20 +11,26 @@ import * as api from "@/api";
 import { BlockPicker } from "@/focus/BlockPicker";
 import { FocusIcon, PICKABLE_ICONS } from "@/focus/icons";
 import { keyLabel } from "@/focus/format";
-import { Chips, Confirm, Group, Row, Switch } from "../controls";
+import { Select } from "@/components/Select";
+import { Group, Row, Switch } from "../controls";
 
 const SNOOZE = [
+  { value: "1", label: "1 minute" },
+  { value: "3", label: "3 minutes" },
+  { value: "5", label: "5 minutes" },
+  { value: "10", label: "10 minutes" },
   { value: "0", label: "No snooze" },
-  { value: "1", label: "1 min" },
-  { value: "3", label: "3 min" },
-  { value: "5", label: "5 min" },
-  { value: "10", label: "10 min" },
 ] as const;
 
 const HURDLE = [
   { value: "strict", label: "Strict sessions" },
   { value: "always", label: "Every session" },
   { value: "never", label: "Never" },
+] as const;
+
+const SURFACE = [
+  { value: "bar", label: "Floating bar" },
+  { value: "tray", label: "Tray only" },
 ] as const;
 
 const small =
@@ -108,7 +112,6 @@ export function Focus() {
   const [draft, setDraft] = useState<FocusCategory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [clearing, setClearing] = useState(false);
   const file = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -157,81 +160,56 @@ export function Focus() {
 
   if (!settings) return null;
 
+  const row = "group flex items-center gap-3 px-3.5 py-2.5";
+  const onHover = "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100";
+
   return (
     <div className="space-y-6">
-      <Group title="Sessions">
-        <Row id="focus-snooze" label="Snooze" description="How long a blocked app or site comes back for in a Soft session.">
-          <Chips label="Snooze" value={String(settings.snoozeMinutes) as (typeof SNOOZE)[number]["value"]} options={SNOOZE} onChange={(v) => set("focus.snooze_minutes", v)} />
-        </Row>
-        <Row id="focus-restore" label="Reopen apps when a session ends" description="Apps Focus quit start again, once each.">
-          <Switch label="Reopen apps when a session ends" checked={settings.restoreApps} onChange={(on) => set("focus.restore_apps", on ? "1" : "0")} />
-        </Row>
-        <Row id="focus-surface" label="Show a running session as" description="The bar floats on top and never takes focus; the tray keeps it out of sight.">
-          <Chips
-            label="Show a running session as"
-            value={settings.surface}
-            options={[
-              { value: "bar", label: "Floating bar" },
-              { value: "tray", label: "Tray only" },
-            ]}
-            onChange={(v) => set("focus.surface", v)}
+      <Group>
+        <Row id="focus-snooze" label="Snooze duration" description="How long a blocked app or site comes back for.">
+          <Select
+            label="Snooze duration"
+            value={String(settings.snoozeMinutes) as (typeof SNOOZE)[number]["value"]}
+            options={SNOOZE}
+            onChange={(v) => set("focus.snooze_minutes", v)}
+            className="w-40"
           />
         </Row>
-        <Row id="focus-bang" label="Start sessions with !f" description={<>Type <code className="font-mono">!f write report 45m</code> in the Palette to start with your last Block list.</>}>
-          <Switch label="Start sessions with !f" checked={settings.bang} onChange={(on) => set("focus.bang", on ? "1" : "0")} />
+        <Row id="focus-surface" label="Running session" description="Where the goal and time left stay in view.">
+          <Select label="Running session" value={settings.surface} options={SURFACE} onChange={(v) => set("focus.surface", v)} className="w-40" />
+        </Row>
+        <Row id="focus-restore" label="Restore terminated apps" description="Reopen apps Focus quit when the session ends.">
+          <Switch label="Restore terminated apps" checked={settings.restoreApps} onChange={(on) => set("focus.restore_apps", on ? "1" : "0")} />
+        </Row>
+        <Row id="focus-bang" label="Start with !f" description={<>Type <code className="font-mono">!f write report 45m</code> in the Palette.</>}>
+          <Switch label="Start with !f" checked={settings.bang} onChange={(on) => set("focus.bang", on ? "1" : "0")} />
+        </Row>
+        <Row id="focus-scheduled" label="Scheduled sessions" description="Sessions that start themselves at set times.">
+          <span className="text-[12px] text-fg/50">Coming soon</span>
         </Row>
       </Group>
 
-      <Group title="Hurdles">
-        <Row id="focus-hurdle-shutdown" label="Hold shutdown" description="Windows shows your goal and time left, and still offers Shut down anyway.">
-          <Chips label="Hold shutdown" value={settings.hurdleShutdown} options={HURDLE} onChange={(v) => set("focus.hurdle_shutdown", v)} />
+      <Group title="Strict">
+        <Row id="focus-hurdle-shutdown" label="Hold shutdown" description="Shows your goal on Windows' shutdown screen.">
+          <Select label="Hold shutdown" value={settings.hurdleShutdown} options={HURDLE} onChange={(v) => set("focus.hurdle_shutdown", v)} className="w-40" />
         </Row>
-        <Row id="focus-hurdle-idle" label="Keep the PC awake" description="Idle sleep waits for the session. Sleep from the Start menu or the lid cannot be held; the session pauses instead.">
-          <Chips label="Keep the PC awake" value={settings.hurdleIdle} options={HURDLE} onChange={(v) => set("focus.hurdle_idle", v)} />
+        <Row id="focus-hurdle-idle" label="Keep the PC awake" description="Holds idle sleep off. Sleeping by hand pauses the session.">
+          <Select label="Keep the PC awake" value={settings.hurdleIdle} options={HURDLE} onChange={(v) => set("focus.hurdle_idle", v)} className="w-40" />
+        </Row>
+        <Row id="focus-locked" label="Locked sessions" description="No way out until the clock runs out.">
+          <span className="text-[12px] text-fg/50">Coming soon</span>
         </Row>
       </Group>
 
-      <Group title="Focus categories">
-        {builtins.map((c) => (
-          <div key={c.id} className="flex items-center gap-3 px-3.5 py-2.5">
-            <FocusIcon name={c.icon} className="size-4 text-accent" />
-            <span className="text-[13px] text-fg">{c.name}</span>
-            <span className="flex-1 truncate text-[12px] text-fg/50">
-              {c.dynamic === "games" ? "Installed games and launchers" : `${c.items.length} apps and sites`} · built in
-            </span>
-            <button type="button" className={small} onClick={() => setDraft({ ...c, id: "", name: `${c.name} (copy)`, dynamic: null, copiedFrom: c.id })}>
-              Duplicate
-            </button>
-          </div>
-        ))}
-        {custom.map((c) =>
-          draft?.id === c.id ? (
-            <Editor key={c.id} draft={draft} onChange={setDraft} onSave={save} onCancel={() => setDraft(null)} error={error} />
-          ) : (
-            <div key={c.id} className="flex items-center gap-3 px-3.5 py-2.5">
-              <FocusIcon name={c.icon} className="size-4 text-accent" />
-              <span className="text-[13px] text-fg">{c.name}</span>
-              <span className="flex-1 truncate text-[12px] text-fg/50">{c.items.length} apps and sites</span>
-              <button type="button" className={small} onClick={() => setDraft(c)}>
-                Edit
-              </button>
-              <button type="button" className={small} onClick={() => void api.focusDeleteCategory(c.id).then(load)}>
-                Delete
-              </button>
-            </div>
-          ),
-        )}
-        {draft && draft.id === "" && (
-          <Editor draft={draft} onChange={setDraft} onSave={save} onCancel={() => setDraft(null)} error={error} />
-        )}
-        <div className="flex items-center gap-2 px-3.5 py-2.5">
-          <button type="button" className={`${small} bg-control`} onClick={() => setDraft({ id: "", name: "", icon: "Target", items: [] })}>
-            New Focus category
+      <section>
+        <div className="mb-2 flex items-center gap-1 px-1">
+          <h2 className="flex-1 text-[13px] font-medium text-fg/60">Focus categories</h2>
+          {note && <span className="mr-2 text-[12px] text-fg/60">{note}</span>}
+          <button type="button" className={small} onClick={() => setDraft({ id: "", name: "", icon: "Target", items: [] })}>
+            New
           </button>
-          <span className="flex-1" />
-          {note && <span className="text-[12px] text-fg/60">{note}</span>}
           <button type="button" className={small} onClick={() => file.current?.click()}>
-            Import…
+            Import
           </button>
           <button type="button" className={small} disabled={custom.length === 0} onClick={exportAll}>
             Export
@@ -249,37 +227,46 @@ export function Focus() {
             }}
           />
         </div>
-      </Group>
-
-      <Group title="History">
-        <Row id="focus-clear" label="Clear Focus history" description="Deletes every finished session and what it blocked. A running session stays.">
-          <button type="button" className={small} onClick={() => setClearing(true)}>
-            Clear…
-          </button>
-        </Row>
-      </Group>
-
-      <Group title="Coming soon">
-        <Row id="focus-scheduled" label="Scheduled sessions" description="Sessions that start themselves, such as weekdays 9 to 12 with Social blocked.">
-          <span className="text-[12px] text-fg/50">Coming soon</span>
-        </Row>
-        <Row id="focus-locked" label="Locked sessions" description="A session that cannot be ended early or escaped through Task Manager. Needs a Windows service (ADR-0036).">
-          <span className="text-[12px] text-fg/50">Coming soon</span>
-        </Row>
-      </Group>
-
-      {clearing && (
-        <Confirm
-          title="Clear Focus history?"
-          consequence="Every finished Focus session and its blocks are deleted. Stats start from zero. This cannot be undone."
-          confirmLabel="Clear history"
-          onConfirm={() => {
-            setClearing(false);
-            void api.focusClearHistory();
-          }}
-          onCancel={() => setClearing(false)}
-        />
-      )}
+        <div className="divide-y divide-hairline overflow-hidden rounded-card border border-hairline bg-card">
+          {draft && draft.id === "" && (
+            <Editor draft={draft} onChange={setDraft} onSave={save} onCancel={() => setDraft(null)} error={error} />
+          )}
+          {custom.map((c) =>
+            draft?.id === c.id ? (
+              <Editor key={c.id} draft={draft} onChange={setDraft} onSave={save} onCancel={() => setDraft(null)} error={error} />
+            ) : (
+              <div key={c.id} className={row}>
+                <FocusIcon name={c.icon} className="size-4 text-accent" />
+                <span className="text-[13px] text-fg">{c.name}</span>
+                <span className="flex-1 truncate text-[12px] text-fg/50">{c.items.length} apps and sites</span>
+                <button type="button" className={`${small} ${onHover}`} onClick={() => setDraft(c)}>
+                  Edit
+                </button>
+                <button type="button" className={`${small} ${onHover}`} onClick={() => void api.focusDeleteCategory(c.id).then(load)}>
+                  Delete
+                </button>
+              </div>
+            ),
+          )}
+          {builtins.map((c) => (
+            <div key={c.id} className={row}>
+              <FocusIcon name={c.icon} className="size-4 text-accent" />
+              <span className="text-[13px] text-fg">{c.name}</span>
+              <span className="flex-1 truncate text-[12px] text-fg/50">
+                {c.dynamic === "games" ? "Installed games and launchers" : `${c.items.length} apps and sites`}
+              </span>
+              <button
+                type="button"
+                className={`${small} ${onHover}`}
+                onClick={() => setDraft({ ...c, id: "", name: `${c.name} (copy)`, dynamic: null, copiedFrom: c.id })}
+              >
+                Duplicate
+              </button>
+              <span className="w-14 text-right text-[11px] text-fg/40">Built in</span>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

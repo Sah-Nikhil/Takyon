@@ -2,12 +2,9 @@ import { expect, test, type Page } from "./fixtures";
 import { paletteHeight, VIEW_HEIGHT } from "@takyon/shared";
 
 /**
- * v0.16's visual layer: the Focus view in the Palette, the floating bar, and
- * Settings → Focus and Focus Stats.
- *
- * The session is the mock's (`api.mock.ts` § Focus). Blocking itself, the
- * clock and the store are Rust's and answered in `tests/focus.rs`; this
- * catches whether every surface draws and responds.
+ * v0.16's visual layer: the Focus view, the floating bar, Settings → Focus and
+ * Focus Stats. The session is the mock's (`api.mock.ts` § Focus); blocking,
+ * clock and store are Rust's, answered in `tests/focus.rs`.
  */
 
 type Mock = { emitShow: () => void };
@@ -116,7 +113,7 @@ test.describe("Settings", () => {
   test("Focus lists preferences, Focus categories and the Coming soon rows", async ({ page }) => {
     await page.goto("/?window=settings");
     await page.getByRole("button", { name: "Focus", exact: true }).click();
-    await expect(page.getByRole("radiogroup", { name: "Snooze" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Snooze duration" })).toBeVisible();
     await expect(page.getByText("Video & streaming")).toBeVisible();
     await expect(page.getByText("Scheduled sessions")).toBeVisible();
     await expect(page.getByText("Coming soon", { exact: true }).first()).toBeVisible();

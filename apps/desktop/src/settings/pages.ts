@@ -290,13 +290,12 @@ export const PAGES: SettingsPage[] = [
     tier: "feature",
     Component: Focus,
     controls: [
-      { id: "focus-snooze", label: "Snooze", keywords: ["focus", "snooze", "block", "distraction"] },
-      { id: "focus-restore", label: "Reopen apps when a session ends", keywords: ["focus", "restore", "relaunch"] },
-      { id: "focus-surface", label: "Show a running session as", keywords: ["focus", "bar", "tray", "floating"] },
-      { id: "focus-bang", label: "Start sessions with !f", keywords: ["focus", "bang", "!f"] },
+      { id: "focus-snooze", label: "Snooze duration", keywords: ["focus", "snooze", "block", "distraction"] },
+      { id: "focus-restore", label: "Restore terminated apps", keywords: ["focus", "restore", "relaunch"] },
+      { id: "focus-surface", label: "Running session", keywords: ["focus", "bar", "tray", "floating"] },
+      { id: "focus-bang", label: "Start with !f", keywords: ["focus", "bang", "!f"] },
       { id: "focus-hurdle-shutdown", label: "Hold shutdown", keywords: ["focus", "strict", "shutdown", "restart"] },
       { id: "focus-hurdle-idle", label: "Keep the PC awake", keywords: ["focus", "strict", "sleep", "awake"] },
-      { id: "focus-clear", label: "Clear Focus history", keywords: ["focus", "history", "delete", "stats"] },
       { id: "focus-scheduled", label: "Scheduled sessions", keywords: ["focus", "schedule", "coming soon"] },
       { id: "focus-locked", label: "Locked sessions", keywords: ["focus", "locked", "strict", "coming soon"] },
     ],
@@ -306,6 +305,9 @@ export const PAGES: SettingsPage[] = [
     title: "Focus Stats",
     tier: "feature",
     Component: FocusStats,
-    controls: [{ id: "focus-stats", label: "Focus stats", keywords: ["focus", "stats", "history", "usage", "time"] }],
+    controls: [
+      { id: "focus-stats", label: "Focus stats", keywords: ["focus", "stats", "history", "usage", "time"] },
+      { id: "focus-clear", label: "Clear Focus history", keywords: ["focus", "history", "delete", "stats"] },
+    ],
   },
 ];
