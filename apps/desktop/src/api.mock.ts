@@ -1118,6 +1118,7 @@ const focusMock = {
     const undo = removed ? prior !== undefined && !prior.removed : shipped;
     if (!undo) focusEdits.push({ category, item, removed });
   },
+  focusFetchIcons: async (_keys: string[]) => 0,
   focusResetBuiltin: async (category: string) => {
     focusEdits = focusEdits.filter((e) => e.category !== category);
   },

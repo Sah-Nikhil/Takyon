@@ -746,6 +746,7 @@ pub fn run() {
             focus::ipc::focus_reset_friction,
             focus::ipc::focus_categories,
             focus::ipc::focus_members,
+            focus::ipc::focus_fetch_icons,
             focus::ipc::focus_edit_builtin,
             focus::ipc::focus_reset_builtin,
             focus::ipc::focus_save_category,
@@ -960,6 +961,7 @@ pub fn run() {
             // thread, and the autostart registry write is disk-bound.
             let deferred = handle.clone();
             let focus_prefs = prefs.clone();
+            let focus_prefs_icons = prefs.clone();
             std::thread::spawn(move || {
                 // First, so a Strict session survives a reboot before anything
                 // slower runs: right after the hotkey (ADR-0036).
@@ -970,25 +972,48 @@ pub fn run() {
                 }
                 let signals = deferred.clone();
                 let surface_prefs = focus_prefs.clone();
+                // The tray line's block half; cleared when no session runs.
+                let last_block: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+                let last_view: std::sync::Mutex<focus::service::View> = Default::default();
                 focus::runtime::spawn(
                     focus,
                     focus_prefs,
                     focus_page,
                     Arc::new(move |signal| {
                         // The bar or the tray line follows every change of view.
-                        if let focus::runtime::Signal::View { view } = &signal {
-                            let tray =
-                                surface_prefs.get(prefs::FOCUS_SURFACE).as_deref() == Some("tray");
-                            focus::bar::set(&signals, view.running && !tray);
-                            let status = view.running.then(|| {
-                                let state = if view.paused { "paused" } else { "on" };
-                                format!("Focus {state}: {}", view.goal)
-                            });
-                            tray::set_status(&signals, status.as_deref());
+                        let tray_only =
+                            surface_prefs.get(prefs::FOCUS_SURFACE).as_deref() == Some("tray");
+                        let mut block = last_block.lock().unwrap_or_else(|p| p.into_inner());
+                        let mut shown = last_view.lock().unwrap_or_else(|p| p.into_inner());
+                        match &signal {
+                            focus::runtime::Signal::View { view } => {
+                                focus::bar::set(&signals, view.running && !tray_only);
+                                if !view.running {
+                                    *block = None;
+                                }
+                                *shown = view.clone();
+                            }
+                            focus::runtime::Signal::Blocked { label, .. } => {
+                                *block = Some(label.clone());
+                                if tray_only {
+                                    tray::flash(&signals);
+                                }
+                            }
+                            focus::runtime::Signal::Ended { .. } => *block = None,
                         }
+                        let status = tray::focus_status(&shown, block.as_deref());
+                        tray::set_status(&signals, status.as_deref());
+                        drop((block, shown));
                         focus::ipc::emit(&signals, signal);
                     }),
                 );
+                // Its own thread, a minute late: the login budget never shares
+                // the network with it.
+                let icon_prefs = focus_prefs_icons;
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    focus::ipc::fetch_builtin_icons(&icon_prefs);
+                });
                 tray::self_heal_autostart(&deferred);
                 uiaccess::start(&deferred);
                 firstrun::maybe_enable(&deferred);

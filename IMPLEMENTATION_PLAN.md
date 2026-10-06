@@ -568,7 +568,9 @@ foreground and, every 2 s, the process table. Quits run on short-lived threads
 so a 2 s grace never stalls the tick. The floating bar is a third webview,
 `focusbar`, built off the main thread when a session starts and destroyed when it
 ends, so the idle budget never carries it; `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`
-are set after build because Tauri has no option for them.
+are set after build and it is shown with `SW_SHOWNOACTIVATE` (`bar::float_quietly`),
+because Tauri has no option for either and its `show()` activates. The hidden
+window is `focus::power::Watch`, testable on its own thread.
 
 ---
 

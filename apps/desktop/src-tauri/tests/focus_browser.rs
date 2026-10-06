@@ -6,6 +6,10 @@
 //! the address bar is caught within a day. A Gecko profile showing a modal
 //! (welcome, terms) has no address bar in its tree: skipped, said so.
 //!
+//! Safe on a desktop in use: waits for 20 s with no input, stops once anyone
+//! else types or moves the mouse, and sends only navigate's Enter into its own
+//! browser, in front. Busy desktop: a skip off CI, a failure on it.
+//!
 //! cargo test --test focus_browser -- --ignored --nocapture
 
 #![cfg(windows)]
@@ -21,10 +25,8 @@ use takyon_lib::focus::browser::{engine_of, mta, Bar, Engine, Uia};
 use takyon_lib::focus::site::{block_url, host_of, is_block_page};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-    VIRTUAL_KEY, VK_CONTROL, VK_MENU,
-};
+use windows::Win32::System::SystemInformation::GetTickCount;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClassNameW, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
     IsWindowVisible, PostMessageW, SetForegroundWindow, WM_CLOSE,
@@ -32,9 +34,56 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 const ORIGINAL: &str = "https://example.com/takyon-live?x=1";
 
+/// Tick of the last keyboard or mouse input, ours included.
+fn last_input() -> u32 {
+    let mut info = LASTINPUTINFO {
+        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
+    unsafe {
+        let _ = GetLastInputInfo(&mut info);
+    }
+    info.dwTime
+}
+
+/// Wait up to a minute for 20 s with no input. False: someone is using it.
+fn wait_idle() -> bool {
+    poll(Duration::from_secs(60), || {
+        let idle = unsafe { GetTickCount() }.wrapping_sub(last_input());
+        (idle >= 20_000).then_some(())
+    })
+    .is_some()
+}
+
+/// The input tick as of our last action: any later input was a person.
+struct Guard(u32);
+
+impl Guard {
+    fn check(&self) -> Result<(), Skip> {
+        if last_input() == self.0 {
+            Ok(())
+        } else {
+            Err(Skip(BUSY.into()))
+        }
+    }
+
+    /// After an action of ours that injects input (navigate's Enter).
+    fn ours(&mut self) {
+        self.0 = last_input();
+    }
+}
+
+const BUSY: &str = "desktop in use";
+
 #[test]
 #[ignore = "launches real browsers and loads example.com"]
 fn v0_16_live_block_and_restore_in_every_installed_browser() {
+    let ci = std::env::var_os("CI").is_some();
+    if !wait_idle() {
+        assert!(!ci, "a CI runner's desktop should be idle");
+        eprintln!("[skip] {BUSY}: no 20 s without input; nothing launched");
+        return;
+    }
     let _com = mta();
     let uia = Uia::new().expect("UI Automation");
     let page = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -49,6 +98,8 @@ fn v0_16_live_block_and_restore_in_every_installed_browser() {
         let engine = engine_of(&exe).expect("candidate is a supported browser");
         let name = exe.display().to_string();
         let profile = TempDir::new(&format!("focus-live-{}", engine_label(&exe)));
+        // Declared after `profile`, so dropped first: a panic still closes it.
+        let _cleanup = Cleanup(profile.path().to_path_buf());
         let before: Vec<isize> = top_windows().into_iter().map(|(h, _, _)| h).collect();
         let mut child = launch(&exe, engine, profile.path());
         let Some(hwnd) = wait_window(engine, &before, Duration::from_secs(30)) else {
@@ -58,13 +109,17 @@ fn v0_16_live_block_and_restore_in_every_installed_browser() {
             let _ = child.wait();
             continue;
         };
-        let outcome = drive(&uia, hwnd, engine, &page);
+        let outcome = drive(&uia, hwnd, engine, &exe, profile.path(), &page);
         close(hwnd);
         kill_profile(profile.path());
         let _ = child.kill();
         let _ = child.wait();
         match outcome {
             Ok(()) => passed.push(name),
+            Err(Skip(why)) if why == BUSY && !ci => {
+                eprintln!("[skip] {name}: {why}; stopping");
+                return;
+            }
             Err(Skip(why)) => eprintln!("[skip] {name}: {why}"),
         }
     }
@@ -74,6 +129,15 @@ fn v0_16_live_block_and_restore_in_every_installed_browser() {
 
 struct Skip(String);
 
+/// Ends every process on a throwaway profile when dropped, panics included.
+struct Cleanup(PathBuf);
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        kill_profile(&self.0);
+    }
+}
+
 fn engine_label(exe: &Path) -> String {
     exe.to_string_lossy()
         .bytes()
@@ -81,8 +145,17 @@ fn engine_label(exe: &Path) -> String {
         .to_string()
 }
 
-/// Read, block, restore. Panics on a real failure; Skip only for a modal.
-fn drive(uia: &Uia, hwnd: isize, engine: Engine, page: &Path) -> Result<(), Skip> {
+/// Read, block, restore. Panics on a real failure; Skip for a modal, or for
+/// a person at the machine.
+fn drive(
+    uia: &Uia,
+    hwnd: isize,
+    engine: Engine,
+    exe: &Path,
+    profile: &Path,
+    page: &Path,
+) -> Result<(), Skip> {
+    let mut guard = Guard(last_input());
     let first = poll(Duration::from_secs(8), || match uia.read(hwnd, engine) {
         Bar::Url(url) => Some(url),
         _ => None,
@@ -94,28 +167,35 @@ fn drive(uia: &Uia, hwnd: isize, engine: Engine, page: &Path) -> Result<(), Skip
         "read {first:?}"
     );
 
-    bring_front(hwnd);
-    assert!(is_foreground(hwnd), "browser must be in front to navigate");
+    front(hwnd, &guard)?;
     assert!(uia.navigate(hwnd, engine, &block_url(page, ORIGINAL, 0, "Live test")));
+    guard.ours();
     let blocked = poll(Duration::from_secs(8), || match uia.read(hwnd, engine) {
         Bar::Url(url) if is_block_page(&url) => Some(url),
         _ => None,
     });
     assert!(blocked.is_some(), "tab never reached the block page");
 
-    bring_front(hwnd);
-    assert!(
-        is_foreground(hwnd),
-        "lost the foreground; not sending Ctrl+T"
-    );
-    chord(&[VK_CONTROL, VIRTUAL_KEY(b'T' as u16)]);
-    std::thread::sleep(Duration::from_millis(1200));
-    bring_front(hwnd);
-    assert!(uia.navigate(hwnd, engine, "https://example.org/takyon-live-2"));
-    std::thread::sleep(Duration::from_millis(2500));
+    // A second tab without a keystroke: the browser hands the URL to its
+    // running instance on the same profile, which opens it in front.
+    second_tab(exe, engine, profile);
+    let second = poll(Duration::from_secs(10), || match uia.read(hwnd, engine) {
+        Bar::Url(url) if host_of(&url).as_deref() == Some("example.org") => Some(url),
+        _ => None,
+    });
+    assert!(second.is_some(), "second tab never opened");
 
-    bring_front(hwnd);
-    let restored = uia.restore(hwnd, engine);
+    // Retried like the runtime's walk: a strip read mid-switch shows no tabs.
+    let mut restored = 0;
+    for _ in 0..3 {
+        front(hwnd, &guard)?;
+        restored = uia.restore(hwnd, engine);
+        guard.ours();
+        if restored > 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
     if restored != 1 {
         eprintln!(
             "front={} bar={:?} hwnd={hwnd}",
@@ -149,6 +229,30 @@ fn poll<T>(timeout: Duration, mut f: impl FnMut() -> Option<T>) -> Option<T> {
         }
         std::thread::sleep(Duration::from_millis(300));
     }
+}
+
+/// Raise the browser for a step that types, or say why not. Never forces it:
+/// a refused raise is the foreground lock, which means a person is about.
+fn front(hwnd: isize, guard: &Guard) -> Result<(), Skip> {
+    guard.check()?;
+    unsafe {
+        let _ = SetForegroundWindow(HWND(hwnd as *mut _));
+    }
+    poll(Duration::from_secs(3), || is_foreground(hwnd).then_some(()))
+        .ok_or_else(|| Skip(format!("{BUSY}: Windows kept the foreground elsewhere")))?;
+    guard.check()
+}
+
+fn second_tab(exe: &Path, engine: Engine, profile: &Path) {
+    const SECOND: &str = "https://example.org/takyon-live-2";
+    let mut cmd = Command::new(exe);
+    match engine {
+        Engine::Gecko => cmd.arg("-profile").arg(profile).args(["-new-tab", SECOND]),
+        Engine::Chromium => cmd
+            .arg(format!("--user-data-dir={}", profile.display()))
+            .arg(SECOND),
+    };
+    let _ = cmd.spawn().map(|mut c| c.wait());
 }
 
 /// Every supported browser registered on this machine, plus Store Firefox.
@@ -259,19 +363,6 @@ fn top_windows() -> Vec<(isize, String, String)> {
     out
 }
 
-/// The test owns this window; Takyon itself never raises a browser.
-fn bring_front(hwnd: isize) {
-    poll(Duration::from_secs(5), || {
-        // Foreground lock: a background process may raise a window only
-        // right after it sent input. An Alt tap is that input.
-        chord(&[VK_MENU]);
-        unsafe {
-            let _ = SetForegroundWindow(HWND(hwnd as *mut _));
-        }
-        is_foreground(hwnd).then_some(())
-    });
-}
-
 fn is_foreground(hwnd: isize) -> bool {
     unsafe { GetForegroundWindow().0 as isize == hwnd }
 }
@@ -287,26 +378,4 @@ fn close(hwnd: isize) {
     let _ = Command::new("taskkill")
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .output();
-}
-
-fn chord(keys: &[VIRTUAL_KEY]) {
-    let key = |vk: VIRTUAL_KEY, up: bool| INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: vk,
-                wScan: 0,
-                dwFlags: if up {
-                    KEYEVENTF_KEYUP
-                } else {
-                    KEYBD_EVENT_FLAGS(0)
-                },
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    };
-    let mut inputs: Vec<INPUT> = keys.iter().map(|k| key(*k, false)).collect();
-    inputs.extend(keys.iter().rev().map(|k| key(*k, true)));
-    unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
 }
