@@ -179,7 +179,7 @@ fn v0_16_custom_categories_are_created_edited_and_deleted() {
     assert!(saved.id.starts_with("custom:"), "{}", saved.id);
 
     let reopened = Store::open(Some(dir.to_owned())).unwrap();
-    assert_eq!(reopened.custom_categories(), [saved.clone()]);
+    assert_eq!(reopened.custom_categories(), std::slice::from_ref(&saved));
 
     let mut edited = saved.clone();
     edited.name = "Renamed".into();
