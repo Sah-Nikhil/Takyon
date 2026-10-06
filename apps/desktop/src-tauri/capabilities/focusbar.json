@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "focusbar",
+  "description": "The Focus bar. Dragging only; everything else is IPC through api.ts.",
+  "windows": ["focusbar"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

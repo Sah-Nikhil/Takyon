@@ -59,6 +59,14 @@ pub fn tooltip(indexing: bool) -> String {
     }
 }
 
+/// A Focus session's line in the tooltip, or the plain one when none runs.
+pub fn set_status(app: &AppHandle, status: Option<&str>) {
+    if let Some(icon) = app.tray_by_id(TRAY_ID) {
+        let text = status.map_or_else(|| tooltip(false), |s| format!("{DISPLAY_NAME} — {s}"));
+        let _ = icon.set_tooltip(Some(text));
+    }
+}
+
 /// Update the tooltip to match the walk. Silent when there is no tray.
 pub fn set_indexing(app: &AppHandle, indexing: bool) {
     if let Some(icon) = app.tray_by_id(TRAY_ID) {

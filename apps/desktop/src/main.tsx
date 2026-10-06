@@ -1,6 +1,6 @@
 /**
- * One bundle, two windows. Which one this root is depends on `?window=` in the
- * URL, set by the Tauri window definitions in `tauri.conf.json`. A second HTML
+ * One bundle, three windows: Palette, Settings, Focus bar. Which one this root
+ * is depends on `?window=` in the URL, set where each window is built. A second HTML
  * entry point would mean a second Vite build and a second cold start; the Palette
  * is warm precisely so nothing pays a cold start.
  */
@@ -10,6 +10,7 @@ import ReactDOM from "react-dom/client";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Palette } from "./palette/Palette";
 import { Settings } from "./settings/Settings";
+import { FocusBar } from "./focus/FocusBar";
 import { inTauri } from "./api";
 import {
   bannerRequest,
@@ -93,7 +94,7 @@ if (!inTauri) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {kind === "settings" ? <Settings /> : <Palette />}
+      {kind === "settings" ? <Settings /> : kind === "bar" ? <FocusBar /> : <Palette />}
     </ErrorBoundary>
   </React.StrictMode>,
 );

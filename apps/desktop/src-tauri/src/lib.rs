@@ -964,11 +964,25 @@ pub fn run() {
                     }
                 }
                 let signals = deferred.clone();
+                let surface_prefs = focus_prefs.clone();
                 focus::runtime::spawn(
                     focus,
                     focus_prefs,
                     focus_page,
-                    Arc::new(move |signal| focus::ipc::emit(&signals, signal)),
+                    Arc::new(move |signal| {
+                        // The bar or the tray line follows every change of view.
+                        if let focus::runtime::Signal::View { view } = &signal {
+                            let tray =
+                                surface_prefs.get(prefs::FOCUS_SURFACE).as_deref() == Some("tray");
+                            focus::bar::set(&signals, view.running && !tray);
+                            let status = view.running.then(|| {
+                                let state = if view.paused { "paused" } else { "on" };
+                                format!("Focus {state}: {}", view.goal)
+                            });
+                            tray::set_status(&signals, status.as_deref());
+                        }
+                        focus::ipc::emit(&signals, signal);
+                    }),
                 );
                 tray::self_heal_autostart(&deferred);
                 uiaccess::start(&deferred);
