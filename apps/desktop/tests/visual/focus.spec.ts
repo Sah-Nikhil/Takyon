@@ -156,14 +156,22 @@ test.describe("Settings", () => {
     await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
   });
 
-  test("Focus Stats draws the total, the daily chart and the breakdown", async ({ page }) => {
+  test("Focus stats opens as Focus / Stats and draws the line, total and breakdown", async ({ page }) => {
     await page.goto("/?window=settings");
-    await page.getByRole("button", { name: "Focus Stats" }).click();
+    await page.getByRole("button", { name: "Focus", exact: true }).click();
+    await page.getByRole("button", { name: /Focus stats/ }).click();
+    await expect(page.getByRole("heading", { name: "Focus Stats", level: 1 })).toBeVisible();
     await expect(page.getByRole("img", { name: "Focused time per day" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "YouTube" })).toBeVisible();
     await expect(page).toHaveScreenshot("settings-focus-stats.png", { fullPage: true });
     await page.getByRole("radio", { name: "By day" }).click();
-    await page.getByRole("radio", { name: "30 days" }).click();
-    await expect(page).toHaveScreenshot("settings-focus-stats-30.png", { fullPage: true });
+    await page.getByRole("radio", { name: "7 days" }).click();
+    await expect(page).toHaveScreenshot("settings-focus-stats-7.png", { fullPage: true });
+    // Back through the crumb, then once more through the sidebar.
+    await page.locator("main h1").getByRole("button", { name: "Focus" }).click();
+    await expect(page.getByRole("combobox", { name: "Snooze duration" })).toBeVisible();
+    await page.getByRole("button", { name: /Focus stats/ }).click();
+    await page.locator("nav").getByRole("button", { name: "Focus", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Snooze duration" })).toBeVisible();
   });
 });

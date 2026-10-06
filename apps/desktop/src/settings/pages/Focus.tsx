@@ -2,10 +2,11 @@
  * Settings → Focus (v0.16): session preferences, Strict hurdles, Focus
  * categories. Raycast's shape: one line per setting, a dropdown on the right,
  * row actions on hover. Coming soon is static text, never a disabled control
- * (`pages.ts`). Clearing history lives on Focus Stats, beside the history.
+ * (`pages.ts`). Stats is a sub-view, "Focus / Stats", opened from the top row.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { CaretRight } from "@phosphor-icons/react";
 import type { FocusCategory, FocusSettings } from "@takyon/shared";
 import * as api from "@/api";
 import { BlockPicker } from "@/focus/BlockPicker";
@@ -13,6 +14,8 @@ import { FocusIcon, PICKABLE_ICONS } from "@/focus/icons";
 import { keyLabel } from "@/focus/format";
 import { Select } from "@/components/Select";
 import { Group, Row, Switch } from "../controls";
+import { CrumbContext } from "../crumb";
+import { FocusStatsPanel, hours } from "./FocusStats";
 
 const SNOOZE = [
   { value: "1", label: "1 minute" },
@@ -113,6 +116,9 @@ export function Focus() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
+  const [view, setView] = useState<"main" | "stats">("main");
+  const [week, setWeek] = useState<number | null>(null);
+  const setCrumb = useContext(CrumbContext);
 
   const load = useCallback(() => {
     void api.focusSettings().then(setSettings);
@@ -122,6 +128,14 @@ export function Focus() {
     });
   }, []);
   useEffect(load, [load]);
+  useEffect(() => {
+    void api.focusStats(7).then((s) => setWeek(s.focusedMs));
+  }, []);
+
+  const openStats = () => {
+    setView("stats");
+    setCrumb({ label: "Stats", back: () => (setView("main"), setCrumb(null)) });
+  };
 
   const set = (key: string, value: string) => void api.focusSetSetting(key, value).then(load);
 
@@ -159,12 +173,28 @@ export function Focus() {
   };
 
   if (!settings) return null;
+  if (view === "stats") return <FocusStatsPanel />;
 
   const row = "group flex items-center gap-3 px-3.5 py-2.5";
   const onHover = "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100";
 
   return (
     <div className="space-y-6">
+      <button
+        id="setting-focus-stats"
+        type="button"
+        onClick={openStats}
+        className="flex w-full items-center gap-3 rounded-card border border-hairline bg-card px-3.5 py-3 text-left transition-colors hover:bg-row-hover"
+      >
+        <span className="flex-1">
+          <span className="block text-[13px] text-fg">Focus stats</span>
+          <span className="block text-[12px] text-fg/55">
+            {week === null ? "Focused time, per day and per Focus category." : `${hours(week)} focused in the last 7 days`}
+          </span>
+        </span>
+        <CaretRight weight="duotone" className="size-4 text-fg/45" />
+      </button>
+
       <Group>
         <Row id="focus-snooze" label="Snooze duration" description="How long a blocked app or site comes back for.">
           <Select

@@ -21,7 +21,6 @@ import { Calculator } from "./pages/Calculator";
 import { ClipboardHistory } from "./pages/ClipboardHistory";
 import { FileSearch } from "./pages/FileSearch";
 import { Focus } from "./pages/Focus";
-import { FocusStats } from "./pages/FocusStats";
 import { General } from "./pages/General";
 import { Keyboard } from "./pages/Keyboard";
 import { Launcher } from "./pages/Launcher";
@@ -298,16 +297,11 @@ export const PAGES: SettingsPage[] = [
       { id: "focus-hurdle-idle", label: "Keep the PC awake", keywords: ["focus", "strict", "sleep", "awake"] },
       { id: "focus-scheduled", label: "Scheduled sessions", keywords: ["focus", "schedule", "coming soon"] },
       { id: "focus-locked", label: "Locked sessions", keywords: ["focus", "locked", "strict", "coming soon"] },
-    ],
-  },
-  {
-    id: "focus-stats",
-    title: "Focus Stats",
-    tier: "feature",
-    Component: FocusStats,
-    controls: [
-      { id: "focus-stats", label: "Focus stats", keywords: ["focus", "stats", "history", "usage", "time"] },
-      { id: "focus-clear", label: "Clear Focus history", keywords: ["focus", "history", "delete", "stats"] },
+      {
+        id: "focus-stats",
+        label: "Focus stats",
+        keywords: ["focus", "stats", "history", "usage", "time", "clear history"],
+      },
     ],
   },
 ];
