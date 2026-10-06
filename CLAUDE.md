@@ -57,7 +57,7 @@ Every architectural decision is now made and none of them is open: **ADR-0026**
 amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
 ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
 
-**Six phases sit between v0.10.1 and v1.0, and the first of them is built.**
+**Seven phases sit between v0.10.1 and v1.0, and the first of them is built.**
 **v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
 (unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
 caches it off the startup path, and hands it to `probe::resolve`, to every
@@ -78,6 +78,12 @@ shims; the real npm shape still only exists on the laptop that reported it, so
 (`docs/plans/v0.15-agent-streaming.md`) moves each Agent to a live two-way
 process, t3code's chat path, for token streaming and a permission UI,
 superseding v0.8's fresh process per Turn.
+
+**v0.16 Focus is planned, not built** (`docs/plans/v0.16-focus.md`): Raycast-style
+Focus sessions that block apps and websites for a set time. Apps are quit and
+websites are caught through UI Automation on the address bar, with no network
+filtering (**ADR-0035**). Soft and Strict levels; Locked needs a service and is
+deferred (**ADR-0036**). Its verify script is written ahead of the build.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

@@ -750,6 +750,39 @@ mid-answer, or with a prompt pending — leaves no process Takyon started.
 
 ---
 
+## v0.16 — Focus
+
+**Goal:** a Focus session blocks the apps and websites you name for as long as
+you say, like Raycast Focus, with no elevation, no service, no extension and no
+network request. Plan: [`docs/plans/v0.16-focus.md`](./docs/plans/v0.16-focus.md).
+
+Independent of v0.11 to v0.15 and not a v1.0 blocker. Apps are quit through
+`WM_CLOSE` and then `TerminateProcess`; websites are caught by reading the active
+tab's address bar through UI Automation and sent to a local block page
+(**ADR-0035**). Two strictness levels, Soft and Strict, chosen per session;
+Locked needs a service and waits for its own ADR (**ADR-0036**). Windows only;
+macOS refuses in words. Planned, not built.
+
+- [ ] **Spike first:** UI Automation reads and navigates the address bar in Chrome, Edge and Firefox on this machine. Go/no-go for ADR-0035
+- [ ] `focus/` module and `focus.db`; a running session resumes at startup
+- [ ] App blocking: start sweep, foreground hook, 2 s poll, can't-block reported in words
+- [ ] Website blocking: supported-browser table, `blocked.html`, tab restore
+- [ ] Snooze, Pause, Complete, Edit; Strict friction; sleep pauses the clock
+- [ ] Strict hurdles: shutdown reason screen and idle-sleep hold, each switchable
+- [ ] Six built-in Focus categories in `categories.json`, Games filled in from Game launchers; custom ones with import and export
+- [ ] Palette Entries and the start form; `!f`, off by default
+- [ ] Floating bar that never takes focus, collapsible to the tray
+- [ ] Settings → Focus and Settings → Focus stats; Coming soon rows for Scheduled sessions and Locked
+- [ ] [`docs/verify/v0.16.md`](./docs/verify/v0.16.md) driven against a release build
+
+**Exit criteria:** a Soft session blocks Discord and youtube.com in Chrome and
+Firefox, restores the tabs when it completes, and lets Snooze and Pause through.
+A Strict session survives Task Manager and a reboot with the right time left,
+and holds shutdown behind its reason. Focus stats shows the history. No network
+request anywhere.
+
+---
+
 ## v1.0 — Ship
 
 - [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing, `tauri-plugin-updater`

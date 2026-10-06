@@ -56,3 +56,4 @@ it.
 | [`v0.10.md`](./v0.10.md) | v0.10 appearance | [`../plans/v0.10-appearance.md`](../plans/v0.10-appearance.md) |
 | [`v0.11.md`](./v0.11.md) | v0.11 PATH hydration | [`../plans/v0.11-path-hydration.md`](../plans/v0.11-path-hydration.md) |
 | [`v0.11.1.md`](./v0.11.1.md) | v0.11.1 Agent spawning | [`../plans/v0.11.1-agent-spawning.md`](../plans/v0.11.1-agent-spawning.md) |
+| [`v0.16.md`](./v0.16.md) | v0.16 Focus (written ahead of the build) | [`../plans/v0.16-focus.md`](../plans/v0.16-focus.md) |
