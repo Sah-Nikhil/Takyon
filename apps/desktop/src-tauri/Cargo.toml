@@ -66,12 +66,15 @@ aes-gcm = { version = "0.10", features = ["std"] }
 tauri = { version = "2", features = ["test"] }
 
 [target.'cfg(windows)'.dev-dependencies]
-# Authoring `.lnk` fixtures for the Recents tests. Same version and a subset of
-# the features the real dependency already asks for, so nothing extra compiles.
+# Authoring `.lnk` fixtures for the Recents tests, and finding and driving a
+# browser window in the Focus live test. Same version and a subset of the
+# features the real dependency already asks for, so nothing extra compiles.
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Com",
   "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
 ] }
 
 [target.'cfg(windows)'.dependencies]
@@ -127,6 +130,10 @@ windows = { version = "0.61", features = [
   # so session-0 services are never quit.
   "Win32_Storage_Packaging_Appx",
   "Win32_System_RemoteDesktop",
+  # UI Automation on a browser's address bar and tab strip (ADR-0035).
+  # `Variant` carries the property values UIA conditions compare against.
+  "Win32_UI_Accessibility",
+  "Win32_System_Variant",
 ] }
 
 [target.'cfg(unix)'.dependencies]
