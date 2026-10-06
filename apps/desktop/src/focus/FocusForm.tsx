@@ -11,7 +11,7 @@ import type { BlockList, FocusCategory, FocusError, FocusRefusal, PageTheme } fr
 import * as api from "@/api";
 import { Switch } from "@/settings/controls";
 import { BlockPicker } from "./BlockPicker";
-import { lengthText, presetMinutes, refusalLines } from "./format";
+import { contentsText, lengthText, presetMinutes, refusalLines } from "./format";
 import { FocusIcon } from "./icons";
 
 /** The live theme's plate, fg and accent, as `styles.css` resolved them. */
@@ -162,6 +162,23 @@ export function FocusForm({
 
         <Field label="Block">
           <BlockPicker value={list} categories={categories} onChange={setList} />
+          {list.categories.length > 0 && (
+            <dl aria-label="What the Focus categories block" className="mt-2 space-y-1 text-[12px]">
+              {list.categories.map((id) => {
+                const c = categories.find((x) => x.id === id);
+                if (!c) return null;
+                return (
+                  <div key={id} className="flex gap-2">
+                    <dt className="shrink-0 text-fg/70">{c.name}</dt>
+                    <dd className="min-w-0 truncate text-fg/50">{contentsText(c, 5)}</dd>
+                  </div>
+                );
+              })}
+            </dl>
+          )}
+          {list.categories.length > 0 && (
+            <p className="mt-1 text-[11px] text-fg/40">Change what each one holds in Settings → Focus.</p>
+          )}
           {refused.length > 0 && (
             <ul className="mt-1.5 space-y-0.5 text-[12px] text-warning" role="status" aria-label="Can't block">
               {refusalLines(refused, categories).map((line) => (

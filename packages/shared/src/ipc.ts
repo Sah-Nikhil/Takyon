@@ -732,6 +732,24 @@ export interface FocusCategory {
   dynamic?: string | null;
   copiedFrom?: string | null;
   items: FocusItem[];
+  /** Built-ins: keys the user added, also in `items`. */
+  added?: string[];
+  /** Built-ins: shipped items or detected games the user took out. */
+  removed?: FocusItem[];
+}
+
+/** `members::Member`: one thing a Focus category holds, on this machine. */
+export interface FocusMember {
+  key: string;
+  label: string;
+  kind: "site" | "app";
+  /** Apps only: found on this machine. */
+  installed: boolean;
+  icon?: string | null;
+  /** Built-ins: the user put it there. */
+  added: boolean;
+  /** Games: found through a launcher rather than listed. */
+  detected: boolean;
 }
 
 export interface FocusCategories {

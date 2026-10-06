@@ -79,3 +79,15 @@ export function refusalLines(refusals: FocusRefusal[], categories: FocusCategory
   }
   return lines;
 }
+
+/** "X, Twitter, Threads and 2 more": what a Focus category holds, in a line. */
+export function contentsText(category: FocusCategory, shown = 3): string {
+  const labels = [...new Set(category.items.map((i) => i.label))];
+  const games = category.dynamic === "games";
+  if (labels.length === 0) return games ? "Every installed game" : "Nothing yet";
+  if (games) return `${labels.join(", ")} and every installed game`;
+  const head = labels.slice(0, shown);
+  const more = labels.length - head.length;
+  if (more > 0) return `${head.join(", ")} and ${more} more`;
+  return head.length > 1 ? `${head.slice(0, -1).join(", ")} and ${head.at(-1)}` : head[0]!;
+}

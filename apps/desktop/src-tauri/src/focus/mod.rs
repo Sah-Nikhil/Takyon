@@ -9,6 +9,7 @@ pub mod categories;
 pub mod duration;
 pub mod identity;
 pub mod ipc;
+pub mod members;
 pub mod procs;
 pub mod protected;
 pub mod rules;

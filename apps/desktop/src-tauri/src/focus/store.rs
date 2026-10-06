@@ -1,4 +1,5 @@
-//! `focus.db`: sessions, their events, and custom Focus categories.
+//! `focus.db`: sessions, their events, custom Focus categories, and the
+//! user's edits to built-in ones.
 //!
 //! A running session is the row with `ended_at IS NULL`, at most one. Startup
 //! reads it and resumes enforcement; that row is what makes Strict mean
@@ -10,7 +11,7 @@ use std::sync::{Mutex, MutexGuard};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-use super::categories::{Category, Item};
+use super::categories::{Category, Edit, Item};
 use super::session::{Clock, Strictness};
 
 /// What one session blocks. Stored as JSON with `kind` reserved for the Allow
@@ -253,6 +254,7 @@ impl Store {
                 dynamic: None,
                 copied_from,
                 items: items(&conn, id),
+                ..Default::default()
             })
             .collect()
     }
@@ -301,6 +303,61 @@ impl Store {
             self.lock()?
                 .execute("DELETE FROM categories WHERE id = ?1", [n])?;
         }
+        Ok(())
+    }
+
+    /// Every edit to a built-in Focus category, oldest first.
+    pub fn builtin_edits(&self) -> Vec<Edit> {
+        let Ok(conn) = self.lock() else {
+            return Vec::new();
+        };
+        conn.prepare("SELECT category, key, label, removed FROM builtin_edits ORDER BY rowid")
+            .and_then(|mut stmt| {
+                stmt.query_map([], |r| {
+                    Ok(Edit {
+                        category: r.get(0)?,
+                        key: r.get(1)?,
+                        label: r.get(2)?,
+                        removed: r.get(3)?,
+                    })
+                })?
+                .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Add `key` to a built-in, or take it out. Undoing an edit forgets it:
+    /// re-adding a shipped item, or removing one the user had added.
+    pub fn edit_builtin(&self, edit: &Edit) -> rusqlite::Result<()> {
+        let conn = self.lock()?;
+        let was_added: bool = conn
+            .query_row(
+                "SELECT removed = 0 FROM builtin_edits WHERE category = ?1 AND key = ?2",
+                params![edit.category, edit.key],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        conn.execute(
+            "DELETE FROM builtin_edits WHERE category = ?1 AND key = ?2",
+            params![edit.category, edit.key],
+        )?;
+        let shipped = super::categories::builtins()
+            .iter()
+            .any(|c| c.id == edit.category && c.items.iter().any(|i| i.key == edit.key));
+        let undo = if edit.removed { was_added } else { shipped };
+        if !undo {
+            conn.execute(
+                "INSERT INTO builtin_edits (category, key, label, removed) VALUES (?1, ?2, ?3, ?4)",
+                params![edit.category, edit.key, edit.label, edit.removed],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Back to the shipped list.
+    pub fn reset_builtin(&self, category: &str) -> rusqlite::Result<()> {
+        self.lock()?
+            .execute("DELETE FROM builtin_edits WHERE category = ?1", [category])?;
         Ok(())
     }
 
@@ -388,5 +445,12 @@ CREATE TABLE IF NOT EXISTS category_items (
   key         TEXT    NOT NULL,
   label       TEXT    NOT NULL,
   PRIMARY KEY (category_id, key)
+);
+CREATE TABLE IF NOT EXISTS builtin_edits (
+  category    TEXT    NOT NULL,
+  key         TEXT    NOT NULL,
+  label       TEXT    NOT NULL,
+  removed     INTEGER NOT NULL,
+  PRIMARY KEY (category, key)
 );
 ";

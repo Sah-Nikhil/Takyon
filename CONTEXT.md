@@ -222,8 +222,8 @@ _Avoid_: session (bare), focus mode, timer, pomodoro, block
 
 **Focus category**:
 A named, reusable set of apps and websites, such as Social or Games. Built-in
-ones ship with Takyon and can be duplicated but not edited; custom ones belong to
-the user. Always the two words together: a Group is something else entirely.
+ones ship with Takyon; the user can add to them, take things out, and reset them
+to what shipped. Custom ones belong to the user outright. Always the two words together: a Group is something else entirely.
 _Avoid_: category (bare), group, list, tag, collection
 
 **Block list**:

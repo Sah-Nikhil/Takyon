@@ -9,7 +9,7 @@
 mod common;
 
 use common::TempDir;
-use takyon_lib::focus::categories::{Category, Item};
+use takyon_lib::focus::categories::{Category, Edit, Item};
 use takyon_lib::focus::session::{Clock, Strictness};
 use takyon_lib::focus::store::{BlockList, EventKind, Outcome, Store, StoreError};
 
@@ -166,6 +166,7 @@ fn category(id: &str, keys: &[&str]) -> Category {
                 label: k.to_string(),
             })
             .collect(),
+        ..Default::default()
     }
 }
 
@@ -189,6 +190,57 @@ fn v0_16_custom_categories_are_created_edited_and_deleted() {
 
     reopened.delete_category(&edited.id).unwrap();
     assert!(reopened.custom_categories().is_empty());
+}
+
+fn edit(key: &str, label: &str, removed: bool) -> Edit {
+    Edit {
+        category: "social".into(),
+        key: key.into(),
+        label: label.into(),
+        removed,
+    }
+}
+
+/// Edits to a built-in survive a reopen; undoing one forgets it, and Reset
+/// forgets everything.
+#[test]
+fn v0_16_edits_to_a_built_in_are_kept_restored_and_reset() {
+    let dir = TempDir::new("focus-builtin-edits");
+    let store = Store::open(Some(dir.to_owned())).unwrap();
+    store
+        .edit_builtin(&edit("exe:mastodon.exe", "Mastodon", false))
+        .unwrap();
+    store
+        .edit_builtin(&edit("site:linkedin.com", "LinkedIn", true))
+        .unwrap();
+    let reopened = Store::open(Some(dir.to_owned())).unwrap();
+    assert_eq!(
+        reopened.builtin_edits(),
+        [
+            edit("exe:mastodon.exe", "Mastodon", false),
+            edit("site:linkedin.com", "LinkedIn", true)
+        ]
+    );
+
+    reopened
+        .edit_builtin(&edit("site:linkedin.com", "LinkedIn", false))
+        .unwrap();
+    assert_eq!(
+        reopened.builtin_edits(),
+        [edit("exe:mastodon.exe", "Mastodon", false)]
+    );
+    reopened
+        .edit_builtin(&edit("exe:mastodon.exe", "Mastodon", true))
+        .unwrap();
+    assert!(
+        reopened.builtin_edits().is_empty(),
+        "an added item just goes"
+    );
+    reopened
+        .edit_builtin(&edit("site:x.com", "X", true))
+        .unwrap();
+    reopened.reset_builtin("social").unwrap();
+    assert!(reopened.builtin_edits().is_empty());
 }
 
 // --- Processes ------------------------------------------------------------

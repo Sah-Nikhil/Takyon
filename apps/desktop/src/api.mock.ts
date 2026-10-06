@@ -39,6 +39,8 @@ import type {
   FocusBangLine,
   FocusCategories,
   FocusCategory,
+  FocusItem,
+  FocusMember,
   FocusRefusal,
   FocusSettings,
   FocusSignal,
@@ -827,6 +829,37 @@ const FOCUS_BUILTINS: FocusCategory[] = [
 
 const PROTECTED = ["exe:explorer.exe", "exe:takyon.exe"];
 
+/** Apps the mock machine has: Discord and Steam, two games through Steam. */
+const FOCUS_KNOWN = [
+  { key: "exe:discord.exe", icon: "app:discord" },
+  { key: "exe:steam.exe", icon: "app:steam" },
+];
+const FOCUS_GAMES: FocusItem[] = [
+  { key: "entry:steam:730", label: "Counter-Strike 2" },
+  { key: "entry:steam:570", label: "Dota 2" },
+];
+
+/** `with_edits`, for the mock: the user's edits over the shipped list. */
+type MockEdit = { category: string; item: FocusItem; removed: boolean };
+let focusEdits: MockEdit[] = [];
+function focusBuiltins(): FocusCategory[] {
+  return FOCUS_BUILTINS.map((c) => {
+    let items = [...c.items];
+    const added: string[] = [];
+    const removed: FocusItem[] = [];
+    for (const e of focusEdits.filter((x) => x.category === c.id)) {
+      if (e.removed) {
+        items = items.filter((i) => i.key !== e.item.key);
+        removed.push(e.item);
+      } else if (!items.some((i) => i.key === e.item.key)) {
+        items.push(e.item);
+        added.push(e.item.key);
+      }
+    }
+    return { ...c, items, added, removed };
+  });
+}
+
 let focusCustom: FocusCategory[] = [];
 let nextCustom = 1;
 let focusLast: BlockList = { categories: ["social", "video"], items: ["exe:discord.exe"] };
@@ -1053,9 +1086,41 @@ const focusMock = {
     frictionAt = null;
   },
   focusCategories: async (): Promise<FocusCategories> => ({
-    builtins: FOCUS_BUILTINS,
+    builtins: focusBuiltins(),
     custom: focusCustom,
   }),
+  focusMembers: async (id: string): Promise<FocusMember[]> => {
+    const c = [...focusBuiltins(), ...focusCustom].find((x) => x.id === id);
+    if (!c) return [];
+    const out: FocusMember[] = c.items.map((i) => {
+      const known = FOCUS_KNOWN.find((k) => k.key === i.key);
+      return {
+        ...i,
+        kind: i.key.startsWith("site:") ? "site" : "app",
+        installed: Boolean(known) || i.key.startsWith("entry:"),
+        icon: known?.icon ?? null,
+        added: (c.added ?? []).includes(i.key),
+        detected: false,
+      };
+    });
+    if (c.dynamic === "games") {
+      for (const g of FOCUS_GAMES) {
+        if ((c.removed ?? []).some((r) => r.key === g.key)) continue;
+        out.push({ ...g, kind: "app", installed: true, icon: null, added: false, detected: true });
+      }
+    }
+    return out;
+  },
+  focusEditBuiltin: async (category: string, item: FocusItem, removed: boolean) => {
+    const prior = focusEdits.find((e) => e.category === category && e.item.key === item.key);
+    focusEdits = focusEdits.filter((e) => e !== prior);
+    const shipped = FOCUS_BUILTINS.find((c) => c.id === category)?.items.some((i) => i.key === item.key);
+    const undo = removed ? prior !== undefined && !prior.removed : shipped;
+    if (!undo) focusEdits.push({ category, item, removed });
+  },
+  focusResetBuiltin: async (category: string) => {
+    focusEdits = focusEdits.filter((e) => e.category !== category);
+  },
   focusSaveCategory: async (category: FocusCategory) => {
     if (!category.name.trim()) throw "A Focus category needs a name";
     const saved = { ...category, id: category.id || `custom:${nextCustom++}` };

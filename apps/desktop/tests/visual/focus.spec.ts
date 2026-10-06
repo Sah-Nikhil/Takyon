@@ -37,9 +37,12 @@ test("typing focus finds the four Focus commands", async ({ page }) => {
 test("Start Focus Session opens the form with the last Block list", async ({ page }) => {
   await openForm(page);
   await expect(page.getByRole("textbox", { name: "Duration" })).toHaveValue("45m");
-  await expect(page.getByText("Social", { exact: true })).toBeVisible();
-  await expect(page.getByText("Video & streaming", { exact: true })).toBeVisible();
+  const chips = page.getByRole("group", { name: "Block list" });
+  await expect(chips.getByText("Social", { exact: true })).toBeVisible();
+  await expect(chips.getByText("Video & streaming", { exact: true })).toBeVisible();
   await expect(page.getByText("Discord", { exact: true })).toBeVisible();
+  const holds = page.getByRole("definition");
+  await expect(holds.first()).toHaveText("X, Instagram, Reddit and TikTok");
   await expect(page).toHaveScreenshot("focus-form.png");
 });
 
@@ -153,15 +156,61 @@ test.describe("Settings", () => {
     await expect(page).toHaveScreenshot("settings-focus.png", { fullPage: true });
   });
 
-  test("a built-in Focus category duplicates into an editable one", async ({ page }) => {
+  async function openCategory(page: Page, name: string) {
     await page.goto("/?window=settings");
     await page.getByRole("button", { name: "Focus", exact: true }).click();
-    await page.getByRole("button", { name: "Duplicate" }).first().click();
+    await page.getByRole("button", { name: new RegExp(`^${name}`) }).click();
+    await expect(page.locator("main h1")).toContainText(name);
+  }
+
+  test("a Focus category's page lists its apps, installed or not, and its websites", async ({ page }) => {
+    await openCategory(page, "Messaging");
+    const apps = page.locator("section", { has: page.getByRole("heading", { name: "Apps" }) });
+    await expect(apps.getByText("Discord", { exact: true })).toBeVisible();
+    await expect(apps.getByText("Installed", { exact: true })).toHaveCount(1);
+    await expect(apps.getByText("Not installed")).toHaveCount(2);
+    await expect(page).toHaveScreenshot("settings-focus-category.png", { fullPage: true });
+  });
+
+  test("a built-in takes additions and removals, and Reset undoes both", async ({ page }) => {
+    await openCategory(page, "Messaging");
+    const adder = page.getByRole("textbox", { name: "Add apps or websites" });
+    await adder.fill("teams.microsoft.com");
+    await adder.press("Enter");
+    const sites = page.locator("section", { has: page.getByRole("heading", { name: "Websites" }) });
+    await expect(sites.getByText("teams.microsoft.com").first()).toBeVisible();
+    await expect(sites.getByText("Added")).toBeVisible();
+    await page.getByRole("button", { name: "Remove Slack" }).click();
+    const out = page.locator("section", { has: page.getByRole("heading", { name: "Taken out" }) });
+    await expect(out.getByText("Slack")).toBeVisible();
+    await expect(page).toHaveScreenshot("settings-focus-category-edited.png", { fullPage: true });
+    await out.getByRole("button", { name: "Put back" }).click();
+    await expect(page.getByRole("button", { name: "Remove Slack" })).toBeAttached();
+    await page.getByRole("button", { name: "Reset to default" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Reset to default" }).click();
+    await expect(page.getByText("teams.microsoft.com")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reset to default" })).toHaveCount(0);
+  });
+
+  test("Games lists the games launchers found, and one can be taken out", async ({ page }) => {
+    await openCategory(page, "Games");
+    const games = page.locator("section", { has: page.getByRole("heading", { name: "Installed games" }) });
+    await expect(games.getByText("Counter-Strike 2")).toBeVisible();
+    await page.getByRole("button", { name: "Remove Dota 2" }).click();
+    await expect(games.getByText("Dota 2")).toHaveCount(0);
+    await expect(page.getByText("Taken out")).toBeVisible();
+  });
+
+  test("a built-in duplicates into a custom one with a name to edit", async ({ page }) => {
+    await openCategory(page, "Social");
+    await page.getByRole("button", { name: "Duplicate" }).click();
     const name = page.getByRole("textbox", { name: "Focus category name" });
     await expect(name).toHaveValue("Social (copy)");
-    await page.getByRole("button", { name: "Save Focus category" }).click();
-    await expect(page.getByText("Social (copy)")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
+    await name.fill("Doomscrolling");
+    await name.press("Enter");
+    await expect(page.locator("main h1")).toContainText("Doomscrolling");
+    await page.locator("main h1").getByRole("button", { name: "Focus" }).click();
+    await expect(page.getByRole("button", { name: /^Doomscrolling/ })).toBeVisible();
   });
 
   test("Focus stats opens as Focus / Stats and draws the line, total and breakdown", async ({ page }) => {

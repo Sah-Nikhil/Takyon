@@ -45,7 +45,14 @@ impl Rules {
             let Some(category) = found else { continue };
             wanted.extend(category.items.iter().map(|i| i.key.clone()));
             if category.dynamic.as_deref() == Some("games") {
-                wanted.extend(machine.games.iter().map(|g| format!("entry:{g}")));
+                let taken_out = |key: &String| category.removed.iter().any(|r| &r.key == key);
+                wanted.extend(
+                    machine
+                        .games
+                        .iter()
+                        .map(|g| format!("entry:{g}"))
+                        .filter(|key| !taken_out(key)),
+                );
             }
         }
         wanted.extend(list.items.iter().cloned());
@@ -207,6 +214,7 @@ mod tests {
                     label: (*k).into(),
                 })
                 .collect(),
+            ..Default::default()
         }
     }
 
@@ -269,6 +277,32 @@ mod tests {
             items: vec![],
         });
         assert_eq!(keys(&rules), ["entry:steam:730", "exe:steam.exe"]);
+    }
+
+    /// A detected game the user took out of Games stays playable.
+    #[test]
+    fn v0_16_a_game_taken_out_of_games_is_not_blocked() {
+        let mut games = cat("games", &["exe:steam.exe"]);
+        games.removed.push(Item {
+            key: "entry:steam:730".into(),
+            label: "Counter-Strike 2".into(),
+        });
+        let ids = ["steam:730".to_string()];
+        let machine = Machine {
+            builtins: &[games],
+            custom: &[],
+            games: &ids,
+            game_dir: &steam,
+            takyon_dir: Path::new(r"D:\Takyon"),
+        };
+        let (rules, _) = Rules::build(
+            &BlockList {
+                categories: vec!["games".into()],
+                items: vec![],
+            },
+            &machine,
+        );
+        assert_eq!(keys(&rules), ["exe:steam.exe"]);
     }
 
     #[test]

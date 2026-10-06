@@ -10,8 +10,9 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
-use super::categories::{builtins, schema_error, Category};
+use super::categories::{builtins, schema_error, Category, Edit, Item};
 use super::duration::{self, DurationError};
+use super::members::{members, Known, Member};
 use super::rules::Refusal;
 use super::runtime::{now_ms, Signal};
 use super::service::{FocusError, View};
@@ -19,7 +20,9 @@ use super::session::Strictness;
 use super::settings::{themed_page, PageTheme};
 use super::store::BlockList;
 use super::Focus;
+use crate::entry::LaunchTarget;
 use crate::prefs::{self, Prefs};
+use crate::sources::apps::{AppOrigin, AppSource};
 
 pub const EVENT_FOCUS: &str = "takyon://focus";
 
@@ -217,9 +220,83 @@ pub struct Categories {
 #[tauri::command]
 pub fn focus_categories(focus: State<'_, Arc<Focus>>) -> Categories {
     Categories {
-        builtins: builtins().to_vec(),
+        builtins: focus.builtins(),
         custom: focus.store().custom_categories(),
     }
+}
+
+/// What one Focus category holds on this machine, for its Settings page.
+#[tauri::command]
+pub fn focus_members(
+    id: String,
+    focus: State<'_, Arc<Focus>>,
+    apps: State<'_, Arc<AppSource>>,
+) -> Vec<Member> {
+    let Some(category) = focus
+        .builtins()
+        .into_iter()
+        .chain(focus.store().custom_categories())
+        .find(|c| c.id == id)
+    else {
+        return Vec::new();
+    };
+    members(&category, &known(&apps))
+}
+
+/// The apps Source's list, reduced for [`members`].
+fn known(apps: &AppSource) -> Vec<Known> {
+    apps.all()
+        .into_iter()
+        .map(|a| Known {
+            id: a.id.0,
+            title: a.title,
+            exe: match &a.target {
+                LaunchTarget::Exe { path, .. } => {
+                    path.file_name().map(|n| n.to_string_lossy().to_lowercase())
+                }
+                _ => None,
+            },
+            aumid: match &a.target {
+                LaunchTarget::Aumid(aumid) => Some(aumid.clone()),
+                _ => None,
+            },
+            game: a.origin == AppOrigin::Game,
+            icon: a.icon.map(|i| i.0),
+        })
+        .collect()
+}
+
+/// Add to or take out of a built-in Focus category.
+#[tauri::command]
+pub fn focus_edit_builtin(
+    category: String,
+    item: Item,
+    removed: bool,
+    focus: State<'_, Arc<Focus>>,
+) -> Result<(), String> {
+    if !builtins().iter().any(|c| c.id == category) {
+        return Err(format!("No built-in Focus category {category}"));
+    }
+    if let Some(problem) = custom_item_error(&item.key) {
+        return Err(problem);
+    }
+    focus
+        .store()
+        .edit_builtin(&Edit {
+            category,
+            key: item.key,
+            label: item.label,
+            removed,
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn focus_reset_builtin(category: String, focus: State<'_, Arc<Focus>>) -> Result<(), String> {
+    focus
+        .store()
+        .reset_builtin(&category)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

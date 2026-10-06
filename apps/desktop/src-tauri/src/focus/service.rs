@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 
-use super::categories::builtins;
+use super::categories::{builtins, with_edits, Category};
 use super::duration::DurationError;
 use super::identity::Process;
 use super::procs::Running;
@@ -164,7 +164,13 @@ impl Focus {
         }
     }
 
+    /// Built-in Focus categories with the user's edits laid over them.
+    pub fn builtins(&self) -> Vec<Category> {
+        with_edits(builtins(), &self.store.builtin_edits())
+    }
+
     fn rules(&self, list: &BlockList) -> (Rules, Vec<String>) {
+        let builtins = self.builtins();
         let custom = self.store.custom_categories();
         let games = self.machine.games();
         let ids: Vec<String> = games.iter().map(|(id, _)| id.clone()).collect();
@@ -177,7 +183,7 @@ impl Focus {
         };
         let takyon_dir = self.machine.takyon_dir();
         let machine = RulesMachine {
-            builtins: builtins(),
+            builtins: &builtins,
             custom: &custom,
             games: &ids,
             game_dir: &game_dir,
@@ -568,6 +574,44 @@ mod tests {
             ]
         );
         assert!(focus.preview(&list(&["exe:slack.exe"])).is_empty());
+    }
+
+    /// An app the user added to a built-in is blocked with it.
+    #[test]
+    fn v0_16_a_built_in_blocks_what_the_user_added_to_it() {
+        let focus = focus();
+        focus
+            .store()
+            .edit_builtin(&super::super::categories::Edit {
+                category: "social".into(),
+                key: "exe:mastodon.exe".into(),
+                label: "Mastodon".into(),
+                removed: false,
+            })
+            .unwrap();
+        let list = BlockList {
+            categories: vec!["social".into()],
+            items: vec![],
+        };
+        focus.start("x", MIN, Strictness::Soft, &list, T0).unwrap();
+        let mastodon = Running {
+            pid: 3,
+            process: Process {
+                image: r"C:\Mastodon\Mastodon.exe".into(),
+                session_id: 1,
+                ..Default::default()
+            },
+        };
+        let quit = focus.with_active(|a| {
+            a.rules.to_quit(
+                &[mastodon],
+                &mut a.snoozes,
+                None,
+                T0,
+                std::path::Path::new(r"D:\Takyon"),
+            )
+        });
+        assert_eq!(quit.unwrap(), [(3, "exe:mastodon.exe".to_string())]);
     }
 
     #[test]

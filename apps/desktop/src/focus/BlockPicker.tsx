@@ -3,7 +3,8 @@
  *
  * Suggestions are Focus categories, applications (from the ordinary Bangless
  * query, apps only) and a last "Block website" row once the text looks like a
- * domain. Raycast's shape (its Focus form, 2026).
+ * domain. Raycast's shape (its Focus form, 2026). With `onPick`, it is only an
+ * adder: picks go to the caller and no chips are drawn (a category's page).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import { LinkSimple, X } from "@phosphor-icons/react";
 import type { BlockList, Entry, FocusCategory } from "@takyon/shared";
 import * as api from "@/api";
 import { FocusIcon } from "./icons";
-import { keyLabel } from "./format";
+import { contentsText, keyLabel } from "./format";
 
 type Suggestion =
   | { kind: "category"; category: FocusCategory }
@@ -28,10 +29,14 @@ export function BlockPicker({
   value,
   categories,
   onChange,
+  onPick,
+  placeholder = "Apps, websites, Focus categories…",
 }: {
   value: BlockList;
   categories: FocusCategory[];
-  onChange: (next: BlockList) => void;
+  onChange?: (next: BlockList) => void;
+  onPick?: (key: string, label: string) => void;
+  placeholder?: string;
 }) {
   const [text, setText] = useState("");
   // Keyed by the query that produced them, so a stale or short query shows none.
@@ -67,15 +72,20 @@ export function BlockPicker({
 
 
   const add = (s: Suggestion) => {
-    if (s.kind === "category") onChange({ ...value, categories: [...value.categories, s.category.id] });
-    if (s.kind === "app") onChange({ ...value, items: [...value.items, `entry:${s.entry.id}`] });
-    if (s.kind === "site") onChange({ ...value, items: [...value.items, `site:${s.domain}`] });
     setText("");
+    if (onPick) {
+      if (s.kind === "app") onPick(`entry:${s.entry.id}`, s.entry.title);
+      if (s.kind === "site") onPick(`site:${s.domain}`, s.domain);
+      return;
+    }
+    if (s.kind === "category") onChange?.({ ...value, categories: [...value.categories, s.category.id] });
+    if (s.kind === "app") onChange?.({ ...value, items: [...value.items, `entry:${s.entry.id}`] });
+    if (s.kind === "site") onChange?.({ ...value, items: [...value.items, `site:${s.domain}`] });
   };
 
   const removeCategory = (id: string) =>
-    onChange({ ...value, categories: value.categories.filter((c) => c !== id) });
-  const removeItem = (key: string) => onChange({ ...value, items: value.items.filter((k) => k !== key) });
+    onChange?.({ ...value, categories: value.categories.filter((c) => c !== id) });
+  const removeItem = (key: string) => onChange?.({ ...value, items: value.items.filter((k) => k !== key) });
 
   // Labels for app chips picked this session; later reads fall back to the key.
   const [appTitles, setAppTitles] = useState<Record<string, string>>({});
@@ -89,6 +99,8 @@ export function BlockPicker({
   return (
     <div className="relative">
       <div
+        role="group"
+        aria-label="Block list"
         className={`flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border bg-control/40 px-2 py-1.5 ${
           open ? "border-accent/60" : "border-edge"
         }`}
@@ -96,7 +108,7 @@ export function BlockPicker({
         {value.categories.map((id) => {
           const c = categories.find((x) => x.id === id);
           return (
-            <span key={id} className={chip}>
+            <span key={id} className={chip} title={c ? contentsText(c, 12) : undefined}>
               <FocusIcon name={c?.icon} className="size-4 text-accent" />
               {c?.name ?? id}
               <button type="button" aria-label={`Remove ${c?.name ?? id}`} onClick={() => removeCategory(id)} className="grid size-5 place-items-center rounded text-fg/50 hover:bg-row-selected hover:text-fg">
@@ -116,8 +128,8 @@ export function BlockPicker({
         ))}
         <input
           value={text}
-          aria-label="Add apps, websites or Focus categories"
-          placeholder={value.categories.length + value.items.length ? "" : "Apps, websites, Focus categories…"}
+          aria-label={onPick ? "Add apps or websites" : "Add apps, websites or Focus categories"}
+          placeholder={value.categories.length + value.items.length ? "" : placeholder}
           onChange={(e) => {
             setText(e.target.value);
             setActive(0);
@@ -171,8 +183,8 @@ export function BlockPicker({
               {s.kind === "category" && (
                 <>
                   <FocusIcon name={s.category.icon} className="size-4 text-accent" />
-                  <span className="flex-1 truncate">{s.category.name}</span>
-                  <span className="text-[11px] text-fg/50">Focus category</span>
+                  <span className="shrink-0">{s.category.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-right text-[11px] text-fg/50">{contentsText(s.category)}</span>
                 </>
               )}
               {s.kind === "app" && (

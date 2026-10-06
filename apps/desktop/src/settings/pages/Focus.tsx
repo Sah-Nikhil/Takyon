@@ -2,19 +2,20 @@
  * Settings → Focus (v0.16): session preferences, Strict hurdles, Focus
  * categories. Raycast's shape: one line per setting, a dropdown on the right,
  * row actions on hover. Coming soon is static text, never a disabled control
- * (`pages.ts`). Stats is a sub-view, "Focus / Stats", opened from the top row.
+ * (`pages.ts`). Stats and each Focus category are sub-views: "Focus / Stats",
+ * "Focus / Social".
  */
 
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CaretRight } from "@phosphor-icons/react";
 import type { FocusCategory, FocusSettings } from "@takyon/shared";
 import * as api from "@/api";
-import { BlockPicker } from "@/focus/BlockPicker";
-import { FocusIcon, PICKABLE_ICONS } from "@/focus/icons";
-import { keyLabel } from "@/focus/format";
+import { FocusIcon } from "@/focus/icons";
+import { contentsText } from "@/focus/format";
 import { Select } from "@/components/Select";
 import { Group, Row, Switch } from "../controls";
 import { CrumbContext } from "../crumb";
+import { FocusCategoryPanel } from "./FocusCategoryPanel";
 import { FocusStatsPanel, hours } from "./FocusStats";
 
 const SNOOZE = [
@@ -39,84 +40,14 @@ const SURFACE = [
 const small =
   "rounded-control px-2.5 py-1 text-[12.5px] text-fg/80 transition-colors hover:bg-row-hover hover:text-fg";
 
-function Editor({
-  draft,
-  onChange,
-  onSave,
-  onCancel,
-  error,
-}: {
-  draft: FocusCategory;
-  onChange: (c: FocusCategory) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  error: string | null;
-}) {
-  return (
-    <div className="space-y-3 px-3.5 py-3">
-      <div className="flex items-center gap-2">
-        <input
-          autoFocus
-          value={draft.name}
-          aria-label="Focus category name"
-          placeholder="Name"
-          onChange={(e) => onChange({ ...draft, name: e.target.value })}
-          className="w-56 rounded-control bg-control px-2.5 py-1 text-[13px] text-fg outline-none placeholder:text-fg/46"
-        />
-        <div role="radiogroup" aria-label="Icon" className="flex flex-wrap gap-0.5">
-          {PICKABLE_ICONS.map((icon) => (
-            <button
-              key={icon}
-              type="button"
-              role="radio"
-              aria-checked={draft.icon === icon}
-              aria-label={icon}
-              onClick={() => onChange({ ...draft, icon })}
-              className={`grid size-7 place-items-center rounded-control ${
-                draft.icon === icon ? "bg-plate ring-1 ring-accent/45" : "hover:bg-row-hover"
-              }`}
-            >
-              <FocusIcon name={icon} className="size-4 text-accent" />
-            </button>
-          ))}
-        </div>
-      </div>
-      <BlockPicker
-        value={{ categories: [], items: draft.items.map((i) => i.key) }}
-        categories={[]}
-        onChange={(list) =>
-          onChange({
-            ...draft,
-            items: list.items.map((key) => draft.items.find((i) => i.key === key) ?? { key, label: keyLabel(key, []) }),
-          })
-        }
-      />
-      {error && (
-        <p className="text-[12.5px] text-warning" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="flex justify-end gap-2">
-        <button type="button" className={small} onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="button" className={`${small} bg-control`} onClick={onSave}>
-          Save Focus category
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function Focus() {
   const [settings, setSettings] = useState<FocusSettings | null>(null);
   const [builtins, setBuiltins] = useState<FocusCategory[]>([]);
   const [custom, setCustom] = useState<FocusCategory[]>([]);
-  const [draft, setDraft] = useState<FocusCategory | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<"main" | "stats">("main");
+  /** `main`, `stats`, or a Focus category's id. */
+  const [view, setView] = useState("main");
   const [week, setWeek] = useState<number | null>(null);
   const setCrumb = useContext(CrumbContext);
 
@@ -132,24 +63,27 @@ export function Focus() {
     void api.focusStats(7).then((s) => setWeek(s.focusedMs));
   }, []);
 
+  const back = () => {
+    setView("main");
+    setCrumb(null);
+    load();
+  };
   const openStats = () => {
     setView("stats");
-    setCrumb({ label: "Stats", back: () => (setView("main"), setCrumb(null)) });
+    setCrumb({ label: "Stats", back });
+  };
+  const openCategory = (c: FocusCategory) => {
+    setView(c.id);
+    setCrumb({ label: c.name, back });
+  };
+  const newCategory = () => {
+    const names = new Set(custom.map((c) => c.name));
+    let name = "New Focus category";
+    for (let n = 2; names.has(name); n++) name = `New Focus category (${n})`;
+    void api.focusSaveCategory({ id: "", name, icon: "Target", items: [] }).then(openCategory);
   };
 
   const set = (key: string, value: string) => void api.focusSetSetting(key, value).then(load);
-
-  const save = () => {
-    if (!draft) return;
-    api.focusSaveCategory(draft).then(
-      () => {
-        setDraft(null);
-        setError(null);
-        load();
-      },
-      (e) => setError(String(e)),
-    );
-  };
 
   const exportAll = () => {
     void api.focusExportCategories([]).then((json) => {
@@ -174,9 +108,19 @@ export function Focus() {
 
   if (!settings) return null;
   if (view === "stats") return <FocusStatsPanel />;
+  if (view !== "main")
+    return (
+      <FocusCategoryPanel
+        key={view}
+        id={view}
+        onOpen={openCategory}
+        onGone={back}
+        onRename={(label) => setCrumb({ label, back })}
+      />
+    );
 
-  const row = "group flex items-center gap-3 px-3.5 py-2.5";
-  const onHover = "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100";
+  const row =
+    "flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-row-hover focus-visible:bg-row-hover";
 
   return (
     <div className="space-y-6">
@@ -235,7 +179,7 @@ export function Focus() {
         <div className="mb-2 flex items-center gap-1 px-1">
           <h2 className="flex-1 text-[13px] font-medium text-fg/60">Focus categories</h2>
           {note && <span className="mr-2 text-[12px] text-fg/60">{note}</span>}
-          <button type="button" className={small} onClick={() => setDraft({ id: "", name: "", icon: "Target", items: [] })}>
+          <button type="button" className={small} onClick={newCategory}>
             New
           </button>
           <button type="button" className={small} onClick={() => file.current?.click()}>
@@ -258,42 +202,14 @@ export function Focus() {
           />
         </div>
         <div className="divide-y divide-hairline overflow-hidden rounded-card border border-hairline bg-card">
-          {draft && draft.id === "" && (
-            <Editor draft={draft} onChange={setDraft} onSave={save} onCancel={() => setDraft(null)} error={error} />
-          )}
-          {custom.map((c) =>
-            draft?.id === c.id ? (
-              <Editor key={c.id} draft={draft} onChange={setDraft} onSave={save} onCancel={() => setDraft(null)} error={error} />
-            ) : (
-              <div key={c.id} className={row}>
-                <FocusIcon name={c.icon} className="size-4 text-accent" />
-                <span className="text-[13px] text-fg">{c.name}</span>
-                <span className="flex-1 truncate text-[12px] text-fg/50">{c.items.length} apps and sites</span>
-                <button type="button" className={`${small} ${onHover}`} onClick={() => setDraft(c)}>
-                  Edit
-                </button>
-                <button type="button" className={`${small} ${onHover}`} onClick={() => void api.focusDeleteCategory(c.id).then(load)}>
-                  Delete
-                </button>
-              </div>
-            ),
-          )}
-          {builtins.map((c) => (
-            <div key={c.id} className={row}>
-              <FocusIcon name={c.icon} className="size-4 text-accent" />
-              <span className="text-[13px] text-fg">{c.name}</span>
-              <span className="flex-1 truncate text-[12px] text-fg/50">
-                {c.dynamic === "games" ? "Installed games and launchers" : `${c.items.length} apps and sites`}
-              </span>
-              <button
-                type="button"
-                className={`${small} ${onHover}`}
-                onClick={() => setDraft({ ...c, id: "", name: `${c.name} (copy)`, dynamic: null, copiedFrom: c.id })}
-              >
-                Duplicate
-              </button>
-              <span className="w-14 text-right text-[11px] text-fg/40">Built in</span>
-            </div>
+          {[...custom, ...builtins].map((c) => (
+            <button key={c.id} type="button" className={row} onClick={() => openCategory(c)}>
+              <FocusIcon name={c.icon} className="size-4 shrink-0 text-accent" />
+              <span className="shrink-0 text-[13px] text-fg">{c.name}</span>
+              <span className="min-w-0 flex-1 truncate text-[12px] text-fg/50">{contentsText(c, 4)}</span>
+              {!c.id.startsWith("custom:") && <span className="shrink-0 text-[11px] text-fg/40">Built in</span>}
+              <CaretRight weight="duotone" className="size-3.5 shrink-0 text-fg/40" />
+            </button>
           ))}
         </div>
       </section>

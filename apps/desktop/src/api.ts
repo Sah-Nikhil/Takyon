@@ -34,6 +34,8 @@ import {
   type FocusBangLine,
   type FocusCategories,
   type FocusCategory,
+  type FocusItem,
+  type FocusMember,
   type FocusRefusal,
   type FocusSettings,
   type FocusSignal,
@@ -655,6 +657,19 @@ export const focusResetFriction = () =>
 
 export const focusCategories = () =>
   inTauri ? invoke<FocusCategories>("focus_categories") : mock.focusCategories();
+
+/** A Focus category's items marked installed or not, plus Games' detected games. */
+export const focusMembers = (id: string) =>
+  inTauri ? invoke<FocusMember[]>("focus_members", { id }) : mock.focusMembers(id);
+
+/** Add to (`removed: false`) or take out of a built-in Focus category. */
+export const focusEditBuiltin = (category: string, item: FocusItem, removed: boolean) =>
+  inTauri
+    ? invoke<void>("focus_edit_builtin", { category, item, removed })
+    : mock.focusEditBuiltin(category, item, removed);
+
+export const focusResetBuiltin = (category: string) =>
+  inTauri ? invoke<void>("focus_reset_builtin", { category }) : mock.focusResetBuiltin(category);
 
 export const focusSaveCategory = (category: FocusCategory) =>
   inTauri

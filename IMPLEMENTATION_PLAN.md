@@ -386,6 +386,7 @@ CREATE TABLE sessions (
 CREATE TABLE session_events (session_id, at, kind, target);  -- blocked|snoozed|paused|resumed|refused
 CREATE TABLE categories (id INTEGER PRIMARY KEY, name, icon, copied_from);
 CREATE TABLE category_items (category_id, key, label, PRIMARY KEY (category_id, key));
+CREATE TABLE builtin_edits (category, key, label, removed, PRIMARY KEY (category, key));
 ```
 
 The running session is the row with `ended_at IS NULL`, read in deferred init
@@ -393,7 +394,8 @@ behind the hotkey and resumed (`focus::service`). The clock is stored whole so a
 restart resumes Pauses and sleep exactly. History is kept until cleared; nothing
 in it is secret in ADR-0008's sense. Preferences are `focus.*` keys in
 `settings.db`. Built-in Focus categories are not stored: `categories.json` is
-compiled in.
+compiled in, and `builtin_edits` holds only the user's additions and removals,
+laid over it by `categories::with_edits`.
 
 ---
 
@@ -678,7 +680,9 @@ visual layer (TBC-0007).
 `endsAt`, not a ticking value, so every surface counts down locally. Durations
 and stats take the frontend's local time (`localMsOfDay`, UTC offset): Rust holds
 no timezone logic. Contract checks for `FocusView`, `FocusSettings` and
-`FocusStats` live beside the structs.
+`FocusStats` live beside the structs. `focus_preview` returns `Refusal`s and is
+async: it walks the process table and the registry. `focus_members` resolves a
+Focus category against the apps Source for its Settings page.
 
 ---
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { FocusCategory } from "@takyon/shared";
-import { clock, keyLabel, presetMinutes, refusalLines } from "./format";
+import { clock, contentsText, keyLabel, presetMinutes, refusalLines } from "./format";
 
 describe("clock", () => {
   test("minutes and seconds under an hour", () => {
@@ -59,5 +59,30 @@ describe("refusalLines", () => {
   });
   test("nothing refused, no lines", () => {
     expect(refusalLines([], [])).toEqual([]);
+  });
+});
+
+describe("contentsText", () => {
+  const c = (labels: string[], dynamic: string | null = null): FocusCategory => ({
+    id: "x",
+    name: "X",
+    icon: "Star",
+    dynamic,
+    items: labels.map((label, i) => ({ key: `site:s${i}.com`, label })),
+  });
+  test("names the first few, once each, and counts the rest", () => {
+    expect(contentsText(c(["X", "Twitter", "Threads", "Threads", "Reddit", "TikTok"]))).toBe(
+      "X, Twitter, Threads and 2 more",
+    );
+  });
+  test("a short list is named whole", () => {
+    expect(contentsText(c(["YouTube", "YouTube"]))).toBe("YouTube");
+    expect(contentsText(c(["A", "B"]))).toBe("A and B");
+  });
+  test("Games says installed games come with it", () => {
+    expect(contentsText(c(["Steam"], "games"))).toBe("Steam and every installed game");
+  });
+  test("empty says so", () => {
+    expect(contentsText(c([]))).toBe("Nothing yet");
   });
 });
