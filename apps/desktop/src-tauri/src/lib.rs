@@ -20,6 +20,7 @@ pub mod com;
 pub mod crashlog;
 pub mod entry;
 pub mod firstrun;
+pub mod focus;
 pub mod frecency;
 pub mod hotkey;
 pub mod icons;
