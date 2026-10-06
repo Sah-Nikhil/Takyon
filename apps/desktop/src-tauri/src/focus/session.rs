@@ -140,6 +140,15 @@ impl Clock {
         self.ends_at(now).saturating_sub(now)
     }
 
+    /// Time actually focused by `end`: elapsed less every Pause, at most the
+    /// planned length (a late tick never adds focus that did not happen).
+    pub fn focused_ms(&self, end: u64) -> u64 {
+        let elapsed = end
+            .saturating_sub(self.started_ms)
+            .saturating_sub(self.paused_total(end));
+        elapsed.min(self.planned_ms)
+    }
+
     pub fn is_over(&self, now: u64) -> bool {
         self.remaining(now) == 0
     }

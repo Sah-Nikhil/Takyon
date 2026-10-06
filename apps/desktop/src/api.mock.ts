@@ -42,6 +42,7 @@ import type {
   FocusSettings,
   FocusSignal,
   FocusStartRequest,
+  FocusStats,
   FocusView,
 } from "@takyon/shared";
 
@@ -909,6 +910,54 @@ function mockDuration(text: string): number {
   return ms;
 }
 
+let focusHistoryCleared = false;
+
+/**
+ * A believable fortnight, fixed rather than random so screenshots are stable.
+ * Minutes per day, oldest first; the page clock is pinned by the fixture.
+ */
+const STATS_MINUTES = [0, 95, 140, 60, 0, 25, 180, 120, 75, 0, 210, 45, 160, 90];
+
+function mockStats(days: number): FocusStats {
+  if (focusHistoryCleared) {
+    return { focusedMs: 0, sessions: 0, fullLength: 0, endedEarly: 0, strict: 0, blocks: 0, snoozes: 0, days: [], categories: [], blocked: [] };
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const list = Array.from({ length: days }, (_, i) => {
+    const minutes = STATS_MINUTES[(STATS_MINUTES.length - days + i + STATS_MINUTES.length * 7) % STATS_MINUTES.length] ?? 0;
+    return {
+      start: today.getTime() - (days - 1 - i) * 86_400_000,
+      focusedMs: minutes * MIN,
+      sessions: minutes ? Math.ceil(minutes / 50) : 0,
+      blocks: Math.round(minutes / 9),
+    };
+  });
+  const focusedMs = list.reduce((a, d) => a + d.focusedMs, 0);
+  const sessions = list.reduce((a, d) => a + d.sessions, 0);
+  return {
+    focusedMs,
+    sessions,
+    fullLength: Math.round(sessions * 0.7),
+    endedEarly: sessions - Math.round(sessions * 0.7),
+    strict: Math.round(sessions * 0.3),
+    blocks: list.reduce((a, d) => a + d.blocks, 0),
+    snoozes: Math.round(sessions / 3),
+    days: list,
+    categories: [
+      { id: "social", focusedMs: Math.round(focusedMs * 0.8) },
+      { id: "video", focusedMs: Math.round(focusedMs * 0.55) },
+      { id: "messaging", focusedMs: Math.round(focusedMs * 0.3) },
+    ],
+    blocked: [
+      { key: "site:youtube.com", count: 41 },
+      { key: "exe:discord.exe", count: 27 },
+      { key: "site:x.com", count: 19 },
+      { key: "site:reddit.com", count: 8 },
+    ],
+  };
+}
+
 const focusMock = {
   focusParseDuration: async (text: string) => mockDuration(text),
   focusParseBang: async (line: string): Promise<FocusBangLine> => {
@@ -1033,7 +1082,10 @@ const focusMock = {
       focusPrefs.hurdleShutdown = value as FocusSettings["hurdleShutdown"];
     if (k === "hurdle_idle") focusPrefs.hurdleIdle = value as FocusSettings["hurdleIdle"];
   },
-  focusClearHistory: async () => {},
+  focusClearHistory: async () => {
+    focusHistoryCleared = true;
+  },
+  focusStats: async (days: number): Promise<FocusStats> => mockStats(days),
   onFocus: (cb: (signal: FocusSignal) => void) => {
     focusListeners.add(cb);
     return () => {

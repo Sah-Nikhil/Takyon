@@ -17,6 +17,7 @@ pub mod service;
 pub mod session;
 pub mod settings;
 pub mod site;
+pub mod stats;
 pub mod store;
 
 use std::path::PathBuf;

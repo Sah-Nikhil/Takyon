@@ -37,6 +37,7 @@ import {
   type FocusSettings,
   type FocusSignal,
   type FocusStartRequest,
+  type FocusStats,
   type FocusView,
   type AliasRow,
   type AppAliasRow,
@@ -690,3 +691,9 @@ export function onFocus(cb: (signal: FocusSignal) => void): () => void {
     void p.then((un) => un());
   };
 }
+
+/** Focus stats over the last `days` local days; days bucket by this clock. */
+export const focusStats = (days: number) =>
+  inTauri
+    ? invoke<FocusStats>("focus_stats", { days, utcOffsetMin: -new Date().getTimezoneOffset() })
+    : mock.focusStats(days);

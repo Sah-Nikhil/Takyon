@@ -761,3 +761,20 @@ export interface FocusStartRequest {
   list: BlockList;
   theme?: PageTheme;
 }
+
+/** `stats::Stats`: Focus over a range of local days. */
+export interface FocusStats {
+  focusedMs: number;
+  sessions: number;
+  fullLength: number;
+  endedEarly: number;
+  strict: number;
+  blocks: number;
+  snoozes: number;
+  /** One per day in the range, oldest first, zeros included. */
+  days: { start: number; focusedMs: number; sessions: number; blocks: number }[];
+  /** Focus category ids by focused time with them blocked, most first. */
+  categories: { id: string; focusedMs: number }[];
+  /** Block list keys by times blocked, most first, at most ten. */
+  blocked: { key: string; count: number }[];
+}

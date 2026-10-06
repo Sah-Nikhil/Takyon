@@ -374,3 +374,23 @@ pub fn focus_set_setting(
 pub fn focus_clear_history(focus: State<'_, Arc<Focus>>) -> Result<(), String> {
     focus.store().clear_history().map_err(|e| e.to_string())
 }
+
+/// Focus stats over the last `days` local days. `utc_offset_min`: minutes east
+/// of UTC, as the frontend's clock says (`-getTimezoneOffset()`).
+#[tauri::command]
+pub fn focus_stats(
+    days: u32,
+    utc_offset_min: i32,
+    focus: State<'_, Arc<Focus>>,
+) -> super::stats::Stats {
+    let now = now_ms();
+    let since = now.saturating_sub(u64::from(days + 1) * 86_400_000);
+    let store = focus.store();
+    super::stats::compute(
+        &store.history(since),
+        &store.events(since),
+        now,
+        days,
+        utc_offset_min,
+    )
+}
