@@ -4,4 +4,5 @@
 //! ADR-0036. Terms from `CONTEXT.md` §Focus.
 
 pub mod duration;
+pub mod session;
 pub mod site;
