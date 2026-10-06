@@ -5,12 +5,12 @@
 
 use std::sync::OnceLock;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::site::domain_of;
 
 /// One Focus category.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Category {
     pub id: String,
     pub name: String,
@@ -19,10 +19,13 @@ pub struct Category {
     /// `games`: items plus every installed game, resolved at session start.
     #[serde(default)]
     pub dynamic: Option<String>,
+    /// Built-in id this custom category was duplicated from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copied_from: Option<String>,
     pub items: Vec<Item>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Item {
     /// `site:`, `exe:` or `package:`; never `entry:`, whose paths are per machine.
     pub key: String,

@@ -3,10 +3,12 @@
 //! Times are wall-clock ms since the Unix epoch, passed in by the caller. A
 //! session ends at start + planned length + every Pause, sleep included.
 
+use serde::{Deserialize, Serialize};
+
 use super::duration::{DurationError, MAX_MS};
 
-/// A session's clock.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A session's clock. Serialised whole into focus.db.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Clock {
     started_ms: u64,
     planned_ms: u64,
@@ -18,7 +20,7 @@ pub struct Clock {
 }
 
 /// The Pause in force. `until` None = open-ended (sleep, or no break length).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Pause {
     since: u64,
     until: Option<u64>,
@@ -33,6 +35,14 @@ impl Clock {
             pause: None,
             asleep: None,
         }
+    }
+
+    pub fn started_at(&self) -> u64 {
+        self.started_ms
+    }
+
+    pub fn planned_ms(&self) -> u64 {
+        self.planned_ms
     }
 
     /// Stop the clock. `break_ms` ends it by itself; None waits for [`resume`].
@@ -141,7 +151,8 @@ impl Clock {
 }
 
 /// How hard a session is to leave early (ADR-0036).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Strictness {
     Soft,
     Strict,
@@ -390,6 +401,22 @@ mod tests {
         friction.reset();
         assert!(!friction.is_ready(T0 + 60_000));
         assert_eq!(friction.remaining(T0 + 60_000), None);
+    }
+
+    /// focus.db stores the clock as JSON; a restart must resume it exactly.
+    #[test]
+    fn v0_16_a_clock_survives_a_round_trip_through_json() {
+        let mut clock = Clock::start(T0, 30 * MIN);
+        clock.pause(T0 + 5 * MIN, Some(5 * MIN));
+        clock.sleep(T0 + 7 * MIN);
+        let json = serde_json::to_string(&clock).unwrap();
+        let back: Clock = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, clock);
+        assert_eq!((back.started_at(), back.planned_ms()), (T0, 30 * MIN));
+        assert_eq!(
+            serde_json::to_string(&Strictness::Strict).unwrap(),
+            "\"strict\""
+        );
     }
 
     /// Pause while paused keeps the first; resume while running does nothing.

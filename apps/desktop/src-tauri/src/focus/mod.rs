@@ -9,3 +9,4 @@ pub mod identity;
 pub mod protected;
 pub mod session;
 pub mod site;
+pub mod store;
