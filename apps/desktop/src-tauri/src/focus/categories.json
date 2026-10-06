@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "id": "social",
+      "name": "Social",
+      "icon": "UsersThree",
+      "items": [
+        { "key": "site:x.com", "label": "X" },
+        { "key": "site:twitter.com", "label": "Twitter" },
+        { "key": "site:instagram.com", "label": "Instagram" },
+        { "key": "site:facebook.com", "label": "Facebook" },
+        { "key": "site:reddit.com", "label": "Reddit" },
+        { "key": "site:tiktok.com", "label": "TikTok" },
+        { "key": "site:threads.net", "label": "Threads" },
+        { "key": "site:threads.com", "label": "Threads" },
+        { "key": "site:bsky.app", "label": "Bluesky" },
+        { "key": "site:linkedin.com", "label": "LinkedIn" },
+        { "key": "site:pinterest.com", "label": "Pinterest" },
+        { "key": "site:snapchat.com", "label": "Snapchat" },
+        { "key": "exe:instagram.exe", "label": "Instagram" },
+        { "key": "exe:tiktok.exe", "label": "TikTok" }
+      ]
+    },
+    {
+      "id": "messaging",
+      "name": "Messaging",
+      "icon": "ChatsCircle",
+      "items": [
+        { "key": "exe:discord.exe", "label": "Discord" },
+        { "key": "site:discord.com", "label": "Discord" },
+        { "key": "exe:slack.exe", "label": "Slack" },
+        { "key": "site:slack.com", "label": "Slack" },
+        { "key": "exe:whatsapp.exe", "label": "WhatsApp" },
+        { "key": "package:5319275a.whatsappdesktop_cv1g1gvanyjgm", "label": "WhatsApp" },
+        { "key": "site:web.whatsapp.com", "label": "WhatsApp Web" },
+        { "key": "exe:telegram.exe", "label": "Telegram" },
+        { "key": "package:telegrammessengerllp.telegramdesktop_t4vj0pshhgkwm", "label": "Telegram" },
+        { "key": "site:web.telegram.org", "label": "Telegram Web" },
+        { "key": "exe:signal.exe", "label": "Signal" },
+        { "key": "exe:messenger.exe", "label": "Messenger" },
+        { "key": "site:messenger.com", "label": "Messenger" },
+        { "key": "exe:ms-teams.exe", "label": "Microsoft Teams" }
+      ]
+    },
+    {
+      "id": "video",
+      "name": "Video & streaming",
+      "icon": "PlayCircle",
+      "items": [
+        { "key": "site:youtube.com", "label": "YouTube" },
+        { "key": "site:youtu.be", "label": "YouTube" },
+        { "key": "site:netflix.com", "label": "Netflix" },
+        { "key": "package:4df9e0f8.netflix_mcm4njqhnhss8", "label": "Netflix" },
+        { "key": "site:twitch.tv", "label": "Twitch" },
+        { "key": "site:primevideo.com", "label": "Prime Video" },
+        { "key": "site:disneyplus.com", "label": "Disney+" },
+        { "key": "site:hulu.com", "label": "Hulu" },
+        { "key": "site:max.com", "label": "Max" },
+        { "key": "site:crunchyroll.com", "label": "Crunchyroll" },
+        { "key": "site:hotstar.com", "label": "JioHotstar" },
+        { "key": "site:jiocinema.com", "label": "JioCinema" }
+      ]
+    },
+    {
+      "id": "news",
+      "name": "News",
+      "icon": "Newspaper",
+      "items": [
+        { "key": "site:news.google.com", "label": "Google News" },
+        { "key": "site:bbc.com", "label": "BBC" },
+        { "key": "site:bbc.co.uk", "label": "BBC" },
+        { "key": "site:nytimes.com", "label": "The New York Times" },
+        { "key": "site:theguardian.com", "label": "The Guardian" },
+        { "key": "site:reuters.com", "label": "Reuters" },
+        { "key": "site:news.ycombinator.com", "label": "Hacker News" },
+        { "key": "site:msn.com", "label": "MSN" }
+      ]
+    },
+    {
+      "id": "shopping",
+      "name": "Shopping",
+      "icon": "ShoppingBag",
+      "items": [
+        { "key": "site:amazon.com", "label": "Amazon" },
+        { "key": "site:amazon.in", "label": "Amazon India" },
+        { "key": "site:amazon.co.uk", "label": "Amazon UK" },
+        { "key": "site:ebay.com", "label": "eBay" },
+        { "key": "site:aliexpress.com", "label": "AliExpress" },
+        { "key": "site:flipkart.com", "label": "Flipkart" },
+        { "key": "site:myntra.com", "label": "Myntra" },
+        { "key": "site:etsy.com", "label": "Etsy" },
+        { "key": "site:temu.com", "label": "Temu" }
+      ]
+    },
+    {
+      "id": "games",
+      "name": "Games",
+      "icon": "GameController",
+      "dynamic": "games",
+      "items": [
+        { "key": "exe:steam.exe", "label": "Steam" },
+        { "key": "exe:epicgameslauncher.exe", "label": "Epic Games Launcher" },
+        { "key": "exe:galaxyclient.exe", "label": "GOG Galaxy" },
+        { "key": "exe:battle.net.exe", "label": "Battle.net" },
+        { "key": "exe:eadesktop.exe", "label": "EA app" },
+        { "key": "exe:ubisoftconnect.exe", "label": "Ubisoft Connect" },
+        { "key": "exe:riotclientservices.exe", "label": "Riot Client" }
+      ]
+    }
+  ]
+}
