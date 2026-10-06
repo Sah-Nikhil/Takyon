@@ -3,8 +3,11 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
+
+use super::browser::engine_of;
 use super::categories::Category;
-use super::identity::{resolve, Process, Target};
+use super::identity::{norm, resolve, Process, Target};
 use super::procs::Running;
 use super::protected::{is_protected, refuses};
 use super::session::Snoozes;
@@ -109,6 +112,80 @@ impl Rules {
     pub fn is_empty(&self) -> bool {
         self.apps.is_empty() && self.sites.is_empty()
     }
+
+    /// What a session would fail at on this machine right now, for the start
+    /// form. `can_quit`: false for a process above Takyon's integrity level,
+    /// which UIPI also shuts out of UI Automation. `browsers`: registered
+    /// browser images with their display names.
+    pub fn refusals(
+        &self,
+        procs: &[Running],
+        can_quit: &dyn Fn(u32) -> bool,
+        browsers: &[(PathBuf, String)],
+    ) -> Vec<Refusal> {
+        let mut out = Vec::new();
+        for r in procs {
+            if let Some(key) = self.app_key(&r.process) {
+                if !out
+                    .iter()
+                    .any(|o| matches!(o, Refusal::Elevated { key: k, .. } if k == key))
+                    && !can_quit(r.pid)
+                {
+                    out.push(Refusal::Elevated {
+                        key: key.to_string(),
+                        name: stem(&r.process.image),
+                    });
+                }
+            }
+        }
+        if self.sites.is_empty() {
+            return out;
+        }
+        for r in procs {
+            let image = norm(&r.process.image);
+            let registered = browsers.iter().find(|(exe, _)| norm(exe) == image);
+            let supported = engine_of(&r.process.image).is_some();
+            let refusal = match (registered, supported) {
+                (Some((_, name)), false) => Refusal::Browser {
+                    name: name.clone(),
+                    elevated: false,
+                },
+                (_, true) if !can_quit(r.pid) => Refusal::Browser {
+                    name: registered.map_or_else(|| stem(&r.process.image), |(_, n)| n.clone()),
+                    elevated: true,
+                },
+                _ => continue,
+            };
+            if !out.contains(&refusal) {
+                out.push(refusal);
+            }
+        }
+        out
+    }
+}
+
+/// Why the start form cannot promise part of a Block list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
+pub enum Refusal {
+    /// Part of Windows or Takyon itself.
+    Protected { key: String },
+    /// Running as administrator: Takyon can neither close nor read it.
+    Elevated { key: String, name: String },
+    /// A running browser whose address bar Focus cannot read.
+    Browser { name: String, elevated: bool },
+}
+
+/// `Discord` from `D:\Discord\Discord.exe`.
+fn stem(image: &Path) -> String {
+    image
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -295,6 +372,61 @@ mod tests {
         );
         snoozes.snooze("site:youtube.com", T0, 60_000);
         assert_eq!(rules.site_block("youtube.com", &mut snoozes, T0 + 1), None);
+    }
+
+    fn browser(exe: &str, name: &str) -> (PathBuf, String) {
+        (PathBuf::from(exe), name.to_string())
+    }
+
+    /// The start form names what a running session would fail at, before it starts.
+    #[test]
+    fn v0_16_running_elevated_apps_and_unreadable_browsers_are_refused_up_front() {
+        let (rules, _) = build(BlockList {
+            categories: vec![],
+            items: vec!["exe:discord.exe".into(), "site:youtube.com".into()],
+        });
+        let procs = [
+            running(10, r"D:\Discord\Discord.exe", 1),
+            running(11, r"D:\Discord\Discord.exe", 1),
+            running(20, r"C:\Opera GX\opera_gx.exe", 1),
+            running(30, r"C:\Chrome\chrome.exe", 1),
+            running(40, r"C:\Edge\msedge.exe", 1),
+            running(50, r"C:\Tools\notepad.exe", 1),
+        ];
+        let browsers = [
+            browser(r"C:\Opera GX\opera_gx.exe", "Opera GX"),
+            browser(r"C:\Chrome\chrome.exe", "Google Chrome"),
+            browser(r"C:\Edge\msedge.exe", "Microsoft Edge"),
+        ];
+        let elevated = |pid: u32| pid == 11 || pid == 30 || pid == 50;
+        assert_eq!(
+            rules.refusals(&procs, &|pid| !elevated(pid), &browsers),
+            [
+                Refusal::Elevated {
+                    key: "exe:discord.exe".into(),
+                    name: "Discord".into()
+                },
+                Refusal::Browser {
+                    name: "Opera GX".into(),
+                    elevated: false
+                },
+                Refusal::Browser {
+                    name: "Google Chrome".into(),
+                    elevated: true
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn v0_16_browsers_are_only_a_refusal_when_the_list_has_sites() {
+        let (rules, _) = build(BlockList {
+            categories: vec![],
+            items: vec!["exe:discord.exe".into()],
+        });
+        let procs = [running(20, r"C:\Opera GX\opera_gx.exe", 1)];
+        let browsers = [browser(r"C:\Opera GX\opera_gx.exe", "Opera GX")];
+        assert!(rules.refusals(&procs, &|_| true, &browsers).is_empty());
     }
 
     #[test]

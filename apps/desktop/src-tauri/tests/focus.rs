@@ -308,3 +308,39 @@ fn v0_16_quitting_a_process_that_is_gone_says_so() {
     child.wait().unwrap();
     assert_eq!(procs::quit(pid, Duration::from_millis(200)), Quit::Gone);
 }
+
+/// The start form's elevation probe: our own child can be closed, a service
+/// running as SYSTEM in session 0 cannot.
+#[test]
+fn v0_16_can_quit_tells_our_processes_from_ones_above_us() {
+    let child = Spawned(
+        Command::new("ping.exe")
+            .args(["-n", "30", "127.0.0.1"])
+            .spawn()
+            .unwrap(),
+    );
+    assert!(procs::can_quit(child.0.id()));
+    let services: Vec<u32> = procs::snapshot()
+        .into_iter()
+        .filter(|r| r.process.session_id == 0)
+        .map(|r| r.pid)
+        .collect();
+    assert!(
+        services.is_empty() || services.iter().any(|&pid| !procs::can_quit(pid)),
+        "every session 0 process was quittable"
+    );
+}
+
+/// Machine-dependent: shape only. Every entry an absolute `.exe` with a name.
+#[test]
+fn v0_16_registered_browsers_read_from_the_registry() {
+    for (exe, name) in takyon_lib::focus::browser::registered() {
+        assert!(exe.is_absolute(), "{exe:?}");
+        assert!(
+            exe.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("exe")),
+            "{exe:?}"
+        );
+        assert!(!name.trim().is_empty(), "{exe:?}");
+    }
+}

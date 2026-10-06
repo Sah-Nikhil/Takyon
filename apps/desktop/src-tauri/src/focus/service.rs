@@ -12,7 +12,8 @@ use serde::Serialize;
 use super::categories::builtins;
 use super::duration::DurationError;
 use super::identity::Process;
-use super::rules::{Machine as RulesMachine, Rules};
+use super::procs::Running;
+use super::rules::{Machine as RulesMachine, Refusal, Rules};
 use super::session::{Clock, Friction, Snoozes, Strictness};
 use super::store::{BlockList, EventKind, Outcome, Session, Store, StoreError};
 
@@ -22,6 +23,12 @@ pub trait Machine: Send + Sync {
     fn games(&self) -> Vec<(String, Option<PathBuf>)>;
     /// Takyon's install directory; never blocked.
     fn takyon_dir(&self) -> PathBuf;
+    /// Processes running now, for the start form's refusals.
+    fn running(&self) -> Vec<Running>;
+    /// False for a process Takyon cannot close: run as administrator.
+    fn can_quit(&self, pid: u32) -> bool;
+    /// Registered browsers' images and display names.
+    fn browsers(&self) -> Vec<(PathBuf, String)>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -179,9 +186,20 @@ impl Focus {
         Rules::build(list, &machine)
     }
 
-    /// Keys the start form should list as refused, before starting.
-    pub fn preview(&self, list: &BlockList) -> Vec<String> {
-        self.rules(list).1
+    /// What the start form should list as refused, before starting: keys
+    /// Focus never touches, then what is running beyond its reach.
+    pub fn preview(&self, list: &BlockList) -> Vec<Refusal> {
+        let (rules, protected) = self.rules(list);
+        let mut out: Vec<Refusal> = protected
+            .into_iter()
+            .map(|key| Refusal::Protected { key })
+            .collect();
+        if !rules.is_empty() {
+            let browsers = self.machine.browsers();
+            let can_quit = |pid| self.machine.can_quit(pid);
+            out.extend(rules.refusals(&self.machine.running(), &can_quit, &browsers));
+        }
+        out
     }
 
     pub fn start(
@@ -379,7 +397,6 @@ fn view_of(active: Option<&Active>, now: u64) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::focus::procs::Running;
 
     const MIN: u64 = 60_000;
     const T0: u64 = 1_760_000_000_000;
@@ -395,6 +412,23 @@ mod tests {
         }
         fn takyon_dir(&self) -> PathBuf {
             PathBuf::from(r"D:\Takyon")
+        }
+        fn running(&self) -> Vec<Running> {
+            let elevated = |image: &str| Running {
+                pid: 7,
+                process: Process {
+                    image: image.into(),
+                    session_id: 1,
+                    ..Default::default()
+                },
+            };
+            vec![elevated(r"D:\Discord\Discord.exe")]
+        }
+        fn can_quit(&self, pid: u32) -> bool {
+            pid != 7
+        }
+        fn browsers(&self) -> Vec<(PathBuf, String)> {
+            Vec::new()
         }
     }
 
@@ -516,6 +550,24 @@ mod tests {
                 T0,
             )
             .unwrap();
+    }
+
+    #[test]
+    fn v0_16_the_preview_names_protected_keys_then_what_runs_elevated() {
+        let focus = focus();
+        assert_eq!(
+            focus.preview(&list(&["exe:explorer.exe", "exe:discord.exe"])),
+            [
+                Refusal::Protected {
+                    key: "exe:explorer.exe".into()
+                },
+                Refusal::Elevated {
+                    key: "exe:discord.exe".into(),
+                    name: "Discord".into()
+                }
+            ]
+        );
+        assert!(focus.preview(&list(&["exe:slack.exe"])).is_empty());
     }
 
     #[test]

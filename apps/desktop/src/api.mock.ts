@@ -39,6 +39,7 @@ import type {
   FocusBangLine,
   FocusCategories,
   FocusCategory,
+  FocusRefusal,
   FocusSettings,
   FocusSignal,
   FocusStartRequest,
@@ -848,6 +849,8 @@ const IDLE_VIEW: FocusView = {
   refused: [],
 };
 let focusNow: FocusView = IDLE_VIEW;
+/** `?refusals=1`: Discord runs as administrator and Opera GX is open. */
+let focusRefusals = false;
 let frictionAt: number | null = null;
 
 function emitFocus(signal: FocusSignal) {
@@ -875,12 +878,13 @@ function frictionReady() {
   return !focusNow.strict || (frictionAt !== null && Date.now() - frictionAt >= 30_000);
 }
 
-/** `?focus=running|strict|paused`: a session under way; `?focusbang=1`: `!f` on. */
+/** `?focus=running|strict|paused`: a session under way; `?focusbang=1`: `!f` on; `?refusals=1`. */
 (() => {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
   // `?focusbang=1`: `!f` switched on, as Settings would leave it.
   if (params.get("focusbang") === "1") focusPrefs.bang = true;
+  focusRefusals = params.get("refusals") === "1";
   const mode = params.get("focus");
   if (mode !== "running" && mode !== "strict" && mode !== "paused") return;
   const remainingMs = 23 * MIN + 41_000;
@@ -973,7 +977,16 @@ const focusMock = {
     }
   },
   focusView: async () => focusTick(),
-  focusPreview: async (list: BlockList) => list.items.filter((k) => PROTECTED.includes(k)),
+  focusPreview: async (list: BlockList): Promise<FocusRefusal[]> => {
+    const out: FocusRefusal[] = list.items
+      .filter((k) => PROTECTED.includes(k))
+      .map((key) => ({ kind: "protected", key }));
+    if (!focusRefusals) return out;
+    if (list.items.includes("exe:discord.exe")) out.push({ kind: "elevated", key: "exe:discord.exe", name: "Discord" });
+    const sites = list.categories.length > 0 || list.items.some((k) => k.startsWith("site:"));
+    if (sites) out.push({ kind: "browser", name: "Opera GX", elevated: false });
+    return out;
+  },
   focusStart: async (request: FocusStartRequest) => {
     if (focusNow.running) throw { kind: "alreadyRunning" };
     const items = request.list.items.filter((k) => !PROTECTED.includes(k));

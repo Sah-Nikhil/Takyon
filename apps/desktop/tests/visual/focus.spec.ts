@@ -17,8 +17,8 @@ async function open(page: Page, query = "") {
   return page.getByPlaceholder("Search");
 }
 
-async function openForm(page: Page) {
-  const input = await open(page);
+async function openForm(page: Page, query = "") {
+  const input = await open(page, query);
   await input.fill("focus");
   await page.getByRole("option", { name: /Start Focus Session/ }).click();
   await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
@@ -51,6 +51,14 @@ test("a typed website is offered and added to the Block list", async ({ page }) 
   await expect(page).toHaveScreenshot("focus-form-site.png");
   await picker.press("Enter");
   await expect(page.getByText("nytimes.com", { exact: true })).toBeVisible();
+});
+
+test("the form names what is running out of Focus's reach before starting", async ({ page }) => {
+  await openForm(page, "&refusals=1");
+  const refused = page.getByRole("status", { name: "Can't block" });
+  await expect(refused).toContainText("Can't block Discord while it runs as administrator.");
+  await expect(refused).toContainText("Can't block sites in Opera GX: Focus can't read its address bar.");
+  await expect(page).toHaveScreenshot("focus-form-refusals.png");
 });
 
 test("a duration that is not one says why", async ({ page }) => {

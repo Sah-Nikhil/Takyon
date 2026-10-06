@@ -7,11 +7,11 @@
  */
 
 import { useEffect, useState } from "react";
-import type { BlockList, FocusCategory, FocusError, PageTheme } from "@takyon/shared";
+import type { BlockList, FocusCategory, FocusError, FocusRefusal, PageTheme } from "@takyon/shared";
 import * as api from "@/api";
 import { Switch } from "@/settings/controls";
 import { BlockPicker } from "./BlockPicker";
-import { keyLabel, lengthText, presetMinutes } from "./format";
+import { lengthText, presetMinutes, refusalLines } from "./format";
 import { FocusIcon } from "./icons";
 
 /** The live theme's plate, fg and accent, as `styles.css` resolved them. */
@@ -67,7 +67,7 @@ export function FocusForm({
   const [durationError, setDurationError] = useState<string | null>(null);
   const [list, setList] = useState<BlockList>({ categories: [], items: [] });
   const [strict, setStrict] = useState(false);
-  const [refused, setRefused] = useState<string[]>([]);
+  const [refused, setRefused] = useState<FocusRefusal[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -86,8 +86,16 @@ export function FocusForm({
     };
   }, [duration]);
 
+  // Re-asked every 5 s: closing an elevated app or a browser clears its line.
   useEffect(() => {
-    void api.focusPreview(list).then(setRefused);
+    let live = true;
+    const ask = () => void api.focusPreview(list).then((r) => live && setRefused(r));
+    ask();
+    const timer = setInterval(ask, 5_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
   }, [list]);
 
   const empty = list.categories.length + list.items.length === 0;
@@ -155,9 +163,11 @@ export function FocusForm({
         <Field label="Block">
           <BlockPicker value={list} categories={categories} onChange={setList} />
           {refused.length > 0 && (
-            <p className="mt-1.5 text-[12px] text-warning" role="status">
-              Can't block {refused.map((k) => keyLabel(k, categories)).join(", ")}: part of Windows or Takyon itself.
-            </p>
+            <ul className="mt-1.5 space-y-0.5 text-[12px] text-warning" role="status" aria-label="Can't block">
+              {refusalLines(refused, categories).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
           )}
         </Field>
 

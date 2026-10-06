@@ -711,6 +711,12 @@ export type FocusError =
   | { kind: "duration"; reason: string }
   | { kind: "storage"; reason: string };
 
+/** `rules::Refusal`: what the start form says Focus cannot do, before it starts. */
+export type FocusRefusal =
+  | { kind: "protected"; key: string }
+  | { kind: "elevated"; key: string; name: string }
+  | { kind: "browser"; name: string; elevated: boolean };
+
 export interface FocusItem {
   key: string;
   label: string;

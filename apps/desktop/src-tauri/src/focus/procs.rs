@@ -48,6 +48,12 @@ pub fn quit(pid: u32, grace: Duration) -> Quit {
     imp::quit(pid, grace)
 }
 
+/// Could [`quit`] end `pid`? False above Takyon's integrity level (run as
+/// administrator), which is also what shuts UI Automation out (UIPI).
+pub fn can_quit(pid: u32) -> bool {
+    imp::can_quit(pid)
+}
+
 #[cfg(windows)]
 mod imp {
     use std::path::PathBuf;
@@ -187,6 +193,14 @@ mod imp {
         search.found
     }
 
+    pub fn can_quit(pid: u32) -> bool {
+        unsafe {
+            OpenProcess(PROCESS_TERMINATE, false, pid)
+                .map(Handle)
+                .is_ok()
+        }
+    }
+
     pub fn quit(pid: u32, grace: Duration) -> Quit {
         unsafe {
             let h = match OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, false, pid) {
@@ -240,5 +254,9 @@ mod imp {
 
     pub fn quit(_: u32, _: Duration) -> Quit {
         Quit::Denied
+    }
+
+    pub fn can_quit(_: u32) -> bool {
+        false
     }
 }

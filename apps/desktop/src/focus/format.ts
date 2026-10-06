@@ -1,6 +1,6 @@
 /** Focus text helpers. Pure, so `bun test` covers them without a DOM. */
 
-import type { FocusCategory } from "@takyon/shared";
+import type { FocusCategory, FocusRefusal } from "@takyon/shared";
 
 /** Duration chips on the start form. */
 export const presetMinutes = [25, 45, 60, 120];
@@ -58,4 +58,24 @@ export function keyLabel(key: string, categories: FocusCategory[]): string {
     default:
       return key;
   }
+}
+
+/** The start form's refusals, one sentence each; protected keys share one. */
+export function refusalLines(refusals: FocusRefusal[], categories: FocusCategory[]): string[] {
+  const protectedKeys = refusals.flatMap((r) => (r.kind === "protected" ? [keyLabel(r.key, categories)] : []));
+  const lines = protectedKeys.length
+    ? [`Can't block ${protectedKeys.join(", ")}: part of Windows or Takyon itself.`]
+    : [];
+  for (const r of refusals) {
+    if (r.kind === "elevated") {
+      lines.push(`Can't block ${r.name} while it runs as administrator. Reopen it normally first.`);
+    } else if (r.kind === "browser") {
+      lines.push(
+        r.elevated
+          ? `Can't block sites in ${r.name} while it runs as administrator.`
+          : `Can't block sites in ${r.name}: Focus can't read its address bar.`,
+      );
+    }
+  }
+  return lines;
 }

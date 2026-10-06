@@ -48,4 +48,16 @@ impl service::Machine for ThisMachine {
             .and_then(|p| p.parent().map(PathBuf::from))
             .unwrap_or_default()
     }
+
+    fn running(&self) -> Vec<procs::Running> {
+        procs::snapshot()
+    }
+
+    fn can_quit(&self, pid: u32) -> bool {
+        procs::can_quit(pid)
+    }
+
+    fn browsers(&self) -> Vec<(PathBuf, String)> {
+        browser::registered()
+    }
 }

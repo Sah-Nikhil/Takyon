@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use super::categories::{builtins, schema_error, Category};
 use super::duration::{self, DurationError};
+use super::rules::Refusal;
 use super::runtime::{now_ms, Signal};
 use super::service::{FocusError, View};
 use super::session::Strictness;
@@ -79,9 +80,10 @@ pub fn focus_view(focus: State<'_, Arc<Focus>>) -> View {
     focus.view(now_ms())
 }
 
-/// Keys the start form lists as refused, before starting.
-#[tauri::command]
-pub fn focus_preview(list: BlockList, focus: State<'_, Arc<Focus>>) -> Vec<String> {
+/// What the start form lists as refused, before starting. Async: it walks
+/// the process table and the registry, never on the main thread.
+#[tauri::command(async)]
+pub fn focus_preview(list: BlockList, focus: State<'_, Arc<Focus>>) -> Vec<Refusal> {
     focus.preview(&list)
 }
 

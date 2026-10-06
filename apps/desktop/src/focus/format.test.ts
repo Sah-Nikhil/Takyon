@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { FocusCategory } from "@takyon/shared";
-import { clock, keyLabel, presetMinutes } from "./format";
+import { clock, keyLabel, presetMinutes, refusalLines } from "./format";
 
 describe("clock", () => {
   test("minutes and seconds under an hour", () => {
@@ -35,4 +35,29 @@ describe("keyLabel", () => {
 
 test("presets cover a sprint to a long block", () => {
   expect(presetMinutes).toEqual([25, 45, 60, 120]);
+});
+
+describe("refusalLines", () => {
+  test("protected keys share one line; each other refusal gets its own", () => {
+    expect(
+      refusalLines(
+        [
+          { kind: "protected", key: "exe:explorer.exe" },
+          { kind: "protected", key: "exe:takyon.exe" },
+          { kind: "elevated", key: "exe:discord.exe", name: "Discord" },
+          { kind: "browser", name: "Opera GX", elevated: false },
+          { kind: "browser", name: "Google Chrome", elevated: true },
+        ],
+        [],
+      ),
+    ).toEqual([
+      "Can't block explorer, takyon: part of Windows or Takyon itself.",
+      "Can't block Discord while it runs as administrator. Reopen it normally first.",
+      "Can't block sites in Opera GX: Focus can't read its address bar.",
+      "Can't block sites in Google Chrome while it runs as administrator.",
+    ]);
+  });
+  test("nothing refused, no lines", () => {
+    expect(refusalLines([], [])).toEqual([]);
+  });
 });

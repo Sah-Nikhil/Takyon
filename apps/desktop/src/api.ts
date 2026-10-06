@@ -34,6 +34,7 @@ import {
   type FocusBangLine,
   type FocusCategories,
   type FocusCategory,
+  type FocusRefusal,
   type FocusSettings,
   type FocusSignal,
   type FocusStartRequest,
@@ -624,7 +625,7 @@ export const focusView = () =>
 
 /** Keys on `list` that Focus will refuse, for the start form. */
 export const focusPreview = (list: BlockList) =>
-  inTauri ? invoke<string[]>("focus_preview", { list }) : mock.focusPreview(list);
+  inTauri ? invoke<FocusRefusal[]>("focus_preview", { list }) : mock.focusPreview(list);
 
 /** Rejects with a `FocusError`. */
 export const focusStart = (request: FocusStartRequest) =>

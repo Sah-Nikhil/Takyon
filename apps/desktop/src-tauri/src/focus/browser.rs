@@ -4,7 +4,7 @@
 //! `AutomationId` `urlbar-input` (spike result). Run on an MTA thread; the
 //! shell walk's `ComScope` is apartment-threaded and wrong for this.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Which address-bar lookup a browser takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -292,9 +292,118 @@ mod uia {
     }
 }
 
+/// The executable an `open\command` value runs: quoted or bare, args dropped.
+pub fn exe_of_command(command: &str) -> Option<PathBuf> {
+    let c = command.trim();
+    let exe = match c.strip_prefix('"') {
+        Some(rest) => rest.split('"').next()?,
+        None => {
+            let end = c.to_ascii_lowercase().find(".exe")? + 4;
+            &c[..end]
+        }
+    };
+    (!exe.is_empty()).then(|| PathBuf::from(exe))
+}
+
+/// Every browser registered under `StartMenuInternet` (machine, then user),
+/// as image and display name: how Windows' own default-browser list knows them.
+#[cfg(windows)]
+pub fn registered() -> Vec<(PathBuf, String)> {
+    use windows::core::{HSTRING, PCWSTR, PWSTR};
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER,
+        HKEY_LOCAL_MACHINE, KEY_READ, RRF_RT_REG_SZ,
+    };
+
+    fn read(root: HKEY, path: &str) -> Option<String> {
+        let mut buf = [0u16; 1024];
+        let mut size = (buf.len() * 2) as u32;
+        let got = unsafe {
+            RegGetValueW(
+                root,
+                &HSTRING::from(path),
+                PCWSTR::null(),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buf.as_mut_ptr().cast()),
+                Some(&mut size),
+            )
+        };
+        (got == ERROR_SUCCESS).then(|| {
+            let n = (size as usize / 2).saturating_sub(1);
+            String::from_utf16_lossy(&buf[..n])
+        })
+    }
+
+    let mut out: Vec<(PathBuf, String)> = Vec::new();
+    for root in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
+        let base = r"SOFTWARE\Clients\StartMenuInternet";
+        let mut key = HKEY::default();
+        if unsafe { RegOpenKeyExW(root, &HSTRING::from(base), None, KEY_READ, &mut key) }
+            != ERROR_SUCCESS
+        {
+            continue;
+        }
+        for i in 0.. {
+            let mut name = [0u16; 256];
+            let mut len = name.len() as u32;
+            let got = unsafe {
+                RegEnumKeyExW(
+                    key,
+                    i,
+                    Some(PWSTR(name.as_mut_ptr())),
+                    &mut len,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            };
+            if got != ERROR_SUCCESS {
+                break;
+            }
+            let sub = format!(
+                r"{base}\{}",
+                String::from_utf16_lossy(&name[..len as usize])
+            );
+            let exe =
+                read(root, &format!(r"{sub}\shell\open\command")).and_then(|c| exe_of_command(&c));
+            if let (Some(exe), Some(display)) = (exe, read(root, &sub)) {
+                if !out.iter().any(|(e, _)| e == &exe) {
+                    out.push((exe, display));
+                }
+            }
+        }
+        unsafe {
+            let _ = RegCloseKey(key);
+        }
+    }
+    out
+}
+
+#[cfg(not(windows))]
+pub fn registered() -> Vec<(PathBuf, String)> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v0_16_a_browser_command_line_gives_its_executable() {
+        assert_eq!(
+            exe_of_command(r#""C:\Program Files\Opera GX\opera_gx.exe" --single-argument %1"#),
+            Some(PathBuf::from(r"C:\Program Files\Opera GX\opera_gx.exe"))
+        );
+        assert_eq!(
+            exe_of_command(r"C:\Tools\Mini Browser\mini.exe %1"),
+            Some(PathBuf::from(r"C:\Tools\Mini Browser\mini.exe"))
+        );
+        assert_eq!(exe_of_command(""), None);
+        assert_eq!(exe_of_command("rundll32 url.dll"), None);
+    }
 
     #[test]
     fn v0_16_supported_browsers_are_known_by_image_name() {
