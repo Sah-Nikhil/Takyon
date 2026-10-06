@@ -134,6 +134,10 @@ windows = { version = "0.61", features = [
   # `Variant` carries the property values UIA conditions compare against.
   "Win32_UI_Accessibility",
   "Win32_System_Variant",
+  # Focus hurdles: `SetThreadExecutionState` holds idle sleep off, and
+  # `ShutdownBlockReasonCreate` names the session on the shutdown screen.
+  "Win32_System_Power",
+  "Win32_System_Shutdown",
 ] }
 
 [target.'cfg(unix)'.dependencies]

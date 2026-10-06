@@ -138,6 +138,31 @@ pub const DEFAULT_THEME: &str = "vela";
 /// The Palette's shape: `"compact"` (default) or `"expanded"`.
 pub const WINDOW_MODE: &str = "ui.window-mode";
 
+/// Snooze length in minutes for Soft Focus sessions; `"0"` = No Snooze.
+/// Absent = 3, Raycast's default. Read by `focus::settings::snooze_ms`.
+pub const FOCUS_SNOOZE: &str = "focus.snooze_minutes";
+
+/// Reopen apps Focus quit when the session ends. `"1"`/`"0"`, default off.
+pub const FOCUS_RESTORE_APPS: &str = "focus.restore_apps";
+
+/// Running-session indicator: `"bar"` (default) or `"tray"`.
+pub const FOCUS_SURFACE: &str = "focus.surface";
+
+/// Floating bar position, `"x,y"` in physical pixels. Absent = top centre.
+pub const FOCUS_BAR_POSITION: &str = "focus.bar_position";
+
+/// Whether `!f` starts sessions. `"1"`/`"0"`, **default off**.
+pub const FOCUS_BANG: &str = "focus.bang";
+
+/// When shutdown is held during a session: `strict` (default), `always`, `never`.
+pub const FOCUS_HURDLE_SHUTDOWN: &str = "focus.hurdle_shutdown";
+
+/// When idle sleep is held off during a session. Same values as above.
+pub const FOCUS_HURDLE_IDLE: &str = "focus.hurdle_idle";
+
+/// Last Block list started, JSON. The form's default and `!f`'s list.
+pub const FOCUS_LAST_LIST: &str = "focus.last_list";
+
 /// Whether tapping the Windows key opens the Palette (v0.10). Default off.
 ///
 /// Not an accelerator: the Windows key is a modifier, so this arms a

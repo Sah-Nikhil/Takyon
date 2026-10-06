@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use super::categories::builtins;
 use super::duration::DurationError;
+use super::identity::Process;
 use super::rules::{Machine as RulesMachine, Rules};
 use super::session::{Clock, Friction, Snoozes, Strictness};
 use super::store::{BlockList, EventKind, Outcome, Session, Store, StoreError};
@@ -93,27 +94,45 @@ pub struct Active {
     pub refused: Vec<String>,
     pub snoozes: Snoozes,
     pub friction: Friction,
+    /// Apps Focus quit, deduped by image, for Restore Terminated Apps.
+    pub quit: Vec<Process>,
 }
 
 pub struct Focus {
     store: Store,
     machine: Box<dyn Machine>,
     live: Mutex<Option<Active>>,
+    /// `quit` of the session that last ended, until the runtime takes it.
+    ended_quit: Mutex<Vec<Process>>,
 }
 
 impl Focus {
     /// Open, resuming a session left running by a crash or reboot.
     pub fn open(store: Store, machine: Box<dyn Machine>) -> Self {
-        let focus = Focus {
+        let focus = Focus::new(store, machine);
+        focus.resume_running();
+        focus
+    }
+
+    /// Open without resuming: `setup` manages this, and the deferred thread
+    /// calls [`Focus::resume_running`], which walks game libraries.
+    pub fn new(store: Store, machine: Box<dyn Machine>) -> Self {
+        Focus {
             store,
             machine,
             live: Mutex::new(None),
-        };
-        if let Some(session) = focus.store.running() {
-            let active = focus.activate(session);
-            *focus.lock() = Some(active);
+            ended_quit: Mutex::new(Vec::new()),
         }
-        focus
+    }
+
+    /// Pick up a session left running by a crash or reboot. True if one was.
+    pub fn resume_running(&self) -> bool {
+        let Some(session) = self.store.running() else {
+            return false;
+        };
+        let active = self.activate(session);
+        *self.lock() = Some(active);
+        true
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<Active>> {
@@ -132,6 +151,7 @@ impl Focus {
             refused,
             snoozes: Snoozes::default(),
             friction,
+            quit: Vec::new(),
         }
     }
 
@@ -243,7 +263,7 @@ impl Focus {
         gate(active, now)?;
         self.store
             .finish(active.session.id, now, Outcome::Completed)?;
-        *live = None;
+        self.end(&mut live);
         Ok(View::default())
     }
 
@@ -278,8 +298,44 @@ impl Focus {
             return None;
         }
         let _ = self.store.finish(active.session.id, now, Outcome::Expired);
-        *live = None;
+        self.end(&mut live);
         Some(Outcome::Expired)
+    }
+
+    /// Machine suspending: the clock stops (`PBT_APMSUSPEND`).
+    pub fn sleep(&self, now: u64) {
+        let _ = self.change(now, |a| {
+            a.session.clock.sleep(now);
+            Ok(())
+        });
+    }
+
+    pub fn wake(&self, now: u64) {
+        let _ = self.change(now, |a| {
+            a.session.clock.wake(now);
+            Ok(())
+        });
+    }
+
+    /// Remember an app Focus quit, for Restore Terminated Apps.
+    pub fn note_quit(&self, process: &Process) {
+        self.with_active(|a| {
+            if !a.quit.iter().any(|q| q.image == process.image) {
+                a.quit.push(process.clone());
+            }
+        });
+    }
+
+    /// Apps quit during the session that just ended. Empty while one runs.
+    pub fn take_quit(&self) -> Vec<Process> {
+        std::mem::take(&mut *self.ended_quit.lock().unwrap_or_else(|p| p.into_inner()))
+    }
+
+    /// Drop the running session, keeping what it quit for the runtime.
+    fn end(&self, live: &mut Option<Active>) {
+        if let Some(active) = live.take() {
+            *self.ended_quit.lock().unwrap_or_else(|p| p.into_inner()) = active.quit;
+        }
     }
 
     /// Run `f` against the running session, if there is one. The enforcer's door.
@@ -321,7 +377,6 @@ fn view_of(active: Option<&Active>, now: u64) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::focus::identity::Process;
     use crate::focus::procs::Running;
 
     const MIN: u64 = 60_000;
@@ -502,6 +557,38 @@ mod tests {
         assert_eq!(focus.tick(T0 + 30 * MIN), Some(Outcome::Expired));
         assert!(!focus.view(T0 + 30 * MIN).running);
         assert_eq!(focus.store().history(0).len(), 1);
+    }
+
+    #[test]
+    fn v0_16_sleep_pauses_the_session_until_wake() {
+        let focus = focus();
+        running(&focus, Strictness::Strict);
+        focus.sleep(T0 + 5 * MIN);
+        focus.wake(T0 + 65 * MIN);
+        assert_eq!(focus.view(T0 + 65 * MIN).remaining_ms, 25 * MIN);
+    }
+
+    /// Restore Terminated Apps reopens what Focus quit, once each, after the end.
+    #[test]
+    fn v0_16_apps_quit_during_a_session_are_handed_back_when_it_ends() {
+        let focus = focus();
+        running(&focus, Strictness::Soft);
+        let discord = Process {
+            image: r"D:\Discord\Discord.exe".into(),
+            session_id: 1,
+            ..Default::default()
+        };
+        focus.note_quit(&discord);
+        focus.note_quit(&discord);
+        assert!(
+            focus.take_quit().is_empty(),
+            "nothing handed back mid-session"
+        );
+        focus.complete(T0 + MIN).unwrap();
+        let back = focus.take_quit();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].image, discord.image);
+        assert!(focus.take_quit().is_empty());
     }
 
     /// The Strict promise: a new process picks up where the old one died.

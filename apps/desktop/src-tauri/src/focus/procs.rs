@@ -33,6 +33,11 @@ pub fn snapshot() -> Vec<Running> {
     imp::snapshot()
 }
 
+/// One process, or None when it cannot be opened for query.
+pub fn describe(pid: u32) -> Option<Process> {
+    imp::describe(pid)
+}
+
 /// Visible top-level windows `pid` owns.
 pub fn window_count(pid: u32) -> usize {
     imp::windows_of(pid, true).len()
@@ -121,7 +126,7 @@ mod imp {
     }
 
     /// None when the process cannot be opened for query (protected, gone).
-    fn describe(pid: u32) -> Option<Process> {
+    pub fn describe(pid: u32) -> Option<Process> {
         unsafe {
             let h = Handle(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?);
             let mut buf = [0u16; 1024];
@@ -223,6 +228,10 @@ mod imp {
 
     pub fn snapshot() -> Vec<Running> {
         Vec::new()
+    }
+
+    pub fn describe(_: u32) -> Option<crate::focus::identity::Process> {
+        None
     }
 
     pub fn windows_of(_: u32, _: bool) -> Vec<()> {

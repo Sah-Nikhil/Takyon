@@ -730,7 +730,28 @@ pub fn run() {
             search::ipc::web_search,
             search::ipc::web_cancel,
             search::ipc::open_url,
-            search::ipc::open_web_query
+            search::ipc::open_web_query,
+            focus::ipc::focus_parse_duration,
+            focus::ipc::focus_parse_bang,
+            focus::ipc::focus_view,
+            focus::ipc::focus_preview,
+            focus::ipc::focus_start,
+            focus::ipc::focus_pause,
+            focus::ipc::focus_resume,
+            focus::ipc::focus_extend,
+            focus::ipc::focus_complete,
+            focus::ipc::focus_snooze,
+            focus::ipc::focus_type_goal,
+            focus::ipc::focus_reset_friction,
+            focus::ipc::focus_categories,
+            focus::ipc::focus_save_category,
+            focus::ipc::focus_delete_category,
+            focus::ipc::focus_export_categories,
+            focus::ipc::focus_import_categories,
+            focus::ipc::focus_last_list,
+            focus::ipc::focus_settings,
+            focus::ipc::focus_set_setting,
+            focus::ipc::focus_clear_history
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -878,6 +899,19 @@ pub fn run() {
             // Same shape as `Turns`: nothing runs until someone types `!s`.
             app.manage(Arc::new(search::ipc::Searches::default()));
 
+            // Focus (v0.16). Opening `focus.db` is one SQLite open; resuming a
+            // session walks game libraries, so that waits for the deferred thread.
+            let focus_store = focus::store::Store::open(identity::data_dir())
+                .or_else(|e| {
+                    eprintln!("[takyon] focus.db could not be opened: {e}");
+                    focus::store::Store::open(None)
+                })
+                .expect("an in-memory database always opens");
+            let focus = Arc::new(focus::Focus::new(focus_store, Box::new(focus::ThisMachine)));
+            let focus_page: focus::ipc::PagePath = Arc::new(std::sync::Mutex::new(None));
+            app.manage(focus.clone());
+            app.manage(focus_page.clone());
+
             // The first thing that makes the app useful, and it stays first.
             // Reads `settings.db` so a rebound hotkey survives a restart: one
             // indexed lookup on an open connection, which is what that costs.
@@ -919,7 +953,22 @@ pub fn run() {
             // three can block: `blocking_show` deadlocks if called on the main
             // thread, and the autostart registry write is disk-bound.
             let deferred = handle.clone();
+            let focus_prefs = prefs.clone();
             std::thread::spawn(move || {
+                // First, so a Strict session survives a reboot before anything
+                // slower runs: right after the hotkey (ADR-0036).
+                if focus.resume_running() {
+                    if let Ok(mut page) = focus_page.lock() {
+                        *page = focus::ipc::write_page(None);
+                    }
+                }
+                let signals = deferred.clone();
+                focus::runtime::spawn(
+                    focus,
+                    focus_prefs,
+                    focus_page,
+                    Arc::new(move |signal| focus::ipc::emit(&signals, signal)),
+                );
                 tray::self_heal_autostart(&deferred);
                 uiaccess::start(&deferred);
                 firstrun::maybe_enable(&deferred);
