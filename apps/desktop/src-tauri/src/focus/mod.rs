@@ -9,6 +9,7 @@ pub mod duration;
 pub mod identity;
 pub mod procs;
 pub mod protected;
+pub mod rules;
 pub mod session;
 pub mod site;
 pub mod store;
