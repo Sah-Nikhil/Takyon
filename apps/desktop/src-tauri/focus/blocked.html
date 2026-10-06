@@ -1,0 +1,261 @@
+<!doctype html>
+<!--
+  Focus block page (v0.16, ADR-0035). A blocked tab is sent here as
+  file:///…/blocked.html?u=<original>&end=<unix-ms>&g=<goal>.
+  Zero network: no fonts, no images, nothing fetched. Title is load-bearing:
+  the tab-restore walk finds this tab by the exact string "Blocked · Takyon".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Blocked · Takyon</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M46,32 L12,16.5 Q23,32 12,47.5 Z' fill='%23a98bf0'/%3E%3Ccircle cx='56' cy='32' r='3.9' fill='%23a98bf0'/%3E%3C/svg%3E">
+
+<!-- Theme roles. Takyon rewrites this block with the live family's half; Vela is the fallback. -->
+<style id="takyon-theme">
+  :root {
+    --plate: oklch(0.196 0.0255 293);
+    --fg: oklch(0.967 0.006 293);
+    --accent: oklch(0.745 0.142 297);
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --plate: oklch(0.9745 0.0075 296);
+      --fg: oklch(0.242 0.033 295);
+      --accent: oklch(0.53 0.183 296);
+    }
+  }
+</style>
+
+<style>
+  :root {
+    /* Derived, never stated: the styles.css rule. */
+    --fg-2: color-mix(in oklab, var(--fg) 68%, var(--plate));
+    --fg-3: color-mix(in oklab, var(--fg) 56%, var(--plate));
+    --hairline: color-mix(in oklab, var(--fg) 10%, transparent);
+    --wake: color-mix(in oklab, var(--fg) 3%, transparent);
+    --glow: color-mix(in oklab, var(--accent) 55%, transparent);
+    --ease: cubic-bezier(0.4, 0, 0.6, 1);
+    --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --display: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --mono: "Cascadia Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+  [hidden] { display: none !important; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--plate);
+    color: var(--fg);
+    font: 400 16px/1.55 var(--ui);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  ::selection { background: color-mix(in oklab, var(--accent) 34%, transparent); color: var(--fg); }
+
+  /* The wake: the mark's cone at room scale, bleeding off the right edge.
+     The particle sits beyond its apex, outrunning it, as the brand requires. */
+  .wake {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  /* Sized in vmin and placed so the apex sits near the right edge and the
+     particle just inside it, whatever the aspect ratio. */
+  .wake svg {
+    position: absolute;
+    width: 130vmin;
+    height: 130vmin;
+    left: calc(100vw - 119.5vmin);
+    top: calc(50vh - 65vmin);
+  }
+  .wake path { fill: var(--wake); }
+  .wake .spark { fill: var(--glow); }
+
+  main {
+    position: relative;
+    min-height: 100%;
+    display: grid;
+    align-content: center;
+    padding: 9vh clamp(24px, 9vw, 140px) 14vh;
+  }
+
+  .column { max-width: 34rem; }
+
+  .mark { width: 52px; height: 52px; display: block; margin-bottom: 40px; overflow: visible; }
+  .mark .cone { fill: var(--fg); transform-origin: 17.5px 32px; animation: sweep 2.3s var(--ease) infinite; }
+  .mark .particle { fill: var(--accent); transform-box: fill-box; transform-origin: center; animation: beat 1.15s var(--ease) infinite alternate; }
+
+  @keyframes beat { to { opacity: 0.35; transform: scale(0.72); } }
+  @keyframes sweep {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-8deg); }
+    75% { transform: rotate(8deg); }
+  }
+
+  .host {
+    font: 500 15px/1.4 var(--ui);
+    color: var(--fg-2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .host b { font-weight: 600; color: var(--fg); }
+
+  h1 {
+    font: 600 clamp(2.1rem, 1.3rem + 3.2vw, 3.6rem)/1.06 var(--display);
+    letter-spacing: -0.028em;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+  }
+
+  .when {
+    margin-top: 28px;
+    padding-top: 22px;
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    color: var(--fg-2);
+  }
+  .clock {
+    font: 500 26px/1 var(--mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+  }
+
+  .note { margin-top: 18px; font-size: 14px; color: var(--fg-3); max-width: 30rem; }
+  .when[hidden] + .note { margin-top: 26px; }
+
+  a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    border-radius: 3px;
+  }
+  a:hover { text-decoration-thickness: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  footer {
+    position: fixed;
+    left: clamp(24px, 9vw, 140px);
+    bottom: 28px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 500 14px/1 var(--ui);
+    letter-spacing: 0.01em;
+    color: var(--fg-3);
+  }
+  footer svg { width: 16px; height: 16px; }
+  footer path { fill: currentColor; }
+  footer circle { fill: var(--accent); }
+
+  body.done .clock { color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mark .cone, .mark .particle { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="wake" aria-hidden="true">
+    <svg viewBox="0 0 64 64">
+      <path d="M46,32 L12,16.5 Q23,32 12,47.5 Z"/>
+      <circle class="spark" cx="56" cy="32" r="0.9"/>
+    </svg>
+  </div>
+
+  <main>
+    <div class="column">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+        <path class="cone" d="M46,32 L12,16.5 Q23,32 12,47.5 Z"/>
+        <circle class="particle" cx="56" cy="32" r="3.9"/>
+      </svg>
+
+      <p class="host"><span id="host-line">This site is on your Block list</span></p>
+      <h1 id="heading">Stay with what you started.</h1>
+
+      <div class="when" id="when" hidden>
+        <span class="clock" id="clock">0:00</span>
+        <span id="until"></span>
+      </div>
+
+      <p class="note" id="note">Takyon brings this tab back when your Focus session ends.</p>
+    </div>
+  </main>
+
+  <footer><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M46,32 L12,16.5 Q23,32 12,47.5 Z"/><circle cx="56" cy="32" r="3.9"/></svg>takyon</footer>
+
+<script>
+  "use strict";
+  const q = new URLSearchParams(location.search);
+  const raw = q.get("u") || "";
+  const goal = (q.get("g") || "").trim();
+  const end = Number(q.get("end")) || 0;
+
+  // Only ever return to a web page; never a javascript:, file: or data: URL.
+  let back = null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "http:" || url.protocol === "https:") back = url;
+  } catch {}
+
+  const host = back ? back.hostname.replace(/^www\./, "") : "";
+  const $ = (id) => document.getElementById(id);
+
+  if (host) {
+    const b = document.createElement("b");
+    b.textContent = host;
+    $("host-line").replaceChildren(b, " is on your Block list");
+  }
+  if (goal) $("heading").textContent = goal;
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmt = (ms) => {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+  };
+
+  function finish() {
+    document.body.classList.add("done");
+    $("clock").textContent = "0:00";
+    $("until").textContent = "Session over.";
+    if (back) {
+      const a = document.createElement("a");
+      a.href = back.href;
+      a.textContent = `Back to ${host}`;
+      $("note").replaceChildren(a);
+      setTimeout(() => location.replace(back.href), 1200);
+    } else {
+      $("note").textContent = "You can close this tab.";
+    }
+  }
+
+  // end <= 0 means unknown: no countdown, and never an automatic return.
+  if (end > 0) {
+    $("when").hidden = false;
+    const at = new Date(end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    $("until").textContent = `left · until ${at}`;
+    const tick = () => {
+      const left = end - Date.now();
+      if (left <= 0) return finish();
+      $("clock").textContent = fmt(left);
+      setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+    };
+    tick();
+  }
+</script>
+</body>
+</html>

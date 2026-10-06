@@ -41,7 +41,7 @@ UI.
   normalised to a host before matching. A domain matches itself and its
   subdomains.
 - A match sets the address bar's value to
-  `file:///<install>/focus/blocked.html?u=<original>&end=<unix-ms>` and sends
+  `file:///<data>/focus/blocked.html?u=<original>&end=<unix-ms>&g=<goal>` and sends
   Enter, after re-checking that the browser is still in front and its address bar
   has focus. The block page is a local file that makes no request.
 - The block page's title is always `Blocked · Takyon`. At session end Takyon
@@ -58,6 +58,55 @@ UI.
 Bindings come from the `windows` crate Takyon already uses (ADR-0019), with the
 `Win32_UI_Accessibility` feature added. No new crate.
 
+## Spike result, 2026-10-06: go
+
+A throwaway Rust probe on `windows` 0.61.3 (the version Takyon pins), run
+against the five browsers installed on the dev machine, each on a temporary
+profile. Every step passed in all five:
+
+| | Chrome | Edge | Helium | Firefox 157 (Store) | Zen |
+|---|---|---|---|---|---|
+| Address bar lookup | `ClassName` `OmniboxViewViews` | same | same | `AutomationId` `urlbar-input` | same |
+| Displayed value at `https://example.com/spike-a?x=1` | `example.com/spike-a?x=1` | `https://example.com/spike-a?x=1` | `example.com/spike-a?x=1` | `example.com/spike-a?x=1` | `example.com` |
+| Displayed value on the block page | `C:/…/blocked.html?u=…` | same | same | `file:///C:/…/blocked.html?u=…` | same |
+| Set value + Enter navigates | yes | yes | yes | yes | yes |
+| Tab strip lists `Blocked · Takyon` by name | yes | yes | yes | yes | yes |
+| `SelectionItemPattern.Select` switches tab | yes | yes | yes | yes | yes |
+| Restore from `u` lands on the original URL | yes | yes | yes | yes | yes |
+
+Costs: about 0.1 ms per address-bar read on a cached element, 11 to 29 ms to
+find the bar again from the window, and 10 to 28 ms to walk the tab strip. A
+500 ms poll is negligible.
+
+What the spike changed in the design:
+
+- **Chromium is found by `ClassName` `OmniboxViewViews`.** Its `AutomationId`
+  (`view_1012`, `view_1017`) differs between builds and its name is localised.
+- **The displayed value has four shapes**: with a scheme, without one, host
+  only, and a bare drive path for `file:`. Host extraction and the `u=` parse
+  accept all four.
+- **Never act while the address bar has keyboard focus.** A half-typed `youtu`
+  reads as the value, with `HasKeyboardFocus` true, in Chromium. Gecko's
+  cached element went stale while focused and read `""`. Either way the rule is
+  the same: skip the tick when the bar has focus or reads empty, and re-find the
+  element on an empty read.
+- **Gecko hides the whole toolbar while a window-modal dialog is up.** A fresh
+  Zen profile's welcome screen (`zen-welcome-video`), Firefox's "Welcome to
+  Firefox" terms dialog and its "Make Firefox your primary browser?" prompt
+  each left no address bar in the tree. Nobody can browse past a modal either,
+  so a browser with no address bar in its tree is unreadable for that tick and
+  nothing more. The live test seeds its throwaway Firefox profile with
+  `browser.shell.checkDefaultBrowser=false`; the terms dialog is accepted by
+  hand, once per profile, never by Takyon.
+- **Gecko's address-bar element goes stale.** Zen threw `0x800401FD` (object
+  not connected) on `SetFocus` with an element found a moment earlier. Every
+  navigate re-finds the bar, and checks `HasKeyboardFocus` before sending Enter,
+  re-finding again if focus moved.
+- **Firefox from the Microsoft Store is an MSIX package** under
+  `C:\Program Files\WindowsApps\Mozilla.Firefox_…\VFS\…\firefox.exe`. The image
+  name is still `firefox.exe`, so detection by image name holds, but any code
+  that looks for Firefox by install path misses it.
+
 ## Considered options
 
 | Option | Elevation | Why not |
@@ -70,10 +119,11 @@ Bindings come from the `windows` crate Takyon already uses (ADR-0019), with the
 ## Consequences
 
 - **Browsers change their UI Automation trees.** Chromium's address bar is found
-  by control type inside the toolbar, never by its localised name. Gecko's is
-  found by `AutomationId` `urlbar-input`. A live `--ignored` test drives each
-  installed browser, and CI's daily job runs it, so an update that breaks a
-  lookup is noticed within a day, the same arrangement `ddg.rs` has.
+  by `ClassName` `OmniboxViewViews`, never by its localised name or its
+  per-build `AutomationId`. Gecko's is found by `AutomationId` `urlbar-input`.
+  A live `--ignored` test drives each installed browser, and CI's daily job runs
+  it, so an update that breaks a lookup is noticed within a day, the same
+  arrangement `ddg.rs` has.
 - **There is a visible flash.** The blocked page starts loading before the
   500 ms poll catches it, so the user can see it for up to half a second. Raycast
   has the same window. Shorter polling costs CPU in the browser's accessibility

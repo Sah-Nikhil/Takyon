@@ -763,7 +763,7 @@ tab's address bar through UI Automation and sent to a local block page
 Locked needs a service and waits for its own ADR (**ADR-0036**). Windows only;
 macOS refuses in words. Planned, not built.
 
-- [ ] **Spike first:** UI Automation reads and navigates the address bar in Chrome, Edge and Firefox on this machine. Go/no-go for ADR-0035
+- [x] **Spike first:** UI Automation reads and navigates the address bar. **Go** (2026-10-06): Chrome, Edge, Helium, Firefox (Store) and Zen pass every step. ADR-0035 § Spike result. Block page designed: `src-tauri/focus/blocked.html`
 - [ ] `focus/` module and `focus.db`; a running session resumes at startup
 - [ ] App blocking: start sweep, foreground hook, 2 s poll, can't-block reported in words
 - [ ] Website blocking: supported-browser table, `blocked.html`, tab restore
