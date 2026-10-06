@@ -707,6 +707,7 @@ export type FocusError =
   | { kind: "nothingToBlock" }
   | { kind: "needsFriction" }
   | { kind: "notAllowed" }
+  | { kind: "unsupported" }
   | { kind: "duration"; reason: string }
   | { kind: "storage"; reason: string };
 

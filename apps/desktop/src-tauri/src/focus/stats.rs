@@ -184,6 +184,36 @@ mod tests {
         }
     }
 
+    /// `interface FocusStats` in `packages/shared/src/ipc.ts`, copied by hand.
+    #[test]
+    fn v0_16_stats_match_ipc_ts() {
+        let v = serde_json::to_value(compute(&[], &[], NOON, 7, 0)).unwrap();
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        let want = [
+            "blocked",
+            "blocks",
+            "categories",
+            "days",
+            "endedEarly",
+            "focusedMs",
+            "fullLength",
+            "sessions",
+            "snoozes",
+            "strict",
+        ];
+        assert_eq!(keys, want);
+        let day = &v["days"][0];
+        let mut day_keys: Vec<&str> = day
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        day_keys.sort_unstable();
+        assert_eq!(day_keys, ["blocks", "focusedMs", "sessions", "start"]);
+    }
+
     #[test]
     fn v0_16_local_midnight_follows_the_offset() {
         // 12:00 UTC is 17:30 in India (+330): midnight there is 18:30 UTC the day before.

@@ -103,6 +103,10 @@ pub fn focus_start(
     prefs: State<'_, Arc<Prefs>>,
     page: State<'_, PagePath>,
 ) -> Result<View, FocusError> {
+    // A session nothing enforces would read as blocking and block nothing.
+    if cfg!(not(windows)) {
+        return Err(FocusError::Unsupported);
+    }
     let strictness = if request.strict {
         Strictness::Strict
     } else {
@@ -336,13 +340,17 @@ pub struct FocusSettings {
 
 #[tauri::command]
 pub fn focus_settings(prefs: State<'_, Arc<Prefs>>) -> FocusSettings {
+    settings_of(&prefs)
+}
+
+fn settings_of(prefs: &Prefs) -> FocusSettings {
     let get = |k: &str| prefs.get(k);
     FocusSettings {
         snooze_minutes: super::settings::snooze_ms(get(prefs::FOCUS_SNOOZE).as_deref())
             .map_or(0, |ms| (ms / 60_000) as u32),
-        restore_apps: prefs::flag(&prefs, prefs::FOCUS_RESTORE_APPS, false),
+        restore_apps: prefs::flag(prefs, prefs::FOCUS_RESTORE_APPS, false),
         surface: get(prefs::FOCUS_SURFACE).unwrap_or_else(|| "bar".into()),
-        bang: prefs::flag(&prefs, prefs::FOCUS_BANG, false),
+        bang: prefs::flag(prefs, prefs::FOCUS_BANG, false),
         hurdle_shutdown: get(prefs::FOCUS_HURDLE_SHUTDOWN).unwrap_or_else(|| "strict".into()),
         hurdle_idle: get(prefs::FOCUS_HURDLE_IDLE).unwrap_or_else(|| "strict".into()),
     }
@@ -399,4 +407,34 @@ pub fn focus_stats(
         days,
         utc_offset_min,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Keys as `interface FocusSettings` in `packages/shared/src/ipc.ts`
+    /// declares them, copied by hand: the independent side of the contract.
+    #[test]
+    fn v0_16_focus_settings_match_ipc_ts() {
+        let prefs = Prefs::open(None).unwrap();
+        let v = serde_json::to_value(settings_of(&prefs)).unwrap();
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "bang",
+                "hurdleIdle",
+                "hurdleShutdown",
+                "restoreApps",
+                "snoozeMinutes",
+                "surface"
+            ]
+        );
+        assert_eq!(
+            v["snoozeMinutes"], 3,
+            "default snooze is Raycast's 3 minutes"
+        );
+    }
 }

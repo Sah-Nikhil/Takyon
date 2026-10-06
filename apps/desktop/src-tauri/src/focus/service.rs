@@ -35,6 +35,8 @@ pub enum FocusError {
     NeedsFriction,
     /// Strict sessions have no Snooze.
     NotAllowed,
+    /// Nothing enforces a session on this platform yet (macOS until v0.12).
+    Unsupported,
     Duration {
         reason: String,
     },
@@ -405,6 +407,30 @@ mod tests {
             categories: vec![],
             items: items.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    /// `interface FocusView` in `packages/shared/src/ipc.ts`, copied by hand.
+    #[test]
+    fn v0_16_the_view_matches_ipc_ts() {
+        let v = serde_json::to_value(View::default()).unwrap();
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "breakEndsAt",
+                "endsAt",
+                "frictionMs",
+                "goal",
+                "paused",
+                "refused",
+                "remainingMs",
+                "running",
+                "strict"
+            ]
+        );
+        let e = serde_json::to_value(FocusError::NeedsFriction).unwrap();
+        assert_eq!(e["kind"], "needsFriction");
     }
 
     #[test]

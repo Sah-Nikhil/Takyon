@@ -207,6 +207,10 @@ jobs:
           shared-key: rust-desktop-test
           save-if: false
       - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test web_search -- --ignored --nocapture
+      # Focus (ADR-0035): drives each installed browser's address bar through
+      # UI Automation. A runner's idle desktop is the one place this is reliable;
+      # a browser update that moves the bar is caught within a day.
+      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test focus_browser -- --ignored --nocapture
 
   # `bun run bench` against a release build. Budget misses warn, harness
   # failures fail: a shared runner's timings are too noisy to gate on, but a

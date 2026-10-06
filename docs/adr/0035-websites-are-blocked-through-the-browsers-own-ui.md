@@ -44,10 +44,12 @@ UI.
   `file:///<data>/focus/blocked.html?u=<original>&end=<unix-ms>&g=<goal>` and sends
   Enter, after re-checking that the browser is still in front and its address bar
   has focus. The block page is a local file that makes no request.
-- The block page's title is always `Blocked · Takyon`. At session end Takyon
-  walks each browser's tab strip for tab items with that name, selects each one,
-  reads `u` from its address bar, and navigates back. As a fallback, the page's
-  own timer returns to `u` once `end` has passed.
+- The block page's title is always `Blocked · Takyon`. After a session ends
+  early, the next time each browser comes to the front Takyon walks its tab
+  strip for tab items with that name, selects each one, reads `u` from its
+  address bar, and navigates back; Takyon never raises a browser itself. A
+  session that expires needs no walk: each page returns to `u` once `end` has
+  passed.
 - Only the active tab is read. A blocked background tab is caught when it is
   activated, because activation changes the address bar. This avoids switching
   tabs under the user to inspect them.

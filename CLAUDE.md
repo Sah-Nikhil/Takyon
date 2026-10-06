@@ -79,11 +79,15 @@ shims; the real npm shape still only exists on the laptop that reported it, so
 process, t3code's chat path, for token streaming and a permission UI,
 superseding v0.8's fresh process per Turn.
 
-**v0.16 Focus is planned, not built** (`docs/plans/v0.16-focus.md`): Raycast-style
-Focus sessions that block apps and websites for a set time. Apps are quit and
-websites are caught through UI Automation on the address bar, with no network
-filtering (**ADR-0035**). Soft and Strict levels; Locked needs a service and is
-deferred (**ADR-0036**). Its verify script is written ahead of the build.
+**v0.16 Focus is built; its verify script is unrun** (`docs/plans/v0.16-focus.md`):
+Raycast-style Focus sessions that block apps and websites for a set time. Apps
+are quit and websites are caught through UI Automation on the address bar, with
+no network filtering (**ADR-0035**). Soft and Strict levels; Locked needs a
+service and is deferred (**ADR-0036**). Code under `src-tauri/src/focus/` and
+`src/focus/`. The shutdown hurdle, sleep handling and the bar's focus behaviour
+have no automated coverage: `docs/tbd/v0.16.md` §1 lists what only a hand run
+proves. The live browser test (`--test focus_browser -- --ignored`) needs an
+idle desktop; do not run it on a machine someone is using.
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

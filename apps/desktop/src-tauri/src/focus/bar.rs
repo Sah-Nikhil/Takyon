@@ -43,13 +43,15 @@ fn build(app: &AppHandle) {
             .inner_size(WIDTH, HEIGHT)
             .resizable(false)
             .decorations(false)
-            // Transparent like the Palette: the bar draws its own rounded panel.
-            .transparent(true)
             .always_on_top(true)
             .skip_taskbar(true)
             .focused(false)
             .shadow(false)
             .visible(false);
+    // Transparent like the Palette: the bar draws its own rounded panel. macOS
+    // needs Tauri's private-API feature for this; v0.12's port decides that.
+    #[cfg(windows)]
+    let builder = builder.transparent(true);
     let window = match builder.build() {
         Ok(w) => w,
         Err(e) => return eprintln!("[takyon] the Focus bar could not be built: {e}"),

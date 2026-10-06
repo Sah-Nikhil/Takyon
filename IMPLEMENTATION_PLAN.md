@@ -372,6 +372,29 @@ runs with `PRAGMA secure_delete = ON` and follows with
 `PRAGMA wal_checkpoint(TRUNCATE)`. "The row is deleted" and "the secret is gone"
 are different claims and this feature needs the second one.
 
+### `focus.db` (v0.16)
+
+```sql
+CREATE TABLE sessions (
+  id INTEGER PRIMARY KEY, goal TEXT NOT NULL,
+  strictness TEXT NOT NULL,          -- "soft" | "strict"; "locked" later (ADR-0036)
+  block_list TEXT NOT NULL,          -- JSON {categories, items}
+  started_at INTEGER NOT NULL, planned_ms INTEGER NOT NULL,
+  clock TEXT NOT NULL,               -- the whole session::Clock as JSON
+  ended_at INTEGER, outcome TEXT     -- "expired" | "completed"
+);
+CREATE TABLE session_events (session_id, at, kind, target);  -- blocked|snoozed|paused|resumed|refused
+CREATE TABLE categories (id INTEGER PRIMARY KEY, name, icon, copied_from);
+CREATE TABLE category_items (category_id, key, label, PRIMARY KEY (category_id, key));
+```
+
+The running session is the row with `ended_at IS NULL`, read in deferred init
+behind the hotkey and resumed (`focus::service`). The clock is stored whole so a
+restart resumes Pauses and sleep exactly. History is kept until cleared; nothing
+in it is secret in ADR-0008's sense. Preferences are `focus.*` keys in
+`settings.db`. Built-in Focus categories are not stored: `categories.json` is
+compiled in.
+
 ---
 
 ## 5. The file index (v0.7)
@@ -536,6 +559,15 @@ spawning, and `run` re-checks the gate after attaching the job. Termination neve
 blocks; each Turn's own thread reaps. The prompt goes on stdin, never argv
 (ADR-0032), and `turn::spawn` is the only Turn spawn path.
 
+**Focus (v0.16).** One `focus` thread, started in deferred init: MTA COM for
+UI Automation (ADR-0035), a hidden *top-level* window (message-only windows miss
+`WM_POWERBROADCAST` and `WM_QUERYENDSESSION`), and a 250 ms tick that polls the
+foreground and, every 2 s, the process table. Quits run on short-lived threads
+so a 2 s grace never stalls the tick. The floating bar is a third webview,
+`focusbar`, built off the main thread when a session starts and destroyed when it
+ends, so the idle budget never carries it; `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`
+are set after build because Tauri has no option for them.
+
 ---
 
 ## 8. The IPC contract
@@ -639,6 +671,14 @@ Types live in `packages/shared` and mirror the Rust structs. **Contract tests
 assert that Rust's serialised output matches these types** — that is the one
 test that catches fixture drift, which is the silent failure mode of the mocked
 visual layer (TBC-0007).
+
+**Focus (v0.16)** adds `focus_*` commands (`focus/ipc.rs`) and one event,
+`takyon://focus`, carrying `FocusSignal`: `view` on every change of shape,
+`blocked` with the target and whether it is snoozable, `ended`. The view carries
+`endsAt`, not a ticking value, so every surface counts down locally. Durations
+and stats take the frontend's local time (`localMsOfDay`, UTC offset): Rust holds
+no timezone logic. Contract checks for `FocusView`, `FocusSettings` and
+`FocusStats` live beside the structs.
 
 ---
 

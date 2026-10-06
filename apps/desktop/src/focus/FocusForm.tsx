@@ -30,6 +30,8 @@ export function focusErrorText(e: unknown): string {
   switch (err?.kind) {
     case "alreadyRunning":
       return "A Focus session is already running.";
+    case "unsupported":
+      return "Focus blocks apps and sites on Windows only, for now.";
     case "nothingToBlock":
       return "Nothing on the Block list can be blocked on this machine.";
     case "duration":

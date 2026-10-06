@@ -764,15 +764,15 @@ Locked needs a service and waits for its own ADR (**ADR-0036**). Windows only;
 macOS refuses in words. Planned, not built.
 
 - [x] **Spike first:** UI Automation reads and navigates the address bar. **Go** (2026-10-06): Chrome, Edge, Helium, Firefox (Store) and Zen pass every step. ADR-0035 § Spike result. Block page designed: `src-tauri/focus/blocked.html`
-- [ ] `focus/` module and `focus.db`; a running session resumes at startup
-- [ ] App blocking: start sweep, foreground hook, 2 s poll, can't-block reported in words
-- [ ] Website blocking: supported-browser table, `blocked.html`, tab restore
-- [ ] Snooze, Pause, Complete, Edit; Strict friction; sleep pauses the clock
-- [ ] Strict hurdles: shutdown reason screen and idle-sleep hold, each switchable
-- [ ] Six built-in Focus categories in `categories.json`, Games filled in from Game launchers; custom ones with import and export
-- [ ] Palette Entries and the start form; `!f`, off by default
-- [ ] Floating bar that never takes focus, collapsible to the tray
-- [ ] Settings → Focus and Settings → Focus stats; Coming soon rows for Scheduled sessions and Locked
+- [x] `focus/` module and `focus.db`; a running session resumes at startup, in deferred init behind the hotkey
+- [x] App blocking: foreground every 250 ms and the process table every 2 s (polled, not hooked: [`docs/tbd/v0.16.md`](./docs/tbd/v0.16.md) §3); `WM_CLOSE`, grace, terminate; an elevated app is recorded as refused. Naming it on the start form is §6
+- [x] Website blocking: supported-browser table, themed `blocked.html` per session, tab restore (lazy on the next visit after an early Complete, §4)
+- [x] Snooze, Pause, Complete, Edit (+10 min); Strict friction; sleep pauses the clock
+- [x] Strict hurdles: shutdown reason screen and idle-sleep hold, each switchable (never exercised by hand yet, §1)
+- [x] Six built-in Focus categories in `categories.json`, Games filled in from Steam and Epic install directories; custom ones with import and export
+- [x] Palette Entries (Start, Complete, Pause, Resume Focus Session) and the start form; `!f`, off by default
+- [x] Floating bar that never takes focus, collapsible to the tray (no flash in tray mode, §7)
+- [x] Settings → Focus with Stats as its own sub-view (Focus / Stats, a line over a gradient); Coming soon rows for Scheduled sessions and Locked
 - [ ] [`docs/verify/v0.16.md`](./docs/verify/v0.16.md) driven against a release build
 
 **Exit criteria:** a Soft session blocks Discord and youtube.com in Chrome and
