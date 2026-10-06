@@ -9,8 +9,8 @@
 //! raw query, never a ranked search. That is what makes ADR-0002 checkable by
 //! reading — a line with no Bang cannot reach the network.
 //!
-//! Four Bangs: `!v` v0.5, `!e` v0.7, `!c` v0.8, `!s` v0.9. Registry, `!` picker and
-//! user-defined Bangs: `docs/plans/bang-registry.md` (part-resumed at v0.8).
+//! Five Bangs: `!v` v0.5, `!e` v0.7, `!c` v0.8, `!s` v0.9, `!f` v0.16.
+//! Registry, `!` picker and user-defined Bangs: `docs/plans/bang-registry.md`.
 
 /// Where a line of input goes, and what that Mode sees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +29,9 @@ pub enum Route<'a> {
     /// `!s` — web search. The rest is the question, or empty for the row naming
     /// the provider and whether it holds a key.
     Web(&'a str),
+    /// `!f` — start a Focus session (v0.16): goal plus trailing duration. Off
+    /// unless switched on in Settings → Focus.
+    Focus(&'a str),
 }
 
 /// The clipboard Bang. One letter, and `v` because `Ctrl+V` is what it replaces.
@@ -43,6 +46,9 @@ pub const ASK: &str = "c";
 
 /// The web Bang. `s` for search, the spelling every browser's own bang list uses.
 pub const WEB: &str = "s";
+
+/// The Focus Bang. `f` for Focus; off by default (v0.16).
+pub const FOCUS: &str = "f";
 
 /// Route one line of input.
 pub fn parse(line: &str) -> Route<'_> {
@@ -62,6 +68,7 @@ pub fn parse(line: &str) -> Route<'_> {
         FILES => Route::Files(rest.trim()),
         ASK => Route::Ask(rest.trim()),
         WEB => Route::Web(rest.trim()),
+        FOCUS => Route::Focus(rest.trim()),
         // Unknown Bang is treated literally rather than rejected (§9). A hint row
         // saying so is part of the registry work, not of this parser.
         _ => Route::Bangless(line),
@@ -136,6 +143,17 @@ mod tests {
         // Position 0 only, and the ident ends at whitespace, exactly as `!v`.
         assert_eq!(parse("find !s thing"), Route::Bangless("find !s thing"));
         assert_eq!(parse("!search"), Route::Bangless("!search"));
+    }
+
+    #[test]
+    fn v0_16_bang_f_routes_a_focus_line() {
+        assert_eq!(parse("!f"), Route::Focus(""));
+        assert_eq!(
+            parse("!f write report 45m"),
+            Route::Focus("write report 45m")
+        );
+        assert_eq!(parse("!F  trimmed  "), Route::Focus("trimmed"));
+        assert_eq!(parse("!focus"), Route::Bangless("!focus"));
     }
 
     /// Unknown Bangs fall through with the line intact (§9), so nothing is lost

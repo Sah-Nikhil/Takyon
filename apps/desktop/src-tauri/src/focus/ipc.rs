@@ -354,6 +354,7 @@ pub fn focus_set_setting(
     key: String,
     value: String,
     prefs: State<'_, Arc<Prefs>>,
+    pipeline: State<'_, Arc<crate::query::Pipeline>>,
 ) -> Result<(), String> {
     let ok = match key.as_str() {
         prefs::FOCUS_SNOOZE => matches!(value.as_str(), "0" | "1" | "3" | "5" | "10"),
@@ -367,7 +368,12 @@ pub fn focus_set_setting(
     if !ok {
         return Err(format!("{key} cannot be {value:?}"));
     }
-    prefs.set(&key, &value).map_err(|e| e.to_string())
+    prefs.set(&key, &value).map_err(|e| e.to_string())?;
+    if key == prefs::FOCUS_BANG {
+        // Cached on the keystroke path, like every Bang switch.
+        pipeline.set_focus_bang(value == "1");
+    }
+    Ok(())
 }
 
 #[tauri::command]

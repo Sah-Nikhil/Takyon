@@ -349,6 +349,8 @@ export interface QueryResult {
    * `ask`: the answer streams, so there is nothing to rank.
    */
   web?: Web;
+  /** `!f` with the Bang switched on (v0.16): the line after the Bang. */
+  focus?: { line: string };
 }
 
 /** The `!s` Mode's state for one keystroke. */

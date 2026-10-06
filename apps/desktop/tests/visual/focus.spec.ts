@@ -83,6 +83,31 @@ test("a Strict session asks for the goal before ending early", async ({ page }) 
   await expect(page).toHaveScreenshot("focus-friction.png");
 });
 
+test("!f is plain text until Settings switches it on", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("!f write report 45m");
+  await expect(page.getByTestId("focus-note")).toHaveCount(0);
+});
+
+test("!f with a goal and a length starts the session on Enter", async ({ page }) => {
+  const input = await open(page, "&focusbang=1");
+  await input.fill("!f write report 45m");
+  await expect(page.getByTestId("focus-note")).toHaveText("Focus on write report for 45 min — press Enter");
+  await page.setViewportSize({ width: 640, height: paletteHeight(1) });
+  await expect(page).toHaveScreenshot("palette-focus-bang.png");
+  await input.press("Enter");
+  await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
+  await expect(page.getByRole("heading", { name: "write report" })).toBeVisible();
+});
+
+test("!f without a length opens the form with the goal typed", async ({ page }) => {
+  const input = await open(page, "&focusbang=1");
+  await input.fill("!f write report");
+  await expect(page.getByTestId("focus-note")).toContainText("press Enter to pick a length");
+  await input.press("Enter");
+  await expect(page.getByRole("textbox", { name: "Goal" })).toHaveValue("write report");
+});
+
 test.describe("the floating bar", () => {
   test.use({ viewport: { width: 360, height: 52 } });
 

@@ -59,6 +59,17 @@ pub struct QueryResult {
     /// the same reason: the answer streams, so there is nothing to rank.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub web: Option<Web>,
+    /// Present exactly when the line is `!f` and the Bang is on (v0.16). The
+    /// frontend splits goal from duration: it holds the local clock.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus: Option<FocusLine>,
+}
+
+/// The `!f` Mode's line, untouched.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusLine {
+    pub line: String,
 }
 
 /// The `!c` Mode's state for one keystroke.
@@ -155,6 +166,8 @@ pub struct Pipeline {
     /// Whether `!v` routes to clipboard history (`clips.bang`). Read every
     /// keystroke, so atomic rather than behind the Stability mutex.
     clips_bang: std::sync::atomic::AtomicBool,
+    /// Whether `!f` starts Focus sessions. Off by default (v0.16).
+    focus_bang: std::sync::atomic::AtomicBool,
     recents_on: std::sync::atomic::AtomicBool,
     /// The switched-on Agents in preference order. Cached from `settings.db` for
     /// the same reason `clips_bang` is: it is read on the keystroke path, which
@@ -204,6 +217,7 @@ impl Pipeline {
             files: None,
             clips: None,
             clips_bang: std::sync::atomic::AtomicBool::new(true),
+            focus_bang: std::sync::atomic::AtomicBool::new(false),
             recents_on: std::sync::atomic::AtomicBool::new(true),
             ask_order: std::sync::Mutex::new(crate::agents::AgentKind::ALL.to_vec()),
             web_key: std::sync::atomic::AtomicBool::new(false),
@@ -226,6 +240,15 @@ impl Pipeline {
 
     pub fn bang_enabled(&self) -> bool {
         self.clips_bang.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_focus_bang(&self, on: bool) {
+        self.focus_bang
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn focus_bang(&self) -> bool {
+        self.focus_bang.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// The Agents `!c` walks. Written by Settings, read every keystroke.
@@ -309,6 +332,18 @@ impl Pipeline {
             // Agent answers is the setting (`docs/plans/bang-registry.md`).
             Route::Ask(question) => return self.ask_result(question, seq, self.ask_order()),
             Route::Web(question) => return self.web_result(question, seq),
+            // Off, and `!f` is text: Start Focus Session is still a command.
+            Route::Focus(line) if self.focus_bang() => {
+                return QueryResult {
+                    seq,
+                    focus: Some(FocusLine {
+                        line: line.to_string(),
+                    }),
+                    status_row: true,
+                    ..QueryResult::default()
+                };
+            }
+            Route::Focus(_) => raw,
             Route::Bangless(line) => line,
         };
 
@@ -336,6 +371,7 @@ impl Pipeline {
                 status_row: false,
                 ask: None,
                 web: None,
+                focus: None,
             };
         }
 
@@ -369,6 +405,7 @@ impl Pipeline {
             status_row: false,
             ask: None,
             web: None,
+            focus: None,
         }
     }
 
@@ -391,6 +428,7 @@ impl Pipeline {
                 order,
             }),
             web: None,
+            focus: None,
             // Reuses the flag that reserves a status row in the *native* window,
             // exactly as `files_result` does: `!c` has no Entries, and without a
             // reserved row its one line falls outside the window.
@@ -440,6 +478,7 @@ impl Pipeline {
             status_row: false,
             ask: None,
             web: None,
+            focus: None,
         }
     }
 
@@ -474,6 +513,7 @@ impl Pipeline {
             status_row: !matches!(files.index().status(), crate::index::IndexStatus::Ready),
             ask: None,
             web: None,
+            focus: None,
         }
     }
 
@@ -1668,6 +1708,21 @@ otepad.exe",
             .entries
             .iter()
             .all(|e| e.kind != EntryKind::Clip));
+    }
+
+    /// `!f` is off until Settings switches it on, and then hands the line to
+    /// the frontend untouched; it holds the clock that reads `until …`.
+    #[test]
+    fn v0_16_bang_f_is_text_until_switched_on() {
+        let p = pipeline_with_clips(&[]);
+        assert!(p.query("!f write report 45m", 1).focus.is_none());
+        p.set_focus_bang(true);
+        let r = p.query("!f write report 45m", 2);
+        assert_eq!(
+            r.focus.map(|f| f.line),
+            Some("write report 45m".to_string())
+        );
+        assert!(r.entries.is_empty());
     }
 
     /// The Bang is a shortcut over the command, and can be turned off.

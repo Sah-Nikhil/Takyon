@@ -871,6 +871,7 @@ pub fn run() {
             // a keystroke can arrive before the Palette has mounted, and `!v`
             // silently falling through would look like a broken Bang.
             pipeline.set_bang_enabled(prefs::flag(&prefs, prefs::CLIPS_BANG, true));
+            pipeline.set_focus_bang(prefs::flag(&prefs, prefs::FOCUS_BANG, false));
             // Same reason, and it was the gap v0.6 closed: the policy was pushed
             // from the frontend only, so every keystroke before the Palette
             // mounted answered under Automatic whatever the user had chosen.

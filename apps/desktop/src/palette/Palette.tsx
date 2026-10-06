@@ -39,6 +39,9 @@ import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
 import { FocusView } from "@/focus/FocusView";
 import type { Intent as FocusIntent } from "@/focus/FocusRunning";
+import { liveTheme } from "@/focus/FocusForm";
+import { lengthText } from "@/focus/format";
+import type { FocusBangLine } from "@takyon/shared";
 
 /** Focus command Entries and the intent each opens the Focus view with. */
 const FOCUS_COMMANDS: Record<string, FocusIntent> = {
@@ -93,6 +96,10 @@ export function Palette() {
   const [view, setView] = useState<ViewKind | null>(null);
   /** Which Focus command opened the Focus view (v0.16). */
   const [focusIntent, setFocusIntent] = useState<FocusIntent>("start");
+  /** `!f`: the line as typed, and what Rust read out of it (v0.16). */
+  const [focusLine, setFocusLine] = useState<string | null>(null);
+  const [focusBang, setFocusBang] = useState<FocusBangLine | null>(null);
+  const [focusGoal, setFocusGoal] = useState<string | undefined>(undefined);
   /** Action labels for the footer, by id. Fetched once; Rust owns the words. */
   const [labels, setLabels] = useState<Record<string, Action>>({});
   /*
@@ -179,6 +186,9 @@ export function Palette() {
       setEntries(result.entries);
       setAsk(result.ask ?? null);
       setWeb(result.web ?? null);
+      setFocusLine(result.focus?.line ?? null);
+      if (result.focus) void api.focusParseBang(result.focus.line).then(setFocusBang);
+      else setFocusBang(null);
       // Selection follows the top Entry on every new result set. From v0.3 the
       // Stability rule freezes it ~100 ms after the last keystroke so that a late
       // Source cannot move what Enter is about to launch; until then, "the top
@@ -376,6 +386,31 @@ export function Palette() {
     void api.setView("web");
   }, [web]);
 
+  /*
+    Enter on `!f`. With a length, the session starts with the last Block list;
+    without one, the form opens with the goal already typed.
+   */
+  const startFocusBang = useCallback(() => {
+    if (focusLine === null || !focusBang) return;
+    if (focusBang.lengthMs) {
+      const lengthMs = focusBang.lengthMs;
+      void api
+        .focusLastList()
+        .then((list) => api.focusStart({ goal: focusBang.goal, lengthMs, strict: false, list, theme: liveTheme() }))
+        .finally(() => {
+          setFocusIntent("start");
+          setFocusGoal(undefined);
+          setView("focus");
+          void api.setView("focus");
+        });
+      return;
+    }
+    setFocusGoal(focusBang.goal);
+    setFocusIntent("start");
+    setView("focus");
+    void api.setView("focus");
+  }, [focusBang, focusLine]);
+
   const closeMenu = useCallback(() => {
     setMenu(null);
     void api.setActionMenu(null);
@@ -572,9 +607,22 @@ export function Palette() {
     window — it is always there, because a fixed-height panel with the list
     branch switched off is a tall empty box with a hairline across the top.
    */
+  /* `!f`'s one row: what Enter will start, or why it cannot yet. */
+  const focusNote =
+    focusLine === null
+      ? null
+      : !focusBang || !focusBang.goal
+        ? "Start a Focus session: a goal and a length, like write report 45m"
+        : focusBang.error
+          ? `${focusBang.goal} · ${focusBang.error}`
+          : focusBang.lengthMs
+            ? `Focus on ${focusBang.goal} for ${lengthText(focusBang.lengthMs)} — press Enter`
+            : `Focus on ${focusBang.goal} — press Enter to pick a length`;
+
   const showList =
     expanded ||
     entries.length > 0 ||
+    focusNote !== null ||
     webNote !== null ||
     fileIndexNote !== null ||
     askNote !== null;
@@ -611,7 +659,7 @@ export function Palette() {
   if (view === "focus") {
     return (
       <div className="relative flex h-full w-full flex-col p-2">
-        <FocusView intent={focusIntent} onClose={closeView} />
+        <FocusView intent={focusIntent} initialGoal={focusGoal} onClose={closeView} />
       </div>
     );
   }
@@ -703,6 +751,7 @@ export function Palette() {
             // rather than being launched.
             if (ask) startAsk();
             else if (web) startSearch();
+            else if (focusLine !== null) startFocusBang();
             else run(selected, actionForEvent(e, selectedKind));
           }
         }}
@@ -795,6 +844,15 @@ export function Palette() {
                 {webNote}
               </div>
             )}
+            {focusNote && (
+              <div
+                className="flex items-center px-2 text-[13px] text-fg/80"
+                style={{ height: ROW_HEIGHT }}
+                data-testid="focus-note"
+              >
+                {focusNote}
+              </div>
+            )}
             {askNote && (
               <div
                 className={`flex items-center px-2 text-[13px] ${
@@ -855,7 +913,11 @@ export function Palette() {
                   ? web.query
                     ? "Search"
                     : null
-                  : undefined
+                  : focusLine !== null
+                    ? focusBang?.goal
+                      ? "Start Focus"
+                      : null
+                    : undefined
             }
           />
         )}

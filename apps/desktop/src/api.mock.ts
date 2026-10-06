@@ -875,10 +875,13 @@ function frictionReady() {
   return !focusNow.strict || (frictionAt !== null && Date.now() - frictionAt >= 30_000);
 }
 
-/** `?focus=running|strict|paused`: a session already under way, for screenshots. */
+/** `?focus=running|strict|paused`: a session under way; `?focusbang=1`: `!f` on. */
 (() => {
   if (typeof window === "undefined") return;
-  const mode = new URLSearchParams(window.location.search).get("focus");
+  const params = new URLSearchParams(window.location.search);
+  // `?focusbang=1`: `!f` switched on, as Settings would leave it.
+  if (params.get("focusbang") === "1") focusPrefs.bang = true;
+  const mode = params.get("focus");
   if (mode !== "running" && mode !== "strict" && mode !== "paused") return;
   const remainingMs = 23 * MIN + 41_000;
   focusNow = {
@@ -1111,6 +1114,10 @@ export const mock = {
         statusRow: false,
         ask: { query: ask, agent: route[0] ?? null, order: route },
       };
+    }
+    // `!f` with the Bang on: the line goes back untouched (v0.16).
+    if (focusPrefs.bang && /^!f(\s|$)/i.test(q)) {
+      return { seq, entries: [], statusRow: true, focus: { line: q.replace(/^!f\s*/i, "") } };
     }
     // `!s` carries no Entries either, and no request is made here: typing the
     // Bang sends nothing, exactly as `query.rs` does it (ADR-0002).

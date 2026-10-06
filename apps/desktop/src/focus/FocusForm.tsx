@@ -15,7 +15,7 @@ import { keyLabel, lengthText, presetMinutes } from "./format";
 import { FocusIcon } from "./icons";
 
 /** The live theme's plate, fg and accent, as `styles.css` resolved them. */
-function liveTheme(): PageTheme | undefined {
+export function liveTheme(): PageTheme | undefined {
   if (typeof document === "undefined") return undefined;
   const css = getComputedStyle(document.documentElement);
   const role = (name: string) => css.getPropertyValue(`--color-${name}`).trim();
