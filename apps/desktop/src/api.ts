@@ -29,6 +29,15 @@ import {
   type SearchMessage,
   type WebSettings,
   EVENT_SEARCH,
+  EVENT_FOCUS,
+  type BlockList,
+  type FocusBangLine,
+  type FocusCategories,
+  type FocusCategory,
+  type FocusSettings,
+  type FocusSignal,
+  type FocusStartRequest,
+  type FocusView,
   type AliasRow,
   type AppAliasRow,
   type Placement,
@@ -587,6 +596,96 @@ export const openWebQuery = (query: string) =>
 export function onSearch(cb: (message: SearchMessage) => void): () => void {
   if (!inTauri) return mock.onSearch(cb);
   const p = listen<SearchMessage>(EVENT_SEARCH, (e) => cb(e.payload));
+  return () => {
+    void p.then((un) => un());
+  };
+}
+
+/* ------------------------------------------------------------------ Focus */
+
+/** Local time of day, ms since midnight: `until 4:30pm` is read against it. */
+export const localMsOfDay = (now = new Date()) =>
+  ((now.getHours() * 60 + now.getMinutes()) * 60 + now.getSeconds()) * 1000 + now.getMilliseconds();
+
+/** Live validation for the Duration field: length in ms, or rejects with why. */
+export const focusParseDuration = (text: string) =>
+  inTauri
+    ? invoke<number>("focus_parse_duration", { text, localMsOfDay: localMsOfDay() })
+    : mock.focusParseDuration(text);
+
+export const focusParseBang = (line: string) =>
+  inTauri
+    ? invoke<FocusBangLine>("focus_parse_bang", { line, localMsOfDay: localMsOfDay() })
+    : mock.focusParseBang(line);
+
+export const focusView = () =>
+  inTauri ? invoke<FocusView>("focus_view") : mock.focusView();
+
+/** Keys on `list` that Focus will refuse, for the start form. */
+export const focusPreview = (list: BlockList) =>
+  inTauri ? invoke<string[]>("focus_preview", { list }) : mock.focusPreview(list);
+
+/** Rejects with a `FocusError`. */
+export const focusStart = (request: FocusStartRequest) =>
+  inTauri ? invoke<FocusView>("focus_start", { request }) : mock.focusStart(request);
+
+export const focusPause = (breakMinutes: number | null) =>
+  inTauri ? invoke<FocusView>("focus_pause", { breakMinutes }) : mock.focusPause(breakMinutes);
+
+export const focusResume = () =>
+  inTauri ? invoke<FocusView>("focus_resume") : mock.focusResume();
+
+export const focusExtend = (minutes: number) =>
+  inTauri ? invoke<FocusView>("focus_extend", { minutes }) : mock.focusExtend(minutes);
+
+export const focusComplete = () =>
+  inTauri ? invoke<FocusView>("focus_complete") : mock.focusComplete();
+
+export const focusSnooze = (key: string) =>
+  inTauri ? invoke<void>("focus_snooze", { key }) : mock.focusSnooze(key);
+
+/** Strict friction: the retyped goal. True starts the 30 s countdown. */
+export const focusTypeGoal = (text: string) =>
+  inTauri ? invoke<boolean>("focus_type_goal", { text }) : mock.focusTypeGoal(text);
+
+export const focusResetFriction = () =>
+  inTauri ? invoke<void>("focus_reset_friction") : mock.focusResetFriction();
+
+export const focusCategories = () =>
+  inTauri ? invoke<FocusCategories>("focus_categories") : mock.focusCategories();
+
+export const focusSaveCategory = (category: FocusCategory) =>
+  inTauri
+    ? invoke<FocusCategory>("focus_save_category", { category })
+    : mock.focusSaveCategory(category);
+
+export const focusDeleteCategory = (id: string) =>
+  inTauri ? invoke<void>("focus_delete_category", { id }) : mock.focusDeleteCategory(id);
+
+export const focusExportCategories = (ids: string[]) =>
+  inTauri ? invoke<string>("focus_export_categories", { ids }) : mock.focusExportCategories(ids);
+
+export const focusImportCategories = (json: string) =>
+  inTauri
+    ? invoke<FocusCategory[]>("focus_import_categories", { json })
+    : mock.focusImportCategories(json);
+
+export const focusLastList = () =>
+  inTauri ? invoke<BlockList>("focus_last_list") : mock.focusLastList();
+
+export const focusSettings = () =>
+  inTauri ? invoke<FocusSettings>("focus_settings") : mock.focusSettings();
+
+/** One Focus preference; Rust refuses unknown keys and values. */
+export const focusSetSetting = (key: string, value: string) =>
+  inTauri ? invoke<void>("focus_set_setting", { key, value }) : mock.focusSetSetting(key, value);
+
+export const focusClearHistory = () =>
+  inTauri ? invoke<void>("focus_clear_history") : mock.focusClearHistory();
+
+export function onFocus(cb: (signal: FocusSignal) => void): () => void {
+  if (!inTauri) return mock.onFocus(cb);
+  const p = listen<FocusSignal>(EVENT_FOCUS, (e) => cb(e.payload));
   return () => {
     void p.then((un) => un());
   };

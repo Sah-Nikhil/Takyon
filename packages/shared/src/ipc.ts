@@ -253,7 +253,7 @@ export type ClipRetention = "forever" | "6-months" | "1-month" | "1-week" | "1-d
  * Not a second window: a third WebView2 would cost the login budget and a large
  * share of the 150 MB ceiling. The warm Palette grows, and Escape goes back.
  */
-export type ViewKind = "clipboard-history" | "ask" | "web";
+export type ViewKind = "clipboard-history" | "ask" | "web" | "focus";
 
 /**
  * How tall a full-window View is, logical pixels. Mirrors `VIEW_HEIGHT` in
@@ -664,4 +664,100 @@ export interface WebSettings {
   hint?: string;
   /** Where a key comes from. In the response so provider and page move together. */
   signupUrl: string;
+}
+
+/* ------------------------------------------------------------------ Focus */
+
+/** `focus/ipc.rs`. Every Focus change, plus a block and the session ending. */
+export const EVENT_FOCUS = "takyon://focus";
+
+/** What one Focus session blocks. Keys: `site:`, `exe:`, `package:`, `entry:`. */
+export interface BlockList {
+  /** Focus category ids: built-in (`social`) or custom (`custom:3`). */
+  categories: string[];
+  items: string[];
+}
+
+/** `service::View`: the running Focus session, or `running: false`. */
+export interface FocusView {
+  running: boolean;
+  goal: string;
+  strict: boolean;
+  remainingMs: number;
+  /** Wall-clock ms. The frontend counts down from this itself. */
+  endsAt: number;
+  paused: boolean;
+  breakEndsAt?: number | null;
+  /** Keys Focus will not touch: shell, Takyon itself. */
+  refused: string[];
+  /** Strict countdown left once the goal is retyped; absent before. */
+  frictionMs?: number | null;
+}
+
+export type FocusSignal =
+  | { kind: "view"; view: FocusView }
+  | { kind: "blocked"; key: string; label: string; snoozable: boolean }
+  | { kind: "ended"; outcome: "expired" | "completed" };
+
+export type FocusError =
+  | { kind: "alreadyRunning" }
+  | { kind: "notRunning" }
+  | { kind: "nothingToBlock" }
+  | { kind: "needsFriction" }
+  | { kind: "notAllowed" }
+  | { kind: "duration"; reason: string }
+  | { kind: "storage"; reason: string };
+
+export interface FocusItem {
+  key: string;
+  label: string;
+}
+
+export interface FocusCategory {
+  /** `social` built-in, `custom:3` custom, `""` when not yet saved. */
+  id: string;
+  name: string;
+  /** Phosphor icon name. */
+  icon: string;
+  /** `games`: plus every installed game, resolved at session start. */
+  dynamic?: string | null;
+  copiedFrom?: string | null;
+  items: FocusItem[];
+}
+
+export interface FocusCategories {
+  builtins: FocusCategory[];
+  custom: FocusCategory[];
+}
+
+export interface FocusSettings {
+  /** 0 = No Snooze. */
+  snoozeMinutes: number;
+  restoreApps: boolean;
+  surface: "bar" | "tray";
+  bang: boolean;
+  hurdleShutdown: "strict" | "always" | "never";
+  hurdleIdle: "strict" | "always" | "never";
+}
+
+/** `!f` line split into goal and a trailing duration. */
+export interface FocusBangLine {
+  goal: string;
+  lengthMs?: number | null;
+  error?: string | null;
+}
+
+/** Colours the block page is painted in: the live theme half. */
+export interface PageTheme {
+  plate: string;
+  fg: string;
+  accent: string;
+}
+
+export interface FocusStartRequest {
+  goal: string;
+  lengthMs: number;
+  strict: boolean;
+  list: BlockList;
+  theme?: PageTheme;
 }

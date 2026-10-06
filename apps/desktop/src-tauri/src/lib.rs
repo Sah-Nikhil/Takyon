@@ -267,6 +267,7 @@ fn set_view(app: tauri::AppHandle, view: Option<String>) {
         Some("clipboard-history") => Some(window::View::ClipboardHistory),
         Some("ask") => Some(window::View::Ask),
         Some("web") => Some(window::View::Web),
+        Some("focus") => Some(window::View::Focus),
         _ => None,
     };
     window::set_view(&app, view);

@@ -753,7 +753,11 @@ impl Pipeline {
             }
             self.record_activation(id, crate::entry::EntryKind::Command, action);
             return match command {
-                CommandId::ClipboardHistory => Ok(()),
+                CommandId::ClipboardHistory
+                | CommandId::FocusStart
+                | CommandId::FocusComplete
+                | CommandId::FocusPause
+                | CommandId::FocusResume => Ok(()),
             };
         }
         if let Some(row) = clip_id(id) {

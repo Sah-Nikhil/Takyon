@@ -32,6 +32,11 @@ pub struct Command {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandId {
     ClipboardHistory,
+    /// v0.16. All four open the Focus view; it shows the form or the controls.
+    FocusStart,
+    FocusComplete,
+    FocusPause,
+    FocusResume,
 }
 
 impl CommandId {
@@ -39,6 +44,10 @@ impl CommandId {
     pub fn slug(self) -> &'static str {
         match self {
             CommandId::ClipboardHistory => "clipboard-history",
+            CommandId::FocusStart => "focus-start",
+            CommandId::FocusComplete => "focus-complete",
+            CommandId::FocusPause => "focus-pause",
+            CommandId::FocusResume => "focus-resume",
         }
     }
 
@@ -50,18 +59,48 @@ impl CommandId {
     pub fn from_entry(id: &EntryId) -> Option<Self> {
         match id.as_str().strip_prefix(PREFIX)? {
             "clipboard-history" => Some(CommandId::ClipboardHistory),
+            "focus-start" => Some(CommandId::FocusStart),
+            "focus-complete" => Some(CommandId::FocusComplete),
+            "focus-pause" => Some(CommandId::FocusPause),
+            "focus-resume" => Some(CommandId::FocusResume),
             _ => None,
         }
     }
 }
 
 /// The table. One command at v0.5; v0.6 and beyond add rows, not code.
-const TABLE: &[(CommandId, &str, &str, &[&str])] = &[(
-    CommandId::ClipboardHistory,
-    "Clipboard History",
-    "Takyon",
-    &["clipboard", "history", "clip", "hist", "paste", "copied"],
-)];
+const TABLE: &[(CommandId, &str, &str, &[&str])] = &[
+    (
+        CommandId::ClipboardHistory,
+        "Clipboard History",
+        "Takyon",
+        &["clipboard", "history", "clip", "hist", "paste", "copied"],
+    ),
+    (
+        CommandId::FocusStart,
+        "Start Focus Session",
+        "Takyon",
+        &["focus", "block", "distraction", "pomodoro", "deep work"],
+    ),
+    (
+        CommandId::FocusComplete,
+        "Complete Focus Session",
+        "Takyon",
+        &["focus", "finish", "end", "stop"],
+    ),
+    (
+        CommandId::FocusPause,
+        "Pause Focus Session",
+        "Takyon",
+        &["focus", "break"],
+    ),
+    (
+        CommandId::FocusResume,
+        "Resume Focus Session",
+        "Takyon",
+        &["focus", "continue"],
+    ),
+];
 
 /// Built-in commands as a Source.
 pub struct CommandSource {
@@ -183,6 +222,28 @@ mod tests {
     fn v0_5_his_matches_the_titles_own_second_word() {
         let hay = Haystack::new("Clipboard History", None);
         assert_eq!(rank::tier_of("his", &hay), Some(rank::TIER_WORD_PREFIX));
+    }
+
+    #[test]
+    fn v0_16_focus_finds_the_focus_commands_with_start_first() {
+        let found = hits("focus");
+        assert_eq!(found.len(), 4);
+        let titles: Vec<&str> = found.iter().map(|e| e.title.as_str()).collect();
+        assert!(titles.contains(&"Start Focus Session"));
+        let start = hits("start focus");
+        assert_eq!(start[0].title, "Start Focus Session");
+    }
+
+    #[test]
+    fn v0_16_focus_command_ids_round_trip() {
+        for id in [
+            CommandId::FocusStart,
+            CommandId::FocusComplete,
+            CommandId::FocusPause,
+            CommandId::FocusResume,
+        ] {
+            assert_eq!(CommandId::from_entry(&id.entry_id()), Some(id));
+        }
     }
 
     #[test]

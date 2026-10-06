@@ -35,6 +35,14 @@ import type {
   SettingsSnapshot,
   ShowPayload,
   WebSettings,
+  BlockList,
+  FocusBangLine,
+  FocusCategories,
+  FocusCategory,
+  FocusSettings,
+  FocusSignal,
+  FocusStartRequest,
+  FocusView,
 } from "@takyon/shared";
 
 type ShowListener = (payload: ShowPayload) => void;
@@ -422,6 +430,30 @@ const COMMAND_FIXTURE: Entry = {
   actions: ["open_command"],
 };
 
+/**
+ * The four Focus commands (v0.16). Offered only for queries naming "focus":
+ * a narrower net than Rust's ranking, so earlier baselines keep their rows.
+ */
+const FOCUS_COMMAND_FIXTURES: Entry[] = [
+  ["focus-start", "Start Focus Session"],
+  ["focus-complete", "Complete Focus Session"],
+  ["focus-pause", "Pause Focus Session"],
+  ["focus-resume", "Resume Focus Session"],
+].map(([slug, title], i) => ({
+  id: `command:${slug}`,
+  title: title!,
+  subtitle: "Takyon",
+  kind: "command",
+  score: 690 - i,
+  actions: ["open_command"],
+}));
+
+function focusCommands(q: string): Entry[] {
+  if (!/focus/i.test(q)) return [];
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  return FOCUS_COMMAND_FIXTURES.filter((e) => words.every((w) => e.title.toLowerCase().includes(w)));
+}
+
 /** Rows for the history surface. Day offsets so grouping has something to do. */
 const now = Math.floor(Date.now() / 1000);
 const CLIP_ROWS: ClipRow[] = [
@@ -727,6 +759,289 @@ function calcFixture(q: string): Entry[] {
   ];
 }
 
+/* ------------------------------------------------------------------ Focus */
+
+const MIN = 60_000;
+
+/** The built-ins, trimmed: enough rows to draw every surface. */
+const FOCUS_BUILTINS: FocusCategory[] = [
+  {
+    id: "social",
+    name: "Social",
+    icon: "UsersThree",
+    items: [
+      { key: "site:x.com", label: "X" },
+      { key: "site:instagram.com", label: "Instagram" },
+      { key: "site:reddit.com", label: "Reddit" },
+      { key: "site:tiktok.com", label: "TikTok" },
+    ],
+  },
+  {
+    id: "messaging",
+    name: "Messaging",
+    icon: "ChatsCircle",
+    items: [
+      { key: "exe:discord.exe", label: "Discord" },
+      { key: "exe:slack.exe", label: "Slack" },
+      { key: "exe:whatsapp.exe", label: "WhatsApp" },
+    ],
+  },
+  {
+    id: "video",
+    name: "Video & streaming",
+    icon: "PlayCircle",
+    items: [
+      { key: "site:youtube.com", label: "YouTube" },
+      { key: "site:netflix.com", label: "Netflix" },
+      { key: "site:twitch.tv", label: "Twitch" },
+    ],
+  },
+  {
+    id: "news",
+    name: "News",
+    icon: "Newspaper",
+    items: [
+      { key: "site:news.google.com", label: "Google News" },
+      { key: "site:bbc.com", label: "BBC" },
+    ],
+  },
+  {
+    id: "shopping",
+    name: "Shopping",
+    icon: "ShoppingBag",
+    items: [
+      { key: "site:amazon.com", label: "Amazon" },
+      { key: "site:flipkart.com", label: "Flipkart" },
+    ],
+  },
+  {
+    id: "games",
+    name: "Games",
+    icon: "GameController",
+    dynamic: "games",
+    items: [{ key: "exe:steam.exe", label: "Steam" }],
+  },
+];
+
+const PROTECTED = ["exe:explorer.exe", "exe:takyon.exe"];
+
+let focusCustom: FocusCategory[] = [];
+let nextCustom = 1;
+let focusLast: BlockList = { categories: ["social", "video"], items: ["exe:discord.exe"] };
+const focusPrefs: FocusSettings = {
+  snoozeMinutes: 3,
+  restoreApps: false,
+  surface: "bar",
+  bang: false,
+  hurdleShutdown: "strict",
+  hurdleIdle: "strict",
+};
+const focusListeners = new Set<(signal: FocusSignal) => void>();
+const IDLE_VIEW: FocusView = {
+  running: false,
+  goal: "",
+  strict: false,
+  remainingMs: 0,
+  endsAt: 0,
+  paused: false,
+  refused: [],
+};
+let focusNow: FocusView = IDLE_VIEW;
+let frictionAt: number | null = null;
+
+function emitFocus(signal: FocusSignal) {
+  for (const cb of focusListeners) cb(signal);
+}
+
+function focusTick(): FocusView {
+  if (!focusNow.running) return focusNow;
+  const remainingMs = focusNow.paused
+    ? focusNow.remainingMs
+    : Math.max(0, focusNow.endsAt - Date.now());
+  const frictionMs = frictionAt === null ? null : Math.max(0, frictionAt + 30_000 - Date.now());
+  return { ...focusNow, remainingMs, frictionMs };
+}
+
+function changed(view: FocusView): FocusView {
+  focusNow = view;
+  const shown = focusTick();
+  emitFocus({ kind: "view", view: shown });
+  return shown;
+}
+
+/** Strict: has the retyped goal's countdown run out? */
+function frictionReady() {
+  return !focusNow.strict || (frictionAt !== null && Date.now() - frictionAt >= 30_000);
+}
+
+/** `?focus=running|strict|paused`: a session already under way, for screenshots. */
+(() => {
+  if (typeof window === "undefined") return;
+  const mode = new URLSearchParams(window.location.search).get("focus");
+  if (mode !== "running" && mode !== "strict" && mode !== "paused") return;
+  const remainingMs = 23 * MIN + 41_000;
+  focusNow = {
+    running: true,
+    goal: "Write Focus manual page",
+    strict: mode === "strict",
+    remainingMs,
+    endsAt: Date.now() + remainingMs,
+    paused: mode === "paused",
+    breakEndsAt: mode === "paused" ? Date.now() + 5 * MIN : null,
+    refused: [],
+  };
+})();
+
+/** Mirror of `duration.rs` for the shapes the form offers; not a full parser. */
+function mockDuration(text: string): number {
+  const t = text.trim().toLowerCase();
+  if (t.startsWith("until ")) return 150 * MIN;
+  const m =
+    /^(\d+(?:\.\d+)?)\s*(h|hr|hrs|hours?|m|min|mins|minutes?)?\s*(?:(\d+)\s*(?:m|min|mins|minutes?)?)?$/.exec(
+      t,
+    );
+  if (!m) throw "Not a length or a time";
+  const n = Number(m[1]);
+  const hours = m[2]?.startsWith("h") ?? false;
+  const ms = hours ? n * 60 * MIN + Number(m[3] ?? 0) * MIN : n * MIN;
+  if (ms === 0) throw "Too short";
+  if (ms > 24 * 60 * MIN) throw "Longer than a day";
+  return ms;
+}
+
+const focusMock = {
+  focusParseDuration: async (text: string) => mockDuration(text),
+  focusParseBang: async (line: string): Promise<FocusBangLine> => {
+    const m = /^(.*?)\s*(\d+(?:\.\d+)?\s*(?:h|m)\w*(?:\s*\d+\s*m\w*)?|until .+)$/i.exec(line.trim());
+    if (!m) return { goal: line.trim(), lengthMs: null, error: null };
+    try {
+      return { goal: m[1]!.trim(), lengthMs: mockDuration(m[2]!), error: null };
+    } catch (e) {
+      return { goal: m[1]!.trim(), lengthMs: null, error: String(e) };
+    }
+  },
+  focusView: async () => focusTick(),
+  focusPreview: async (list: BlockList) => list.items.filter((k) => PROTECTED.includes(k)),
+  focusStart: async (request: FocusStartRequest) => {
+    if (focusNow.running) throw { kind: "alreadyRunning" };
+    const items = request.list.items.filter((k) => !PROTECTED.includes(k));
+    if (request.list.categories.length + items.length === 0) throw { kind: "nothingToBlock" };
+    focusLast = request.list;
+    frictionAt = null;
+    return changed({
+      running: true,
+      goal: request.goal.trim() || "Focus",
+      strict: request.strict,
+      remainingMs: request.lengthMs,
+      endsAt: Date.now() + request.lengthMs,
+      paused: false,
+      refused: request.list.items.filter((k) => PROTECTED.includes(k)),
+    });
+  },
+  focusPause: async (breakMinutes: number | null) => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    if (!frictionReady()) throw { kind: "needsFriction" };
+    frictionAt = null;
+    const remainingMs = Math.max(0, focusNow.endsAt - Date.now());
+    return changed({
+      ...focusNow,
+      paused: true,
+      remainingMs,
+      breakEndsAt: breakMinutes ? Date.now() + breakMinutes * MIN : null,
+    });
+  },
+  focusResume: async () => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    return changed({
+      ...focusNow,
+      paused: false,
+      endsAt: Date.now() + focusNow.remainingMs,
+      breakEndsAt: null,
+    });
+  },
+  focusExtend: async (minutes: number) => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    return changed({
+      ...focusNow,
+      endsAt: focusNow.endsAt + minutes * MIN,
+      remainingMs: focusNow.remainingMs + minutes * MIN,
+    });
+  },
+  focusComplete: async () => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    if (!frictionReady()) throw { kind: "needsFriction" };
+    frictionAt = null;
+    changed(IDLE_VIEW);
+    emitFocus({ kind: "ended", outcome: "completed" });
+    return IDLE_VIEW;
+  },
+  focusSnooze: async (_key: string) => {
+    if (focusNow.strict || focusPrefs.snoozeMinutes === 0) throw { kind: "notAllowed" };
+  },
+  focusTypeGoal: async (text: string) => {
+    const ok = text.trim() === focusNow.goal.trim();
+    if (ok) frictionAt = Date.now();
+    changed(focusNow);
+    return ok;
+  },
+  focusResetFriction: async () => {
+    frictionAt = null;
+  },
+  focusCategories: async (): Promise<FocusCategories> => ({
+    builtins: FOCUS_BUILTINS,
+    custom: focusCustom,
+  }),
+  focusSaveCategory: async (category: FocusCategory) => {
+    if (!category.name.trim()) throw "A Focus category needs a name";
+    const saved = { ...category, id: category.id || `custom:${nextCustom++}` };
+    focusCustom = [...focusCustom.filter((c) => c.id !== saved.id), saved];
+    return saved;
+  },
+  focusDeleteCategory: async (id: string) => {
+    focusCustom = focusCustom.filter((c) => c.id !== id);
+  },
+  focusExportCategories: async (ids: string[]) =>
+    JSON.stringify(
+      {
+        version: 1,
+        categories: focusCustom.filter((c) => ids.length === 0 || ids.includes(c.id)),
+      },
+      null,
+      2,
+    ),
+  focusImportCategories: async (json: string) => {
+    const file = JSON.parse(json) as { categories: FocusCategory[] };
+    const saved: FocusCategory[] = [];
+    for (const c of file.categories) {
+      let name = c.name;
+      for (let n = 2; focusCustom.some((x) => x.name === name); n++) name = `${c.name} (${n})`;
+      const one = { ...c, id: `custom:${nextCustom++}`, name };
+      focusCustom = [...focusCustom, one];
+      saved.push(one);
+    }
+    return saved;
+  },
+  focusLastList: async () => focusLast,
+  focusSettings: async () => ({ ...focusPrefs }),
+  focusSetSetting: async (key: string, value: string) => {
+    const k = key.replace("focus.", "");
+    if (k === "snooze_minutes") focusPrefs.snoozeMinutes = Number(value);
+    if (k === "restore_apps") focusPrefs.restoreApps = value === "1";
+    if (k === "surface") focusPrefs.surface = value as FocusSettings["surface"];
+    if (k === "bang") focusPrefs.bang = value === "1";
+    if (k === "hurdle_shutdown")
+      focusPrefs.hurdleShutdown = value as FocusSettings["hurdleShutdown"];
+    if (k === "hurdle_idle") focusPrefs.hurdleIdle = value as FocusSettings["hurdleIdle"];
+  },
+  focusClearHistory: async () => {},
+  onFocus: (cb: (signal: FocusSignal) => void) => {
+    focusListeners.add(cb);
+    return () => {
+      focusListeners.delete(cb);
+    };
+  },
+};
+
 export const mock = {
   dismiss: async () => {
     emitHide();
@@ -777,6 +1092,7 @@ export const mock = {
         ? [
             ...calcFixture(q),
             ...[...FIXTURES, COMMAND_FIXTURE].filter((e) => matches(e, q)),
+            ...focusCommands(q),
           ]
         : // Expanded's first view (v0.10). Rust answers the empty line with the
           // top Frecency Entries in that mode only; here the same branch hands
@@ -796,7 +1112,7 @@ export const mock = {
     const entry = entryId.startsWith("calc:")
       ? { actions: ["copy_answer"] }
       : (CLIP_FIXTURES.find((e) => e.id === entryId) ??
-        [...FIXTURES, COMMAND_FIXTURE].find((e) => e.id === entryId));
+        [...FIXTURES, COMMAND_FIXTURE, ...FOCUS_COMMAND_FIXTURES].find((e) => e.id === entryId));
     // `flatMap`, not `map().filter(Boolean)`: with `noUncheckedIndexedAccess`
     // the lookup is `Action | undefined` and `filter` does not narrow it.
     // Returning `[]` for an unknown id also mirrors Rust.
@@ -1164,4 +1480,5 @@ export const mock = {
       turnListeners.delete(cb);
     };
   },
+  ...focusMock,
 };

@@ -37,6 +37,16 @@ import { AskView } from "./AskView";
 import { SearchView } from "./SearchView";
 import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
+import { FocusView } from "@/focus/FocusView";
+import type { Intent as FocusIntent } from "@/focus/FocusRunning";
+
+/** Focus command Entries and the intent each opens the Focus view with. */
+const FOCUS_COMMANDS: Record<string, FocusIntent> = {
+  "command:focus-start": "start",
+  "command:focus-complete": "complete",
+  "command:focus-pause": "pause",
+  "command:focus-resume": "resume",
+};
 import { Footer } from "./Footer";
 import { EntryRow } from "./EntryRow";
 import { groupEntries } from "./groups";
@@ -81,6 +91,8 @@ export function Palette() {
     nothing in here can do.
    */
   const [view, setView] = useState<ViewKind | null>(null);
+  /** Which Focus command opened the Focus view (v0.16). */
+  const [focusIntent, setFocusIntent] = useState<FocusIntent>("start");
   /** Action labels for the footer, by id. Fetched once; Rust owns the words. */
   const [labels, setLabels] = useState<Record<string, Action>>({});
   /*
@@ -377,7 +389,13 @@ export function Palette() {
       // reaches the shell and the window stays up.
       if (actionId === "open_command") {
         void api.activate(entryId, actionId);
-        openView("clipboard-history");
+        const focus = FOCUS_COMMANDS[entryId];
+        if (focus) {
+          setFocusIntent(focus);
+          openView("focus");
+        } else {
+          openView("clipboard-history");
+        }
         return;
       }
       // No hide here either: Rust hides inside `activate`, before it asks the
@@ -590,6 +608,14 @@ export function Palette() {
     `VIEW_HEIGHT`, so a list left mounted under it would be a second scrollable
     thing in a window sized for one.
    */
+  if (view === "focus") {
+    return (
+      <div className="relative flex h-full w-full flex-col p-2">
+        <FocusView intent={focusIntent} onClose={closeView} />
+      </div>
+    );
+  }
+
   if (view === "clipboard-history") {
     return (
       <div className="relative flex h-full w-full flex-col p-2">

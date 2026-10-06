@@ -11,6 +11,7 @@ use super::site::domain_of;
 
 /// One Focus category.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct Category {
     pub id: String,
     pub name: String,

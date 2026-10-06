@@ -88,6 +88,8 @@ pub enum View {
     /// `!s` with a question typed. Same height and same reason: a streamed
     /// answer over a source list, both scrolling (v0.9).
     Web,
+    /// The Focus start form, or the running session's controls (v0.16).
+    Focus,
 }
 
 /// How tall a full-window View is, logical pixels.
