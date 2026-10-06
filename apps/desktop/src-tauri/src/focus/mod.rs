@@ -6,6 +6,7 @@
 pub mod categories;
 pub mod duration;
 pub mod identity;
+pub mod procs;
 pub mod protected;
 pub mod session;
 pub mod site;

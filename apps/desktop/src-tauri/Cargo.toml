@@ -122,6 +122,11 @@ windows = { version = "0.61", features = [
   # Agent is `cmd.exe` → `node` → the CLI, and killing the first leaves the
   # other two running (ADR-0033). Toolhelp above resumes the suspended child.
   "Win32_System_JobObjects",
+  # v0.16 Focus. `Appx` is `GetApplicationUserModelId` and `GetPackageFamilyName`,
+  # how a Store app is told apart; `RemoteDesktop` is `ProcessIdToSessionId`,
+  # so session-0 services are never quit.
+  "Win32_Storage_Packaging_Appx",
+  "Win32_System_RemoteDesktop",
 ] }
 
 [target.'cfg(unix)'.dependencies]

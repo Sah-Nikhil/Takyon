@@ -190,3 +190,121 @@ fn v0_16_custom_categories_are_created_edited_and_deleted() {
     reopened.delete_category(&edited.id).unwrap();
     assert!(reopened.custom_categories().is_empty());
 }
+
+// --- Processes ------------------------------------------------------------
+
+use std::process::{Child, Command};
+use std::time::{Duration, Instant};
+use takyon_lib::focus::procs::{self, Quit};
+
+/// Kills the child if a test panics before quitting it.
+struct Spawned(Child);
+
+impl Drop for Spawned {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+    }
+}
+
+fn wait_for<F: FnMut() -> bool>(what: &str, timeout: Duration, mut ready: F) {
+    let start = Instant::now();
+    while !ready() {
+        assert!(start.elapsed() < timeout, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Paths compared canonicalised: `%TEMP%` may be an 8.3 alias (CLAUDE.md).
+#[test]
+fn v0_16_the_snapshot_sees_this_test_with_its_image_path() {
+    let me = std::process::id();
+    let found = procs::snapshot()
+        .into_iter()
+        .find(|r| r.pid == me)
+        .expect("own pid in snapshot");
+    let canon = |p: &std::path::Path| std::fs::canonicalize(p).unwrap();
+    assert_eq!(
+        canon(&found.process.image),
+        canon(&std::env::current_exe().unwrap())
+    );
+    assert_ne!(found.process.session_id, 0);
+    assert_eq!(found.process.package_family, None);
+}
+
+/// A PowerShell WinForms window, up and visible. `on_close` runs in its
+/// FormClosing handler.
+fn form(on_close: &str) -> Spawned {
+    let script = format!(
+        "Add-Type -AssemblyName System.Windows.Forms; \
+         $f = New-Object Windows.Forms.Form; $f.Text = 'takyon-focus-test'; \
+         $f.add_FormClosing({{ {on_close} }}); [Windows.Forms.Application]::Run($f)"
+    );
+    let child = Spawned(
+        Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &script])
+            .spawn()
+            .unwrap(),
+    );
+    let pid = child.0.id();
+    wait_for("the form", Duration::from_secs(30), || {
+        procs::window_count(pid) > 0
+    });
+    child
+}
+
+/// A window that honours `WM_CLOSE` closes; nothing gets terminated.
+#[test]
+fn v0_16_a_windowed_app_is_asked_to_close_first() {
+    let mut child = form("");
+    assert_eq!(
+        procs::quit(child.0.id(), Duration::from_secs(5)),
+        Quit::Closed
+    );
+    assert!(child.0.try_wait().unwrap().is_some());
+}
+
+/// Asked, refused, terminated once the grace runs out.
+#[test]
+fn v0_16_a_window_refusing_to_close_is_terminated_after_the_grace() {
+    let mut child = form("$_.Cancel = $true");
+    let started = Instant::now();
+    assert_eq!(
+        procs::quit(child.0.id(), Duration::from_millis(800)),
+        Quit::Terminated
+    );
+    assert!(started.elapsed() >= Duration::from_millis(800));
+    wait_for("exit", Duration::from_secs(5), || {
+        child.0.try_wait().unwrap().is_some()
+    });
+}
+
+/// Nothing to ask, so no grace: `taskkill` without `/F` does the same.
+#[test]
+fn v0_16_a_windowless_process_is_terminated_at_once() {
+    let mut child = Spawned(
+        Command::new("ping.exe")
+            .args(["-n", "120", "127.0.0.1"])
+            .spawn()
+            .unwrap(),
+    );
+    let started = Instant::now();
+    assert_eq!(
+        procs::quit(child.0.id(), Duration::from_secs(10)),
+        Quit::Terminated
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
+    wait_for("exit", Duration::from_secs(5), || {
+        child.0.try_wait().unwrap().is_some()
+    });
+}
+
+#[test]
+fn v0_16_quitting_a_process_that_is_gone_says_so() {
+    let mut child = Command::new("cmd.exe")
+        .args(["/c", "exit"])
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    child.wait().unwrap();
+    assert_eq!(procs::quit(pid, Duration::from_millis(200)), Quit::Gone);
+}
