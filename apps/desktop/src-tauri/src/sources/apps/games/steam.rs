@@ -181,6 +181,8 @@ impl<'a> Tokens<'a> {
 pub struct SteamGame {
     pub app_id: u32,
     pub name: String,
+    /// Folder under `steamapps\common`. Focus blocks everything inside it.
+    pub installdir: Option<String>,
 }
 
 /// App ids Steam installs that are not games.
@@ -245,9 +247,16 @@ pub fn parse_manifest(input: &str) -> Option<SteamGame> {
     if name.is_empty() {
         return None;
     }
+    let installdir = state
+        .get("installdir")
+        .and_then(Vdf::as_str)
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .map(String::from);
     Some(SteamGame {
         app_id,
         name: name.to_string(),
+        installdir,
     })
 }
 
@@ -314,7 +323,7 @@ pub fn steam_path() -> Option<PathBuf> {
 /// The `steamapps` directory of the install itself is always a library, and it is
 /// listed in `libraryfolders.vdf` too — hence the dedupe. Reading it twice would
 /// double every game on a single-library machine.
-pub fn discover(steam: &Path) -> Vec<SteamGame> {
+pub fn discover(steam: &Path) -> Vec<(PathBuf, SteamGame)> {
     let mut roots = vec![steam.to_path_buf()];
     let index = steam.join("steamapps").join("libraryfolders.vdf");
     if let Ok(text) = std::fs::read_to_string(&index) {
@@ -345,7 +354,7 @@ pub fn discover(steam: &Path) -> Vec<SteamGame> {
                 continue;
             };
             if is_game(game.app_id, &game.name) && seen_ids.insert(game.app_id) {
-                games.push(game);
+                games.push((root.clone(), game));
             }
         }
     }
@@ -372,9 +381,12 @@ impl GameLibrary for SteamLibrary {
     fn games(&self) -> Vec<Game> {
         discover(&self.path)
             .into_iter()
-            .map(|game| Game {
+            .map(|(root, game)| Game {
                 launcher: GameLauncher::Steam,
                 id: game.app_id.to_string(),
+                install_dir: game
+                    .installdir
+                    .map(|d| root.join("steamapps").join("common").join(d)),
                 name: game.name,
             })
             .collect()
@@ -471,7 +483,8 @@ mod tests {
             parse_manifest(A_REAL_GAME),
             Some(SteamGame {
                 app_id: 440,
-                name: "Team Fortress 2".into()
+                name: "Team Fortress 2".into(),
+                installdir: Some("Team Fortress 2".into()),
             })
         );
     }

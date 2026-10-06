@@ -10,6 +10,7 @@ pub mod identity;
 pub mod procs;
 pub mod protected;
 pub mod rules;
+pub mod service;
 pub mod session;
 pub mod site;
 pub mod store;

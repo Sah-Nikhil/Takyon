@@ -127,6 +127,7 @@ pub fn discover(manifests: &Path) -> Vec<Game> {
         }
         games.push(Game {
             launcher: GameLauncher::Epic,
+            install_dir: Some(manifest.install_location.clone()),
             id: manifest.app_name,
             name: manifest.display_name,
         });
