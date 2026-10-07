@@ -135,12 +135,13 @@ test.describe("the floating bar", () => {
     await expect(page).toHaveScreenshot("focus-bar-paused.png");
   });
 
-  test("centres the goal between the icon and the clock", async ({ page }) => {
+  test("hugs its content: no gap between the goal and the clock", async ({ page }) => {
     await page.goto("/?window=bar&focus=running");
-    const goal = page.getByText("Write Focus manual page");
-    await expect(goal).toBeVisible();
-    const box = (await goal.boundingBox())!;
-    expect(Math.abs(box.x + box.width / 2 - 150)).toBeLessThanOrEqual(1);
+    const goal = (await page.getByText("Write Focus manual page").boundingBox())!;
+    const time = (await page.getByText("23:41").boundingBox())!;
+    expect(time.x - (goal.x + goal.width)).toBeLessThanOrEqual(24);
+    const pill = (await page.locator("[data-tauri-drag-region]").first().boundingBox())!;
+    expect(pill.width).toBeLessThan(270);
   });
 
   test("fades only its panel to the opacity Settings holds", async ({ page }) => {

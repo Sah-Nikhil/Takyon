@@ -1,12 +1,12 @@
 /**
- * The floating Focus bar (v0.16): goal centred, time left on the right;
- * Pause and Complete on hover. A block pulses it in `accent` with the target's
- * name and, in a Soft session, Snooze. The window never takes focus (`bar.rs`),
- * so nothing here types: Strict exits go through the Palette's friction.
- * The panel is its own layer so Settings' opacity fades it, never the text.
+ * The floating Focus bar (v0.16): a pill that hugs its content, goal then time
+ * left; Pause and Complete overlay the clock on hover, so hovering never
+ * resizes it. A block pulses it in `accent` with the target's name and, in a
+ * Soft session, Snooze. The window never takes focus and is sized to the pill
+ * (`bar.rs` `fit`). The panel is its own layer: opacity fades it, not the text.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle, Pause, Play } from "@phosphor-icons/react";
 import type { FocusView } from "@takyon/shared";
 import * as api from "@/api";
@@ -23,6 +23,7 @@ export function FocusBar() {
   const [hint, setHint] = useState<string | null>(null);
   const [opacity, setOpacity] = useState(90);
   const [now, setNow] = useState(() => Date.now());
+  const pill = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void api.focusView().then(setView);
@@ -39,6 +40,23 @@ export function FocusBar() {
     };
   }, []);
 
+  // The window follows the pill: a new goal, a block line, Snooze appearing.
+  const running = Boolean(view?.running);
+  useEffect(() => {
+    const el = pill.current;
+    if (!el) return;
+    let last = 0;
+    const observer = new ResizeObserver(() => {
+      const width = Math.ceil(el.getBoundingClientRect().width);
+      if (width !== last) {
+        last = width;
+        void api.focusBarFit(width);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [running]);
+
   if (!view?.running) return null;
 
   const live = notice && now - notice.at < NOTICE_MS ? notice : null;
@@ -52,25 +70,28 @@ export function FocusBar() {
       }
     });
 
-  const icon = "grid size-6 place-items-center rounded-md text-fg/70 hover:bg-row-selected hover:text-fg";
+  const icon = "grid size-5 place-items-center rounded-md text-fg/70 hover:bg-row-selected hover:text-fg";
 
   return (
-    <div
-      data-tauri-drag-region
-      data-pulse={live ? true : undefined}
-      className="group relative grid h-full w-full grid-cols-[4rem_minmax(0,1fr)_4rem] items-center px-2.5"
-    >
+    // `w-max`: the pill measures its own width, not the window's, or a window
+    // narrower than the content could never be asked to grow.
+    <div className="flex h-full w-full items-center justify-center overflow-hidden">
       <div
-        aria-hidden
-        style={{ opacity: opacity / 100 }}
-        className="pointer-events-none absolute inset-0 rounded-xl border border-edge bg-plate group-data-[pulse=true]:animate-[focus-pulse_1.2s_ease-out_2] group-data-[pulse=true]:border-accent/70"
-      />
-      <FocusIcon name="Target" className="pointer-events-none relative size-4 justify-self-start text-accent" />
-      <span data-tauri-drag-region className="relative truncate text-center text-[13px] font-medium text-fg">
-        {hint ?? (live ? `${live.label} blocked` : view.goal)}
-      </span>
+        ref={pill}
+        data-tauri-drag-region
+        data-pulse={live ? true : undefined}
+        className="group relative flex h-full w-max shrink-0 items-center gap-2.5 pl-3.5 pr-3"
+      >
+        <div
+          aria-hidden
+          style={{ opacity: opacity / 100 }}
+          className="pointer-events-none absolute inset-0 rounded-xl border border-edge bg-plate group-data-[pulse=true]:animate-[focus-pulse_1.2s_ease-out_2] group-data-[pulse=true]:border-accent/70"
+        />
+        <FocusIcon name="Target" className="pointer-events-none relative size-4 shrink-0 text-accent" />
+        <span data-tauri-drag-region className="relative max-w-[16rem] truncate text-[13px] font-medium text-fg">
+          {hint ?? (live ? `${live.label} blocked` : view.goal)}
+        </span>
 
-      <div className="relative flex items-center justify-self-end">
         {live?.snoozable ? (
           <button
             type="button"
@@ -78,19 +99,20 @@ export function FocusBar() {
               void api.focusSnooze(live.key);
               setNotice(null);
             }}
-            className="h-6 rounded-md border border-edge bg-control px-2 text-[12px] text-fg hover:bg-row-selected"
+            className="relative h-6 shrink-0 rounded-md border border-edge bg-control px-2 text-[12px] text-fg hover:bg-row-selected"
           >
             Snooze
           </button>
         ) : (
-          <>
+          <div className="relative flex shrink-0 items-center">
+            {/* Invisible, not gone, on hover: it holds the width the buttons overlay. */}
             <span
               data-tauri-drag-region
-              className={`font-mono text-[12.5px] tabular-nums group-hover:hidden ${view.paused ? "text-fg/50" : "text-fg/80"}`}
+              className={`font-mono text-[12.5px] tabular-nums group-hover:invisible ${view.paused ? "text-fg/50" : "text-fg/80"}`}
             >
               {view.paused ? "Paused" : clock(remaining)}
             </span>
-            <div className="hidden items-center gap-0.5 group-hover:flex">
+            <div className="absolute inset-y-0 right-0 hidden items-center gap-0.5 group-hover:flex">
               {view.paused ? (
                 <button type="button" aria-label="Resume" className={icon} onClick={() => void api.focusResume()}>
                   <Play weight="duotone" className="size-3.5" />
@@ -104,7 +126,7 @@ export function FocusBar() {
                 <CheckCircle weight="duotone" className="size-3.5" />
               </button>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>

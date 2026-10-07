@@ -308,6 +308,20 @@ function bar(): Win | undefined {
       w.visible,
   );
 }
+/** Real screen pixels of a window, with a margin round it: what a person sees. */
+function screen(win: Win | undefined, name: string) {
+  if (!win) return;
+  const pad = 24;
+  const script = `Add-Type -AssemblyName System.Drawing
+Add-Type -Namespace T -Name D -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();'
+[void][T.D]::SetProcessDPIAware()
+$b = New-Object System.Drawing.Bitmap ${win.w + 2 * pad}, ${win.h + 2 * pad}
+$g = [System.Drawing.Graphics]::FromImage($b)
+$g.CopyFromScreen(${win.x - pad}, ${win.y - pad}, 0, 0, $b.Size)
+$b.Save('${join(SHOTS, name)}')`;
+  execFileSync("powershell.exe", ["-NoProfile", "-Command", script]);
+}
+
 /** The bar webview's panel opacity, once a change has had time to land. */
 async function barPageOpacity(): Promise<string> {
   const page = cdp!
@@ -422,14 +436,9 @@ async function main() {
       Boolean(b && b.ex & 0x08000000 && b.ex & 0x80),
       b ? `exstyle 0x${b.ex.toString(16)}` : "",
     );
-    const barPage = cdp!
-      .contexts()
-      .flatMap((c) => c.pages())
-      .find((p) => p.url().includes("window=bar"));
-    if (barPage)
-      await barPage
-        .screenshot({ path: join(SHOTS, "bar.png") })
-        .catch(() => {});
+    // Screen pixels once it has refit: a CDP shot mid-resize is garbage.
+    await sleep(1000);
+    screen(bar(), "bar.png");
 
     launch(TEST_APP);
     await until(() => running(TEST_APP).length > 0, 5_000);
@@ -478,7 +487,13 @@ async function main() {
       await until(() => !bar(), 5_000);
       const idleMb = treeMb(app!.pid!);
       await start("verify", [TEST_KEY]);
-      const again = await until(bar, 6_000);
+      // Opens at the start width, then refits to the pill about its centre.
+      await until(bar, 6_000);
+      const again =
+        (await until(() => {
+          const now = bar();
+          return now && Math.abs(now.x - 240) <= 2 ? now : undefined;
+        }, 3_000)) ?? bar();
       step(
         "E.2 bar comes back where it was dragged",
         Boolean(
@@ -502,7 +517,11 @@ async function main() {
         faded === "0.6",
         `panel opacity ${faded}`,
       );
+      await sleep(1000);
+      screen(bar(), "bar-screen-60.png");
       await setting("bar_opacity", "90");
+      await sleep(1000);
+      screen(bar(), "bar-screen-90.png");
       step(
         "E.5 RSS recorded (debug build, not a budget)",
         true,

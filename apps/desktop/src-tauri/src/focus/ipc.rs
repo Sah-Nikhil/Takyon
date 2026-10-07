@@ -484,6 +484,12 @@ fn settings_of(prefs: &Prefs) -> FocusSettings {
     }
 }
 
+/// The bar's pill measured `width` logical px: size its window to it.
+#[tauri::command]
+pub fn focus_bar_fit(width: f64, app: AppHandle) {
+    super::bar::fit(&app, width);
+}
+
 /// Set one Focus preference. Only Focus keys, only known values.
 #[tauri::command]
 pub fn focus_set_setting(

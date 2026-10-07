@@ -1142,6 +1142,7 @@ const focusMock = {
     if (!undo) focusEdits.push({ category, item, removed });
   },
   focusFetchIcons: async (_keys: string[]) => 0,
+  focusBarFit: async (_width: number) => {},
   focusResetBuiltin: async (category: string) => {
     focusEdits = focusEdits.filter((e) => e.category !== category);
   },

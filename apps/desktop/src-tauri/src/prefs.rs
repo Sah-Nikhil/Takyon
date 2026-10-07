@@ -151,7 +151,8 @@ pub const FOCUS_SURFACE: &str = "focus.surface";
 /// Where the floating bar opens: `"bottom"` (default) or `"top"`, centred.
 pub const FOCUS_BAR_PLACE: &str = "focus.bar_place";
 
-/// Where the user last dragged the bar, `"x,y"` physical pixels. Empty or
+/// Where the user last dragged the bar, `"cx,y"` (centre, top) in physical
+/// pixels. Empty or
 /// absent = [`FOCUS_BAR_PLACE`]'s spot; changing that setting clears it.
 pub const FOCUS_BAR_POSITION: &str = "focus.bar_position";
 

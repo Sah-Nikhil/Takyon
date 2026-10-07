@@ -6,6 +6,11 @@
 
 #[cfg(windows)]
 fn main() {
+    // Physical pixels, like the screen captures and Takyon's own placement;
+    // a DPI-unaware process is handed scaled coordinates.
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware();
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
     let num = |i: usize| arg(i).parse::<isize>().unwrap_or(0);

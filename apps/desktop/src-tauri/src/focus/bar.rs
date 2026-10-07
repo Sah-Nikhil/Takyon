@@ -12,9 +12,12 @@ use crate::prefs::{self, Prefs};
 
 pub const LABEL: &str = "focusbar";
 
-/// Logical size: goal, icon and countdown, nothing to spare.
-const WIDTH: f64 = 300.0;
+/// Logical height. Width follows the pill's content ([`fit`]), within
+/// [`MIN_WIDTH`]..[`MAX_WIDTH`]; [`START_WIDTH`] until the page measures.
 const HEIGHT: f64 = 40.0;
+const START_WIDTH: f64 = 200.0;
+const MIN_WIDTH: f64 = 120.0;
+const MAX_WIDTH: f64 = 420.0;
 /// Logical gap kept to every work-area edge, the taskbar's included.
 const MARGIN: f64 = 16.0;
 
@@ -48,13 +51,9 @@ fn physical(logical: f64, scale: f64) -> i32 {
     (logical * scale).round() as i32
 }
 
-/// Where the bar opens: centred, [`MARGIN`] in from the chosen edge.
-pub fn spot(area: Area, scale: f64, place: Place) -> (i32, i32) {
-    let (w, h, m) = (
-        physical(WIDTH, scale),
-        physical(HEIGHT, scale),
-        physical(MARGIN, scale),
-    );
+/// Where a bar of physical `size` opens: centred, [`MARGIN`] in from the edge.
+pub fn spot(area: Area, scale: f64, place: Place, (w, h): (i32, i32)) -> (i32, i32) {
+    let m = physical(MARGIN, scale);
     let x = area.x + (area.w - w) / 2;
     let y = match place {
         Place::Top => area.y + m,
@@ -63,7 +62,7 @@ pub fn spot(area: Area, scale: f64, place: Place) -> (i32, i32) {
     (x, y)
 }
 
-/// `"x,y"` physical pixels, as the move handler stores it.
+/// `"cx,y"`: the dragged bar's centre and top, physical pixels.
 pub fn parse_position(value: Option<&str>) -> Option<(i32, i32)> {
     let (x, y) = value?.split_once(',')?;
     Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
@@ -71,17 +70,52 @@ pub fn parse_position(value: Option<&str>) -> Option<(i32, i32)> {
 
 /// `pos` pulled back inside the work area, [`MARGIN`] from each edge. A
 /// monitor too small for the bar plus margins gets it pinned top-left.
-pub fn clamp(area: Area, scale: f64, (x, y): (i32, i32)) -> (i32, i32) {
-    let (w, h, m) = (
-        physical(WIDTH, scale),
-        physical(HEIGHT, scale),
-        physical(MARGIN, scale),
-    );
+pub fn clamp(area: Area, scale: f64, (w, h): (i32, i32), (x, y): (i32, i32)) -> (i32, i32) {
+    let m = physical(MARGIN, scale);
     let fit = |v: i32, lo: i32, hi: i32| v.min(hi).max(lo);
     (
         fit(x, area.x + m, area.x + area.w - w - m),
         fit(y, area.y + m, area.y + area.h - h - m),
     )
+}
+
+/// The width the pill asked for, held to [`MIN_WIDTH`]..[`MAX_WIDTH`].
+pub fn fitted_width(requested: f64) -> f64 {
+    if requested.is_finite() {
+        requested.clamp(MIN_WIDTH, MAX_WIDTH)
+    } else {
+        START_WIDTH
+    }
+}
+
+/// Left edge after a resize from `old_w` to `new_w` that keeps the centre.
+pub fn recentre(x: i32, old_w: i32, new_w: i32) -> i32 {
+    x + (old_w - new_w) / 2
+}
+
+/// Resize the showing bar to the pill's `width` (logical), centre kept,
+/// still inside the margins. The page calls this when its content changes.
+pub fn fit(app: &AppHandle, width: f64) {
+    let Some(window) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    let (Ok(pos), Ok(old)) = (window.outer_position(), window.outer_size()) else {
+        return;
+    };
+    let Some((area, scale)) = work_area(&window) else {
+        return;
+    };
+    let new = (
+        physical(fitted_width(width), scale),
+        physical(HEIGHT, scale),
+    );
+    if new.0 == old.width as i32 {
+        return;
+    }
+    let x = recentre(pos.x, old.width as i32, new.0);
+    let (x, y) = clamp(area, scale, new, (x, pos.y));
+    let _ = window.set_size(tauri::PhysicalSize::new(new.0 as u32, new.1 as u32));
+    let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
 /// Show (building if absent) or close the bar. Never blocks the caller.
@@ -125,23 +159,30 @@ fn work_area(window: &tauri::WebviewWindow) -> Option<(Area, f64)> {
     Some((area, monitor.scale_factor()))
 }
 
-fn edge(area: Area, scale: f64, prefs: &Prefs) -> (i32, i32) {
+fn edge(area: Area, scale: f64, size: (i32, i32), prefs: &Prefs) -> (i32, i32) {
     spot(
         area,
         scale,
         Place::parse(prefs.get(prefs::FOCUS_BAR_PLACE).as_deref()),
+        size,
     )
+}
+
+/// The window's physical size now.
+fn size_of(window: &tauri::WebviewWindow) -> Option<(i32, i32)> {
+    let s = window.outer_size().ok()?;
+    Some((s.width as i32, s.height as i32))
 }
 
 /// The dragged spot if there is one, pulled inside this work area (the
 /// taskbar or resolution may have moved); else the chosen edge.
 fn place(window: &tauri::WebviewWindow, prefs: &Prefs) {
-    let Some((area, scale)) = work_area(window) else {
+    let (Some((area, scale)), Some(size)) = (work_area(window), size_of(window)) else {
         return;
     };
     let (x, y) = match parse_position(prefs.get(prefs::FOCUS_BAR_POSITION).as_deref()) {
-        Some(dragged) => clamp(area, scale, dragged),
-        None => edge(area, scale, prefs),
+        Some((cx, y)) => clamp(area, scale, size, (cx - size.0 / 2, y)),
+        None => edge(area, scale, size, prefs),
     };
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
@@ -151,7 +192,7 @@ fn build(app: &AppHandle) {
     let builder =
         WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?window=bar".into()))
             .title("Takyon Focus")
-            .inner_size(WIDTH, HEIGHT)
+            .inner_size(START_WIDTH, HEIGHT)
             .resizable(false)
             .decorations(false)
             .always_on_top(true)
@@ -174,20 +215,21 @@ fn build(app: &AppHandle) {
         let WindowEvent::Moved(p) = event else {
             return;
         };
-        let Some((area, scale)) = work_area(&held) else {
+        let (Some((area, scale)), Some(size)) = (work_area(&held), size_of(&held)) else {
             return;
         };
         // Dragged past a margin: put it back. The second Moved is inside.
-        let inside = clamp(area, scale, (p.x, p.y));
+        let inside = clamp(area, scale, size, (p.x, p.y));
         if inside != (p.x, p.y) {
             let _ = held.set_position(PhysicalPosition::new(inside.0, inside.1));
             return;
         }
         // Only a drag is remembered: our own placement lands on the edge.
-        if inside != edge(area, scale, &prefs) {
+        // Stored as the centre: the width refits, the centre is what stays.
+        if inside != edge(area, scale, size, &prefs) {
             let _ = prefs.set(
                 prefs::FOCUS_BAR_POSITION,
-                &format!("{},{}", inside.0, inside.1),
+                &format!("{},{}", inside.0 + size.0 / 2, inside.1),
             );
         }
     });
@@ -237,17 +279,20 @@ mod tests {
         h: 1032,
     };
 
+    /// 300 by 40 at 100 %, 450 by 60 at 150 %.
+    const AT_100: (i32, i32) = (300, 40);
+    const AT_150: (i32, i32) = (450, 60);
+
     #[test]
     fn v0_16_the_bar_opens_centred_at_the_bottom_unless_told_top() {
         assert_eq!(Place::parse(None), Place::Bottom);
         assert_eq!(Place::parse(Some("bottom")), Place::Bottom);
         assert_eq!(Place::parse(Some("top")), Place::Top);
         assert_eq!(Place::parse(Some("left")), Place::Bottom);
-        // 300 wide, 40 high, 16 from the edge, at 100 %.
-        assert_eq!(spot(AREA, 1.0, Place::Bottom), (810, 976));
-        assert_eq!(spot(AREA, 1.0, Place::Top), (810, 16));
+        assert_eq!(spot(AREA, 1.0, Place::Bottom, AT_100), (810, 976));
+        assert_eq!(spot(AREA, 1.0, Place::Top, AT_100), (810, 16));
         // 150 %: everything in physical pixels, still centred on the area.
-        assert_eq!(spot(AREA, 1.5, Place::Bottom), (735, 948));
+        assert_eq!(spot(AREA, 1.5, Place::Bottom, AT_150), (735, 948));
     }
 
     /// A second monitor left of the primary has negative coordinates.
@@ -259,7 +304,7 @@ mod tests {
             w: 1280,
             h: 1024,
         };
-        assert_eq!(spot(left, 1.0, Place::Top), (-790, 16));
+        assert_eq!(spot(left, 1.0, Place::Top, AT_100), (-790, 16));
     }
 
     #[test]
@@ -273,25 +318,31 @@ mod tests {
 
     #[test]
     fn v0_16_a_dragged_bar_stays_a_margin_inside_every_edge() {
-        assert_eq!(
-            clamp(AREA, 1.0, (500, 400)),
-            (500, 400),
-            "inside: untouched"
-        );
-        assert_eq!(clamp(AREA, 1.0, (500, -30)), (500, 16), "off the top");
-        assert_eq!(
-            clamp(AREA, 1.0, (500, 1010)),
-            (500, 976),
-            "into the taskbar"
-        );
-        assert_eq!(clamp(AREA, 1.0, (-200, 400)), (16, 400));
-        assert_eq!(clamp(AREA, 1.0, (1800, 400)), (1604, 400));
+        let at = |pos| clamp(AREA, 1.0, AT_100, pos);
+        assert_eq!(at((500, 400)), (500, 400), "inside: untouched");
+        assert_eq!(at((500, -30)), (500, 16), "off the top");
+        assert_eq!(at((500, 1010)), (500, 976), "into the taskbar");
+        assert_eq!(at((-200, 400)), (16, 400));
+        assert_eq!(at((1800, 400)), (1604, 400));
         let tiny = Area {
             x: 0,
             y: 0,
             w: 200,
             h: 50,
         };
-        assert_eq!(clamp(tiny, 1.0, (40, 40)), (16, 16));
+        assert_eq!(clamp(tiny, 1.0, AT_100, (40, 40)), (16, 16));
+    }
+
+    /// The pill hugs its content: a short goal makes a short bar, and the
+    /// bar grows and shrinks about its centre.
+    #[test]
+    fn v0_16_the_bar_fits_its_content_about_its_centre() {
+        assert_eq!(fitted_width(186.4), 186.4);
+        assert_eq!(fitted_width(40.0), 120.0);
+        assert_eq!(fitted_width(900.0), 420.0);
+        assert_eq!(fitted_width(f64::NAN), 200.0);
+        // 200 wide at x 860 is centred on 960; 300 wide stays centred there.
+        assert_eq!(recentre(860, 200, 300), 810);
+        assert_eq!(recentre(810, 300, 200), 860);
     }
 }
