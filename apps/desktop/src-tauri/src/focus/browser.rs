@@ -260,19 +260,25 @@ mod uia {
                 let Ok(docs) = window.FindAll(TreeScope_Descendants, &condition) else {
                     return Vec::new();
                 };
-                (0..docs.Length().unwrap_or(0))
+                // Gecko lists every tab's document, background ones offscreen
+                // while the window is in front: on-screen ones go first.
+                let mut found: Vec<(bool, String)> = (0..docs.Length().unwrap_or(0))
                     .filter_map(|i| docs.GetElement(i).ok())
                     .filter_map(|d| {
-                        Self::value(&d).filter(|v| !v.is_empty()).or_else(|| {
+                        let url = Self::value(&d).filter(|v| !v.is_empty()).or_else(|| {
                             d.GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
                                 UIA_LegacyIAccessiblePatternId,
                             )
                             .and_then(|la| la.CurrentValue())
                             .ok()
                             .map(|b| b.to_string())
-                        })
+                        })?;
+                        let off = d.CurrentIsOffscreen().is_ok_and(|o| o.as_bool());
+                        Some((off, url))
                     })
-                    .collect()
+                    .collect();
+                found.sort_by_key(|(off, _)| *off);
+                found.into_iter().map(|(_, url)| url).collect()
             }
         }
 

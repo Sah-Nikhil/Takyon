@@ -112,7 +112,9 @@ What the spike changed in the design:
   a client has asked its `Chrome_RenderWidgetHostHWND` windows, which turns on
   its renderer accessibility. So on a miss Takyon asks them and retries for up
   to 0.5 s, once per block, never on the 500 ms poll. Falls back to the bar's
-  text when nothing matches.
+  text when nothing matches. Gecko lists every tab's document, and with the
+  window in front a background tab's is offscreen, so on-screen documents are
+  matched first: Zen's host-only bar would otherwise match any tab on that host.
 - **Firefox from the Microsoft Store is an MSIX package** under
   `C:\Program Files\WindowsApps\Mozilla.Firefox_…\VFS\…\firefox.exe`. The image
   name is still `firefox.exe`, so detection by image name holds, but any code

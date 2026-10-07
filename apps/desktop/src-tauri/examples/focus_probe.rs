@@ -19,6 +19,7 @@ fn main() {
         "docs" => win::docs(num(1)),
         "children" => win::children(num(1)),
         "page" => win::page(num(1)),
+        "docinfo" => win::docinfo(num(1)),
         "hold" => win::hold(num(1) as u32),
         "idle" => win::idle(),
         other => format!("{{\"error\":\"unknown command {other:?}\"}}"),
@@ -221,6 +222,62 @@ mod win {
             json(&shown),
             full.map_or("null".into(), |u| json(&u))
         )
+    }
+
+    /// Each document element: value, offscreen flag, rectangle.
+    pub fn docinfo(hwnd: isize) -> String {
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+        use windows::Win32::System::Variant::VARIANT;
+        use windows::Win32::UI::Accessibility::{
+            CUIAutomation, IUIAutomation, IUIAutomationLegacyIAccessiblePattern,
+            TreeScope_Descendants, UIA_ControlTypePropertyId, UIA_DocumentControlTypeId,
+            UIA_LegacyIAccessiblePatternId,
+        };
+        let _com = mta();
+        let rows: Vec<String> = (|| unsafe {
+            let uia: IUIAutomation =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+            let root = uia.ElementFromHandle(HWND(hwnd as *mut _)).ok()?;
+            let cond = uia
+                .CreatePropertyCondition(
+                    UIA_ControlTypePropertyId,
+                    &VARIANT::from(UIA_DocumentControlTypeId.0),
+                )
+                .ok()?;
+            let found = root.FindAll(TreeScope_Descendants, &cond).ok()?;
+            Some(
+                (0..found.Length().ok()?)
+                    .filter_map(|i| found.GetElement(i).ok())
+                    .map(|d| {
+                        let v = d
+                            .GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
+                                UIA_LegacyIAccessiblePatternId,
+                            )
+                            .and_then(|la| la.CurrentValue())
+                            .map(|b| b.to_string())
+                            .unwrap_or_default();
+                        let off = d.CurrentIsOffscreen().map(|b| b.as_bool()).unwrap_or(false);
+                        let r = d.CurrentBoundingRectangle().unwrap_or_default();
+                        let st = d
+                            .GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
+                                UIA_LegacyIAccessiblePatternId,
+                            )
+                            .and_then(|la| la.CurrentState())
+                            .unwrap_or(0);
+                        format!(
+                            "{{\"v\":{},\"off\":{off},\"rect\":[{},{},{},{}],\"state\":{st}}}",
+                            json(&v),
+                            r.left,
+                            r.top,
+                            r.right,
+                            r.bottom
+                        )
+                    })
+                    .collect(),
+            )
+        })()
+        .unwrap_or_default();
+        format!("[{}]", rows.join(","))
     }
 
     /// Tab names in the strip, by walking for tab items.
