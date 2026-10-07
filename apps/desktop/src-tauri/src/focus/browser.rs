@@ -63,8 +63,8 @@ mod uia {
         CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationLegacyIAccessiblePattern,
         IUIAutomationSelectionItemPattern, IUIAutomationValuePattern, TreeScope_Descendants,
         UIA_AutomationIdPropertyId, UIA_ClassNamePropertyId, UIA_ControlTypePropertyId,
-        UIA_LegacyIAccessiblePatternId, UIA_SelectionItemPatternId, UIA_TabItemControlTypeId,
-        UIA_ValuePatternId,
+        UIA_DocumentControlTypeId, UIA_LegacyIAccessiblePatternId, UIA_SelectionItemPatternId,
+        UIA_TabItemControlTypeId, UIA_ValuePatternId,
     };
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
@@ -73,7 +73,7 @@ mod uia {
     use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
     use super::{Bar, Engine, BLOCK_TITLE};
-    use crate::focus::site::original_from;
+    use crate::focus::site::{fuller, original_from};
 
     /// COM initialised multithreaded for the scope. UIA clients belong on MTA.
     pub struct MtaScope(bool);
@@ -223,6 +223,59 @@ mod uia {
             restored
         }
 
+        /// The full address of the page the bar shows trimmed, from the page's
+        /// own document; None leaves the caller with the bar's text. Chromium
+        /// exposes web documents only once a client asks its render widgets, so
+        /// on a miss they are asked and the walk retried (ADR-0035, as built).
+        pub fn page_url(&self, h: isize, display: &str) -> Option<String> {
+            if let Some(url) = fuller(display, &self.documents(h)) {
+                return Some(url);
+            }
+            for child in render_widgets(h) {
+                let _ = self.documents(child);
+            }
+            for _ in 0..5 {
+                std::thread::sleep(Duration::from_millis(100));
+                if let Some(url) = fuller(display, &self.documents(h)) {
+                    return Some(url);
+                }
+            }
+            None
+        }
+
+        /// URLs of the web documents in window `h`, outermost first: the page's
+        /// own address, never the bar's trimmed display.
+        pub fn documents(&self, h: isize) -> Vec<String> {
+            let doc_type = VARIANT::from(UIA_DocumentControlTypeId.0);
+            unsafe {
+                let Ok(window) = self.automation.ElementFromHandle(hwnd(h)) else {
+                    return Vec::new();
+                };
+                let Ok(condition) = self
+                    .automation
+                    .CreatePropertyCondition(UIA_ControlTypePropertyId, &doc_type)
+                else {
+                    return Vec::new();
+                };
+                let Ok(docs) = window.FindAll(TreeScope_Descendants, &condition) else {
+                    return Vec::new();
+                };
+                (0..docs.Length().unwrap_or(0))
+                    .filter_map(|i| docs.GetElement(i).ok())
+                    .filter_map(|d| {
+                        Self::value(&d).filter(|v| !v.is_empty()).or_else(|| {
+                            d.GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
+                                UIA_LegacyIAccessiblePatternId,
+                            )
+                            .and_then(|la| la.CurrentValue())
+                            .ok()
+                            .map(|b| b.to_string())
+                        })
+                    })
+                    .collect()
+            }
+        }
+
         fn blocked_tabs(&self, h: isize) -> Vec<IUIAutomationElement> {
             let tab_type = VARIANT::from(UIA_TabItemControlTypeId.0);
             unsafe {
@@ -247,6 +300,30 @@ mod uia {
                     .collect()
             }
         }
+    }
+
+    /// Chromium's web content child windows under `h`.
+    fn render_widgets(h: isize) -> Vec<isize> {
+        use windows::core::BOOL;
+        use windows::Win32::Foundation::LPARAM;
+        use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
+        unsafe extern "system" fn each(child: HWND, lp: LPARAM) -> BOOL {
+            let mut buf = [0u16; 64];
+            let n = unsafe { GetClassNameW(child, &mut buf) } as usize;
+            if String::from_utf16_lossy(&buf[..n]) == "Chrome_RenderWidgetHostHWND" {
+                unsafe { (*(lp.0 as *mut Vec<isize>)).push(child.0 as isize) };
+            }
+            BOOL(1)
+        }
+        let mut out: Vec<isize> = Vec::new();
+        unsafe {
+            let _ = EnumChildWindows(
+                Some(hwnd(h)),
+                Some(each),
+                LPARAM(&mut out as *mut _ as isize),
+            );
+        }
+        out
     }
 
     /// Switch to a tab. SelectionItem worked in all five browsers tested;

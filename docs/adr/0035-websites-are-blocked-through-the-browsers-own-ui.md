@@ -104,6 +104,15 @@ What the spike changed in the design:
   not connected) on `SetFocus` with an element found a moment earlier. Every
   navigate re-finds the bar, and checks `HasKeyboardFocus` before sending Enter,
   re-finding again if focus moved.
+- **The original URL comes from the page, not the bar (as built).** Chrome's bar
+  hides `www.`, and Zen's shows the host only, so the bar's text cannot always
+  be restored exactly. At block time, `Uia::page_url` reads the window's web
+  documents (UIA `Document` elements, value = the page's URL) and takes the
+  outermost one that matches the bar. Chromium only exposes web content once
+  a client has asked its `Chrome_RenderWidgetHostHWND` windows, which turns on
+  its renderer accessibility. So on a miss Takyon asks them and retries for up
+  to 0.5 s, once per block, never on the 500 ms poll. Falls back to the bar's
+  text when nothing matches.
 - **Firefox from the Microsoft Store is an MSIX package** under
   `C:\Program Files\WindowsApps\Mozilla.Firefox_…\VFS\…\firefox.exe`. The image
   name is still `firefox.exe`, so detection by image name holds, but any code

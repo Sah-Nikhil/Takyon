@@ -333,7 +333,12 @@ mod imp {
             return;
         };
         let view = focus.view(now);
-        let url = block_url(&page, &original_url(&display), view.ends_at, &view.goal);
+        // The page's own address where the browser exposes it: Chrome's bar
+        // hides `www.`, Zen's shows the host only.
+        let original = uia
+            .page_url(front, &display)
+            .unwrap_or_else(|| original_url(&display));
+        let url = block_url(&page, &original, view.ends_at, &view.goal);
         if uia.navigate(front, engine, &url) {
             st.nav_cooldown.insert(front, now + 1_500);
             notice(focus, prefs, emit, st, &key, label_of(&key, None), now);

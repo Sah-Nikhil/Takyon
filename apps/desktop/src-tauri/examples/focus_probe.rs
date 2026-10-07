@@ -16,6 +16,9 @@ fn main() {
         "move" => win::move_to(num(1), num(2) as i32, num(3) as i32),
         "omnibox" => win::omnibox(num(1)),
         "tabs" => win::tabs(num(1)),
+        "docs" => win::docs(num(1)),
+        "children" => win::children(num(1)),
+        "page" => win::page(num(1)),
         "hold" => win::hold(num(1) as u32),
         "idle" => win::idle(),
         other => format!("{{\"error\":\"unknown command {other:?}\"}}"),
@@ -150,6 +153,74 @@ mod win {
             Bar::Busy => "{\"bar\":\"<busy>\"}".into(),
             Bar::Missing => "{\"bar\":null}".into(),
         }
+    }
+
+    /// URLs of the web documents in a browser window, and how long the walk took.
+    pub fn docs(hwnd: isize) -> String {
+        let _com = mta();
+        let Some(uia) = Uia::new() else {
+            return "{\"docs\":[]}".into();
+        };
+        let t = std::time::Instant::now();
+        let docs: Vec<String> = uia.documents(hwnd).iter().map(|d| json(d)).collect();
+        format!(
+            "{{\"docs\":[{}],\"ms\":{}}}",
+            docs.join(","),
+            t.elapsed().as_millis()
+        )
+    }
+
+    /// Child windows of a top-level window, with classes; then each one's docs.
+    pub fn children(hwnd: isize) -> String {
+        use windows::Win32::UI::WindowsAndMessaging::EnumChildWindows;
+        unsafe extern "system" fn each(h: HWND, lp: LPARAM) -> BOOL {
+            unsafe { (*(lp.0 as *mut Vec<HWND>)).push(h) };
+            BOOL(1)
+        }
+        let mut kids: Vec<HWND> = Vec::new();
+        unsafe {
+            let _ = EnumChildWindows(
+                Some(HWND(hwnd as *mut _)),
+                Some(each),
+                LPARAM(&mut kids as *mut _ as isize),
+            );
+        }
+        let _com = mta();
+        let uia = Uia::new();
+        let rows: Vec<String> = kids
+            .iter()
+            .map(|&k| {
+                let (_, class, _) = info(k);
+                let docs = uia
+                    .as_ref()
+                    .map(|u| u.documents(k.0 as isize))
+                    .unwrap_or_default();
+                format!(
+                    "{{\"hwnd\":{},\"class\":{},\"docs\":{:?}}}",
+                    k.0 as isize,
+                    json(&class),
+                    docs
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    /// The active page's full address, as the runtime reads it at block time.
+    pub fn page(hwnd: isize) -> String {
+        let _com = mta();
+        let (Some(uia), Some(engine)) = (Uia::new(), engine(hwnd)) else {
+            return "{\"page\":null}".into();
+        };
+        let Bar::Url(shown) = uia.read(hwnd, engine) else {
+            return "{\"page\":null}".into();
+        };
+        let full = uia.page_url(hwnd, &shown);
+        format!(
+            "{{\"bar\":{},\"page\":{}}}",
+            json(&shown),
+            full.map_or("null".into(), |u| json(&u))
+        )
     }
 
     /// Tab names in the strip, by walking for tab items.

@@ -774,14 +774,11 @@ async function main() {
           Boolean(restored),
           JSON.stringify(tabs(chromeHwnd).tabs),
         );
-        // Chrome's bar hides `www.`, so that tab comes back without it
-        // (docs/tbd/v0.16.md §5); the path is what must survive.
+        // Chrome's bar hides `www.`; the runtime reads the page's own address.
         step(
-          "B.3 restored with paths intact",
+          "B.3 restored exactly, www. and path intact",
           urls.includes("https://example.com/takyon-verify?x=1") &&
-            urls.some((u) =>
-              /^https:\/\/(www\.)?example\.com\/sub\?y=2$/.test(u),
-            ),
+            urls.includes("https://www.example.com/sub?y=2"),
           urls.join(" "),
         );
 

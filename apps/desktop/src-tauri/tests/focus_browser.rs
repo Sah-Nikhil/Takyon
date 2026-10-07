@@ -32,7 +32,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsWindowVisible, PostMessageW, SetForegroundWindow, WM_CLOSE,
 };
 
-const ORIGINAL: &str = "https://example.com/takyon-live?x=1";
+/// `www.` on purpose: Chromium's bar hides it, so only the page's own
+/// address (`Uia::page_url`) can bring it back exactly.
+const ORIGINAL: &str = "https://www.example.com/takyon-live?x=1";
 
 /// Tick of the last keyboard or mouse input, ours included.
 fn last_input() -> u32 {
@@ -161,11 +163,23 @@ fn drive(
         _ => None,
     })
     .ok_or_else(|| Skip("address bar unreadable (modal or first-run screen)".into()))?;
-    assert_eq!(
-        host_of(&first).as_deref(),
-        Some("example.com"),
+    assert!(
+        host_of(&first).is_some_and(|h| h.ends_with("example.com")),
         "read {first:?}"
     );
+    // Gecko's bar shows the full URL already; Chromium needs the document.
+    let address = uia.page_url(hwnd, &first);
+    assert!(
+        address.as_deref().map_or(true, |p| p == ORIGINAL),
+        "page {address:?}"
+    );
+    if engine == Engine::Chromium {
+        assert_eq!(
+            address.as_deref(),
+            Some(ORIGINAL),
+            "Chromium's page address"
+        );
+    }
 
     front(hwnd, &guard)?;
     assert!(uia.navigate(hwnd, engine, &block_url(page, ORIGINAL, 0, "Live test")));
@@ -211,10 +225,18 @@ fn drive(
     }
     assert_eq!(restored, 1, "one blocked tab restored");
     let back = poll(Duration::from_secs(10), || match uia.read(hwnd, engine) {
-        Bar::Url(url) if host_of(&url).as_deref() == Some("example.com") => Some(url),
+        Bar::Url(url) if host_of(&url).is_some_and(|h| h.ends_with("example.com")) => Some(url),
         _ => None,
     });
     assert!(back.is_some(), "restored tab is not back on example.com");
+    if engine == Engine::Chromium {
+        let shown = back.unwrap();
+        assert_eq!(
+            uia.page_url(hwnd, &shown).as_deref(),
+            Some(ORIGINAL),
+            "restored exactly"
+        );
+    }
     Ok(())
 }
 
