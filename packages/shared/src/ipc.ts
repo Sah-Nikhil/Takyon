@@ -308,6 +308,11 @@ export interface Entry {
    * row: `version.rs` explains why it is not read for everything.
    */
   version?: string;
+  /**
+   * Labels under a calculation card's halves, in place of `Expression` and
+   * `Result`. A time zone answer names both zones in words (v0.17).
+   */
+  labels?: [string, string];
 }
 
 /** One row of the `Ctrl+K` action menu. */

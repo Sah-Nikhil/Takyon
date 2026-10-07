@@ -190,6 +190,7 @@ impl Source for RecentsSource {
                 score,
                 actions: actions::for_file(),
                 version: None,
+                labels: None,
             });
         }
         rank::order(out, SOURCE_SHORTLIST)

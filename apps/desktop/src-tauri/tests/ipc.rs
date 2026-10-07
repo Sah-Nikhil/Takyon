@@ -36,7 +36,7 @@ const QUERY_RESULT_KEYS: [&str; 3] = ["seq", "entries", "statusRow"];
 /// `interface Entry`. The optionals must be absent rather than null when Rust
 /// has none, or the frontend's `field?: T` types become `T | null`.
 const ENTRY_REQUIRED: [&str; 5] = ["id", "title", "kind", "score", "actions"];
-const ENTRY_OPTIONAL: [&str; 3] = ["subtitle", "icon", "version"];
+const ENTRY_OPTIONAL: [&str; 4] = ["subtitle", "icon", "version", "labels"];
 /// `type EntryKind`.
 const ENTRY_KINDS: [&str; 8] = [
     "app",

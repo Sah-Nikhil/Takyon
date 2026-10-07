@@ -618,6 +618,7 @@ impl Pipeline {
                 icon: app.icon,
                 score: 0.0,
                 version: app.version,
+                labels: None,
             }),
             K::System | K::SystemTask => self.system.find(id).map(|item| Entry {
                 id: item.id,
@@ -628,6 +629,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_system(),
                 version: None,
+                labels: None,
             }),
             K::Command => self.commands.find(id).map(|command| Entry {
                 id: command.id.clone(),
@@ -638,6 +640,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_command(),
                 version: None,
+                labels: None,
             }),
             K::File | K::Folder | K::Recent => self.recents.find(id).map(|recent| Entry {
                 id: recent.id,
@@ -648,6 +651,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_file(),
                 version: None,
+                labels: None,
             }),
             // A clipboard item and a calculation are both things you *did*, not
             // things you would open again from an empty line.
@@ -739,6 +743,7 @@ impl Pipeline {
                     crate::entry::LaunchTarget::Exe { .. }
                 )),
                 version: None,
+                labels: None,
             });
         }
         if let Some(entry) = self.system.find(id) {
@@ -751,6 +756,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_system(),
                 version: None,
+                labels: None,
             });
         }
         let Some(recent) = self.recents.find(id) else {
@@ -765,6 +771,7 @@ impl Pipeline {
             score: 0.0,
             actions: crate::actions::for_file(),
             version: None,
+            labels: None,
         })
     }
 
@@ -929,6 +936,7 @@ fn clip_entry(clip: Clip) -> Entry {
         score: 0.0,
         actions: crate::actions::for_clip(),
         version: None,
+        labels: None,
     }
 }
 

@@ -442,6 +442,7 @@ impl Source for SystemSource {
                 score,
                 actions: actions::for_system(),
                 version: None,
+                labels: None,
             });
         }
         rank::order(out, SOURCE_SHORTLIST)

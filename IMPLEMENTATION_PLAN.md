@@ -81,6 +81,12 @@ applications disappeared. Measured in [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md)
 §9; the rule is [ADR-0014](./docs/adr/0014-durable-identity-wins-a-collision.md).
 The working directory is *not* part of the id.
 
+**Amended at v0.17.** `Entry` gains `labels: Option<[String; 2]>`, set only on
+a Calc Entry that answers a time zone question: the two zones in words, drawn
+under the card's halves in place of `Expression` and `Result`. Absent, not
+null, everywhere else (`tests/ipc.rs`). `version` (v0.3) is likewise optional
+and not in the block above.
+
 `subtitle` is populated by the Source but **shown only when it disambiguates** —
 [ADR-0016](./docs/adr/0016-the-second-line-is-disambiguation.md). The pipeline
 clears it on every Entry whose title is unique in the list being returned.

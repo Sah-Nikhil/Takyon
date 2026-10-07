@@ -160,6 +160,7 @@ impl Source for CommandSource {
                 score,
                 actions: crate::actions::for_command(),
                 version: None,
+                labels: None,
             });
         }
         out.truncate(SOURCE_SHORTLIST);

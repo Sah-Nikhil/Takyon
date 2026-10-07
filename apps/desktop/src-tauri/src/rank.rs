@@ -516,6 +516,7 @@ mod tests {
             score: 800.0,
             actions: vec![],
             version: None,
+            labels: None,
         }
     }
 
@@ -845,6 +846,7 @@ mod tests {
             score,
             actions: vec![],
             version: None,
+            labels: None,
         }
     }
 

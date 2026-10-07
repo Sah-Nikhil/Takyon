@@ -783,6 +783,25 @@ request anywhere.
 
 ---
 
+## v0.17 — Time zones
+
+**Goal:** `12 pm utc`, `3:30pm pst to ist` and `time in tokyo` answer in the
+calculator, offline, from tzdb data bundled through `jiff` (already in
+`Cargo.lock`). Plan: [`docs/plans/v0.17-time-zones.md`](./docs/plans/v0.17-time-zones.md).
+Asked for on 2026-10-07; v0.4 never planned it. Not a v1.0 blocker. Built
+2026-10-07; the verify script is unrun.
+
+- [x] ADR-0038 (`jiff`) and TBC-0016 for bundled tzdb staleness
+- [x] `calc/tz.rs`: time-of-day parser, IANA ids, cities, abbreviations with one fixed reading each (`ist` India, `cst` US Central, `bst` London)
+- [x] `answer_at` seam with `now` and the local zone injected; the local zone follows jiff's 5-minute cache rather than a show hook
+- [x] The Calc card names both zones in words under its halves, through a new optional `Entry.labels`
+- [ ] [`docs/verify/v0.17.md`](./docs/verify/v0.17.md) run against a release build
+
+**Exit criteria:** correct answers on both sides of a DST change, a bare city
+still opens whatever is called that, and the first-Entry budget holds.
+
+---
+
 ## v1.0 — Ship
 
 - [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing, `tauri-plugin-updater`
