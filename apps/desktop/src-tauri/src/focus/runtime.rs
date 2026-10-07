@@ -34,6 +34,10 @@ pub enum Signal {
     Ended {
         outcome: Outcome,
     },
+    /// The bar's look changed in Settings; it redraws without a restart.
+    Bar {
+        opacity: u32,
+    },
 }
 
 pub type Emit = Arc<dyn Fn(Signal) + Send + Sync>;

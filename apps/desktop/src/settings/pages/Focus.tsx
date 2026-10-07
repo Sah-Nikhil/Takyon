@@ -12,7 +12,7 @@ import type { FocusCategory, FocusSettings } from "@takyon/shared";
 import * as api from "@/api";
 import { FocusIcon } from "@/focus/icons";
 import { Select } from "@/components/Select";
-import { Group, Row, Switch } from "../controls";
+import { Group, Row, Slider, Switch } from "../controls";
 import { CrumbContext } from "../crumb";
 import { FocusCategoryPanel } from "./FocusCategoryPanel";
 import { FocusStatsPanel, hours } from "./FocusStats";
@@ -34,6 +34,11 @@ const HURDLE = [
 const SURFACE = [
   { value: "bar", label: "Floating bar" },
   { value: "tray", label: "Tray only" },
+] as const;
+
+const PLACE = [
+  { value: "bottom", label: "Bottom" },
+  { value: "top", label: "Top" },
 ] as const;
 
 const small =
@@ -151,6 +156,31 @@ export function Focus() {
         <Row id="focus-surface" label="Running session" description="Where the goal and time left stay in view.">
           <Select label="Running session" value={settings.surface} options={SURFACE} onChange={(v) => set("focus.surface", v)} className="w-40" />
         </Row>
+        {settings.surface === "bar" && (
+          <>
+            <Row
+              id="focus-bar-place"
+              label="Floating bar position"
+              description="Centred on the screen. Drag it anywhere; it remembers until you change this."
+            >
+              <Select label="Floating bar position" value={settings.barPlace} options={PLACE} onChange={(v) => set("focus.bar_place", v)} className="w-40" />
+            </Row>
+            <Row id="focus-bar-opacity" label="Floating bar opacity" description="How much of the desktop shows through the bar.">
+              <Slider
+                label="Floating bar opacity"
+                min={30}
+                max={100}
+                step={5}
+                value={settings.barOpacity}
+                format={(v) => `${v}%`}
+                onChange={(v) => {
+                  setSettings({ ...settings, barOpacity: v });
+                  void api.focusSetSetting("focus.bar_opacity", String(v));
+                }}
+              />
+            </Row>
+          </>
+        )}
         <Row id="focus-restore" label="Restore terminated apps" description="Reopen apps Focus quit when the session ends.">
           <Switch label="Restore terminated apps" checked={settings.restoreApps} onChange={(on) => set("focus.restore_apps", on ? "1" : "0")} />
         </Row>

@@ -447,6 +447,18 @@ pub struct FocusSettings {
     bang: bool,
     hurdle_shutdown: String,
     hurdle_idle: String,
+    bar_place: String,
+    bar_opacity: u32,
+}
+
+/// Default and range of `focus.bar_opacity`, percent.
+const BAR_OPACITY: (u32, std::ops::RangeInclusive<u32>) = (90, 30..=100);
+
+fn bar_opacity(value: Option<&str>) -> u32 {
+    value
+        .and_then(|v| v.parse().ok())
+        .filter(|v| BAR_OPACITY.1.contains(v))
+        .unwrap_or(BAR_OPACITY.0)
 }
 
 #[tauri::command]
@@ -464,6 +476,11 @@ fn settings_of(prefs: &Prefs) -> FocusSettings {
         bang: prefs::flag(prefs, prefs::FOCUS_BANG, false),
         hurdle_shutdown: get(prefs::FOCUS_HURDLE_SHUTDOWN).unwrap_or_else(|| "strict".into()),
         hurdle_idle: get(prefs::FOCUS_HURDLE_IDLE).unwrap_or_else(|| "strict".into()),
+        bar_place: match super::bar::Place::parse(get(prefs::FOCUS_BAR_PLACE).as_deref()) {
+            super::bar::Place::Top => "top".into(),
+            super::bar::Place::Bottom => "bottom".into(),
+        },
+        bar_opacity: bar_opacity(get(prefs::FOCUS_BAR_OPACITY).as_deref()),
     }
 }
 
@@ -472,6 +489,7 @@ fn settings_of(prefs: &Prefs) -> FocusSettings {
 pub fn focus_set_setting(
     key: String,
     value: String,
+    app: AppHandle,
     prefs: State<'_, Arc<Prefs>>,
     pipeline: State<'_, Arc<crate::query::Pipeline>>,
 ) -> Result<(), String> {
@@ -482,6 +500,10 @@ pub fn focus_set_setting(
         prefs::FOCUS_HURDLE_SHUTDOWN | prefs::FOCUS_HURDLE_IDLE => {
             matches!(value.as_str(), "strict" | "always" | "never")
         }
+        prefs::FOCUS_BAR_PLACE => matches!(value.as_str(), "top" | "bottom"),
+        prefs::FOCUS_BAR_OPACITY => value
+            .parse::<u32>()
+            .is_ok_and(|v| BAR_OPACITY.1.contains(&v)),
         _ => false,
     };
     if !ok {
@@ -491,6 +513,18 @@ pub fn focus_set_setting(
     if key == prefs::FOCUS_BANG {
         // Cached on the keystroke path, like every Bang switch.
         pipeline.set_focus_bang(value == "1");
+    }
+    // A showing bar follows at once; the next one reads the prefs anyway.
+    if key == prefs::FOCUS_BAR_PLACE {
+        super::bar::replace(&app);
+    }
+    if key == prefs::FOCUS_BAR_OPACITY {
+        emit(
+            &app,
+            Signal::Bar {
+                opacity: bar_opacity(Some(&value)),
+            },
+        );
     }
     Ok(())
 }
@@ -536,6 +570,8 @@ mod tests {
             keys,
             [
                 "bang",
+                "barOpacity",
+                "barPlace",
                 "hurdleIdle",
                 "hurdleShutdown",
                 "restoreApps",
@@ -547,5 +583,16 @@ mod tests {
             v["snoozeMinutes"], 3,
             "default snooze is Raycast's 3 minutes"
         );
+        assert_eq!(v["barPlace"], "bottom");
+        assert_eq!(v["barOpacity"], 90);
+    }
+
+    #[test]
+    fn v0_16_bar_opacity_out_of_range_reads_as_the_default() {
+        assert_eq!(bar_opacity(Some("55")), 55);
+        assert_eq!(bar_opacity(Some("100")), 100);
+        assert_eq!(bar_opacity(Some("10")), 90);
+        assert_eq!(bar_opacity(Some("x")), 90);
+        assert_eq!(bar_opacity(None), 90);
     }
 }

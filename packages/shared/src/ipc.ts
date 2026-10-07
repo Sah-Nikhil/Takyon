@@ -704,7 +704,8 @@ export interface FocusView {
 export type FocusSignal =
   | { kind: "view"; view: FocusView }
   | { kind: "blocked"; key: string; label: string; snoozable: boolean }
-  | { kind: "ended"; outcome: "expired" | "completed" };
+  | { kind: "ended"; outcome: "expired" | "completed" }
+  | { kind: "bar"; opacity: number };
 
 export type FocusError =
   | { kind: "alreadyRunning" }
@@ -770,6 +771,10 @@ export interface FocusSettings {
   bang: boolean;
   hurdleShutdown: "strict" | "always" | "never";
   hurdleIdle: "strict" | "always" | "never";
+  /** Edge the floating bar opens on, centred, unless it was dragged. */
+  barPlace: "bottom" | "top";
+  /** Floating bar panel opacity, percent, 30 to 100. */
+  barOpacity: number;
 }
 
 /** `!f` line split into goal and a trailing duration. */

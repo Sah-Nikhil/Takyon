@@ -120,7 +120,7 @@ test("!f without a length opens the form with the goal typed", async ({ page }) 
 });
 
 test.describe("the floating bar", () => {
-  test.use({ viewport: { width: 360, height: 52 } });
+  test.use({ viewport: { width: 300, height: 40 } });
 
   test("shows the goal and time left", async ({ page }) => {
     await page.goto("/?window=bar&focus=running");
@@ -133,6 +133,23 @@ test.describe("the floating bar", () => {
     await page.goto("/?window=bar&focus=paused");
     await expect(page.getByText("Paused")).toBeVisible();
     await expect(page).toHaveScreenshot("focus-bar-paused.png");
+  });
+
+  test("centres the goal between the icon and the clock", async ({ page }) => {
+    await page.goto("/?window=bar&focus=running");
+    const goal = page.getByText("Write Focus manual page");
+    await expect(goal).toBeVisible();
+    const box = (await goal.boundingBox())!;
+    expect(Math.abs(box.x + box.width / 2 - 150)).toBeLessThanOrEqual(1);
+  });
+
+  test("fades only its panel to the opacity Settings holds", async ({ page }) => {
+    await page.goto("/?window=bar&focus=running&baropacity=50");
+    await expect(page.getByText("23:41")).toBeVisible();
+    const panel = page.locator("[aria-hidden]").first();
+    await expect(panel).toHaveCSS("opacity", "0.5");
+    await expect(page.getByText("Write Focus manual page")).toHaveCSS("opacity", "1");
+    await expect(page).toHaveScreenshot("focus-bar-faded.png");
   });
 
   test("draws in the light half too", async ({ page }) => {
@@ -150,6 +167,8 @@ test.describe("Settings", () => {
     await page.goto("/?window=settings");
     await page.getByRole("button", { name: "Focus", exact: true }).click();
     await expect(page.getByRole("combobox", { name: "Snooze duration" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Floating bar position" })).toContainText("Bottom");
+    await expect(page.getByRole("slider", { name: "Floating bar opacity" })).toHaveValue("90");
     await expect(page.getByText("Video & streaming")).toBeVisible();
     await expect(page.getByText("Scheduled sessions")).toBeVisible();
     await expect(page.getByText("Coming soon", { exact: true }).first()).toBeVisible();

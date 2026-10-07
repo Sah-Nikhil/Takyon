@@ -1000,6 +1000,7 @@ pub fn run() {
                                 }
                             }
                             focus::runtime::Signal::Ended { .. } => *block = None,
+                            focus::runtime::Signal::Bar { .. } => {}
                         }
                         let status = tray::focus_status(&shown, block.as_deref());
                         tray::set_status(&signals, status.as_deref());

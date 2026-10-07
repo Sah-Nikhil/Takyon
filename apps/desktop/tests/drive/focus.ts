@@ -308,6 +308,18 @@ function bar(): Win | undefined {
       w.visible,
   );
 }
+/** The bar webview's panel opacity, once a change has had time to land. */
+async function barPageOpacity(): Promise<string> {
+  const page = cdp!
+    .contexts()
+    .flatMap((c) => c.pages())
+    .find((p) => p.url().includes("window=bar"));
+  if (!page) return "no bar page";
+  await sleep(500);
+  return page.evaluate(
+    () => getComputedStyle(document.querySelector("[aria-hidden]")!).opacity,
+  );
+}
 const gone = (image: string, ms: number) =>
   until(() => running(image).length === 0, ms);
 
@@ -444,8 +456,22 @@ async function main() {
 
     const withBar = treeMb(app!.pid!);
 
-    // E2: position survives.
+    // E2: opens bottom-centre, remembers a drag, never leaves the screen.
     if (b) {
+      const centre = b.x + b.w / 2;
+      step(
+        "E.2 bar opens at the bottom by default",
+        b.y > 400,
+        `${b.x},${b.y}`,
+      );
+      probe("move", b.hwnd, 240, -80);
+      await sleep(800);
+      const pushed = bar();
+      step(
+        "E.2 dragged off the top, it comes back inside the margin",
+        Boolean(pushed && pushed.y >= 8 && pushed.y <= 40),
+        pushed ? `${pushed.x},${pushed.y}` : "no bar",
+      );
       probe("move", b.hwnd, 240, 260);
       await sleep(800);
       await complete();
@@ -454,12 +480,29 @@ async function main() {
       await start("verify", [TEST_KEY]);
       const again = await until(bar, 6_000);
       step(
-        "E.2 bar comes back where it was left",
+        "E.2 bar comes back where it was dragged",
         Boolean(
           again && Math.abs(again.x - 240) <= 2 && Math.abs(again.y - 260) <= 2,
         ),
         again ? `${again.x},${again.y}` : "no bar",
       );
+      await setting("bar_place", "top");
+      await sleep(800);
+      const top = bar();
+      step(
+        "E.2 choosing Top forgets the drag and moves it, centred",
+        Boolean(top && top.y < 60 && Math.abs(top.x + top.w / 2 - centre) <= 2),
+        top ? `${top.x},${top.y}` : "no bar",
+      );
+      await setting("bar_place", "bottom");
+      await setting("bar_opacity", "60");
+      const faded = await barPageOpacity();
+      step(
+        "E.2 opacity reaches the showing bar",
+        faded === "0.6",
+        `panel opacity ${faded}`,
+      );
+      await setting("bar_opacity", "90");
       step(
         "E.5 RSS recorded (debug build, not a budget)",
         true,
