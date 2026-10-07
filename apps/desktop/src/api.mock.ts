@@ -888,6 +888,8 @@ const focusPrefs: FocusSettings = {
   bang: false,
   hurdleShutdown: "strict",
   hurdleIdle: "strict",
+  barPlace: "bottom",
+  barOpacity: 90,
 };
 const focusListeners = new Set<(signal: FocusSignal) => void>();
 const IDLE_VIEW: FocusView = {
@@ -929,19 +931,22 @@ function frictionReady() {
   return !focusNow.strict || (frictionAt !== null && Date.now() - frictionAt >= 30_000);
 }
 
-/** `?focus=running|strict|paused`: a session under way; `?focusbang=1`: `!f` on; `?refusals=1`. */
+/** `?focus=running|strict|paused`, `&goal=…`, `?focusbang=1`, `?refusals=1`, `?baropacity=50`. */
 (() => {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
   // `?focusbang=1`: `!f` switched on, as Settings would leave it.
   if (params.get("focusbang") === "1") focusPrefs.bang = true;
+  // `?baropacity=50`: the bar's panel at that opacity.
+  const opacity = Number(params.get("baropacity"));
+  if (opacity >= 30 && opacity <= 100) focusPrefs.barOpacity = opacity;
   focusRefusals = params.get("refusals") === "1";
   const mode = params.get("focus");
   if (mode !== "running" && mode !== "strict" && mode !== "paused") return;
   const remainingMs = 23 * MIN + 41_000;
   focusNow = {
     running: true,
-    goal: "Write Focus manual page",
+    goal: params.get("goal") ?? "Write Focus manual page",
     strict: mode === "strict",
     remainingMs,
     endsAt: Date.now() + remainingMs,
@@ -1137,6 +1142,8 @@ const focusMock = {
     if (!undo) focusEdits.push({ category, item, removed });
   },
   focusFetchIcons: async (_keys: string[]) => 0,
+  focusBarFit: async (_width: number) => {},
+  focusBarReveal: async (_side: "up" | "down" | null) => {},
   focusResetBuiltin: async (category: string) => {
     focusEdits = focusEdits.filter((e) => e.category !== category);
   },
@@ -1181,6 +1188,11 @@ const focusMock = {
     if (k === "hurdle_shutdown")
       focusPrefs.hurdleShutdown = value as FocusSettings["hurdleShutdown"];
     if (k === "hurdle_idle") focusPrefs.hurdleIdle = value as FocusSettings["hurdleIdle"];
+    if (k === "bar_place") focusPrefs.barPlace = value as FocusSettings["barPlace"];
+    if (k === "bar_opacity") {
+      focusPrefs.barOpacity = Number(value);
+      emitFocus({ kind: "bar", opacity: focusPrefs.barOpacity });
+    }
   },
   focusClearHistory: async () => {
     focusHistoryCleared = true;

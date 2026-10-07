@@ -6,6 +6,11 @@
 
 #[cfg(windows)]
 fn main() {
+    // Physical pixels, like the screen captures and Takyon's own placement;
+    // a DPI-unaware process is handed scaled coordinates.
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware();
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
     let num = |i: usize| arg(i).parse::<isize>().unwrap_or(0);
@@ -22,6 +27,8 @@ fn main() {
         "docinfo" => win::docinfo(num(1)),
         "hold" => win::hold(num(1) as u32),
         "idle" => win::idle(),
+        "hit" => win::hit(num(1) as i32, num(2) as i32),
+        "cursor" => win::cursor(),
         other => format!("{{\"error\":\"unknown command {other:?}\"}}"),
     };
     println!("{out}");
@@ -350,6 +357,30 @@ mod win {
             answer != 0,
             reason.map_or("null".into(), |r| json(&r))
         )
+    }
+
+    /// The top-level window a click at `(x, y)` would reach.
+    pub fn hit(x: i32, y: i32) -> String {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, WindowFromPoint, GA_ROOT};
+        let h = unsafe { GetAncestor(WindowFromPoint(POINT { x, y }), GA_ROOT) };
+        let (pid, class, title) = info(h);
+        format!(
+            "{{\"hwnd\":{},\"pid\":{pid},\"class\":{},\"title\":{}}}",
+            h.0 as isize,
+            json(&class),
+            json(&title)
+        )
+    }
+
+    pub fn cursor() -> String {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut p = POINT::default();
+        unsafe {
+            let _ = GetCursorPos(&mut p);
+        }
+        format!("{{\"x\":{},\"y\":{}}}", p.x, p.y)
     }
 
     pub fn idle() -> String {

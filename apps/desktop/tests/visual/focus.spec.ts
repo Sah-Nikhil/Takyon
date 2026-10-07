@@ -120,7 +120,7 @@ test("!f without a length opens the form with the goal typed", async ({ page }) 
 });
 
 test.describe("the floating bar", () => {
-  test.use({ viewport: { width: 360, height: 52 } });
+  test.use({ viewport: { width: 300, height: 124 } });
 
   test("shows the goal and time left", async ({ page }) => {
     await page.goto("/?window=bar&focus=running");
@@ -133,6 +133,102 @@ test.describe("the floating bar", () => {
     await page.goto("/?window=bar&focus=paused");
     await expect(page.getByText("Paused")).toBeVisible();
     await expect(page).toHaveScreenshot("focus-bar-paused.png");
+  });
+
+  test("hover slides Pause and Complete out from behind the pill", async ({ page }) => {
+    // A bar low on the screen: the buttons go up, toward the middle.
+    await page.addInitScript(() => Object.defineProperty(window, "screenY", { get: () => 2000 }));
+    await page.goto("/?window=bar&focus=running");
+    const pause = page.getByRole("button", { name: "Pause" });
+    await expect(pause).toHaveCSS("opacity", "0");
+    await page.getByText("Write Focus manual page").hover();
+    await expect(pause).toHaveCSS("opacity", "1");
+    await expect(page.getByRole("button", { name: "Complete" })).toHaveCSS("transform", "none");
+    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+    const pill = (await page.getByText("23:41").boundingBox())!;
+    const box = (await pause.boundingBox())!;
+    expect(box.y + box.height).toBeLessThan(pill.y);
+    await expect(page).toHaveScreenshot("focus-bar-hover.png");
+  });
+
+  /** Sampled every frame of the entry: the overshoot must stay inside the window. */
+  for (const [where, screenY] of [
+    ["up", 2000],
+    ["down", 0],
+  ] as const) {
+    test(`the ${where} entry never leaves the window, overshoot included`, async ({ page }) => {
+      await page.addInitScript((y) => Object.defineProperty(window, "screenY", { get: () => y }), screenY);
+      await page.goto("/?window=bar&focus=running");
+      await page.getByText("Write Focus manual page").waitFor();
+      const watch = page.evaluate(
+        () =>
+          new Promise<{ top: number; bottom: number }>((done) => {
+            const buttons = ["Pause", "Complete"].map((n) => document.querySelector(`[aria-label="${n}"]`)!);
+            let top = Infinity;
+            let bottom = -Infinity;
+            const start = performance.now();
+            const frame = () => {
+              for (const b of buttons) {
+                const r = b.getBoundingClientRect();
+                if (getComputedStyle(b).opacity !== "0") {
+                  top = Math.min(top, r.top);
+                  bottom = Math.max(bottom, r.bottom);
+                }
+              }
+              if (performance.now() - start < 600) requestAnimationFrame(frame);
+              else done({ top, bottom });
+            };
+            requestAnimationFrame(frame);
+          }),
+      );
+      await page.getByText("Write Focus manual page").hover();
+      const seen = await watch;
+      expect(seen.top).toBeGreaterThanOrEqual(0);
+      expect(seen.bottom).toBeLessThanOrEqual(124);
+    });
+  }
+
+  test("near the top of the screen the buttons slide down instead", async ({ page }) => {
+    await page.goto("/?window=bar&focus=running");
+    await page.getByText("Write Focus manual page").hover();
+    await expect(page.getByRole("button", { name: "Complete" })).toHaveCSS("transform", "none");
+    const pill = (await page.getByText("23:41").boundingBox())!;
+    const pause = (await page.getByRole("button", { name: "Pause" }).boundingBox())!;
+    expect(pause.y).toBeGreaterThan(pill.y + pill.height);
+  });
+
+  test("a goal too long to fit scrolls on hover and truncates at rest", async ({ page }) => {
+    const goal = "Draft the Tesseract ideation brief and the three launch experiments";
+    // The real window grows to the pill, up to 440; the test viewport has to.
+    await page.setViewportSize({ width: 440, height: 124 });
+    await page.goto(`/?window=bar&focus=running&goal=${encodeURIComponent(goal)}`);
+    await expect(page.getByText(goal)).toHaveCSS("text-overflow", "ellipsis");
+    await page.getByText(goal).hover();
+    const moving = page.locator("[style*='--marquee-shift']");
+    await expect(moving).toHaveCSS("animation-name", "focus-marquee");
+    await expect(page).toHaveScreenshot("focus-bar-long.png", { animations: "disabled" });
+    // Leaving the window, as the real one's region makes any move off the pill.
+    await page.getByTestId("focus-bar").dispatchEvent("mouseout", { relatedTarget: null });
+    await expect(page.getByText(goal)).toHaveCSS("text-overflow", "ellipsis");
+    await expect(page).toHaveScreenshot("focus-bar-long-rest.png");
+  });
+
+  test("hugs its content: no gap between the goal and the clock", async ({ page }) => {
+    await page.goto("/?window=bar&focus=running");
+    const goal = (await page.getByText("Write Focus manual page").boundingBox())!;
+    const time = (await page.getByText("23:41").boundingBox())!;
+    expect(time.x - (goal.x + goal.width)).toBeLessThanOrEqual(24);
+    const pill = (await page.locator("[data-tauri-drag-region]").first().boundingBox())!;
+    expect(pill.width).toBeLessThan(270);
+  });
+
+  test("fades only its panel to the opacity Settings holds", async ({ page }) => {
+    await page.goto("/?window=bar&focus=running&baropacity=50");
+    await expect(page.getByText("23:41")).toBeVisible();
+    const panel = page.locator("[aria-hidden]").first();
+    await expect(panel).toHaveCSS("opacity", "0.5");
+    await expect(page.getByText("Write Focus manual page")).toHaveCSS("opacity", "1");
+    await expect(page).toHaveScreenshot("focus-bar-faded.png");
   });
 
   test("draws in the light half too", async ({ page }) => {
@@ -150,6 +246,8 @@ test.describe("Settings", () => {
     await page.goto("/?window=settings");
     await page.getByRole("button", { name: "Focus", exact: true }).click();
     await expect(page.getByRole("combobox", { name: "Snooze duration" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Floating bar position" })).toContainText("Bottom");
+    await expect(page.getByRole("slider", { name: "Floating bar opacity" })).toHaveValue("90");
     await expect(page.getByText("Video & streaming")).toBeVisible();
     await expect(page.getByText("Scheduled sessions")).toBeVisible();
     await expect(page.getByText("Coming soon", { exact: true }).first()).toBeVisible();

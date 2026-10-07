@@ -701,6 +701,14 @@ export const focusSettings = () =>
 export const focusSetSetting = (key: string, value: string) =>
   inTauri ? invoke<void>("focus_set_setting", { key, value }) : mock.focusSetSetting(key, value);
 
+/** The bar's pill measured `width` logical px; Rust sizes its window to it. */
+export const focusBarFit = (width: number) =>
+  inTauri ? invoke<void>("focus_bar_fit", { width }) : mock.focusBarFit(width);
+
+/** Open the bar's `up` or `down` dock for its hover buttons, or close both. */
+export const focusBarReveal = (side: "up" | "down" | null) =>
+  inTauri ? invoke<void>("focus_bar_reveal", { side }) : mock.focusBarReveal(side);
+
 export const focusClearHistory = () =>
   inTauri ? invoke<void>("focus_clear_history") : mock.focusClearHistory();
 

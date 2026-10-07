@@ -355,11 +355,22 @@ input {
 }
 
 /* The Focus bar's block pulse (v0.16): a ring of accent that fades. */
-@keyframes focus-pulse {
+/* The Focus bar's long goal on hover: one copy's width plus the gap, then repeat. */
+@keyframes focus-marquee {
   from {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-accent) 55%, transparent);
+    transform: translateX(0);
   }
   to {
-    box-shadow: 0 0 0 10px color-mix(in oklab, var(--color-accent) 0%, transparent);
+    transform: translateX(var(--marquee-shift));
+  }
+}
+
+/* Inset: the bar's panel fills its window, so an outward ring would be clipped. */
+@keyframes focus-pulse {
+  from {
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-accent) 70%, transparent);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-accent) 0%, transparent);
   }
 }

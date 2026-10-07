@@ -148,8 +148,16 @@ pub const FOCUS_RESTORE_APPS: &str = "focus.restore_apps";
 /// Running-session indicator: `"bar"` (default) or `"tray"`.
 pub const FOCUS_SURFACE: &str = "focus.surface";
 
-/// Floating bar position, `"x,y"` in physical pixels. Absent = top centre.
+/// Where the floating bar opens: `"bottom"` (default) or `"top"`, centred.
+pub const FOCUS_BAR_PLACE: &str = "focus.bar_place";
+
+/// Where the user last dragged the bar, `"cx,y"` (centre, top) in physical
+/// pixels. Empty or
+/// absent = [`FOCUS_BAR_PLACE`]'s spot; changing that setting clears it.
 pub const FOCUS_BAR_POSITION: &str = "focus.bar_position";
+
+/// Floating bar panel opacity, percent, 30 to 100. Default 90.
+pub const FOCUS_BAR_OPACITY: &str = "focus.bar_opacity";
 
 /// Whether `!f` starts sessions. `"1"`/`"0"`, **default off**.
 pub const FOCUS_BANG: &str = "focus.bang";

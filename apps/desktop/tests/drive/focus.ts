@@ -308,6 +308,36 @@ function bar(): Win | undefined {
       w.visible,
   );
 }
+/** Real screen pixels of a window, with a margin round it: what a person sees. */
+function screen(win: Win | undefined, name: string) {
+  if (!win) return;
+  const pad = 24;
+  const script = `Add-Type -AssemblyName System.Drawing
+Add-Type -Namespace T -Name D -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();'
+[void][T.D]::SetProcessDPIAware()
+$b = New-Object System.Drawing.Bitmap ${win.w + 2 * pad}, ${win.h + 2 * pad}
+$g = [System.Drawing.Graphics]::FromImage($b)
+$g.CopyFromScreen(${win.x - pad}, ${win.y - pad}, 0, 0, $b.Size)
+$b.Save('${join(SHOTS, name)}')`;
+  execFileSync("powershell.exe", ["-NoProfile", "-Command", script]);
+}
+
+/** The bar webview's panel opacity, once a change has had time to land. */
+async function barPageOpacity(): Promise<string> {
+  const page = cdp!
+    .contexts()
+    .flatMap((c) => c.pages())
+    .find((p) => p.url().includes("window=bar"));
+  if (!page) return "no bar page";
+  await sleep(500);
+  return page.evaluate(
+    () => getComputedStyle(document.querySelector("[aria-hidden]")!).opacity,
+  );
+}
+/** Physical height of one button dock: the window is dock, pill, dock (42/40/42). */
+const dockOf = (w: Win) => Math.round((w.h * 42) / 124);
+/** Where the pill itself starts, inside the window. */
+const pillTop = (w: Win) => w.y + dockOf(w);
 const gone = (image: string, ms: number) =>
   until(() => running(image).length === 0, ms);
 
@@ -410,14 +440,9 @@ async function main() {
       Boolean(b && b.ex & 0x08000000 && b.ex & 0x80),
       b ? `exstyle 0x${b.ex.toString(16)}` : "",
     );
-    const barPage = cdp!
-      .contexts()
-      .flatMap((c) => c.pages())
-      .find((p) => p.url().includes("window=bar"));
-    if (barPage)
-      await barPage
-        .screenshot({ path: join(SHOTS, "bar.png") })
-        .catch(() => {});
+    // Screen pixels once it has refit: a CDP shot mid-resize is garbage.
+    await sleep(1000);
+    screen(bar(), "bar.png");
 
     launch(TEST_APP);
     await until(() => running(TEST_APP).length > 0, 5_000);
@@ -444,21 +469,112 @@ async function main() {
 
     const withBar = treeMb(app!.pid!);
 
-    // E2: position survives.
+    // E2: opens bottom-centre, remembers a drag, never leaves the screen.
     if (b) {
+      const centre = b.x + b.w / 2;
+      step(
+        "E.2 bar opens at the bottom by default",
+        b.y > 400,
+        `${b.x},${b.y}`,
+      );
+      probe("move", b.hwnd, 240, -80);
+      await sleep(800);
+      const pushed = bar();
+      step(
+        "E.2 dragged off the top, it comes back inside the margin",
+        Boolean(pushed && pillTop(pushed) >= 8 && pillTop(pushed) <= 40),
+        pushed ? `pill top ${pillTop(pushed)}` : "no bar",
+      );
       probe("move", b.hwnd, 240, 260);
       await sleep(800);
+      // The centre is what is remembered: the pill's width changes with what it shows.
+      const dragged = bar()!;
+      const centreDragged = dragged.x + dragged.w / 2;
       await complete();
       await until(() => !bar(), 5_000);
       const idleMb = treeMb(app!.pid!);
       await start("verify", [TEST_KEY]);
-      const again = await until(bar, 6_000);
-      step(
-        "E.2 bar comes back where it was left",
+      // Opens at the start width, then refits to the pill about its centre.
+      await until(bar, 6_000);
+      const near = (w: Win | undefined) =>
         Boolean(
-          again && Math.abs(again.x - 240) <= 2 && Math.abs(again.y - 260) <= 2,
+          w &&
+          Math.abs(w.x + w.w / 2 - centreDragged) <= 2 &&
+          Math.abs(w.y - 260) <= 2,
+        );
+      const again =
+        (await until(() => (near(bar()) ? bar() : undefined), 3_000)) ?? bar();
+      step(
+        "E.2 bar comes back centred where it was dragged",
+        near(again),
+        again
+          ? `centre ${again.x + again.w / 2}, top ${again.y}; dragged centre ${centreDragged}`
+          : "no bar",
+      );
+      await setting("bar_place", "top");
+      await sleep(800);
+      const top = bar();
+      step(
+        "E.2 choosing Top forgets the drag and moves it, centred",
+        Boolean(
+          top && pillTop(top) < 60 && Math.abs(top.x + top.w / 2 - centre) <= 2,
         ),
-        again ? `${again.x},${again.y}` : "no bar",
+        top ? `pill at ${top.x},${pillTop(top)}` : "no bar",
+      );
+      await setting("bar_place", "bottom");
+      await setting("bar_opacity", "60");
+      const faded = await barPageOpacity();
+      step(
+        "E.2 opacity reaches the showing bar",
+        faded === "0.6",
+        `panel opacity ${faded}`,
+      );
+      await sleep(1000);
+      screen(bar(), "bar-screen-60.png");
+      await setting("bar_opacity", "90");
+      await sleep(1000);
+      screen(bar(), "bar-screen-90.png");
+
+      // E6: the dock above the pill passes clicks through until hovered.
+      const w = bar()!;
+      const dockY = w.y + Math.round(dockOf(w) / 2);
+      const cx = w.x + Math.round(w.w / 2);
+      type Hit = { pid: number; title: string };
+      // A person's cursor over the bar opens the dock, legitimately.
+      const mouse = probe<{ x: number; y: number }>("cursor");
+      const over =
+        mouse.x >= w.x &&
+        mouse.x < w.x + w.w &&
+        mouse.y >= w.y &&
+        mouse.y < w.y + w.h;
+      const rest = probe<Hit>("hit", cx, dockY);
+      step(
+        "E.6 at rest, a click above the pill reaches the window underneath",
+        rest.pid !== app!.pid || over,
+        `"${rest.title}"${over ? " (cursor was over the bar)" : ""}`,
+      );
+      const barView = cdp!
+        .contexts()
+        .flatMap((c) => c.pages())
+        .find((p) => p.url().includes("window=bar"))!;
+      await barView.locator("[data-tauri-drag-region]").first().hover();
+      await sleep(600);
+      const outHit = probe<Hit>("hit", cx, dockY);
+      step(
+        "E.6 hovered, the buttons slide up and take the click",
+        outHit.pid === app!.pid,
+        `"${outHit.title}"`,
+      );
+      screen(bar(), "bar-hover-real.png");
+      await barView
+        .getByTestId("focus-bar")
+        .dispatchEvent("mouseout", { relatedTarget: null });
+      await sleep(600);
+      const back = probe<Hit>("hit", cx, dockY);
+      step(
+        "E.6 left, the dock passes clicks through again",
+        back.pid !== app!.pid,
+        `"${back.title}"`,
       );
       step(
         "E.5 RSS recorded (debug build, not a budget)",

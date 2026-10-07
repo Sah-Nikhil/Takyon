@@ -292,6 +292,8 @@ export const PAGES: SettingsPage[] = [
       { id: "focus-snooze", label: "Snooze duration", keywords: ["focus", "snooze", "block", "distraction"] },
       { id: "focus-restore", label: "Restore terminated apps", keywords: ["focus", "restore", "relaunch"] },
       { id: "focus-surface", label: "Running session", keywords: ["focus", "bar", "tray", "floating"] },
+      { id: "focus-bar-place", label: "Floating bar position", keywords: ["focus", "bar", "pill", "top", "bottom"] },
+      { id: "focus-bar-opacity", label: "Floating bar opacity", keywords: ["focus", "bar", "pill", "transparency", "opacity"] },
       { id: "focus-bang", label: "Start with !f", keywords: ["focus", "bang", "!f"] },
       { id: "focus-hurdle-shutdown", label: "Hold shutdown", keywords: ["focus", "strict", "shutdown", "restart"] },
       { id: "focus-hurdle-idle", label: "Keep the PC awake", keywords: ["focus", "strict", "sleep", "awake"] },

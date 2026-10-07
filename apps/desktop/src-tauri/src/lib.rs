@@ -756,6 +756,8 @@ pub fn run() {
             focus::ipc::focus_last_list,
             focus::ipc::focus_settings,
             focus::ipc::focus_set_setting,
+            focus::ipc::focus_bar_fit,
+            focus::ipc::focus_bar_reveal,
             focus::ipc::focus_clear_history,
             focus::ipc::focus_stats
         ])
@@ -1000,6 +1002,7 @@ pub fn run() {
                                 }
                             }
                             focus::runtime::Signal::Ended { .. } => *block = None,
+                            focus::runtime::Signal::Bar { .. } => {}
                         }
                         let status = tray::focus_status(&shown, block.as_deref());
                         tray::set_status(&signals, status.as_deref());
