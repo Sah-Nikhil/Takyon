@@ -662,6 +662,10 @@ export const focusCategories = () =>
 export const focusMembers = (id: string) =>
   inTauri ? invoke<FocusMember[]>("focus_members", { id }) : mock.focusMembers(id);
 
+/** Fetch icons for sites just added (ADR-0037). Resolves to how many arrived. */
+export const focusFetchIcons = (keys: string[]) =>
+  inTauri ? invoke<number>("focus_fetch_icons", { keys }) : mock.focusFetchIcons(keys);
+
 /** Add to (`removed: false`) or take out of a built-in Focus category. */
 export const focusEditBuiltin = (category: string, item: FocusItem, removed: boolean) =>
   inTauri

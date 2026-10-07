@@ -6,11 +6,12 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AppWindow, LinkSimple, X } from "@phosphor-icons/react";
+import { AppWindow, X } from "@phosphor-icons/react";
 import type { FocusCategory, FocusItem, FocusMember } from "@takyon/shared";
 import * as api from "@/api";
 import { BlockPicker } from "@/focus/BlockPicker";
 import { FocusIcon, PICKABLE_ICONS } from "@/focus/icons";
+import { Favicon } from "@/search/Favicon";
 import { Confirm, Group } from "../controls";
 
 const small =
@@ -30,12 +31,12 @@ function source(m: FocusMember): string {
   return "Picked from your apps";
 }
 
-function MemberRow({ member, onRemove }: { member: FocusMember; onRemove: () => void }) {
+function MemberRow({ member, epoch, onRemove }: { member: FocusMember; epoch: number; onRemove: () => void }) {
   const url = member.icon ? api.iconUrl(member.icon) : "";
   return (
     <div className="group flex items-center gap-3 px-3.5 py-2">
       {member.kind === "site" ? (
-        <LinkSimple weight="duotone" className="size-4 shrink-0 text-fg/55" aria-hidden />
+        <Favicon host={member.key.slice(5)} size={16} epoch={epoch} />
       ) : url ? (
         <img src={url} alt="" className="size-4 shrink-0" />
       ) : (
@@ -82,6 +83,8 @@ export function FocusCategoryPanel({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"reset" | "delete" | null>(null);
+  // Bumped when a just-added site's icon lands, so its row asks again.
+  const [epoch, setEpoch] = useState(0);
   const builtin = !id.startsWith("custom:");
 
   const load = useCallback(() => {
@@ -103,6 +106,7 @@ export function FocusCategoryPanel({
     );
 
   const add = (key: string, label: string) => {
+    if (key.startsWith("site:")) void api.focusFetchIcons([key]).then((n) => n > 0 && setEpoch((e) => e + 1));
     if (builtin) void api.focusEditBuiltin(id, { key, label }, false).then(load, (e) => setError(String(e)));
     else if (!category.items.some((i) => i.key === key)) void saveCustom({ ...category, items: [...category.items, { key, label }] });
   };
@@ -235,14 +239,14 @@ export function FocusCategoryPanel({
       {apps.length > 0 && (
         <Group title="Apps">
           {apps.map((m) => (
-            <MemberRow key={m.key} member={m} onRemove={() => remove(m)} />
+            <MemberRow key={m.key} member={m} epoch={epoch} onRemove={() => remove(m)} />
           ))}
         </Group>
       )}
       {games.length > 0 && (
         <Group title="Installed games">
           {games.map((m) => (
-            <MemberRow key={m.key} member={m} onRemove={() => remove(m)} />
+            <MemberRow key={m.key} member={m} epoch={epoch} onRemove={() => remove(m)} />
           ))}
         </Group>
       )}
@@ -254,7 +258,7 @@ export function FocusCategoryPanel({
       {sites.length > 0 && (
         <Group title="Websites">
           {sites.map((m) => (
-            <MemberRow key={m.key} member={m} onRemove={() => remove(m)} />
+            <MemberRow key={m.key} member={m} epoch={epoch} onRemove={() => remove(m)} />
           ))}
         </Group>
       )}

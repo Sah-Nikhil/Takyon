@@ -62,8 +62,7 @@ fn build(app: &AppHandle) {
         }
         None => place_top_centre(&window),
     }
-    no_activate(&window);
-    let _ = window.show();
+    float(&window);
     let store = prefs.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::Moved(p) = event {
@@ -83,25 +82,37 @@ fn place_top_centre(window: &tauri::WebviewWindow) {
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
-/// `WS_EX_NOACTIVATE` and `WS_EX_TOOLWINDOW`: clicks land, focus stays where
-/// the user is typing, no Alt+Tab entry. Not a Tauri option, hence raw Win32.
+/// Show without taking focus. Tauri's `show()` is `SW_SHOW`, which activates.
 #[cfg(windows)]
-fn no_activate(window: &tauri::WebviewWindow) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    };
-    let Ok(hwnd) = window.hwnd() else { return };
-    let hwnd = HWND(hwnd.0);
-    unsafe {
-        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        let wanted = style | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize;
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted);
+fn float(window: &tauri::WebviewWindow) {
+    if let Ok(hwnd) = window.hwnd() {
+        float_quietly(hwnd.0 as isize);
     }
 }
 
 #[cfg(not(windows))]
-fn no_activate(_: &tauri::WebviewWindow) {}
+fn float(window: &tauri::WebviewWindow) {
+    let _ = window.show();
+}
+
+/// `WS_EX_NOACTIVATE` and `WS_EX_TOOLWINDOW`, then `SW_SHOWNOACTIVATE`:
+/// clicks land, focus stays where the user is typing, no Alt+Tab entry.
+/// Not Tauri options, hence raw Win32. Public for `tests/focus_bar.rs`.
+#[cfg(windows)]
+pub fn float_quietly(hwnd: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, ShowWindow, GWL_EXSTYLE, SW_SHOWNOACTIVATE,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    };
+    let hwnd = HWND(hwnd as *mut _);
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let wanted = style | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize;
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted);
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+}
 
 #[cfg(test)]
 mod tests {

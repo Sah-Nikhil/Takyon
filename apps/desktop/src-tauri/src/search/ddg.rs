@@ -108,8 +108,10 @@ fn percent_decode(value: &str) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&value[i + 1..i + 3], 16) {
+        // Hex digits sliced as bytes: `&value[..]` panics off a char boundary.
+        if bytes[i] == b'%' && i + 3 <= bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+            if let Some(byte) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
                 out.push(byte);
                 i += 3;
                 continue;
@@ -176,6 +178,15 @@ mod tests {
             hits[1].description,
             "Scuderia Ferrari is the racing division of luxury Italian auto manufacturer Ferrari & the oldest team."
         );
+    }
+
+    /// Escape at end of string still decodes. `%` before multi-byte char stays
+    /// literal, no panic: `%a` then first byte of `é` is not a str boundary.
+    #[test]
+    fn v0_9_percent_decode_handles_trailing_escape_and_multibyte_after_percent() {
+        assert_eq!(percent_decode("a%41"), "aA");
+        assert_eq!(percent_decode("%aé"), "%aé");
+        assert_eq!(percent_decode("%é"), "%é");
     }
 
     /// 202 is DuckDuckGo holding back traffic it suspects is automated, seen on a

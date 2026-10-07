@@ -2,9 +2,9 @@
 //! sites, and holds the hurdles while a Focus session runs.
 //!
 //! Polls rather than hooks: foreground every 250 ms, the process table every
-//! 2 s. A hidden top-level window (message-only ones miss broadcasts) takes
-//! `WM_POWERBROADCAST` for sleep and `WM_QUERYENDSESSION` for the shutdown
-//! hurdle. Decisions live in `rules`; this file is only the OS glue.
+//! 2 s. `power::Watch`, a hidden window on this thread, takes sleep and wake
+//! and holds the shutdown hurdle. Decisions live in `rules`; this file is only
+//! the OS glue.
 
 use std::sync::Arc;
 
@@ -57,6 +57,11 @@ pub fn original_url(display: &str) -> String {
     }
 }
 
+/// What Windows' "preventing shutdown" screen says while a session holds it.
+pub fn shutdown_reason(goal: &str, remaining_ms: u64) -> String {
+    format!("Focus: {goal}, {} min left", remaining_ms.div_ceil(60_000))
+}
+
 #[cfg(windows)]
 pub use imp::spawn;
 
@@ -73,28 +78,17 @@ pub fn spawn(
 mod imp {
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use windows::core::{w, HSTRING, PCWSTR};
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows::Win32::System::Power::{
-        SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED,
-    };
-    use windows::Win32::System::Shutdown::{ShutdownBlockReasonCreate, ShutdownBlockReasonDestroy};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow,
-        GetWindowThreadProcessId, MsgWaitForMultipleObjects, PeekMessageW, RegisterClassW,
-        TranslateMessage, MSG, PBT_APMRESUMEAUTOMATIC, PBT_APMSUSPEND, PM_REMOVE, QS_ALLINPUT,
-        WINDOW_EX_STYLE, WM_POWERBROADCAST, WM_QUERYENDSESSION, WNDCLASSW, WS_OVERLAPPED,
-    };
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
-    use super::{now_ms, original_url, Emit, Signal};
+    use super::{now_ms, original_url, shutdown_reason, Emit, Signal};
     use crate::entry::LaunchTarget;
     use crate::focus::browser::{engine_of, mta, Bar, Uia};
     use crate::focus::identity::Process;
+    use crate::focus::power::{keep_awake, pump, Power, Watch};
     use crate::focus::procs::{self, Quit};
     use crate::focus::service::Focus;
     use crate::focus::settings::{snooze_ms, Hurdle};
@@ -109,59 +103,7 @@ mod imp {
     const NOTICE_EVERY_MS: u64 = 5_000;
     /// Tabs left on the block page get restored on visit for this long.
     const RESTORE_WINDOW_MS: u64 = 30 * 60_000;
-
-    static FOCUS: OnceLock<Arc<Focus>> = OnceLock::new();
-    /// Shutdown hurdle armed; read by the window procedure.
-    static HOLD_SHUTDOWN: AtomicBool = AtomicBool::new(false);
-
-    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-        match msg {
-            WM_POWERBROADCAST => {
-                if let Some(focus) = FOCUS.get() {
-                    match wp.0 as u32 {
-                        PBT_APMSUSPEND => focus.sleep(now_ms()),
-                        PBT_APMRESUMEAUTOMATIC => focus.wake(now_ms()),
-                        _ => {}
-                    }
-                }
-                LRESULT(1)
-            }
-            // FALSE holds the shutdown behind Windows' "preventing shutdown"
-            // screen, whose Shut down anyway always wins (ADR-0036).
-            WM_QUERYENDSESSION if HOLD_SHUTDOWN.load(Ordering::Relaxed) => LRESULT(0),
-            _ => unsafe { DefWindowProcW(hwnd, msg, wp, lp) },
-        }
-    }
-
-    fn hidden_window() -> Option<HWND> {
-        unsafe {
-            let instance = GetModuleHandleW(PCWSTR::null()).ok()?;
-            let class = w!("TakyonFocus");
-            let wc = WNDCLASSW {
-                lpfnWndProc: Some(wndproc),
-                hInstance: instance.into(),
-                lpszClassName: class,
-                ..Default::default()
-            };
-            RegisterClassW(&wc);
-            // Top-level and never shown: message-only windows get no broadcasts.
-            CreateWindowExW(
-                WINDOW_EX_STYLE(0),
-                class,
-                w!("Takyon Focus"),
-                WS_OVERLAPPED,
-                0,
-                0,
-                0,
-                0,
-                None,
-                None,
-                Some(instance.into()),
-                None,
-            )
-            .ok()
-        }
-    }
+    const RESTORE_WALKS: u8 = 3;
 
     /// Start the enforcer. `page`: the themed block page for the running session.
     pub fn spawn(
@@ -170,7 +112,6 @@ mod imp {
         page: Arc<Mutex<Option<PathBuf>>>,
         emit: Emit,
     ) {
-        let _ = FOCUS.set(focus.clone());
         std::thread::Builder::new()
             .name("focus".into())
             .spawn(move || run(focus, prefs, page, emit))
@@ -185,28 +126,38 @@ mod imp {
         noticed: HashMap<String, u64>,
         nav_cooldown: HashMap<isize, u64>,
         restore_until: u64,
-        restored: HashSet<isize>,
+        /// Restore walks per browser window: done once one restores a tab.
+        restored: HashMap<isize, u8>,
         holding: bool,
+        next_walk: u64,
         last_view: Option<crate::focus::service::View>,
     }
 
     fn run(focus: Arc<Focus>, prefs: Arc<Prefs>, page: Arc<Mutex<Option<PathBuf>>>, emit: Emit) {
         let _com = mta();
         let uia = Uia::new();
-        let window = hidden_window();
+        let sleeper = focus.clone();
+        let window = Watch::new(move |p| match p {
+            Power::Sleep => sleeper.sleep(now_ms()),
+            Power::Wake => sleeper.wake(now_ms()),
+        });
         let mut st = Loop::default();
         loop {
             pump(Duration::from_millis(250));
             let now = now_ms();
             if let Some(outcome) = focus.tick(now) {
-                ended(&focus, &prefs, &emit, &mut st, window, now);
                 emit(Signal::Ended { outcome });
             }
             let view = focus.view(now);
-            // On change only: the frontend counts down from `endsAt` itself, so
-            // `remaining_ms` ticking is not a change.
+            // Any end, expiry or an early Complete from IPC: both reach here
+            // as running turning false, so restores run for both.
+            if st.last_view.as_ref().is_some_and(|v| v.running) && !view.running {
+                ended(&focus, &prefs, &emit, &mut st, window.as_ref(), now);
+            }
+            // On change only: the frontend counts down from `endsAt` itself.
+            // Whole minutes do count, for the tray's "23 min left".
             let shape = crate::focus::service::View {
-                remaining_ms: 0,
+                remaining_ms: view.remaining_ms.div_ceil(60_000),
                 ..view.clone()
             };
             if st.last_view.as_ref() != Some(&shape) {
@@ -215,12 +166,12 @@ mod imp {
             }
             if !view.running {
                 if st.holding {
-                    release(window, &mut st);
+                    release(window.as_ref(), &mut st);
                 }
                 restore_tabs(&uia, &mut st, now);
                 continue;
             }
-            hurdles(&focus, &prefs, window, &mut st, &view);
+            hurdles(&focus, &prefs, window.as_ref(), &mut st, &view);
             if view.paused {
                 continue;
             }
@@ -234,17 +185,6 @@ mod imp {
             block_site(
                 &focus, &prefs, &emit, &uia, &page, &mut st, front, front_pid, now,
             );
-        }
-    }
-
-    fn pump(timeout: Duration) {
-        unsafe {
-            MsgWaitForMultipleObjects(None, false, timeout.as_millis() as u32, QS_ALLINPUT);
-            let mut msg = MSG::default();
-            while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-                let _ = TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
         }
     }
 
@@ -393,7 +333,12 @@ mod imp {
             return;
         };
         let view = focus.view(now);
-        let url = block_url(&page, &original_url(&display), view.ends_at, &view.goal);
+        // The page's own address where the browser exposes it: Chrome's bar
+        // hides `www.`, Zen's shows the host only.
+        let original = uia
+            .page_url(front, &display)
+            .unwrap_or_else(|| original_url(&display));
+        let url = block_url(&page, &original, view.ends_at, &view.goal);
         if uia.navigate(front, engine, &url) {
             st.nav_cooldown.insert(front, now + 1_500);
             notice(focus, prefs, emit, st, &key, label_of(&key, None), now);
@@ -401,14 +346,16 @@ mod imp {
     }
 
     /// Lazy restore: a browser left holding block pages gets them back the
-    /// next time the user brings it to the front. Never raises a window.
+    /// next time the user brings it to the front. Never raises a window. Up
+    /// to three walks, a second apart: a tab strip read mid-switch shows none.
     fn restore_tabs(uia: &Option<Uia>, st: &mut Loop, now: u64) {
         let Some(uia) = uia else { return };
         if now >= st.restore_until {
             return;
         }
         let front = unsafe { GetForegroundWindow() }.0 as isize;
-        if st.restored.contains(&front) {
+        let walks = st.restored.get(&front).copied().unwrap_or(0);
+        if walks >= RESTORE_WALKS || now < st.next_walk {
             return;
         }
         let Some(engine) = pid_of(front)
@@ -417,14 +364,16 @@ mod imp {
         else {
             return;
         };
-        st.restored.insert(front);
-        uia.restore(front, engine);
+        let done = uia.restore(front, engine) > 0;
+        st.restored
+            .insert(front, if done { RESTORE_WALKS } else { walks + 1 });
+        st.next_walk = now + 1_000;
     }
 
     fn hurdles(
         focus: &Focus,
         prefs: &Prefs,
-        window: Option<HWND>,
+        window: Option<&Watch>,
         st: &mut Loop,
         view: &crate::focus::service::View,
     ) {
@@ -434,28 +383,19 @@ mod imp {
             Hurdle::parse(prefs.get(prefs::FOCUS_HURDLE_SHUTDOWN).as_deref()).applies(strictness);
         let idle =
             Hurdle::parse(prefs.get(prefs::FOCUS_HURDLE_IDLE).as_deref()).applies(strictness);
-        HOLD_SHUTDOWN.store(shutdown, Ordering::Relaxed);
-        if let (true, Some(w)) = (shutdown, window) {
-            let minutes = view.remaining_ms.div_ceil(60_000);
-            let reason = HSTRING::from(format!("Focus: {}, {minutes} min left", view.goal));
-            unsafe {
-                let _ = ShutdownBlockReasonCreate(w, &reason);
-            }
+        if let Some(w) = window {
+            let reason = shutdown.then(|| shutdown_reason(&view.goal, view.remaining_ms));
+            w.hold_shutdown(reason.as_deref());
         }
-        if idle {
-            unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) };
-        }
+        keep_awake(idle);
         st.holding = true;
     }
 
-    fn release(window: Option<HWND>, st: &mut Loop) {
-        HOLD_SHUTDOWN.store(false, Ordering::Relaxed);
+    fn release(window: Option<&Watch>, st: &mut Loop) {
         if let Some(w) = window {
-            unsafe {
-                let _ = ShutdownBlockReasonDestroy(w);
-            }
+            w.hold_shutdown(None);
         }
-        unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
+        keep_awake(false);
         st.holding = false;
     }
 
@@ -464,7 +404,7 @@ mod imp {
         prefs: &Prefs,
         emit: &Emit,
         st: &mut Loop,
-        window: Option<HWND>,
+        window: Option<&Watch>,
         now: u64,
     ) {
         let _ = emit;
@@ -498,6 +438,15 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v0_16_the_shutdown_screen_names_the_goal_and_whole_minutes_left() {
+        assert_eq!(
+            shutdown_reason("Write report", 24 * 60_000 + 1),
+            "Focus: Write report, 25 min left"
+        );
+        assert_eq!(shutdown_reason("x", 0), "Focus: x, 0 min left");
+    }
 
     #[test]
     fn v0_16_the_original_url_gets_a_scheme_when_the_bar_hid_it() {

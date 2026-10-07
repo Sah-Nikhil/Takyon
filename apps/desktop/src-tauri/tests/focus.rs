@@ -396,3 +396,23 @@ fn v0_16_registered_browsers_read_from_the_registry() {
         assert!(!name.trim().is_empty(), "{exe:?}");
     }
 }
+
+/// Network: the first-launch and add-a-site fetch lands in the `!s` cache
+/// (ADR-0037). `--ignored`, run by CI's daily `web-search` job.
+#[test]
+#[ignore = "fetches icons from youtube.com and wikipedia.org"]
+fn v0_16_live_site_icons_land_in_the_shared_cache() {
+    use takyon_lib::focus::icons::{fetch_missing, hosts_of};
+    use takyon_lib::search::favicon::cached;
+    let dir = TempDir::new("focus-icons");
+    let hosts = hosts_of(["site:youtube.com", "site:wikipedia.org"]);
+    assert_eq!(fetch_missing(dir.path(), &hosts), 2);
+    for host in &hosts {
+        assert!(cached(dir.path(), host).is_some(), "{host}");
+    }
+    assert_eq!(
+        fetch_missing(dir.path(), &hosts),
+        0,
+        "cached hosts cost nothing"
+    );
+}

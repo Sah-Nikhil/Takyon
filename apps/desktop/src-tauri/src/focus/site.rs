@@ -65,6 +65,31 @@ pub fn is_block_page(display: &str) -> bool {
     block_query(display).is_some()
 }
 
+/// The page's full address among `docs` (a window's web documents, outermost
+/// first) for what the bar shows trimmed: the first http(s) one that, less
+/// scheme and `www.`, starts with the bar's text less the same.
+pub fn fuller(display: &str, docs: &[String]) -> Option<String> {
+    fn bare(s: &str) -> String {
+        let lower = s.trim().to_ascii_lowercase();
+        let rest = lower
+            .strip_prefix("https://")
+            .or_else(|| lower.strip_prefix("http://"))
+            .unwrap_or(&lower);
+        rest.strip_prefix("www.").unwrap_or(rest).to_string()
+    }
+    let shown = bare(display);
+    if shown.is_empty() {
+        return None;
+    }
+    docs.iter()
+        .find(|d| {
+            let lower = d.to_ascii_lowercase();
+            (lower.starts_with("https://") || lower.starts_with("http://"))
+                && bare(d).starts_with(&shown)
+        })
+        .cloned()
+}
+
 /// The URL a block page stands in for, if `display` is one and it is http(s).
 pub fn original_from(display: &str) -> Option<String> {
     let u = block_query(display)?
@@ -130,6 +155,39 @@ fn decode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Chrome's bar drops `www.` and the scheme, Zen's shows the host only;
+    /// the page's own document has the whole address.
+    #[test]
+    fn v0_16_the_document_url_fills_in_what_the_bar_trimmed() {
+        let docs = |d: &[&str]| d.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            fuller(
+                "example.com/sub?y=2",
+                &docs(&["https://www.example.com/sub?y=2"])
+            )
+            .as_deref(),
+            Some("https://www.example.com/sub?y=2")
+        );
+        assert_eq!(
+            fuller(
+                "example.com",
+                &docs(&["https://example.com/watch?v=1", "https://ads.example.net/x"])
+            )
+            .as_deref(),
+            Some("https://example.com/watch?v=1")
+        );
+        // An iframe or another tab's page is never taken for this one.
+        assert_eq!(
+            fuller(
+                "example.com/sub",
+                &docs(&["https://other.org/", "about:blank", "file:///c:/x.html"])
+            ),
+            None
+        );
+        assert_eq!(fuller("", &docs(&["https://example.com/"])), None);
+        assert_eq!(fuller("example.com", &[]), None);
+    }
 
     fn host(display: &str) -> Option<String> {
         host_of(display)

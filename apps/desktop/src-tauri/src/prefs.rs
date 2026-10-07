@@ -163,6 +163,9 @@ pub const FOCUS_HURDLE_IDLE: &str = "focus.hurdle_idle";
 /// Last Block list started, JSON. The form's default and `!f`'s list.
 pub const FOCUS_LAST_LIST: &str = "focus.last_list";
 
+/// `"1"` once the built-in Focus sites' icons were fetched (ADR-0037).
+pub const FOCUS_ICONS_FETCHED: &str = "focus.icons_fetched";
+
 /// Whether tapping the Windows key opens the Palette (v0.10). Default off.
 ///
 /// Not an accelerator: the Windows key is a modifier, so this arms a

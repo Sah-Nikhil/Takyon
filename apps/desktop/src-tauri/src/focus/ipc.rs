@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use super::categories::{builtins, schema_error, Category, Edit, Item};
 use super::duration::{self, DurationError};
+use super::icons;
 use super::members::{members, Known, Member};
 use super::rules::Refusal;
 use super::runtime::{now_ms, Signal};
@@ -264,6 +265,37 @@ fn known(apps: &AppSource) -> Vec<Known> {
             icon: a.icon.map(|i| i.0),
         })
         .collect()
+}
+
+/// Fetch icons for sites the user just added (ADR-0037); cached ones cost
+/// nothing. Async: one request per new host. Returns how many arrived.
+#[tauri::command(async)]
+pub fn focus_fetch_icons(keys: Vec<String>) -> usize {
+    let hosts = icons::hosts_of(keys.iter().map(String::as_str));
+    crate::identity::data_dir().map_or(0, |dir| icons::fetch_missing(&dir, &hosts))
+}
+
+/// Built-in sites' icons, once per machine, off every budget (ADR-0037). An
+/// attempt that fetched nothing (offline) tries again next launch.
+pub fn fetch_builtin_icons(prefs: &Prefs) {
+    if prefs::flag(prefs, prefs::FOCUS_ICONS_FETCHED, false) {
+        return;
+    }
+    let Some(dir) = crate::identity::data_dir() else {
+        return;
+    };
+    let hosts = icons::hosts_of(
+        builtins()
+            .iter()
+            .flat_map(|c| c.items.iter().map(|i| i.key.as_str())),
+    );
+    let missing = hosts
+        .iter()
+        .filter(|h| crate::search::favicon::cached(&dir, h).is_none())
+        .count();
+    if missing == 0 || icons::fetch_missing(&dir, &hosts) > 0 {
+        let _ = prefs.set(prefs::FOCUS_ICONS_FETCHED, "1");
+    }
 }
 
 /// Add to or take out of a built-in Focus category.

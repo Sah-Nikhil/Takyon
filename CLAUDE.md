@@ -3,7 +3,8 @@
 A local-first keyboard launcher for Windows — a Spotlight/Raycast alternative built
 on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
-anything leaves the machine.
+anything leaves the machine, with one stated exception: Focus fetches site icons
+once after first launch and when a site is added (**ADR-0037**).
 
 **Status: v0.1 through v0.10 are built.** The Palette is warm, the hotkey works,
 and it finds and launches applications, files, clipboard history and
@@ -85,9 +86,10 @@ are quit and websites are caught through UI Automation on the address bar, with
 no network filtering (**ADR-0035**). Soft and Strict levels; Locked needs a
 service and is deferred (**ADR-0036**). Code under `src-tauri/src/focus/` and
 `src/focus/`. The shutdown hurdle, sleep handling and the bar's focus behaviour
-have no automated coverage: `docs/tbd/v0.16.md` §1 lists what only a hand run
-proves. The live browser test (`--test focus_browser -- --ignored`) needs an
-idle desktop; do not run it on a machine someone is using.
+are tested on real Win32 windows (`tests/focus_power.rs`, `tests/focus_bar.rs`);
+`docs/tbd/v0.16.md` §1 lists what only a hand run proves. The live browser test
+(`--test focus_browser -- --ignored`) waits for 20 s of no input and stops if
+anyone touches the machine, so it is safe to start but only runs when idle.
 
 **v0.17 time zones are built; the verify script is unrun**
 (`docs/plans/v0.17-time-zones.md`): `12 pm utc`, `3:30pm pst to ist` and

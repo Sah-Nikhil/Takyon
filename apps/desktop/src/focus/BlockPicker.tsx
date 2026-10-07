@@ -8,9 +8,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LinkSimple, X } from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import type { BlockList, Entry, FocusCategory } from "@takyon/shared";
 import * as api from "@/api";
+import { Favicon } from "@/search/Favicon";
 import { FocusIcon } from "./icons";
 import { contentsText, keyLabel } from "./format";
 
@@ -42,6 +43,8 @@ export function BlockPicker({
   // Keyed by the query that produced them, so a stale or short query shows none.
   const [found, setFound] = useState<{ q: string; apps: Entry[] }>({ q: "", apps: [] });
   const [active, setActive] = useState(0);
+  // Bumped when a just-added site's icon lands (ADR-0037).
+  const [epoch, setEpoch] = useState(0);
   const [open, setOpen] = useState(false);
   const seq = useRef(0);
 
@@ -73,6 +76,7 @@ export function BlockPicker({
 
   const add = (s: Suggestion) => {
     setText("");
+    if (s.kind === "site") void api.focusFetchIcons([`site:${s.domain}`]).then((n) => n > 0 && setEpoch((e) => e + 1));
     if (onPick) {
       if (s.kind === "app") onPick(`entry:${s.entry.id}`, s.entry.title);
       if (s.kind === "site") onPick(`site:${s.domain}`, s.domain);
@@ -119,8 +123,8 @@ export function BlockPicker({
         })}
         {value.items.map((key) => (
           <span key={key} className={chip}>
-            {key.startsWith("site:") && <LinkSimple weight="duotone" className="size-4 text-fg/60" />}
-            {appTitles[key] ?? keyLabel(key, categories)}
+            {key.startsWith("site:") && <Favicon host={key.slice(5)} size={16} epoch={epoch} />}
+            <span>{appTitles[key] ?? keyLabel(key, categories)}</span>
             <button type="button" aria-label={`Remove ${keyLabel(key, categories)}`} onClick={() => removeItem(key)} className="grid size-5 place-items-center rounded text-fg/50 hover:bg-row-selected hover:text-fg">
               <X className="size-3" />
             </button>
@@ -196,7 +200,7 @@ export function BlockPicker({
               )}
               {s.kind === "site" && (
                 <>
-                  <LinkSimple weight="duotone" className="size-4 text-fg/60" />
+                  <Favicon host={s.domain} size={16} />
                   <span className="flex-1 truncate">Block website: {s.domain}</span>
                 </>
               )}

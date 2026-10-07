@@ -11,7 +11,6 @@ import { CaretRight } from "@phosphor-icons/react";
 import type { FocusCategory, FocusSettings } from "@takyon/shared";
 import * as api from "@/api";
 import { FocusIcon } from "@/focus/icons";
-import { contentsText } from "@/focus/format";
 import { Select } from "@/components/Select";
 import { Group, Row, Switch } from "../controls";
 import { CrumbContext } from "../crumb";
@@ -206,7 +205,9 @@ export function Focus() {
             <button key={c.id} type="button" className={row} onClick={() => openCategory(c)}>
               <FocusIcon name={c.icon} className="size-4 shrink-0 text-accent" />
               <span className="shrink-0 text-[13px] text-fg">{c.name}</span>
-              <span className="min-w-0 flex-1 truncate text-[12px] text-fg/50">{contentsText(c, 4)}</span>
+              <span className="min-w-0 flex-1 truncate text-[12px] text-fg/50">
+                {c.dynamic === "games" ? "Installed games and launchers" : `${c.items.length} apps and sites`}
+              </span>
               {!c.id.startsWith("custom:") && <span className="shrink-0 text-[11px] text-fg/40">Built in</span>}
               <CaretRight weight="duotone" className="size-3.5 shrink-0 text-fg/40" />
             </button>
