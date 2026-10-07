@@ -757,6 +757,7 @@ pub fn run() {
             focus::ipc::focus_settings,
             focus::ipc::focus_set_setting,
             focus::ipc::focus_bar_fit,
+            focus::ipc::focus_bar_reveal,
             focus::ipc::focus_clear_history,
             focus::ipc::focus_stats
         ])

@@ -490,6 +490,19 @@ pub fn focus_bar_fit(width: f64, app: AppHandle) {
     super::bar::fit(&app, width);
 }
 
+/// Hover on the bar: open the `"up"` or `"down"` dock for its buttons, or
+/// close both (None) once they have slid away.
+#[tauri::command]
+pub fn focus_bar_reveal(side: Option<String>, app: AppHandle) {
+    use super::bar::Side;
+    let side = match side.as_deref() {
+        Some("up") => Some(Side::Up),
+        Some("down") => Some(Side::Down),
+        _ => None,
+    };
+    super::bar::reveal(&app, side);
+}
+
 /// Set one Focus preference. Only Focus keys, only known values.
 #[tauri::command]
 pub fn focus_set_setting(

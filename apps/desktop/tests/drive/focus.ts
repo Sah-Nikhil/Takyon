@@ -334,6 +334,10 @@ async function barPageOpacity(): Promise<string> {
     () => getComputedStyle(document.querySelector("[aria-hidden]")!).opacity,
   );
 }
+/** Physical height of one button dock: the window is dock, pill, dock (36/40/36). */
+const dockOf = (w: Win) => Math.round((w.h * 36) / 112);
+/** Where the pill itself starts, inside the window. */
+const pillTop = (w: Win) => w.y + dockOf(w);
 const gone = (image: string, ms: number) =>
   until(() => running(image).length === 0, ms);
 
@@ -478,36 +482,44 @@ async function main() {
       const pushed = bar();
       step(
         "E.2 dragged off the top, it comes back inside the margin",
-        Boolean(pushed && pushed.y >= 8 && pushed.y <= 40),
-        pushed ? `${pushed.x},${pushed.y}` : "no bar",
+        Boolean(pushed && pillTop(pushed) >= 8 && pillTop(pushed) <= 40),
+        pushed ? `pill top ${pillTop(pushed)}` : "no bar",
       );
       probe("move", b.hwnd, 240, 260);
       await sleep(800);
+      // The centre is what is remembered: the pill's width changes with what it shows.
+      const dragged = bar()!;
+      const centreDragged = dragged.x + dragged.w / 2;
       await complete();
       await until(() => !bar(), 5_000);
       const idleMb = treeMb(app!.pid!);
       await start("verify", [TEST_KEY]);
       // Opens at the start width, then refits to the pill about its centre.
       await until(bar, 6_000);
-      const again =
-        (await until(() => {
-          const now = bar();
-          return now && Math.abs(now.x - 240) <= 2 ? now : undefined;
-        }, 3_000)) ?? bar();
-      step(
-        "E.2 bar comes back where it was dragged",
+      const near = (w: Win | undefined) =>
         Boolean(
-          again && Math.abs(again.x - 240) <= 2 && Math.abs(again.y - 260) <= 2,
-        ),
-        again ? `${again.x},${again.y}` : "no bar",
+          w &&
+          Math.abs(w.x + w.w / 2 - centreDragged) <= 2 &&
+          Math.abs(w.y - 260) <= 2,
+        );
+      const again =
+        (await until(() => (near(bar()) ? bar() : undefined), 3_000)) ?? bar();
+      step(
+        "E.2 bar comes back centred where it was dragged",
+        near(again),
+        again
+          ? `centre ${again.x + again.w / 2}, top ${again.y}; dragged centre ${centreDragged}`
+          : "no bar",
       );
       await setting("bar_place", "top");
       await sleep(800);
       const top = bar();
       step(
         "E.2 choosing Top forgets the drag and moves it, centred",
-        Boolean(top && top.y < 60 && Math.abs(top.x + top.w / 2 - centre) <= 2),
-        top ? `${top.x},${top.y}` : "no bar",
+        Boolean(
+          top && pillTop(top) < 60 && Math.abs(top.x + top.w / 2 - centre) <= 2,
+        ),
+        top ? `pill at ${top.x},${pillTop(top)}` : "no bar",
       );
       await setting("bar_place", "bottom");
       await setting("bar_opacity", "60");
@@ -522,6 +534,41 @@ async function main() {
       await setting("bar_opacity", "90");
       await sleep(1000);
       screen(bar(), "bar-screen-90.png");
+
+      // E6: the dock above the pill passes clicks through until hovered.
+      const w = bar()!;
+      const dockY = w.y + Math.round(dockOf(w) / 2);
+      const cx = w.x + Math.round(w.w / 2);
+      type Hit = { pid: number; title: string };
+      const rest = probe<Hit>("hit", cx, dockY);
+      step(
+        "E.6 at rest, a click above the pill reaches the window underneath",
+        rest.pid !== app!.pid,
+        `"${rest.title}"`,
+      );
+      const barView = cdp!
+        .contexts()
+        .flatMap((c) => c.pages())
+        .find((p) => p.url().includes("window=bar"))!;
+      await barView.locator("[data-tauri-drag-region]").first().hover();
+      await sleep(600);
+      const outHit = probe<Hit>("hit", cx, dockY);
+      step(
+        "E.6 hovered, the buttons slide up and take the click",
+        outHit.pid === app!.pid,
+        `"${outHit.title}"`,
+      );
+      screen(bar(), "bar-hover-real.png");
+      await barView
+        .getByTestId("focus-bar")
+        .dispatchEvent("mouseout", { relatedTarget: null });
+      await sleep(600);
+      const back = probe<Hit>("hit", cx, dockY);
+      step(
+        "E.6 left, the dock passes clicks through again",
+        back.pid !== app!.pid,
+        `"${back.title}"`,
+      );
       step(
         "E.5 RSS recorded (debug build, not a budget)",
         true,

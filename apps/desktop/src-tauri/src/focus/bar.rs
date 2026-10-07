@@ -4,7 +4,9 @@
 //! between sessions, so idle RSS does not carry a second webview. Built off
 //! the main thread (CLAUDE.md: never create a window from the main thread).
 //! Opens where it was last dragged, else centred at the top or bottom of the
-//! work area (`focus.bar_place`). Never sits past [`MARGIN`] from any edge.
+//! work area (`focus.bar_place`). The pill never sits past [`MARGIN`] from
+//! any edge. Above and below it the window holds a [`DOCK`] the hover buttons
+//! slide into; a window region keeps the docks out of hit-testing until then.
 
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
@@ -12,12 +14,15 @@ use crate::prefs::{self, Prefs};
 
 pub const LABEL: &str = "focusbar";
 
-/// Logical height. Width follows the pill's content ([`fit`]), within
+/// Logical pill height. Width follows the pill's content ([`fit`]), within
 /// [`MIN_WIDTH`]..[`MAX_WIDTH`]; [`START_WIDTH`] until the page measures.
-const HEIGHT: f64 = 40.0;
+const PILL_H: f64 = 40.0;
+/// Room above and below the pill for the hover buttons: 30 px plus a 6 px gap.
+/// Mirrored in `FocusBar.tsx`.
+const DOCK: f64 = 36.0;
 const START_WIDTH: f64 = 200.0;
 const MIN_WIDTH: f64 = 120.0;
-const MAX_WIDTH: f64 = 420.0;
+const MAX_WIDTH: f64 = 440.0;
 /// Logical gap kept to every work-area edge, the taskbar's included.
 const MARGIN: f64 = 16.0;
 
@@ -93,6 +98,37 @@ pub fn recentre(x: i32, old_w: i32, new_w: i32) -> i32 {
     x + (old_w - new_w) / 2
 }
 
+/// Which dock the hover buttons slide into; None while they are tucked away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Up,
+    Down,
+}
+
+/// The part of a `w`-wide window that takes the mouse, `(left, top, right,
+/// bottom)` physical: the pill, plus the dock the buttons are out in.
+pub fn region(w: i32, scale: f64, side: Option<Side>) -> (i32, i32, i32, i32) {
+    let (dock, pill) = (physical(DOCK, scale), physical(PILL_H, scale));
+    match side {
+        None => (0, dock, w, dock + pill),
+        Some(Side::Up) => (0, 0, w, dock + pill),
+        Some(Side::Down) => (0, dock, w, 2 * dock + pill),
+    }
+}
+
+/// Window top-left for a pill at `pill`, and back: the docks sit around it.
+fn window_at((x, y): (i32, i32), scale: f64) -> (i32, i32) {
+    (x, y - physical(DOCK, scale))
+}
+
+fn pill_at((x, y): (i32, i32), scale: f64) -> (i32, i32) {
+    (x, y + physical(DOCK, scale))
+}
+
+fn window_size(w: i32, scale: f64) -> (u32, u32) {
+    (w as u32, physical(2.0 * DOCK + PILL_H, scale) as u32)
+}
+
 /// Resize the showing bar to the pill's `width` (logical), centre kept,
 /// still inside the margins. The page calls this when its content changes.
 pub fn fit(app: &AppHandle, width: f64) {
@@ -107,16 +143,55 @@ pub fn fit(app: &AppHandle, width: f64) {
     };
     let new = (
         physical(fitted_width(width), scale),
-        physical(HEIGHT, scale),
+        physical(PILL_H, scale),
     );
     if new.0 == old.width as i32 {
         return;
     }
-    let x = recentre(pos.x, old.width as i32, new.0);
-    let (x, y) = clamp(area, scale, new, (x, pos.y));
-    let _ = window.set_size(tauri::PhysicalSize::new(new.0 as u32, new.1 as u32));
+    let pill = pill_at((recentre(pos.x, old.width as i32, new.0), pos.y), scale);
+    let (x, y) = window_at(clamp(area, scale, new, pill), scale);
+    let (w, h) = window_size(new.0, scale);
+    let _ = window.set_size(tauri::PhysicalSize::new(w, h));
     let _ = window.set_position(PhysicalPosition::new(x, y));
+    shape(
+        &window,
+        scale,
+        *REVEALED.lock().unwrap_or_else(|p| p.into_inner()),
+    );
 }
+
+/// The dock the buttons are out in now, so a refit keeps the region.
+static REVEALED: std::sync::Mutex<Option<Side>> = std::sync::Mutex::new(None);
+
+/// Hover: open the dock the buttons slide into (`Some`), or close both.
+pub fn reveal(app: &AppHandle, side: Option<Side>) {
+    let Some(window) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    *REVEALED.lock().unwrap_or_else(|p| p.into_inner()) = side;
+    if let Some((_, scale)) = work_area(&window) {
+        shape(&window, scale, side);
+    }
+}
+
+/// Clip the window, input and paint alike, to [`region`].
+#[cfg(windows)]
+fn shape(window: &tauri::WebviewWindow, scale: f64, side: Option<Side>) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn};
+    let (Ok(hwnd), Ok(size)) = (window.hwnd(), window.outer_size()) else {
+        return;
+    };
+    let (l, t, r, b) = region(size.width as i32, scale, side);
+    unsafe {
+        // The window owns the region once set; no DeleteObject.
+        let rgn = CreateRectRgn(l, t, r, b);
+        SetWindowRgn(HWND(hwnd.0), Some(rgn), true);
+    }
+}
+
+#[cfg(not(windows))]
+fn shape(_: &tauri::WebviewWindow, _: f64, _: Option<Side>) {}
 
 /// Show (building if absent) or close the bar. Never blocks the caller.
 pub fn set(app: &AppHandle, shown: bool) {
@@ -168,22 +243,32 @@ fn edge(area: Area, scale: f64, size: (i32, i32), prefs: &Prefs) -> (i32, i32) {
     )
 }
 
-/// The window's physical size now.
-fn size_of(window: &tauri::WebviewWindow) -> Option<(i32, i32)> {
+/// The pill's physical size now: the window's width, the pill's height. A
+/// window not yet shown may report no width: the start width stands in.
+fn size_of(window: &tauri::WebviewWindow, scale: f64) -> Option<(i32, i32)> {
     let s = window.outer_size().ok()?;
-    Some((s.width as i32, s.height as i32))
+    let w = if s.width > 0 {
+        s.width as i32
+    } else {
+        physical(START_WIDTH, scale)
+    };
+    Some((w, physical(PILL_H, scale)))
 }
 
 /// The dragged spot if there is one, pulled inside this work area (the
 /// taskbar or resolution may have moved); else the chosen edge.
 fn place(window: &tauri::WebviewWindow, prefs: &Prefs) {
-    let (Some((area, scale)), Some(size)) = (work_area(window), size_of(window)) else {
+    let Some((area, scale)) = work_area(window) else {
         return;
     };
-    let (x, y) = match parse_position(prefs.get(prefs::FOCUS_BAR_POSITION).as_deref()) {
+    let Some(size) = size_of(window, scale) else {
+        return;
+    };
+    let pill = match parse_position(prefs.get(prefs::FOCUS_BAR_POSITION).as_deref()) {
         Some((cx, y)) => clamp(area, scale, size, (cx - size.0 / 2, y)),
         None => edge(area, scale, size, prefs),
     };
+    let (x, y) = window_at(pill, scale);
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
@@ -192,7 +277,7 @@ fn build(app: &AppHandle) {
     let builder =
         WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?window=bar".into()))
             .title("Takyon Focus")
-            .inner_size(START_WIDTH, HEIGHT)
+            .inner_size(START_WIDTH, 2.0 * DOCK + PILL_H)
             .resizable(false)
             .decorations(false)
             .always_on_top(true)
@@ -209,19 +294,29 @@ fn build(app: &AppHandle) {
         Err(e) => return eprintln!("[takyon] the Focus bar could not be built: {e}"),
     };
     place(&window, &prefs);
+    *REVEALED.lock().unwrap_or_else(|p| p.into_inner()) = None;
     float(&window);
+    // After showing: a region set on the hidden window did not hold.
+    if let Some((_, scale)) = work_area(&window) {
+        shape(&window, scale, None);
+    }
     let held = window.clone();
     window.on_window_event(move |event| {
         let WindowEvent::Moved(p) = event else {
             return;
         };
-        let (Some((area, scale)), Some(size)) = (work_area(&held), size_of(&held)) else {
+        let Some((area, scale)) = work_area(&held) else {
+            return;
+        };
+        let Some(size) = size_of(&held, scale) else {
             return;
         };
         // Dragged past a margin: put it back. The second Moved is inside.
-        let inside = clamp(area, scale, size, (p.x, p.y));
-        if inside != (p.x, p.y) {
-            let _ = held.set_position(PhysicalPosition::new(inside.0, inside.1));
+        let pill = pill_at((p.x, p.y), scale);
+        let inside = clamp(area, scale, size, pill);
+        if inside != pill {
+            let (x, y) = window_at(inside, scale);
+            let _ = held.set_position(PhysicalPosition::new(x, y));
             return;
         }
         // Only a drag is remembered: our own placement lands on the edge.
@@ -333,13 +428,24 @@ mod tests {
         assert_eq!(clamp(tiny, 1.0, AT_100, (40, 40)), (16, 16));
     }
 
+    /// At rest only the pill takes the mouse; a hover opens one dock too.
+    #[test]
+    fn v0_16_the_docks_take_the_mouse_only_while_the_buttons_are_out() {
+        assert_eq!(region(200, 1.0, None), (0, 36, 200, 76));
+        assert_eq!(region(200, 1.0, Some(Side::Up)), (0, 0, 200, 76));
+        assert_eq!(region(200, 1.0, Some(Side::Down)), (0, 36, 200, 112));
+        assert_eq!(region(300, 1.5, None), (0, 54, 300, 114));
+        assert_eq!(window_at((10, 100), 1.0), (10, 64));
+        assert_eq!(pill_at(window_at((10, 100), 1.5), 1.5), (10, 100));
+    }
+
     /// The pill hugs its content: a short goal makes a short bar, and the
     /// bar grows and shrinks about its centre.
     #[test]
     fn v0_16_the_bar_fits_its_content_about_its_centre() {
         assert_eq!(fitted_width(186.4), 186.4);
         assert_eq!(fitted_width(40.0), 120.0);
-        assert_eq!(fitted_width(900.0), 420.0);
+        assert_eq!(fitted_width(900.0), 440.0);
         assert_eq!(fitted_width(f64::NAN), 200.0);
         // 200 wide at x 860 is centred on 960; 300 wide stays centred there.
         assert_eq!(recentre(860, 200, 300), 810);

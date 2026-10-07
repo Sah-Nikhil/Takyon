@@ -931,7 +931,7 @@ function frictionReady() {
   return !focusNow.strict || (frictionAt !== null && Date.now() - frictionAt >= 30_000);
 }
 
-/** `?focus=running|strict|paused`, `?focusbang=1`, `?refusals=1`, `?baropacity=50`. */
+/** `?focus=running|strict|paused`, `&goal=…`, `?focusbang=1`, `?refusals=1`, `?baropacity=50`. */
 (() => {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
@@ -946,7 +946,7 @@ function frictionReady() {
   const remainingMs = 23 * MIN + 41_000;
   focusNow = {
     running: true,
-    goal: "Write Focus manual page",
+    goal: params.get("goal") ?? "Write Focus manual page",
     strict: mode === "strict",
     remainingMs,
     endsAt: Date.now() + remainingMs,
@@ -1143,6 +1143,7 @@ const focusMock = {
   },
   focusFetchIcons: async (_keys: string[]) => 0,
   focusBarFit: async (_width: number) => {},
+  focusBarReveal: async (_side: "up" | "down" | null) => {},
   focusResetBuiltin: async (category: string) => {
     focusEdits = focusEdits.filter((e) => e.category !== category);
   },

@@ -120,7 +120,7 @@ test("!f without a length opens the form with the goal typed", async ({ page }) 
 });
 
 test.describe("the floating bar", () => {
-  test.use({ viewport: { width: 300, height: 40 } });
+  test.use({ viewport: { width: 300, height: 116 } });
 
   test("shows the goal and time left", async ({ page }) => {
     await page.goto("/?window=bar&focus=running");
@@ -133,6 +133,46 @@ test.describe("the floating bar", () => {
     await page.goto("/?window=bar&focus=paused");
     await expect(page.getByText("Paused")).toBeVisible();
     await expect(page).toHaveScreenshot("focus-bar-paused.png");
+  });
+
+  test("hover slides Pause and Complete out from behind the pill", async ({ page }) => {
+    // A bar low on the screen: the buttons go up, toward the middle.
+    await page.addInitScript(() => Object.defineProperty(window, "screenY", { get: () => 2000 }));
+    await page.goto("/?window=bar&focus=running");
+    const pause = page.getByRole("button", { name: "Pause" });
+    await expect(pause).toHaveCSS("opacity", "0");
+    await page.getByText("Write Focus manual page").hover();
+    await expect(pause).toHaveCSS("opacity", "1");
+    await expect(page.getByRole("button", { name: "Complete" })).toHaveCSS("transform", "none");
+    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+    const pill = (await page.getByText("23:41").boundingBox())!;
+    const box = (await pause.boundingBox())!;
+    expect(box.y + box.height).toBeLessThan(pill.y);
+    await expect(page).toHaveScreenshot("focus-bar-hover.png");
+  });
+
+  test("near the top of the screen the buttons slide down instead", async ({ page }) => {
+    await page.goto("/?window=bar&focus=running");
+    await page.getByText("Write Focus manual page").hover();
+    const pill = (await page.getByText("23:41").boundingBox())!;
+    const pause = (await page.getByRole("button", { name: "Pause" }).boundingBox())!;
+    expect(pause.y).toBeGreaterThan(pill.y + pill.height);
+  });
+
+  test("a goal too long to fit scrolls on hover and truncates at rest", async ({ page }) => {
+    const goal = "Draft the Tesseract ideation brief and the three launch experiments";
+    // The real window grows to the pill, up to 440; the test viewport has to.
+    await page.setViewportSize({ width: 440, height: 116 });
+    await page.goto(`/?window=bar&focus=running&goal=${encodeURIComponent(goal)}`);
+    await expect(page.getByText(goal)).toHaveCSS("text-overflow", "ellipsis");
+    await page.getByText(goal).hover();
+    const moving = page.locator("[style*='--marquee-shift']");
+    await expect(moving).toHaveCSS("animation-name", "focus-marquee");
+    await expect(page).toHaveScreenshot("focus-bar-long.png", { animations: "disabled" });
+    // Leaving the window, as the real one's region makes any move off the pill.
+    await page.getByTestId("focus-bar").dispatchEvent("mouseout", { relatedTarget: null });
+    await expect(page.getByText(goal)).toHaveCSS("text-overflow", "ellipsis");
+    await expect(page).toHaveScreenshot("focus-bar-long-rest.png");
   });
 
   test("hugs its content: no gap between the goal and the clock", async ({ page }) => {

@@ -355,6 +355,16 @@ input {
 }
 
 /* The Focus bar's block pulse (v0.16): a ring of accent that fades. */
+/* The Focus bar's long goal on hover: one copy's width plus the gap, then repeat. */
+@keyframes focus-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--marquee-shift));
+  }
+}
+
 /* Inset: the bar's panel fills its window, so an outward ring would be clipped. */
 @keyframes focus-pulse {
   from {
