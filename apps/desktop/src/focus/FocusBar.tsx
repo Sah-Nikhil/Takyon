@@ -17,8 +17,10 @@ import { FocusIcon } from "./icons";
 type Notice = { key: string; label: string; snoozable: boolean; at: number };
 
 const NOTICE_MS = 5_000;
-/** Room above and below the pill, as `bar.rs` `DOCK`: 30 px button, 6 px gap. */
-const DOCK = 36;
+/** Room above and below the pill, as `bar.rs` `DOCK`: 30 px button, 6 px gap,
+ * 6 px headroom for the entry overshoot. */
+const DOCK = 42;
+const HEADROOM = 6;
 const PILL = 40;
 /** Departure-board speed, px per second, and the gap before the text repeats. */
 const SCROLL_PX_S = 40;
@@ -29,8 +31,10 @@ const IN = { ms: 220, ease: "cubic-bezier(0.34, 1.56, 0.64, 1)", stagger: 40 };
 const OUT = { ms: 140, ease: "cubic-bezier(0.4, 0, 1, 1)" };
 
 /** One hover button's motion, `i`th in line, tucked `hide` px behind the pill. */
-function motion(out: boolean, i: number, hide: number, still: boolean): CSSProperties {
+function motion(out: boolean, i: number, hide: number, still: boolean, snap: boolean): CSSProperties {
   if (still) return { opacity: out ? 1 : 0, transition: "opacity 120ms linear" };
+  // Changing docks: jump to the new tucked spot, never glide across the pill.
+  if (snap) return { opacity: 0, transform: `translateY(${hide}px) scale(0.9)`, transition: "none" };
   return {
     opacity: out ? 1 : 0,
     transform: out ? "none" : `translateY(${hide}px) scale(0.9)`,
@@ -89,6 +93,7 @@ export function FocusBar() {
   /** Whether the buttons are out, and which dock they use. */
   const [out, setOut] = useState(false);
   const [side, setSide] = useState<"up" | "down">("up");
+  const [snap, setSnap] = useState(false);
   const pill = useRef<HTMLDivElement>(null);
   const tuck = useRef<number | undefined>(undefined);
 
@@ -142,8 +147,19 @@ export function FocusBar() {
     window.clearTimeout(tuck.current);
     const middle = (screen.availHeight || window.innerHeight) / 2;
     const next = window.screenY + DOCK + PILL / 2 > middle ? "up" : "down";
+    const moved = next !== side;
     setSide(next);
-    void api.focusBarReveal(next).then(() => requestAnimationFrame(() => setOut(true)));
+    setSnap(moved);
+    // Two frames when the dock changed: one painted tucked on the new side,
+    // then the slide, so the transition starts from there.
+    void api.focusBarReveal(next).then(() =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          setSnap(false);
+          setOut(true);
+        }),
+      ),
+    );
   };
   // Slide back first, then give the dock's pixels back to what is underneath.
   const hide = () => {
@@ -162,14 +178,14 @@ export function FocusBar() {
       <div
         data-testid="focus-bar-buttons"
         className="absolute left-1/2 z-0 flex -translate-x-1/2 gap-1.5"
-        style={{ top: side === "up" ? 0 : DOCK + PILL + 6 }}
+        style={{ top: side === "up" ? HEADROOM : DOCK + PILL + 6 }}
       >
         {view.paused ? (
           <button
             type="button"
             aria-label="Resume"
             className={round}
-            style={motion(out, 0, hide_, still)}
+            style={motion(out, 0, hide_, still, snap)}
             onClick={() => void api.focusResume()}
           >
             <Play weight="duotone" className="size-3.5" />
@@ -179,7 +195,7 @@ export function FocusBar() {
             type="button"
             aria-label="Pause"
             className={round}
-            style={motion(out, 0, hide_, still)}
+            style={motion(out, 0, hide_, still, snap)}
             onClick={() => void exit(api.focusPause(null))}
           >
             <Pause weight="duotone" className="size-3.5" />
@@ -189,7 +205,7 @@ export function FocusBar() {
           type="button"
           aria-label="Complete"
           className={round}
-          style={motion(out, 1, hide_, still)}
+          style={motion(out, 1, hide_, still, snap)}
           onClick={() => void exit(api.focusComplete())}
         >
           <CheckCircle weight="duotone" className="size-3.5" />

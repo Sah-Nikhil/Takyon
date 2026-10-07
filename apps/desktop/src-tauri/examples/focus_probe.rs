@@ -28,6 +28,7 @@ fn main() {
         "hold" => win::hold(num(1) as u32),
         "idle" => win::idle(),
         "hit" => win::hit(num(1) as i32, num(2) as i32),
+        "cursor" => win::cursor(),
         other => format!("{{\"error\":\"unknown command {other:?}\"}}"),
     };
     println!("{out}");
@@ -370,6 +371,16 @@ mod win {
             json(&class),
             json(&title)
         )
+    }
+
+    pub fn cursor() -> String {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut p = POINT::default();
+        unsafe {
+            let _ = GetCursorPos(&mut p);
+        }
+        format!("{{\"x\":{},\"y\":{}}}", p.x, p.y)
     }
 
     pub fn idle() -> String {

@@ -17,9 +17,10 @@ pub const LABEL: &str = "focusbar";
 /// Logical pill height. Width follows the pill's content ([`fit`]), within
 /// [`MIN_WIDTH`]..[`MAX_WIDTH`]; [`START_WIDTH`] until the page measures.
 const PILL_H: f64 = 40.0;
-/// Room above and below the pill for the hover buttons: 30 px plus a 6 px gap.
-/// Mirrored in `FocusBar.tsx`.
-const DOCK: f64 = 36.0;
+/// Room above and below the pill for the hover buttons: 30 px, a 6 px gap to
+/// the pill, 6 px of headroom so their entry overshoot is not clipped by the
+/// window edge. Mirrored in `FocusBar.tsx`.
+const DOCK: f64 = 42.0;
 const START_WIDTH: f64 = 200.0;
 const MIN_WIDTH: f64 = 120.0;
 const MAX_WIDTH: f64 = 440.0;
@@ -270,6 +271,11 @@ fn place(window: &tauri::WebviewWindow, prefs: &Prefs) {
     };
     let (x, y) = window_at(pill, scale);
     let _ = window.set_position(PhysicalPosition::new(x, y));
+    shape(
+        window,
+        scale,
+        *REVEALED.lock().unwrap_or_else(|p| p.into_inner()),
+    );
 }
 
 fn build(app: &AppHandle) {
@@ -431,11 +437,11 @@ mod tests {
     /// At rest only the pill takes the mouse; a hover opens one dock too.
     #[test]
     fn v0_16_the_docks_take_the_mouse_only_while_the_buttons_are_out() {
-        assert_eq!(region(200, 1.0, None), (0, 36, 200, 76));
-        assert_eq!(region(200, 1.0, Some(Side::Up)), (0, 0, 200, 76));
-        assert_eq!(region(200, 1.0, Some(Side::Down)), (0, 36, 200, 112));
-        assert_eq!(region(300, 1.5, None), (0, 54, 300, 114));
-        assert_eq!(window_at((10, 100), 1.0), (10, 64));
+        assert_eq!(region(200, 1.0, None), (0, 42, 200, 82));
+        assert_eq!(region(200, 1.0, Some(Side::Up)), (0, 0, 200, 82));
+        assert_eq!(region(200, 1.0, Some(Side::Down)), (0, 42, 200, 124));
+        assert_eq!(region(300, 1.5, None), (0, 63, 300, 123));
+        assert_eq!(window_at((10, 100), 1.0), (10, 58));
         assert_eq!(pill_at(window_at((10, 100), 1.5), 1.5), (10, 100));
     }
 

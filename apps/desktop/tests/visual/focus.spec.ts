@@ -120,7 +120,7 @@ test("!f without a length opens the form with the goal typed", async ({ page }) 
 });
 
 test.describe("the floating bar", () => {
-  test.use({ viewport: { width: 300, height: 116 } });
+  test.use({ viewport: { width: 300, height: 124 } });
 
   test("shows the goal and time left", async ({ page }) => {
     await page.goto("/?window=bar&focus=running");
@@ -151,9 +151,47 @@ test.describe("the floating bar", () => {
     await expect(page).toHaveScreenshot("focus-bar-hover.png");
   });
 
+  /** Sampled every frame of the entry: the overshoot must stay inside the window. */
+  for (const [where, screenY] of [
+    ["up", 2000],
+    ["down", 0],
+  ] as const) {
+    test(`the ${where} entry never leaves the window, overshoot included`, async ({ page }) => {
+      await page.addInitScript((y) => Object.defineProperty(window, "screenY", { get: () => y }), screenY);
+      await page.goto("/?window=bar&focus=running");
+      await page.getByText("Write Focus manual page").waitFor();
+      const watch = page.evaluate(
+        () =>
+          new Promise<{ top: number; bottom: number }>((done) => {
+            const buttons = ["Pause", "Complete"].map((n) => document.querySelector(`[aria-label="${n}"]`)!);
+            let top = Infinity;
+            let bottom = -Infinity;
+            const start = performance.now();
+            const frame = () => {
+              for (const b of buttons) {
+                const r = b.getBoundingClientRect();
+                if (getComputedStyle(b).opacity !== "0") {
+                  top = Math.min(top, r.top);
+                  bottom = Math.max(bottom, r.bottom);
+                }
+              }
+              if (performance.now() - start < 600) requestAnimationFrame(frame);
+              else done({ top, bottom });
+            };
+            requestAnimationFrame(frame);
+          }),
+      );
+      await page.getByText("Write Focus manual page").hover();
+      const seen = await watch;
+      expect(seen.top).toBeGreaterThanOrEqual(0);
+      expect(seen.bottom).toBeLessThanOrEqual(124);
+    });
+  }
+
   test("near the top of the screen the buttons slide down instead", async ({ page }) => {
     await page.goto("/?window=bar&focus=running");
     await page.getByText("Write Focus manual page").hover();
+    await expect(page.getByRole("button", { name: "Complete" })).toHaveCSS("transform", "none");
     const pill = (await page.getByText("23:41").boundingBox())!;
     const pause = (await page.getByRole("button", { name: "Pause" }).boundingBox())!;
     expect(pause.y).toBeGreaterThan(pill.y + pill.height);
@@ -162,7 +200,7 @@ test.describe("the floating bar", () => {
   test("a goal too long to fit scrolls on hover and truncates at rest", async ({ page }) => {
     const goal = "Draft the Tesseract ideation brief and the three launch experiments";
     // The real window grows to the pill, up to 440; the test viewport has to.
-    await page.setViewportSize({ width: 440, height: 116 });
+    await page.setViewportSize({ width: 440, height: 124 });
     await page.goto(`/?window=bar&focus=running&goal=${encodeURIComponent(goal)}`);
     await expect(page.getByText(goal)).toHaveCSS("text-overflow", "ellipsis");
     await page.getByText(goal).hover();

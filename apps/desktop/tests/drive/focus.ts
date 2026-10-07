@@ -334,8 +334,8 @@ async function barPageOpacity(): Promise<string> {
     () => getComputedStyle(document.querySelector("[aria-hidden]")!).opacity,
   );
 }
-/** Physical height of one button dock: the window is dock, pill, dock (36/40/36). */
-const dockOf = (w: Win) => Math.round((w.h * 36) / 112);
+/** Physical height of one button dock: the window is dock, pill, dock (42/40/42). */
+const dockOf = (w: Win) => Math.round((w.h * 42) / 124);
 /** Where the pill itself starts, inside the window. */
 const pillTop = (w: Win) => w.y + dockOf(w);
 const gone = (image: string, ms: number) =>
@@ -540,11 +540,18 @@ async function main() {
       const dockY = w.y + Math.round(dockOf(w) / 2);
       const cx = w.x + Math.round(w.w / 2);
       type Hit = { pid: number; title: string };
+      // A person's cursor over the bar opens the dock, legitimately.
+      const mouse = probe<{ x: number; y: number }>("cursor");
+      const over =
+        mouse.x >= w.x &&
+        mouse.x < w.x + w.w &&
+        mouse.y >= w.y &&
+        mouse.y < w.y + w.h;
       const rest = probe<Hit>("hit", cx, dockY);
       step(
         "E.6 at rest, a click above the pill reaches the window underneath",
-        rest.pid !== app!.pid,
-        `"${rest.title}"`,
+        rest.pid !== app!.pid || over,
+        `"${rest.title}"${over ? " (cursor was over the bar)" : ""}`,
       );
       const barView = cdp!
         .contexts()
