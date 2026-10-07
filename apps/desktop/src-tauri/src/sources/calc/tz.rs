@@ -1,5 +1,5 @@
 //! Time zone conversion (v0.17). tzdb through `jiff`, offline: bundled in the
-//! binary on Windows, `/usr/share/zoneinfo` on macOS (ADR-0037).
+//! binary on Windows, `/usr/share/zoneinfo` on macOS (ADR-0038).
 //!
 //! Recognises `<time> <zone> [to|in <zone>]`, `time in <zone>`, `now in <zone>`
 //! and `<zone> time`. Policy stays in `mod.rs`; this file only parses and

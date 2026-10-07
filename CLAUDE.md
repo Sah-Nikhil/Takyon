@@ -94,7 +94,7 @@ anyone touches the machine, so it is safe to start but only runs when idle.
 **v0.17 time zones are built; the verify script is unrun**
 (`docs/plans/v0.17-time-zones.md`): `12 pm utc`, `3:30pm pst to ist` and
 `time in tokyo` answer in the calculator, offline, through `jiff`'s bundled
-tzdb (**ADR-0037**; staleness watched by TBC-0016). The Calc card names both
+tzdb (**ADR-0038**; staleness watched by TBC-0016). The Calc card names both
 zones in words through `Entry.labels`. A bare time or zone never answers.
 
 Distribution is undecided — open source vs proprietary is an open question, so
@@ -448,6 +448,12 @@ the next.
   It surfaced as `v0_3_a_fresh_pipeline_ranks_by_what_an_earlier_one_learned`
   failing on CI and passing everywhere locally. **Use `query_at` with an explicit
   `now_ms`** — that seam exists for this, as `query.rs`'s `started` field says.
+- **Blocking network work never runs on rayon's global pool.** Use
+  `search::fetch::pool()`. The keystroke fan-out (`query.rs`) shares the global
+  pool, and Focus's sixty first-launch icon fetches, 6 s timeouts each, once
+  held all four threads of a CI runner: the bench slowed show by show and hung
+  at 19 of 30. A 16-core dev machine never shows it.
+  `v0_17_slow_fetches_leave_the_keystroke_pool_free` guards it.
 - **`bun run test:visual` in a worktree can test another checkout's code.**
   `playwright.config.ts` has `reuseExistingServer` on :1420, so a Vite dev
   server already running from the main checkout (or any other worktree) gets

@@ -57,7 +57,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # stays clear of the licensing question ADR-0005 left open. Pure Rust: no OpenSSL
 # to find, ship or version-match. `std` brings `OsRng` for keys and nonces.
 aes-gcm = { version = "0.10", features = ["std"] }
-# v0.17 time zones (ADR-0037). Already in `Cargo.lock`, so a name not a build.
+# v0.17 time zones (ADR-0038). Already in `Cargo.lock`, so a name not a build.
 # Windows: tzdb bundled in the binary; macOS: `/usr/share/zoneinfo`. MIT OR
 # Unlicense. Offline either way, so the Bangless path stays clean (ADR-0002).
 jiff = "0.2"

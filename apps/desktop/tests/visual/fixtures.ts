@@ -14,6 +14,14 @@ export const FIXED_NOW = new Date("2026-01-15T14:30:00Z");
 export const test = base.extend({
   page: async ({ page }, run) => {
     await page.clock.setFixedTime(FIXED_NOW);
+    // `goto` resolves on `load`, which on a cold CI Vite can precede `main.tsx`
+    // installing the mock: `__takyon_mock` read as undefined once on PR #22.
+    const goto = page.goto.bind(page);
+    page.goto = async (url, options) => {
+      const response = await goto(url, options);
+      await page.waitForFunction(() => "__takyon_mock" in window);
+      return response;
+    };
     await run(page);
   },
 });

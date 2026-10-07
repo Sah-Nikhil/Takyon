@@ -98,11 +98,13 @@ pub fn cache_all(dir: &Path, urls: &[String], pages: &[Result<String, SearchErro
         })
         .collect();
 
-    wanted.par_iter().for_each(|(host, i)| {
-        let html = pages.get(*i).and_then(|p| p.as_deref().ok());
-        if let Some(bytes) = fetch_one(&urls[*i], html) {
-            let _ = store(dir, host, &bytes);
-        }
+    fetch::pool().install(|| {
+        wanted.par_iter().for_each(|(host, i)| {
+            let html = pages.get(*i).and_then(|p| p.as_deref().ok());
+            if let Some(bytes) = fetch_one(&urls[*i], html) {
+                let _ = store(dir, host, &bytes);
+            }
+        })
     });
 }
 

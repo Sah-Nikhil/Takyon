@@ -791,7 +791,7 @@ calculator, offline, from tzdb data bundled through `jiff` (already in
 Asked for on 2026-10-07; v0.4 never planned it. Not a v1.0 blocker. Built
 2026-10-07; the verify script is unrun.
 
-- [x] ADR-0037 (`jiff`) and TBC-0016 for bundled tzdb staleness
+- [x] ADR-0038 (`jiff`) and TBC-0016 for bundled tzdb staleness
 - [x] `calc/tz.rs`: time-of-day parser, IANA ids, cities, abbreviations with one fixed reading each (`ist` India, `cst` US Central, `bst` London)
 - [x] `answer_at` seam with `now` and the local zone injected; the local zone follows jiff's 5-minute cache rather than a show hook
 - [x] The Calc card names both zones in words under its halves, through a new optional `Entry.labels`

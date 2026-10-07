@@ -1,6 +1,6 @@
 ---
 status: watching
-pairs-with: ADR-0037
+pairs-with: ADR-0038
 ---
 
 # TBC-0016 — Bundled tzdb on Windows goes stale between releases
