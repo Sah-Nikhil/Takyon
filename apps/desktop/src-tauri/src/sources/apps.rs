@@ -256,6 +256,7 @@ impl Source for AppSource {
                 score,
                 actions: actions::for_app(app.has_path()),
                 version: app.version.clone(),
+                labels: None,
             });
         }
 

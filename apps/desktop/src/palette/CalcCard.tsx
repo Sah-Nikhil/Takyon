@@ -34,14 +34,36 @@ function tint(expression: string) {
   );
 }
 
-function Half({ value, label, tinted = false }: { value: string; label: string; tinted?: boolean }) {
+function Half({
+  value,
+  label,
+  tinted = false,
+  long = false,
+}: {
+  value: string;
+  label: string;
+  tinted?: boolean;
+  long?: boolean;
+}) {
   return (
     <div className="flex min-w-0 flex-col items-center justify-center gap-2 px-4">
       <div className="w-full truncate text-center text-[26px] font-semibold leading-none text-fg">
         {tinted ? tint(value) : value}
       </div>
-      <div className="rounded bg-fg/10 px-1.5 py-0.5 text-[10px] leading-none text-fg/60">
-        {label}
+      {/*
+        A zone in words is long, so it wraps rather than truncates. Two lines
+        fit the card's fixed height (`CALC_CARD_HEIGHT`, mirrored in Rust). Both
+        halves reserve two, so a one-line label leaves its value level.
+       */}
+      <div className={long ? "flex h-[30px] max-w-full items-start justify-center" : "max-w-full"}>
+        <div
+          title={label}
+          className={`max-w-full rounded bg-fg/10 px-1.5 py-0.5 text-[10px] text-fg/60 ${
+            long ? "line-clamp-2 text-center leading-[1.3]" : "leading-none"
+          }`}
+        >
+          {label}
+        </div>
       </div>
     </div>
   );
@@ -68,9 +90,17 @@ export function CalcCard({ entry, selected }: { entry: Entry; selected: boolean 
         }`}
         style={{ height: CALC_CARD_HEIGHT - 8 }}
       >
-        {/* The expression, so the answer can be checked without retyping it. */}
-        <Half value={entry.subtitle ?? ""} label="Expression" tinted />
-        <Half value={entry.title} label="Result" />
+        {/*
+          The expression, so the answer can be checked without retyping it. A
+          time zone card names its zones instead, and `+5:30` is not an operator.
+         */}
+        <Half
+          value={entry.subtitle ?? ""}
+          label={entry.labels?.[0] ?? "Expression"}
+          tinted={!entry.labels}
+          long={!!entry.labels}
+        />
+        <Half value={entry.title} label={entry.labels?.[1] ?? "Result"} long={!!entry.labels} />
 
         {/*
           Two segments with a gap, not one rule behind an opaque arrow. Masking

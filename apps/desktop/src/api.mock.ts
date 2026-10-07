@@ -748,7 +748,25 @@ const CALC_FIXTURES: Record<string, string> = {
   "2024": "2,024",
 };
 
+/** v0.17's time zone card, copied from `v0_17_a_time_zone_answer_is_one_calc_card`. */
+const TZ_FIXTURES: Record<string, Entry> = {
+  "time in tokyo": {
+    id: "calc:6:00 PM JST",
+    title: "6:00 PM JST",
+    subtitle: "11:00 AM CEST",
+    kind: "calc",
+    score: 1000,
+    actions: ["copy_answer"],
+    labels: [
+      "your time · Central European Summer Time, UTC+2 · Wed 7 Oct",
+      "Tokyo · Japan Standard Time, UTC+9 · Wed 7 Oct",
+    ],
+  },
+};
+
 function calcFixture(q: string): Entry[] {
+  const tz = TZ_FIXTURES[q.trim()];
+  if (tz) return [tz];
   const answer = CALC_FIXTURES[q.trim()];
   if (!answer) return [];
   return [

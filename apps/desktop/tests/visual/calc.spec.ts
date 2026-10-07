@@ -85,6 +85,25 @@ test("the card is an ordinary list item and stays selectable", async ({ page }) 
 });
 
 /**
+ * v0.17. A time zone card names both zones in words under its halves, in place
+ * of Expression and Result: a code alone (`IST`) is three countries.
+ */
+test("a time zone answer names both zones under the card", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("time in tokyo");
+
+  const card = page.getByRole("option").first();
+  await expect(card).toContainText("11:00 AM CEST");
+  await expect(card).toContainText("6:00 PM JST");
+  await expect(card).toContainText("Tokyo · Japan Standard Time, UTC+9");
+  await expect(card).toContainText("your time · Central European Summer Time, UTC+2");
+  await expect(card).not.toContainText("Expression");
+
+  await fitTo(page, 1, true);
+  await expect(page).toHaveScreenshot("palette-calc-tz.png");
+});
+
+/**
  * The `2022` case from the live Raycast screenshots, drawn rather than argued
  * about: the calculation takes the top row from the application named after the
  * same year, and Enter goes with it. The Automatic Policy's known cost.

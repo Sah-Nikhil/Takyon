@@ -210,6 +210,7 @@ mod tests {
             score: 800.0,
             actions,
             version: None,
+            labels: None,
         }
     }
 
@@ -366,6 +367,7 @@ mod tests {
             score: 1000.0,
             actions: for_calc(),
             version: None,
+            labels: None,
         });
         assert_eq!(menu.len(), 1);
         assert_eq!(menu[0].label, "Copy answer");
@@ -451,6 +453,7 @@ mod tests {
             score: 0.0,
             actions: for_clip(),
             version: None,
+            labels: None,
         });
         let labels: Vec<&str> = menu.iter().map(|a| a.label.as_str()).collect();
         assert_eq!(

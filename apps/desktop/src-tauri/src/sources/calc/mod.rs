@@ -13,7 +13,10 @@
 
 mod expr;
 mod fmt;
+mod tz;
 mod units;
+
+pub use tz::Clock;
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
@@ -74,15 +77,28 @@ pub struct Answer {
     /// Formatted, grouped, and with a unit label where there is one. What the row
     /// shows and what the clipboard gets — one string, so the two cannot drift.
     pub display: String,
-    /// What the user typed, less any forcing character. Shown as the second line,
-    /// because a result with no expression beside it is unverifiable.
-    pub expression: String,
+    /// Second line: what the user typed, less any forcing character, or for a
+    /// time zone the zone in words. A result with nothing beside it is unverifiable.
+    pub subtitle: String,
+    /// Labels under the card's two halves. `None` draws `Expression` and
+    /// `Result`; a time zone answer names both zones in words.
+    pub labels: Option<[String; 2]>,
 }
 
 /// Decide whether one input is a calculation, and what its answer is.
 ///
 /// Pure, so every rule below is testable without a Palette, a window or a Source.
 pub fn answer(input: &str, policy: Policy) -> Option<Answer> {
+    answer_with(input, policy, Clock::system)
+}
+
+/// [`answer`] at a fixed instant and zone, for tests.
+pub fn answer_at(input: &str, policy: Policy, clock: &Clock) -> Option<Answer> {
+    answer_with(input, policy, || clock.clone())
+}
+
+/// `clock` is lazy: only a time zone question pays for reading the system zone.
+fn answer_with(input: &str, policy: Policy, clock: impl Fn() -> Clock) -> Option<Answer> {
     let raw = input.trim();
     let forced = raw.starts_with(FORCE);
     let body = if forced {
@@ -104,7 +120,17 @@ pub fn answer(input: &str, policy: Policy) -> Option<Answer> {
         let (converted, label) = conversion.apply(value.value)?;
         return Some(Answer {
             display: format!("{} {label}", fmt::number(converted)?),
-            expression: body.to_string(),
+            subtitle: body.to_string(),
+            labels: None,
+        });
+    }
+
+    // After units, which cost one lookup to rule out: `pm` and `utc` are not units.
+    if let Some(reply) = tz::answer(body, &clock()) {
+        return Some(Answer {
+            display: reply.display,
+            subtitle: reply.from,
+            labels: Some(reply.labels),
         });
     }
 
@@ -121,22 +147,31 @@ pub fn answer(input: &str, policy: Policy) -> Option<Answer> {
 
     Some(Answer {
         display,
-        expression: body.to_string(),
+        subtitle: body.to_string(),
+        labels: None,
     })
 }
 
-/// Inline arithmetic and unit conversion. Holds no index and touches no disk.
+/// Inline arithmetic, unit and time zone conversion. Holds no index and touches
+/// no disk beyond jiff's bundled tzdb.
 pub struct CalcSource {
     /// [`Policy`], as a `u8` because it is written from an IPC command and read on
     /// the keystroke path. Relaxed ordering: a policy change landing one keystroke
     /// late is invisible, and a lock here would put contention on the 20 ms budget.
     policy: AtomicU8,
+    /// [`Clock::system`] outside tests; a fixed instant inside them.
+    clock: fn() -> Clock,
 }
 
 impl CalcSource {
     pub fn new() -> Self {
+        Self::with_clock(Clock::system)
+    }
+
+    pub fn with_clock(clock: fn() -> Clock) -> Self {
         CalcSource {
             policy: AtomicU8::new(Policy::Automatic as u8),
+            clock,
         }
     }
 
@@ -175,16 +210,16 @@ impl Source for CalcSource {
         // `raw`, not `needle`: the forcing character survives trimming but not
         // the lowercasing-and-trimming that `needle` is for, and `°C` should not
         // come back as `°c`.
-        let Some(answer) = answer(&q.raw, self.policy()) else {
+        let Some(answer) = answer_with(&q.raw, self.policy(), self.clock) else {
             return Vec::new();
         };
 
         vec![Entry {
             id: EntryId(format!("{ID_PREFIX}{}", answer.display)),
             title: answer.display,
-            // The expression, so the answer can be checked at a glance. A result
-            // with nothing beside it is a number you have to trust.
-            subtitle: Some(answer.expression),
+            // The expression, or the zone in words, so the answer can be checked at
+            // a glance. A result with nothing beside it is a number you have to trust.
+            subtitle: Some(answer.subtitle),
             kind: EntryKind::Calc,
             icon: None,
             // The top rung. `EntryKind::Calc` already wins the tier outright, so
@@ -193,6 +228,7 @@ impl Source for CalcSource {
             score: rank::TIER_ALIAS_EXACT,
             actions: actions::for_calc(),
             version: None,
+            labels: answer.labels,
         }]
     }
 
@@ -337,6 +373,277 @@ mod tests {
         assert!(source
             .query(&Query::new("   "), Duration::from_millis(20))
             .is_empty());
+    }
+
+    /// Wed 7 Oct 2026, 09:00 UTC, on a machine set to Berlin and 12-hour clocks.
+    fn clock() -> Clock {
+        Clock {
+            now: "2026-10-07T09:00:00Z".parse().unwrap(),
+            local: jiff::tz::TimeZone::get("Europe/Berlin").unwrap(),
+            hour24: false,
+        }
+    }
+
+    /// Title, left half, and the two zone labels: everything the card draws.
+    type Card = (String, String, [String; 2]);
+
+    fn card_at(input: &str, clock: &Clock) -> Option<Card> {
+        let a = answer_at(input, Policy::Automatic, clock)?;
+        Some((a.display, a.subtitle, a.labels?))
+    }
+
+    fn tz(input: &str) -> Option<Card> {
+        card_at(input, &clock())
+    }
+
+    fn card(title: &str, from: &str, from_label: &str, to_label: &str) -> Option<Card> {
+        Some((
+            title.into(),
+            from.into(),
+            [from_label.into(), to_label.into()],
+        ))
+    }
+
+    /// The plan's worked conversion, every string the card draws.
+    #[test]
+    fn v0_17_a_time_converts_between_two_named_zones() {
+        assert_eq!(
+            tz("12 pm utc to ist"),
+            card(
+                "5:30 PM IST",
+                "12:00 PM UTC",
+                "Coordinated Universal Time \u{b7} Wed 7 Oct",
+                "Kolkata \u{b7} India Standard Time, UTC+5:30 \u{b7} Wed 7 Oct",
+            )
+        );
+    }
+
+    /// No target means the machine's zone, named `your time` rather than a city.
+    #[test]
+    fn v0_17_a_time_with_no_target_converts_to_the_local_zone() {
+        assert_eq!(
+            tz("12 pm utc"),
+            card(
+                "2:00 PM CEST",
+                "12:00 PM UTC",
+                "Coordinated Universal Time \u{b7} Wed 7 Oct",
+                "your time \u{b7} Central European Summer Time, UTC+2 \u{b7} Wed 7 Oct",
+            )
+        );
+    }
+
+    /// `time in X`, `now in X` and `X time` all ask for now, against the local
+    /// time. London names its code in words: BST in October, GMT in January.
+    #[test]
+    fn v0_17_time_in_a_city_names_the_zone_in_words() {
+        let summer = card(
+            "10:00 AM BST",
+            "11:00 AM CEST",
+            "your time \u{b7} Central European Summer Time, UTC+2 \u{b7} Wed 7 Oct",
+            "London \u{b7} British Summer Time, UTC+1 \u{b7} Wed 7 Oct",
+        );
+        assert_eq!(tz("time in london"), summer);
+        assert_eq!(tz("london time"), summer);
+        assert_eq!(tz("now in london"), summer);
+        assert_eq!(tz("Time in London"), summer);
+
+        let january = Clock {
+            now: "2027-01-06T09:00:00Z".parse().unwrap(),
+            ..clock()
+        };
+        assert_eq!(
+            card_at("time in london", &january),
+            card(
+                "9:00 AM GMT",
+                "10:00 AM CET",
+                "your time \u{b7} Central European Time, UTC+1 \u{b7} Wed 6 Jan",
+                "London \u{b7} Greenwich Mean Time, UTC+0 \u{b7} Wed 6 Jan",
+            )
+        );
+    }
+
+    /// Crossing midnight puts the weekday in the title; each label carries its
+    /// own date. `pst` in October is Pacific time, so it reads PDT.
+    #[test]
+    fn v0_17_a_conversion_that_changes_the_day_says_which_day() {
+        assert_eq!(
+            tz("11 pm pst to ist"),
+            card(
+                "Thu 11:30 AM IST",
+                "11:00 PM PDT",
+                "Los Angeles \u{b7} Pacific Daylight Time, UTC-7 \u{b7} Wed 7 Oct",
+                "Kolkata \u{b7} India Standard Time, UTC+5:30 \u{b7} Thu 8 Oct",
+            )
+        );
+        assert_eq!(
+            tz("1 am ist to new york"),
+            card(
+                "Tue 3:30 PM EDT",
+                "1:00 AM IST",
+                "Kolkata \u{b7} India Standard Time, UTC+5:30 \u{b7} Wed 7 Oct",
+                "New York \u{b7} Eastern Daylight Time, UTC-4 \u{b7} Tue 6 Oct",
+            )
+        );
+    }
+
+    /// The three codes that collide each have one reading, and a zone sharing
+    /// the code is still named correctly: Dublin's IST is Irish.
+    #[test]
+    fn v0_17_colliding_codes_have_one_reading_and_the_right_name() {
+        let to = |input: &str| tz(input).map(|(_, _, [_, to])| to).unwrap();
+        assert!(to("12 pm utc to ist").contains("India Standard Time"));
+        assert!(to("12 pm utc to cst").contains("Central Daylight Time"));
+        assert!(to("12 pm utc to bst").contains("British Summer Time"));
+        let july = Clock {
+            now: "2026-07-01T09:00:00Z".parse().unwrap(),
+            ..clock()
+        };
+        let (title, _, [_, to]) = card_at("time in dublin", &july).unwrap();
+        assert_eq!(title, "10:00 AM IST");
+        assert!(to.contains("Irish Standard Time"), "{to}");
+    }
+
+    /// Spellings of a time, and the off-by-twelve trap.
+    #[test]
+    fn v0_17_times_of_day_parse_in_every_usual_spelling() {
+        let title = |input: &str| tz(input).map(|(t, ..)| t);
+        for input in [
+            "12pm utc to utc",
+            "12 pm utc to utc",
+            "12:00pm utc to utc",
+            "12 p.m. utc to utc",
+            "noon utc to utc",
+            "12:00 utc to utc",
+        ] {
+            assert_eq!(title(input).as_deref(), Some("12:00 PM UTC"), "{input}");
+        }
+        assert_eq!(title("12 am utc to utc").as_deref(), Some("12:00 AM UTC"));
+        assert_eq!(
+            title("midnight utc to utc").as_deref(),
+            Some("12:00 AM UTC")
+        );
+        assert_eq!(title("14:30 utc to utc").as_deref(), Some("2:30 PM UTC"));
+        assert_eq!(
+            title("12:00 utc in kolkata").as_deref(),
+            Some("5:30 PM IST")
+        );
+    }
+
+    /// IANA ids and numeric offsets on either side.
+    #[test]
+    fn v0_17_iana_ids_and_offsets_resolve() {
+        let title = |input: &str| tz(input).map(|(t, ..)| t);
+        assert_eq!(
+            title("9 am asia/tokyo to utc").as_deref(),
+            Some("12:00 AM UTC")
+        );
+        assert_eq!(
+            title("14:00 utc+5:30 to utc").as_deref(),
+            Some("8:30 AM UTC")
+        );
+        assert_eq!(
+            title("12 pm utc to gmt-3").as_deref(),
+            Some("9:00 AM UTC-3")
+        );
+    }
+
+    /// tzdb writes `+04` for Dubai. The title says `UTC+4` and no name is invented.
+    #[test]
+    fn v0_17_a_zone_with_no_code_shows_its_offset_alone() {
+        let (title, _, [_, to]) = tz("time in dubai").unwrap();
+        assert_eq!(title, "1:00 PM UTC+4");
+        assert_eq!(to, "Dubai \u{b7} UTC+4 \u{b7} Wed 7 Oct");
+    }
+
+    /// 2:30 am on 2026-03-08 never happens in New York; 1:30 am on 2026-11-01
+    /// happens twice. Gap shifts forward, fold takes the earlier (EDT).
+    #[test]
+    fn v0_17_dst_gaps_and_folds_resolve_compatibly() {
+        let at = |now: &str, input: &str| {
+            let c = Clock {
+                now: now.parse().unwrap(),
+                ..clock()
+            };
+            card_at(input, &c).map(|(t, ..)| t)
+        };
+        assert_eq!(
+            at("2026-03-08T12:00:00Z", "2:30 am new york to utc").as_deref(),
+            Some("7:30 AM UTC")
+        );
+        assert_eq!(
+            at("2026-11-01T12:00:00Z", "1:30 am new york to utc").as_deref(),
+            Some("5:30 AM UTC")
+        );
+        assert_eq!(
+            at("2026-03-29T12:00:00Z", "2:30 am europe/berlin to utc").as_deref(),
+            Some("1:30 AM UTC")
+        );
+    }
+
+    /// A 24-hour user never sees PM.
+    #[test]
+    fn v0_17_a_24_hour_clock_answers_in_24_hours() {
+        let c = Clock {
+            hour24: true,
+            ..clock()
+        };
+        let (title, from, _) = card_at("12 pm utc to ist", &c).unwrap();
+        assert_eq!(title, "17:30 IST");
+        assert_eq!(from, "12:00 UTC");
+    }
+
+    /// The Palette's top row is not for guessing: a bare time or zone is a
+    /// search, and units keep their own answers, with no zone labels.
+    #[test]
+    fn v0_17_bare_times_and_zones_never_answer() {
+        for input in [
+            "12 pm",
+            "9:30",
+            "tokyo",
+            "ist",
+            "london",
+            "utc",
+            "12 utc",
+            "12 m utc",
+            "screen time",
+            "time in narnia",
+            "12 pmx utc",
+        ] {
+            assert_eq!(
+                answer_at(input, Policy::Automatic, &clock()),
+                None,
+                "{input} answered"
+            );
+        }
+        assert_eq!(auto("5 in to cm").as_deref(), Some("12.7 cm"));
+        assert_eq!(auto("5 ft in in").as_deref(), Some("60 in"));
+        assert_eq!(auto("90 min to h").as_deref(), Some("1.5 h"));
+        assert_eq!(
+            answer("40 kg to lb", Policy::Automatic).unwrap().labels,
+            None
+        );
+        assert_eq!(answer_at("12 pm utc", Policy::Explicit, &clock()), None);
+        assert!(answer_at("=12 pm utc", Policy::Explicit, &clock()).is_some());
+    }
+
+    /// The card a time zone answer becomes: Enter copies the title, the left
+    /// half is the time asked from, and the labels name both zones in words.
+    #[test]
+    fn v0_17_a_time_zone_answer_is_one_calc_card() {
+        let source = CalcSource::with_clock(clock);
+        let entries = source.query(&Query::new("time in tokyo"), Duration::from_millis(20));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].kind, EntryKind::Calc);
+        assert_eq!(entries[0].title, "6:00 PM JST");
+        assert_eq!(entries[0].subtitle.as_deref(), Some("11:00 AM CEST"));
+        assert_eq!(
+            entries[0].labels,
+            Some([
+                "your time \u{b7} Central European Summer Time, UTC+2 \u{b7} Wed 7 Oct".to_string(),
+                "Tokyo \u{b7} Japan Standard Time, UTC+9 \u{b7} Wed 7 Oct".to_string(),
+            ])
+        );
+        assert_eq!(CalcSource::answer_of(&entries[0].id), Some("6:00 PM JST"));
     }
 
     /// Switching policys takes effect on the next keystroke, with no restart.

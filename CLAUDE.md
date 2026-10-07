@@ -89,6 +89,12 @@ have no automated coverage: `docs/tbd/v0.16.md` §1 lists what only a hand run
 proves. The live browser test (`--test focus_browser -- --ignored`) needs an
 idle desktop; do not run it on a machine someone is using.
 
+**v0.17 time zones are built; the verify script is unrun**
+(`docs/plans/v0.17-time-zones.md`): `12 pm utc`, `3:30pm pst to ist` and
+`time in tokyo` answer in the calculator, offline, through `jiff`'s bundled
+tzdb (**ADR-0037**; staleness watched by TBC-0016). The Calc card names both
+zones in words through `Entry.labels`. A bare time or zone never answers.
+
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;
 see ADR-0005). `bun run check:licences` enforces it over every crate and JS
@@ -392,7 +398,8 @@ the next.
   cargo alone does neither. Cost an hour of chasing a phantom regression once.
 - **An Agent's prompt never goes in argv, and nothing with a line break may.**
   Rust routes a `.bat`/`.cmd` through `cmd.exe` and, since CVE-2024-24576,
-  refuses any argument holding `` or `
+  refuses any argument holding `
+` or `
 ` with
   `batch file arguments are invalid` — so an npm-installed Agent failed every
   Turn while Settings still read Ready, because the probes are all one-liners.
@@ -439,6 +446,12 @@ the next.
   It surfaced as `v0_3_a_fresh_pipeline_ranks_by_what_an_earlier_one_learned`
   failing on CI and passing everywhere locally. **Use `query_at` with an explicit
   `now_ms`** — that seam exists for this, as `query.rs`'s `started` field says.
+- **`bun run test:visual` in a worktree can test another checkout's code.**
+  `playwright.config.ts` has `reuseExistingServer` on :1420, so a Vite dev
+  server already running from the main checkout (or any other worktree) gets
+  reused silently: existing tests pass and a new fixture never appears. Check
+  `Get-NetTCPConnection -LocalPort 1420` first; a copy of the config on another
+  port with `bunx vite --port <n> --strictPort` works without touching it.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding
