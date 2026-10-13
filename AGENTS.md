@@ -402,3 +402,11 @@ the next.
   the classic window system menu. Rebinding must work from first launch.
 - WebView2 is not one process — expect a browser, renderer and GPU process. Any
   memory measurement that reads only the main process is wrong.
+
+
+## Orchestration
+
+At session startup, read `orchestration.md` relative to this instruction file
+and apply it throughout the session. Use this project copy as the orchestration
+policy. Send delegation prompts in Homonid ultra. Every subagent invokes
+Homonid max, using the embedded rules when the Homonid skill is unavailable.

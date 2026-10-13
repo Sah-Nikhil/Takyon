@@ -81,11 +81,9 @@ impl AgentDriver for CodexDriver {
     }
 
     fn turn_args(&self, req: &TurnRequest) -> Vec<String> {
+        // Every flag goes on `exec`, before `resume`: the subcommand rejects
+        // `-C` and `--sandbox` with `unexpected argument '-C' found`.
         let mut args = vec!["exec".to_string()];
-        if let Some(session) = &req.session {
-            args.push("resume".into());
-            args.push(session.clone());
-        }
         args.push("--json".into());
         // Codex refuses to run outside a repository, and the Scratch directory is
         // deliberately not one.
@@ -109,6 +107,10 @@ impl AgentDriver for CodexDriver {
             // Codex has no effort flag; it is a config key, overridden per run.
             args.push("-c".into());
             args.push(format!("model_reasoning_effort=\"{effort}\""));
+        }
+        if let Some(session) = &req.session {
+            args.push("resume".into());
+            args.push(session.clone());
         }
         // Prompt on stdin (ADR-0032). `exec` reads it when the prompt is
         // omitted; `exec resume` only with an explicit `-`, so both get one.
@@ -298,20 +300,33 @@ mod tests {
         assert!(CodexDriver.turn_input(&req).ends_with("hi"));
     }
 
-    /// A follow-up is `exec resume <id>`, and the id comes right after `resume`.
+    /// A follow-up ends `resume <id> -`, every flag ahead of `resume`.
+    /// `exec resume` rejects `-C` and `--sandbox`: each follow-up Turn failed.
     #[test]
     fn v0_8_a_codex_follow_up_resumes_its_thread() {
         let args = CodexDriver.turn_args(&TurnRequest {
             prompt: "and then?".into(),
             cwd: std::path::PathBuf::from("."),
             session: Some("th-1".into()),
-            model: None,
-            effort: None,
+            model: Some("test-model".into()),
+            effort: Some("test-effort".into()),
             tools: true,
         });
-        assert_eq!(&args[..3], &["exec", "resume", "th-1"]);
+        assert_eq!(args[0], "exec");
         // `resume` reads stdin only with an explicit `-`.
-        assert_eq!(args.last().unwrap(), "-");
+        assert_eq!(&args[args.len() - 3..], &["resume", "th-1", "-"]);
+        let resume = args.iter().position(|a| a == "resume").unwrap();
+        for flag in [
+            "--json",
+            "--skip-git-repo-check",
+            "-C",
+            "--sandbox",
+            "-m",
+            "-c",
+        ] {
+            let at = args.iter().position(|a| a == flag).expect(flag);
+            assert!(at < resume, "{flag} must precede `resume`: {args:?}");
+        }
         let sandbox = args
             .iter()
             .position(|a| a == "--sandbox")
@@ -377,12 +392,12 @@ mod tests {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from("."),
             session: None,
-            model: Some("gpt-5.3-codex".into()),
-            effort: Some("high".into()),
+            model: Some("test-model".into()),
+            effort: Some("test-effort".into()),
             tools: false,
         });
         let flag = args.iter().position(|a| a == "-c").expect("config flag");
-        assert_eq!(args[flag + 1], "model_reasoning_effort=\"high\"");
+        assert_eq!(args[flag + 1], "model_reasoning_effort=\"test-effort\"");
     }
 
     /// Both failure shapes carry their own message through unchanged.
