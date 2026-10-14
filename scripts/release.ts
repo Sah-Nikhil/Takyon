@@ -13,6 +13,7 @@
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { cargoTargetDir } from "./lib/cargo-target-dir";
 import {
   BUMP_COMMIT_FILES,
   ROOT,
@@ -55,7 +56,7 @@ function local(skipPreflight: boolean) {
   ) as { version: string; productName: string };
   const { version, productName } = conf;
 
-  const nsisDir = join(ROOT, "apps/desktop/src-tauri/target/release/bundle/nsis");
+  const nsisDir = join(cargoTargetDir(ROOT), "release/bundle/nsis");
   // This build's exact name: the directory keeps every installer ever built here.
   const name = `${productName}_${version}_x64-setup.exe`;
   if (!readdirSync(nsisDir).includes(name)) {

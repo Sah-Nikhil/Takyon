@@ -16,12 +16,14 @@ reaped when that call returns.
 #>
 [CmdletBinding()]
 param(
-    [string]$Exe = "apps\desktop\src-tauri\target\release\takyon.exe",
+    # Empty: release build in cargo's target dir, which CARGO_TARGET_DIR can move.
+    [string]$Exe,
     [string]$OutDir = "$env:TEMP\takyon-verify-v0.7",
     [string]$Hotkey = "Ctrl+Alt+Shift+F9"
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Exe) { $Exe = Join-Path (& "$PSScriptRoot\lib\cargo-target-dir.ps1") "release\takyon.exe" }
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type -Namespace Takyon -Name Drive7 -MemberDefinition @'
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
