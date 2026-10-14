@@ -17,7 +17,8 @@ script stay manual; this drives 1, 2, 3 and 4.
 #>
 [CmdletBinding()]
 param(
-    [string]$Exe = "apps\desktop\src-tauri\target\release\takyon.exe",
+    # Empty: release build in cargo's target dir, which CARGO_TARGET_DIR can move.
+    [string]$Exe,
     [string]$OutDir = "$env:TEMP\takyon-verify-v0.8",
     # Free chord. Alt+Space is contested by Raycast and PowerToys Run on most
     # machines this is developed on.
@@ -34,6 +35,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Exe) { $Exe = Join-Path (& "$PSScriptRoot\lib\cargo-target-dir.ps1") "release\takyon.exe" }
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type -Namespace Takyon -Name Drive9 -MemberDefinition @'
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();

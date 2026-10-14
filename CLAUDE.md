@@ -308,9 +308,11 @@ seams that actually matter are Rust traits — `FileIndex`, `AppSource`,
   `#[cfg(not(debug_assertions))]` plus `import.meta.env.DEV` is *not enough* — a
   **release** binary run from `target\release\` passes both, and `bun run bench`
   launches exactly that and then injects thirty keystrokes, one of which will
-  answer the first-run dialog for you. `firstrun::should_ask` therefore also
-  refuses when `TAKYON_BENCH_LOG` is set and when `current_exe()` sits under
-  `target\debug\` or `target\release\`. A stray `Run` key pointing into a build
+  answer the first-run dialog for you. `firstrun::may_register` therefore also
+  refuses when `TAKYON_BENCH_LOG` is set and when `current_exe()` sits in build
+  output: the profile directory build.rs recorded at compile time, which follows
+  `CARGO_TARGET_DIR` wherever it points (`D:\cargo-target\` here), or any
+  `*target\[<triple>\]debug|release\` path. A stray `Run` key pointing into a build
   directory survives `cargo clean`, deleting the repo, and installing the real
   product. (Learned the hard way in tesseract, then again here.)
 - **Autostart state lives in the OS, not in our config** — read it via

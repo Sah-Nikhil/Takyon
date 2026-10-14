@@ -92,7 +92,7 @@ Write-Host "`nBuilding the helper (release)..."
 & cargo build --release -p takyon-uiaccess-helper --manifest-path (Join-Path $repo 'apps\desktop\src-tauri\Cargo.toml')
 if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
 
-$helper = Join-Path $repo 'apps\desktop\src-tauri\target\release\takyon-uiaccess-helper.exe'
+$helper = Join-Path (& "$PSScriptRoot\lib\cargo-target-dir.ps1") 'release\takyon-uiaccess-helper.exe'
 if (-not (Test-Path $helper)) { throw "the helper was not produced at $helper" }
 
 # --- 2. Certificate -----------------------------------------------------------

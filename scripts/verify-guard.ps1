@@ -9,10 +9,12 @@
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$Exe = "apps\desktop\src-tauri\target\release\takyon.exe"
+    # Empty: release build in cargo's target dir, which CARGO_TARGET_DIR can move.
+    [string]$Exe
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Exe) { $Exe = Join-Path (& "$PSScriptRoot\lib\cargo-target-dir.ps1") "release\takyon.exe" }
 
 $underTest = $null
 if (Test-Path $Exe) {

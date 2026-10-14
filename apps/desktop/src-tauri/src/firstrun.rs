@@ -5,8 +5,8 @@
 //! rendered (v0.6 found); General → "Start Takyon when I log in" now reads the
 //! registry on mount and turns it off in one click.
 //!
-//! Guards unchanged: never from a debug build, while benchmarking, or from a
-//! `target\` directory. Marker file records first run, so a later "off" is never
+//! Guards unchanged: never from a debug build, while benchmarking, or from Cargo
+//! build output. Marker file records first run, so a later "off" is never
 //! undone on next launch.
 
 use std::path::PathBuf;
@@ -64,34 +64,58 @@ pub fn maybe_enable(app: &AppHandle) {
 /// Is this a launch that may claim a startup slot at all?
 ///
 /// Release cfg alone let a bench-run binary in `target\release\` leave a `Run` key
-/// into build output. So never with `TAKYON_BENCH_LOG` set, never from `target\`.
-// Reached only from `maybe_enable`, which is compiled out of debug builds.
+/// into build output. So never with `TAKYON_BENCH_LOG` set, never from build output
+/// wherever `CARGO_TARGET_DIR` put it. Only `maybe_enable` calls this (release only).
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn may_register() -> bool {
     if std::env::var_os(crate::bench::LOG_ENV).is_some() {
         return false;
     }
-    match std::env::current_exe() {
-        Ok(exe) => !is_build_output(&exe),
-        // If we cannot tell where we are, do not claim a startup slot.
-        Err(_) => false,
-    }
+    // If we cannot tell where we are, do not claim a startup slot.
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    !is_build_output(&exe) && !built_into().is_some_and(|dir| is_under(&exe, &dir))
 }
 
-/// Does this path sit inside a Cargo build output directory?
+/// Profile dir this binary was compiled into, from build.rs. Canonical.
 ///
-/// Path-taking, so testable without moving a binary. Compares *components*, not
-/// substrings: a folder named `targeted` is not build output.
+/// Catches a `CARGO_TARGET_DIR` of any name. `None` off the build machine,
+/// where the dir does not exist, so nothing can be under it.
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn built_into() -> Option<PathBuf> {
+    option_env!("TAKYON_BUILT_INTO")
+        .filter(|p| !p.is_empty())
+        .and_then(|p| std::fs::canonicalize(p).ok())
+}
+
+/// Is `path` strictly inside `dir`? Per component, case-insensitive like NTFS.
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn is_under(path: &std::path::Path, dir: &std::path::Path) -> bool {
+    let (path, dir) = (lowered(path), lowered(dir));
+    path.len() > dir.len() && path.starts_with(&dir)
+}
+
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn lowered(path: &std::path::Path) -> Vec<String> {
+    path.components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect()
+}
+
+/// Does this path look like Cargo build output, wherever it was built?
+///
+/// `<..>target\[<triple>\]debug|release\`, any name ending `target` (`cargo-target`).
+/// Per component, not substring: a folder named `targeted` is not build output.
 // Reached only from `maybe_enable`, which is compiled out of debug builds.
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn is_build_output(exe: &std::path::Path) -> bool {
-    let parts: Vec<String> = exe
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
-        .collect();
-    parts
-        .windows(2)
-        .any(|w| w[0] == "target" && (w[1] == "debug" || w[1] == "release"))
+    let parts = lowered(exe);
+    let profile = |p: Option<&String>| p.is_some_and(|p| p == "debug" || p == "release");
+    parts.iter().enumerate().any(|(i, p)| {
+        p.ends_with("target") && (profile(parts.get(i + 1)) || profile(parts.get(i + 2)))
+    })
 }
 
 /// Never in a dev build.
@@ -115,6 +139,64 @@ mod tests {
         assert!(is_build_output(std::path::Path::new(
             r"C:\repo\apps\desktop\src-tauri\target\debug\takyon.exe"
         )));
+    }
+
+    /// `CARGO_TARGET_DIR` moves output out of `target\`. A shared dir named
+    /// `cargo-target` (this machine, tesseract too) must still be caught.
+    #[test]
+    fn v0_11_a_relocated_target_dir_is_still_build_output() {
+        assert!(is_build_output(std::path::Path::new(
+            r"D:\cargo-target\release\takyon.exe"
+        )));
+        assert!(is_build_output(std::path::Path::new(
+            r"D:\Cargo_Target\Debug\takyon.exe"
+        )));
+    }
+
+    /// `--target <triple>` adds a level: `target\<triple>\release\`. Release CI
+    /// builds macOS exactly so.
+    #[test]
+    fn v0_11_a_cross_compiled_binary_is_build_output() {
+        assert!(is_build_output(std::path::Path::new(
+            r"C:\repo\target\aarch64-apple-darwin\release\takyon"
+        )));
+    }
+
+    /// `CARGO_TARGET_DIR` may be named anything. The dir this build wrote its
+    /// binary into is build output whatever its name, in any case.
+    #[test]
+    fn v0_11_the_dir_cargo_built_into_is_build_output_whatever_its_name() {
+        let built = std::path::Path::new(r"D:\builds\takyon\release");
+        assert!(is_under(
+            std::path::Path::new(r"D:\builds\takyon\release\takyon.exe"),
+            built
+        ));
+        assert!(is_under(
+            std::path::Path::new(r"d:\BUILDS\Takyon\Release\bundle\nsis\takyon.exe"),
+            built
+        ));
+        assert!(!is_under(
+            std::path::Path::new(r"D:\Takyon\takyon.exe"),
+            built
+        ));
+        assert!(!is_under(
+            std::path::Path::new(r"D:\builds\takyon\release-notes\takyon.exe"),
+            built
+        ));
+    }
+
+    /// build.rs's guess at that dir, checked against where cargo really put
+    /// this test binary (`<profile>\deps\`).
+    #[test]
+    fn v0_11_the_compile_time_build_dir_holds_this_test_binary() {
+        let built = built_into().expect("build.rs sets TAKYON_BUILT_INTO");
+        let exe = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
+        assert!(
+            is_under(&exe, &built),
+            "{} not under {}",
+            exe.display(),
+            built.display()
+        );
     }
 
     /// A real install must still be able to ask. Matching on components rather

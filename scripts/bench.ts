@@ -15,6 +15,7 @@
 
 import { mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { cargoTargetDir } from "./lib/cargo-target-dir";
 
 const ROOT = resolve(import.meta.dir, "..");
 const RESULTS = join(ROOT, "bench", "results");
@@ -132,7 +133,7 @@ async function main() {
   const args = parseArgs(Bun.argv.slice(2));
 
   const profile = args.dev ? "debug" : "release";
-  const exe = join(ROOT, "apps", "desktop", "src-tauri", "target", profile, "takyon.exe");
+  const exe = join(cargoTargetDir(ROOT), profile, "takyon.exe");
   if (!existsSync(exe)) {
     console.error(
       `No ${profile} binary at ${exe}\n` +
