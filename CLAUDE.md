@@ -479,3 +479,9 @@ the next.
 Apply this project orchestration policy throughout the session. Send delegation
 prompts in Homonid ultra. Every subagent invokes Homonid max, using the embedded
 rules when the Homonid skill is unavailable.
+
+**Subagents are pre-authorized here.** Delegate without asking whenever the
+`orchestration` skill says it pays, using its routing table for model and effort.
+One override: every child, Claude or Codex, spawns through T3's `delegate_task`,
+never the native `Agent` tool, even where the skill prefers native. Child prompts
+must restate the Git rules above, since a T3 child never sees this file.
