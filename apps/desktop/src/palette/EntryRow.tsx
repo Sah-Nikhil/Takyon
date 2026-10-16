@@ -8,6 +8,7 @@
  */
 
 import { ROW_HEIGHT, type Entry, type EntryKind } from "@takyon/shared";
+import * as api from "@/api";
 import { AppIcon } from "@/components/AppIcon";
 
 /**
@@ -37,7 +38,17 @@ export function EntryRow({ entry, selected }: { entry: Entry; selected: boolean 
       style={{ height: ROW_HEIGHT }}
       data-selected={selected || undefined}
     >
-      <AppIcon icon={entry.icon} title={entry.title} />
+      {entry.kind === "clip" && entry.icon ? (
+        // An image clip's `icon` is its row id, a `takyon-clip` key (v0.14).
+        <img
+          src={api.clipImageUrl(Number(entry.icon), "thumb")}
+          alt=""
+          className="size-6 shrink-0 rounded-sm object-cover"
+          decoding="async"
+        />
+      ) : (
+        <AppIcon icon={entry.icon} title={entry.title} />
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">

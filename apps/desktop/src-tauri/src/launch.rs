@@ -462,6 +462,63 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     }
 }
 
+/// Put an image on the clipboard: `CF_DIB` for every target, plus the
+/// registered `PNG` format that browsers and Office read for alpha (v0.14).
+///
+/// Windows synthesises `CF_DIBV5` and `CF_BITMAP` from the DIB on request.
+#[cfg(windows)]
+pub fn copy_image_to_clipboard(dib: &[u8], png: &[u8]) -> Result<(), String> {
+    use windows::core::w;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, RegisterClipboardFormatW,
+    };
+    use windows::Win32::System::Ole::CF_DIB;
+
+    let _clipboard = crate::clips::os::lock();
+
+    unsafe {
+        open_clipboard_retrying()?;
+        let result = (|| -> Result<(), String> {
+            EmptyClipboard().map_err(|e| format!("could not clear the clipboard: {e}"))?;
+            set_clipboard_bytes(CF_DIB.0 as u32, dib)?;
+            // Optional: the DIB alone is a complete paste, so a refused PNG
+            // costs alpha in some targets and nothing else.
+            let png_format = RegisterClipboardFormatW(w!("PNG"));
+            if png_format != 0 {
+                let _ = set_clipboard_bytes(png_format, png);
+            }
+            Ok(())
+        })();
+        let _ = CloseClipboard();
+        result
+    }
+}
+
+/// Copy `bytes` into a movable global and hand it to the open clipboard.
+///
+/// Freed here only on failure: on success the clipboard owns it.
+#[cfg(windows)]
+unsafe fn set_clipboard_bytes(format: u32, bytes: &[u8]) -> Result<(), String> {
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+    use windows::Win32::System::DataExchange::SetClipboardData;
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+    let handle: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, bytes.len())
+        .map_err(|e| format!("could not allocate for the clipboard: {e}"))?;
+    let ptr = GlobalLock(handle);
+    if ptr.is_null() {
+        let _ = GlobalFree(Some(handle));
+        return Err("could not lock the clipboard buffer".into());
+    }
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast::<u8>(), bytes.len());
+    let _ = GlobalUnlock(handle);
+    if let Err(e) = SetClipboardData(format, Some(HANDLE(handle.0))) {
+        let _ = GlobalFree(Some(handle));
+        return Err(format!("could not set the clipboard: {e}"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

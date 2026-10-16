@@ -704,18 +704,21 @@ restart, and the Files page says plainly when the service is off.
 stored separately. Plan:
 [`docs/plans/v0.14-clipboard-kinds.md`](./docs/plans/v0.14-clipboard-kinds.md).
 
-Both platforms in one phase. Neither today captures anything but text.
+The Windows image half is built; manual verification is unrun. The user lifted
+the macOS row 6 gate for Windows on 2026-10-17. macOS image capture and paste,
+`Files`, and link classification remain open.
 
-- [ ] `ClipKind` grows `Image` and `Files`, with the schema migration. **`Files` stores paths, never contents** — a copied 40 GB folder is a couple of hundred bytes
-- [ ] `clips/blobs.rs` — encrypted blob files, capped at 32 MB, with **overwrite-then-unlink** and a startup orphan sweep. Every path that destroys clipboard data goes through it, so it lands with its own tests first
-- [ ] Capture on both platforms — `CF_DIB`/`CF_HDROP`, `public.png`/`public.file-url` — behind `ClipboardStore`
-- [ ] Paste-back for both kinds, and link classification on `Text` with a favicon and an Open action
-- [ ] Palette rows, `!v` preview, and a Settings → Clipboard figure for what the history occupies on disk
-- [ ] **ADR-0008 amendment, written with the schema and not after it.** "An attacker learns you copied 31 characters from Bitwarden" becomes "…and every screenshot you took is in there"
+- [ ] `ClipKind` grows `Image` and `Files`. Windows `Image` and the schema migration are built; `Files` remains open. **`Files` stores paths, never contents**
+- [x] Windows `clips/blobs.rs` — encrypted full-PNG blobs, capped at 32 MB encoded PNG and 64 MP, with **overwrite-then-unlink** and startup orphan reconciliation; deletion and retention paths shred blobs
+- [ ] Capture on both platforms. Windows reads text first, then registered `PNG`, `CF_DIBV5`, `CF_DIB`; `CF_HDROP`, macOS types, and `ClipboardStore::read` remain open
+- [ ] Paste-back for both kinds. Windows `Image` writes `CF_DIB` and registered `PNG`; macOS `Image`, `Files`, and link classification remain open
+- [ ] Palette image rows, `!v` preview, and Settings → Clipboard on-disk size. Rust image serving and `clip_disk_bytes` are built; UI integration and manual verification remain open
+- [x] **ADR-0008 amendment.** Image threat model, exclusion markers, blob destruction, and no-store serving are recorded
 
-**Exit criteria:** copy a screenshot, summon `!v`, paste it into another
-application and get the image. Set retention to one day and confirm both the row
-and its blob are gone. Copy a password and confirm nothing is recorded.
+**Exit criteria remain open:** copy a screenshot, summon `!v`, paste it into
+another application and get the image. Set retention to one day and confirm both
+the row and its blob are gone. Copy a password and confirm nothing is recorded
+on both platforms. See [`docs/tbd/v0.14.md`](./docs/tbd/v0.14.md).
 
 ---
 

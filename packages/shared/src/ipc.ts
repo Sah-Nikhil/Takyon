@@ -266,13 +266,13 @@ export interface ClipRow {
   id: number;
   /** Unix seconds. The surface groups by day from this. */
   createdAt: number;
-  kind: "text";
+  kind: "text" | "image";
   /**
    * The executable that owned the clipboard, or the foreground window when
    * Windows reports no owner. Plaintext, and a known metadata leak (ADR-0008).
    */
   sourceExe?: string;
-  /** Characters of the full content, not of the preview. */
+  /** Characters of the full text, or bytes of the stored PNG for an image. */
   len: number;
   /**
    * One line, capped at 160 characters. **The full content never travels with a
@@ -280,6 +280,9 @@ export interface ClipRow {
    * the webview.
    */
   preview: string;
+  /** Pixel size, images only (v0.14). */
+  width?: number;
+  height?: number;
 }
 
 /** A single actionable row in the Palette (CONTEXT.md: Entry, never "result"). */

@@ -361,6 +361,19 @@ export const clipPage = (query: string, limit?: number) =>
     ? invoke<ClipRow[]>("clip_page", { query, limit })
     : mock.clipPage(query, limit);
 
+/** Bytes clipboard history occupies on disk, images included (v0.14). */
+export const clipDiskBytes = () =>
+  inTauri ? invoke<number>("clip_disk_bytes") : mock.clipDiskBytes();
+
+/**
+ * The URL for an image clip's thumbnail or full image (v0.14).
+ *
+ * Served by `takyon-clip`, decrypted per request and `no-store`: a screenshot
+ * never lands in WebView2's disk cache. Bytes never ride in `clipPage`.
+ */
+export const clipImageUrl = (id: number, part: "thumb" | "full"): string =>
+  inTauri ? convertFileSrc(`${part}-${id}`, "takyon-clip") : mock.clipImageUrl(id, part);
+
 /** Whether `!v` reaches clipboard history. The command works either way. */
 export const clipBang = () =>
   inTauri ? invoke<boolean>("clip_bang") : mock.clipBang();

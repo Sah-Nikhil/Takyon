@@ -5,15 +5,13 @@
 //! window — so the two are ordered clipboard first: a failed keystroke leaves the
 //! user one manual `Ctrl+V` away, a failed copy leaves them with nothing.
 //!
-//! Format is not preserved at v0.5 because nothing but text is captured yet. When
-//! images and file lists arrive they are stored with their format and restored to
-//! the same one; the seam is [`Paste::kind`], not a second function.
+//! A clip goes back in the format it came in: text as text, an image as an
+//! image (v0.14). The seam is [`Paste`]'s variant, not a second function.
 //!
 //! Both entry points go through [`crate::clips::os::host`]. This file owns the
 //! shape of a paste and the settle delay; the OS calls live behind the trait.
 
 use crate::clips::os::host;
-use crate::clips::store::ClipKind;
 
 /// How long the target window gets to take focus back before the keystroke.
 ///
@@ -26,11 +24,11 @@ pub const FOCUS_SETTLE_MS: u64 = 80;
 /// Palette, which is the bug this whole file is arranged around.
 const _: () = assert!(FOCUS_SETTLE_MS >= 50);
 
-/// What is being pasted. One variant at v0.5; the point is that paste-back is
-/// already asking rather than assuming text.
-pub struct Paste<'a> {
-    pub kind: ClipKind,
-    pub text: &'a str,
+/// What is being pasted.
+pub enum Paste<'a> {
+    Text(&'a str),
+    /// PNG bytes, as `ClipStore::image` returns them.
+    Image(&'a [u8]),
 }
 
 /// Put the clip on the clipboard. Always run, keystroke or not.
@@ -96,10 +94,7 @@ mod tests {
     /// with no text still copies nothing rather than pressing keys at random.
     #[test]
     fn v0_5_an_empty_paste_is_still_a_clipboard_write_not_a_keystroke() {
-        let paste = Paste {
-            kind: ClipKind::Text,
-            text: "",
-        };
+        let paste = Paste::Text("");
         assert!(to_clipboard(&paste).is_ok());
     }
 }

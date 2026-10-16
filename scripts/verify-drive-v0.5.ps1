@@ -15,7 +15,7 @@ started from a tool call is reaped when that call returns.
 checked the foreground; the individual keys did not, and that gap was real -
 a browser took the foreground mid-run and a paste-back landed a real URL in the
 wrong window. Enter triggers paste-back, Ctrl+Enter and Ctrl+A/Ctrl+C write the
-clipboard, and Ctrl+Backspace destroys a clip here and a word of someone's text
+clipboard, and Ctrl+D destroys a clip here and does something else
 anywhere else. All of those go through `Send-KeyTo` / `Send-ChordTo` (by window)
 or `Send-ChordToPid` (by process, for the Notepad this script started, never one
 the operator had open). A refused key is a SKIP, never a stray keystroke.
@@ -58,7 +58,7 @@ Add-Type -Namespace Takyon -Name Drive5 -MemberDefinition @'
 
 $UP = 0x0002
 $VK = @{ Back = 0x08; Enter = 0x0D; Esc = 0x1B; Ctrl = 0x11; Alt = 0x12; Shift = 0x10
-         F9 = 0x78; K = 0x4B; A = 0x41; C = 0x43 }
+         F9 = 0x78; K = 0x4B; A = 0x41; C = 0x43; D = 0x44 }
 
 # The strings this run files into history. A GUID suffix so a re-run cannot match
 # the previous run's rows, and a shape no installed application shares - V3 types
@@ -641,9 +641,9 @@ try {
     Clear-Query
     if (Send-Text "!v beta-$run") {
         $hBefore = Save-Shot "P4-before"
-        # Ctrl+Backspace destroys a clip here, and deletes a word of someone's
-        # text anywhere else. Guarded for that reason.
-        [void](Send-ChordTo "^takyon$" @($VK.Ctrl) $VK.Back)
+        # Ctrl+D (Ctrl+Backspace before v0.14) destroys a clip here, and is a
+        # bookmark or a duplicate-line anywhere else. Guarded for that reason.
+        [void](Send-ChordTo "^takyon$" @($VK.Ctrl) $VK.D)
         Start-Sleep -Milliseconds 1000
         $hAfter = Save-Shot "P4-after"
         $front = (Get-Front).Name

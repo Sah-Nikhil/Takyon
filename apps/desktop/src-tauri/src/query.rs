@@ -854,12 +854,12 @@ impl Pipeline {
             };
         }
 
-        let text = store
-            .content(row)
+        let content = store
+            .fetch(row)
             .ok_or_else(|| "That clip is no longer in the history.".to_string())?;
-        let clip = Paste {
-            kind: crate::clips::ClipKind::Text,
-            text: &text,
+        let clip = match &content {
+            crate::clips::Content::Text(text) => Paste::Text(text),
+            crate::clips::Content::Image(png) => Paste::Image(png),
         };
         match action {
             a if a == crate::actions::PASTE.as_str() => paste::paste_back(&clip),
@@ -923,14 +923,17 @@ pub fn clip_id(id: &EntryId) -> Option<i64> {
 /// One stored clip as the Palette draws it.
 ///
 /// The preview is the title, and the full content never travels: a search
-/// response would otherwise ship every matching secret into the webview.
+/// response would otherwise ship every matching secret into the webview. An
+/// image's `icon` is its row id, a `takyon-clip` thumbnail key, not an icon key.
 fn clip_entry(clip: Clip) -> Entry {
+    let icon = (clip.kind == crate::clips::ClipKind::Image)
+        .then(|| crate::entry::IconRef(clip.id.to_string()));
     Entry {
         id: EntryId(format!("{CLIP_PREFIX}{}", clip.id)),
         title: clip.preview,
         subtitle: clip.source_exe.as_deref().and_then(source_label),
         kind: crate::entry::EntryKind::Clip,
-        icon: None,
+        icon,
         // Order is recency, applied by the store's query. A score here would
         // invite something to re-sort by it.
         score: 0.0,

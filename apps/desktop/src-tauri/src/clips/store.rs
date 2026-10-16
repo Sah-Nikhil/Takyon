@@ -7,7 +7,9 @@
 //! **Deleting is not the same as destroying.** SQLite leaves freed pages intact
 //! and WAL keeps live content until checkpoint, so every path that removes rows
 //! goes through [`ClipStore::purge`]: `PRAGMA secure_delete = ON` is set at open,
-//! and the delete is followed by `wal_checkpoint(TRUNCATE)`.
+//! and the delete is followed by `wal_checkpoint(TRUNCATE)`. Image rows (v0.14)
+//! keep an encrypted thumbnail in `ciphertext` and the full PNG in a blob file
+//! (`blobs.rs`), which `purge` destroys with the row.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -16,6 +18,8 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce};
 use rusqlite::{params, Connection, OptionalExtension};
 
+use super::blobs::Blobs;
+use super::image::{self, Rgba};
 use super::key::{self, ClipKey, KEY_LEN};
 
 /// How much of a clip the Palette ever draws. Longer content is stored whole and
@@ -100,19 +104,39 @@ impl Default for Retention {
     }
 }
 
-/// What a clip holds. Text only at v0.5 — images and file lists arrive behind the
-/// same rules, which is why this is a kind rather than an assumption.
+/// What a clip holds. Text since v0.5, images since v0.14; file lists are the
+/// kind still to come (`docs/plans/v0.14-clipboard-kinds.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClipKind {
     Text,
+    Image,
 }
 
 impl ClipKind {
+    /// The stored spelling. Frozen, like `Retention::as_str`.
     pub fn as_str(self) -> &'static str {
         match self {
             ClipKind::Text => "text",
+            ClipKind::Image => "image",
         }
     }
+
+    /// Unknown spellings are `None`, and the row is skipped rather than drawn
+    /// as a kind it is not.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "text" => Some(ClipKind::Text),
+            "image" => Some(ClipKind::Image),
+            _ => None,
+        }
+    }
+}
+
+/// A clip's full content, as paste-back needs it.
+pub enum Content {
+    Text(String),
+    /// PNG bytes.
+    Image(Vec<u8>),
 }
 
 /// One row as the UI needs it: metadata plus a truncated, decrypted preview.
@@ -125,8 +149,12 @@ pub struct Clip {
     pub created_at: i64,
     pub kind: ClipKind,
     pub source_exe: Option<String>,
+    /// Characters for text, bytes of the stored PNG for an image.
     pub len: usize,
     pub preview: String,
+    /// Pixel size, images only.
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 /// The clipboard history database.
@@ -136,6 +164,12 @@ pub struct Clip {
 pub struct ClipStore {
     conn: Mutex<Connection>,
     cipher: Aes256Gcm,
+    blobs: Blobs,
+    /// Held from a blob's write to its row's insert, and through `reconcile`.
+    /// Without it `clear` can see a fresh blob as an orphan and shred it.
+    publish: Mutex<()>,
+    /// The data directory, for [`ClipStore::disk_bytes`]. `None` in memory.
+    dir: Option<PathBuf>,
 }
 
 impl ClipStore {
@@ -143,23 +177,32 @@ impl ClipStore {
     /// when `dir` is `None` — the seam the tests use, and the fallback when there
     /// is nowhere to write.
     pub fn open(dir: Option<PathBuf>) -> std::io::Result<Self> {
-        let (conn, key) = match dir {
-            Some(dir) => {
-                std::fs::create_dir_all(&dir)?;
-                let key = key::load_or_create(&dir)?;
-                let conn = Connection::open(dir.join("clips.db")).map_err(sql_err)?;
-                (conn, key)
-            }
-            None => (
-                Connection::open_in_memory().map_err(sql_err)?,
-                ClipKey::generate(),
-            ),
+        let Some(dir) = dir else {
+            let conn = Connection::open_in_memory().map_err(sql_err)?;
+            return Self::with_connection(conn, &ClipKey::generate());
         };
-        Self::with_connection(conn, &key)
+        std::fs::create_dir_all(&dir)?;
+        let key = key::load_or_create(&dir)?;
+        let conn = Connection::open(dir.join("clips.db")).map_err(sql_err)?;
+        let store = Self::build(conn, &key, Blobs::disk(&dir)?, Some(dir))?;
+        // Once, before the watcher can write: a crash between a blob and its row
+        // leaves one without the other, and both halves are reconciled here.
+        store.blobs.sweep_partial();
+        store.reconcile();
+        Ok(store)
     }
 
     /// The half that needs no filesystem, so a test can hand in its own key.
     pub fn with_connection(conn: Connection, key: &ClipKey) -> std::io::Result<Self> {
+        Self::build(conn, key, Blobs::memory(), None)
+    }
+
+    fn build(
+        conn: Connection,
+        key: &ClipKey,
+        blobs: Blobs,
+        dir: Option<PathBuf>,
+    ) -> std::io::Result<Self> {
         // Set every open, not once at creation: `secure_delete` is a connection
         // pragma, so a connection that forgets it leaves recoverable ciphertext in
         // freed pages for the whole session (ADR-0008).
@@ -184,11 +227,15 @@ impl ClipStore {
             [],
         )
         .map_err(sql_err)?;
+        migrate(&conn)?;
 
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.bytes()));
         Ok(ClipStore {
             conn: Mutex::new(conn),
             cipher,
+            blobs,
+            publish: Mutex::new(()),
+            dir,
         })
     }
 
@@ -208,11 +255,7 @@ impl ClipStore {
             return Ok(id);
         }
 
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let ciphertext = self
-            .cipher
-            .encrypt(&nonce, content.as_bytes())
-            .map_err(|_| std::io::Error::other("clipboard content could not be encrypted"))?;
+        let (nonce, ciphertext) = self.seal(content.as_bytes())?;
 
         let conn = self.conn.lock().expect("clips mutex");
         conn.execute(
@@ -223,12 +266,72 @@ impl ClipStore {
                 kind.as_str(),
                 source_exe,
                 content.chars().count() as i64,
-                nonce.as_slice(),
+                nonce,
                 ciphertext
             ],
         )
         .map_err(sql_err)?;
         Ok(conn.last_insert_rowid())
+    }
+
+    /// Store one image capture, returning its row id.
+    ///
+    /// Full PNG sealed into a blob file, thumbnail sealed into the row. Over
+    /// [`image::MAX_PNG_BYTES`] is refused whole. A repeat of the newest image
+    /// moves its timestamp, as text does.
+    pub fn insert_image_at(
+        &self,
+        source_exe: Option<&str>,
+        pixels: &Rgba,
+        now: i64,
+    ) -> std::io::Result<i64> {
+        let png = image::encode_png(pixels)
+            .ok_or_else(|| std::io::Error::other("image could not be encoded"))?;
+        if png.len() > image::MAX_PNG_BYTES {
+            return Err(std::io::Error::other(format!(
+                "image is {} bytes, over the {} cap; skipped",
+                png.len(),
+                image::MAX_PNG_BYTES
+            )));
+        }
+        if let Some(id) = self.touch_if_repeat_image(&png, pixels, now) {
+            return Ok(id);
+        }
+        let thumb = image::encode_png(&image::thumbnail(pixels, image::THUMB_EDGE))
+            .ok_or_else(|| std::io::Error::other("thumbnail could not be encoded"))?;
+
+        let (blob_nonce, blob_ct) = self.seal(&png)?;
+        let (nonce, ciphertext) = self.seal(&thumb)?;
+        let _publish = self.publish.lock().unwrap_or_else(|e| e.into_inner());
+        let name = self.blobs.write(&[blob_nonce, blob_ct].concat())?;
+
+        let conn = self.conn.lock().expect("clips mutex");
+        let inserted = conn.execute(
+            "INSERT INTO clips (created_at, kind, source_exe, len, nonce, ciphertext,
+                                blob, width, height)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                now,
+                ClipKind::Image.as_str(),
+                source_exe,
+                png.len() as i64,
+                nonce,
+                ciphertext,
+                name,
+                pixels.width,
+                pixels.height
+            ],
+        );
+        if let Err(e) = inserted {
+            // No row will ever name it, so it goes now rather than at next start.
+            self.blobs.destroy(&name);
+            return Err(sql_err(e));
+        }
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn insert_image(&self, source_exe: Option<&str>, pixels: &Rgba) -> std::io::Result<i64> {
+        self.insert_image_at(source_exe, pixels, unix_now())
     }
 
     pub fn insert(
@@ -264,21 +367,55 @@ impl ClipStore {
             .collect()
     }
 
-    /// The full text of one clip. What paste-back reads, and the only path that
-    /// ever returns untruncated content.
+    /// The full text of a text clip. What paste-back reads, and the only path
+    /// that ever returns untruncated text. `None` for an image.
     pub fn content(&self, id: i64) -> Option<String> {
-        let conn = self.conn.lock().ok()?;
-        let row: Option<(Vec<u8>, Vec<u8>)> = conn
-            .query_row(
-                "SELECT nonce, ciphertext FROM clips WHERE id = ?1",
+        let (nonce, ciphertext) = self.sealed_row(id, ClipKind::Text)?;
+        self.decrypt(&nonce, &ciphertext)
+    }
+
+    /// Full content of any kind, for paste-back and Copy.
+    pub fn fetch(&self, id: i64) -> Option<Content> {
+        match self.content(id) {
+            Some(text) => Some(Content::Text(text)),
+            None => self.image(id).map(Content::Image),
+        }
+    }
+
+    /// The full PNG of an image clip, decrypted from its blob. Never cached.
+    pub fn image(&self, id: i64) -> Option<Vec<u8>> {
+        let name: String = {
+            let conn = self.conn.lock().ok()?;
+            conn.query_row(
+                "SELECT blob FROM clips WHERE id = ?1 AND kind = 'image'",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| r.get(0),
             )
             .optional()
             .ok()
-            .flatten();
-        let (nonce, ciphertext) = row?;
-        self.decrypt(&nonce, &ciphertext)
+            .flatten()?
+        };
+        self.open_blob(&name)
+    }
+
+    /// The thumbnail PNG of an image clip, from its row.
+    pub fn thumbnail(&self, id: i64) -> Option<Vec<u8>> {
+        let (nonce, ciphertext) = self.sealed_row(id, ClipKind::Image)?;
+        self.decrypt_bytes(&nonce, &ciphertext)
+    }
+
+    /// What history occupies on disk: `clips.db`, its sidecars and every blob.
+    /// Zero in memory. Settings shows it so pruning has a number behind it.
+    pub fn disk_bytes(&self) -> u64 {
+        let Some(dir) = &self.dir else {
+            return 0;
+        };
+        let db: u64 = ["clips.db", "clips.db-wal", "clips.db-shm"]
+            .iter()
+            .filter_map(|n| std::fs::metadata(dir.join(n)).ok())
+            .map(|m| m.len())
+            .sum();
+        db + self.blobs.bytes()
     }
 
     /// How many rows are older than `cutoff`.
@@ -305,10 +442,7 @@ impl ClipStore {
         let Some(seconds) = retention.seconds() else {
             return 0;
         };
-        self.purge(
-            "DELETE FROM clips WHERE created_at < ?1",
-            params![now - seconds],
-        )
+        self.purge("created_at < ?1", params![now - seconds])
     }
 
     pub fn sweep(&self, retention: Retention) -> usize {
@@ -317,12 +451,39 @@ impl ClipStore {
 
     /// Remove one clip.
     pub fn delete(&self, id: i64) -> usize {
-        self.purge("DELETE FROM clips WHERE id = ?1", params![id])
+        self.purge("id = ?1", params![id])
     }
 
-    /// Remove everything.
+    /// Remove everything, then any blob no row named.
     pub fn clear(&self) -> usize {
-        self.purge("DELETE FROM clips", params![])
+        let removed = self.purge("1", params![]);
+        self.reconcile();
+        removed
+    }
+
+    /// Make rows and blob files agree: shred files no row names, delete rows
+    /// whose file is gone. Startup and `clear`; a crash between the two writes
+    /// is the only way they disagree. Either inventory failing stops it: read
+    /// as empty, it would delete everything.
+    pub fn reconcile(&self) {
+        let _publish = self.publish.lock().unwrap_or_else(|e| e.into_inner());
+        let named: rusqlite::Result<Vec<String>> = match self.conn.lock() {
+            Ok(conn) => conn
+                .prepare("SELECT blob FROM clips WHERE blob IS NOT NULL")
+                .and_then(|mut s| s.query_map([], |r| r.get::<_, String>(0))?.collect()),
+            Err(_) => return,
+        };
+        let (named, present) = match (named, self.blobs.names()) {
+            (Ok(named), Ok(present)) => (named, present),
+            (Err(e), _) => return eprintln!("[takyon] clip reconcile skipped, rows: {e}"),
+            (_, Err(e)) => return eprintln!("[takyon] clip reconcile skipped, files: {e}"),
+        };
+        for name in present.iter().filter(|n| !named.contains(n)) {
+            self.blobs.destroy(name);
+        }
+        for name in named.iter().filter(|n| !present.contains(n)) {
+            self.purge("blob = ?1", params![name]);
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -337,20 +498,88 @@ impl ClipStore {
         self.len() == 0
     }
 
-    /// The only path that removes rows.
+    /// The only path that removes rows. `filter` is a `WHERE` clause.
     ///
-    /// `secure_delete` zeroes the freed pages, and the checkpoint truncates the
-    /// WAL that still holds the live copy. Skipping either leaves a deleted
-    /// password readable in a hex editor (ADR-0008).
-    fn purge(&self, sql: &str, args: &[&dyn rusqlite::ToSql]) -> usize {
+    /// `secure_delete` zeroes freed pages, the checkpoint truncates the WAL that
+    /// holds the live copy, and each row's blob is shredded after. Skipping any
+    /// leaves a deleted secret readable in a hex editor (ADR-0008).
+    fn purge(&self, filter: &str, args: &[&dyn rusqlite::ToSql]) -> usize {
         let Ok(conn) = self.conn.lock() else {
             return 0;
         };
-        let removed = conn.execute(sql, args).unwrap_or(0);
+        let blobs: Vec<String> = conn
+            .prepare(&format!(
+                "SELECT blob FROM clips WHERE ({filter}) AND blob IS NOT NULL"
+            ))
+            .and_then(|mut s| s.query_map(args, |r| r.get::<_, String>(0))?.collect())
+            .unwrap_or_default();
+        let removed = conn
+            .execute(&format!("DELETE FROM clips WHERE {filter}"), args)
+            .unwrap_or(0);
         if removed > 0 {
             let _ = conn.pragma_update(None, "wal_checkpoint", "TRUNCATE");
         }
+        // Rows first: a crash here leaves an orphan file the startup sweep
+        // shreds, never a row pointing at nothing.
+        for name in &blobs {
+            self.blobs.destroy(name);
+        }
         removed
+    }
+
+    /// The `nonce, ciphertext` pair of row `id`, only if it is of `kind`.
+    fn sealed_row(&self, id: i64, kind: ClipKind) -> Option<(Vec<u8>, Vec<u8>)> {
+        let conn = self.conn.lock().ok()?;
+        conn.query_row(
+            "SELECT nonce, ciphertext FROM clips WHERE id = ?1 AND kind = ?2",
+            params![id, kind.as_str()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    /// Bump the newest row's timestamp when the same image is copied again.
+    ///
+    /// Compared on the full PNG, never the thumbnail: two screenshots differing
+    /// by a clock digit share a thumbnail, and merging them loses the second.
+    fn touch_if_repeat_image(&self, png: &[u8], pixels: &Rgba, now: i64) -> Option<i64> {
+        let newest = self.recent(1).into_iter().next()?;
+        let same_shape = newest.kind == ClipKind::Image
+            && newest.width == Some(pixels.width)
+            && newest.height == Some(pixels.height)
+            && newest.len == png.len();
+        if !same_shape || self.image(newest.id)? != png {
+            return None;
+        }
+        let conn = self.conn.lock().ok()?;
+        conn.execute(
+            "UPDATE clips SET created_at = ?1 WHERE id = ?2",
+            params![now, newest.id],
+        )
+        .ok()?;
+        Some(newest.id)
+    }
+
+    /// Fresh nonce, then AES-GCM. Returns `(nonce, ciphertext)`.
+    fn seal(&self, plain: &[u8]) -> std::io::Result<(Vec<u8>, Vec<u8>)> {
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let ciphertext = self
+            .cipher
+            .encrypt(&nonce, plain)
+            .map_err(|_| std::io::Error::other("clipboard content could not be encrypted"))?;
+        Ok((nonce.to_vec(), ciphertext))
+    }
+
+    /// A blob file is `nonce || ciphertext`.
+    fn open_blob(&self, name: &str) -> Option<Vec<u8>> {
+        let sealed = self.blobs.read(name)?;
+        if sealed.len() < 12 {
+            return None;
+        }
+        let (nonce, ciphertext) = sealed.split_at(12);
+        self.decrypt_bytes(nonce, ciphertext)
     }
 
     /// Bump the newest row's timestamp when the same text is copied again.
@@ -376,7 +605,8 @@ impl ClipStore {
         let Ok(conn) = self.conn.lock() else {
             return Vec::new();
         };
-        let sql = "SELECT id, created_at, kind, source_exe, len, nonce, ciphertext
+        let sql = "SELECT id, created_at, kind, source_exe, len, nonce, ciphertext,
+                          width, height
                    FROM clips ORDER BY created_at DESC, id DESC LIMIT ?1";
         let Ok(mut stmt) = conn.prepare(sql) else {
             return Vec::new();
@@ -390,6 +620,8 @@ impl ClipStore {
                 row.get::<_, i64>(4)?,
                 row.get::<_, Vec<u8>>(5)?,
                 row.get::<_, Vec<u8>>(6)?,
+                row.get::<_, Option<u32>>(7)?,
+                row.get::<_, Option<u32>>(8)?,
             ))
         });
         let Ok(mapped) = mapped else {
@@ -401,33 +633,81 @@ impl ClipStore {
             .collect()
     }
 
+    /// An image row's text is empty: nothing to match, and its thumbnail is not
+    /// decrypted for a list that only needs its size.
     #[allow(clippy::type_complexity)]
     fn to_clip(
         &self,
-        row: (i64, i64, String, Option<String>, i64, Vec<u8>, Vec<u8>),
+        row: (
+            i64,
+            i64,
+            String,
+            Option<String>,
+            i64,
+            Vec<u8>,
+            Vec<u8>,
+            Option<u32>,
+            Option<u32>,
+        ),
     ) -> Option<(Clip, String)> {
-        let (id, created_at, _kind, source_exe, len, nonce, ciphertext) = row;
-        let text = self.decrypt(&nonce, &ciphertext)?;
+        let (id, created_at, kind, source_exe, len, nonce, ciphertext, width, height) = row;
+        let kind = ClipKind::parse(&kind)?;
+        let (text, preview) = match kind {
+            ClipKind::Text => {
+                let text = self.decrypt(&nonce, &ciphertext)?;
+                let shown = preview(&text);
+                (text, shown)
+            }
+            ClipKind::Image => (
+                String::new(),
+                format!("Image {} \u{d7} {}", width?, height?),
+            ),
+        };
         let clip = Clip {
             id,
             created_at,
-            // One kind at v0.5. Read back and discarded rather than parsed, so
-            // adding `image` is a match here and nothing else.
-            kind: ClipKind::Text,
+            kind,
             source_exe,
             len: len as usize,
-            preview: preview(&text),
+            preview,
+            width,
+            height,
         };
         Some((clip, text))
     }
 
     fn decrypt(&self, nonce: &[u8], ciphertext: &[u8]) -> Option<String> {
-        let plain = self
-            .cipher
-            .decrypt(Nonce::from_slice(nonce), ciphertext)
-            .ok()?;
-        String::from_utf8(plain).ok()
+        String::from_utf8(self.decrypt_bytes(nonce, ciphertext)?).ok()
     }
+
+    fn decrypt_bytes(&self, nonce: &[u8], ciphertext: &[u8]) -> Option<Vec<u8>> {
+        if nonce.len() != 12 {
+            return None;
+        }
+        self.cipher
+            .decrypt(Nonce::from_slice(nonce), ciphertext)
+            .ok()
+    }
+}
+
+/// v0.14's columns, added in place. `ADD COLUMN` is cheap and keeps every
+/// existing row, which are all text and need none of them.
+fn migrate(conn: &Connection) -> std::io::Result<()> {
+    let have: Vec<String> = conn
+        .prepare("PRAGMA table_info(clips)")
+        .and_then(|mut s| s.query_map([], |r| r.get::<_, String>(1))?.collect())
+        .map_err(sql_err)?;
+    for (name, ty) in [
+        ("blob", "TEXT"),
+        ("width", "INTEGER"),
+        ("height", "INTEGER"),
+    ] {
+        if !have.iter().any(|c| c == name) {
+            conn.execute(&format!("ALTER TABLE clips ADD COLUMN {name} {ty}"), [])
+                .map_err(sql_err)?;
+        }
+    }
+    Ok(())
 }
 
 /// One line, capped. Newlines become spaces so a multi-line paste stays one row.
@@ -666,6 +946,182 @@ mod tests {
             ClipStore::with_connection(Connection::open_in_memory().unwrap(), &ClipKey::generate())
                 .unwrap();
         assert!(other.decrypt(&rows.0, &rows.1).is_none());
+    }
+
+    fn pixels(width: u32, height: u32, seed: u8) -> Rgba {
+        let pixels = (0..width * height)
+            .flat_map(|i| [seed, (i % 251) as u8, (i / 7 % 251) as u8, 255])
+            .collect();
+        Rgba {
+            width,
+            height,
+            pixels,
+        }
+    }
+
+    #[test]
+    fn v0_14_an_image_round_trips_with_a_thumbnail_and_a_size() {
+        let s = store();
+        let shot = pixels(600, 300, 1);
+        let id = s.insert_image(Some("SnippingTool.exe"), &shot).unwrap();
+
+        let clip = s.recent(1).remove(0);
+        assert_eq!(clip.kind, ClipKind::Image);
+        assert_eq!((clip.width, clip.height), (Some(600), Some(300)));
+        assert_eq!(clip.preview, "Image 600 \u{d7} 300");
+        let full = image::decode_png(&s.image(id).unwrap()).unwrap();
+        assert_eq!(full, shot);
+        let thumb = image::decode_png(&s.thumbnail(id).unwrap()).unwrap();
+        assert_eq!((thumb.width, thumb.height), (256, 128));
+        assert!(s.content(id).is_none(), "an image has no text");
+        assert!(matches!(s.fetch(id), Some(Content::Image(_))));
+    }
+
+    /// Neither half of an image is plaintext: not the row, not the blob.
+    #[test]
+    fn v0_14_neither_the_row_nor_the_blob_holds_the_png() {
+        let s = store();
+        let id = s.insert_image(None, &pixels(40, 40, 9)).unwrap();
+        let png = s.image(id).unwrap();
+        let sealed = match &s.blobs {
+            Blobs::Memory(map) => map.lock().unwrap().values().next().unwrap().clone(),
+            Blobs::Disk(_) => unreachable!(),
+        };
+        assert!(
+            !contains(&sealed, &png[..16]),
+            "the blob is the PNG in clear"
+        );
+        let row: Vec<u8> = s
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT ciphertext FROM clips", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            !contains(&row, b"IHDR"),
+            "the thumbnail is the PNG in clear"
+        );
+    }
+
+    /// Every destroying path takes the blob with it, or the directory grows
+    /// forever while `clips.db` shrinks.
+    #[test]
+    fn v0_14_delete_sweep_and_clear_each_destroy_the_blob() {
+        let s = store();
+        let a = s.insert_image_at(None, &pixels(8, 8, 1), 1).unwrap();
+        s.insert_image_at(None, &pixels(8, 8, 2), 10_000_000)
+            .unwrap();
+        s.insert_image_at(None, &pixels(8, 8, 3), 10_000_001)
+            .unwrap();
+        assert_eq!(s.blobs.names().unwrap().len(), 3);
+
+        assert_eq!(s.delete(a), 1);
+        assert_eq!(s.blobs.names().unwrap().len(), 2);
+        assert_eq!(s.sweep_at(Retention::OneDay, 10_000_002 + 86_400), 2);
+        assert!(s.blobs.names().unwrap().is_empty());
+
+        s.insert_image(None, &pixels(8, 8, 4)).unwrap();
+        s.insert(ClipKind::Text, None, "text too").unwrap();
+        assert_eq!(s.clear(), 2);
+        assert!(s.blobs.names().unwrap().is_empty());
+    }
+
+    #[test]
+    fn v0_14_reconcile_removes_orphan_files_and_rows_with_no_file() {
+        let s = store();
+        let id = s.insert_image(None, &pixels(4, 4, 1)).unwrap();
+        let orphan = s.blobs.write(b"no row names this").unwrap();
+        s.reconcile();
+        assert!(s.blobs.read(&orphan).is_none());
+        assert_eq!(s.len(), 1);
+
+        for name in s.blobs.names().unwrap() {
+            s.blobs.destroy(&name);
+        }
+        s.reconcile();
+        assert!(s.image(id).is_none());
+        assert!(s.is_empty(), "a row whose blob is gone is gone too");
+    }
+
+    /// An unreadable blob directory reads as an error, not as "no files", or
+    /// reconcile would delete every image row (review finding, v0.14).
+    #[test]
+    fn v0_14_reconcile_does_nothing_when_the_files_cannot_be_listed() {
+        // A file where the directory should be: `read_dir` fails on it every
+        // time, whatever else is in %TEMP%.
+        let not_a_dir =
+            std::env::temp_dir().join(format!("takyon-clips-file-{}", std::process::id()));
+        std::fs::write(&not_a_dir, b"").unwrap();
+        let s = ClipStore::build(
+            Connection::open_in_memory().unwrap(),
+            &ClipKey::generate(),
+            Blobs::Disk(not_a_dir.clone()),
+            None,
+        )
+        .unwrap();
+        s.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO clips (created_at, kind, len, nonce, ciphertext, blob, width, height)
+                 VALUES (1, 'image', 1, x'00', x'00', ?1, 1, 1)",
+                ["0".repeat(32)],
+            )
+            .unwrap();
+        s.reconcile();
+        assert_eq!(s.len(), 1, "a listing error deleted the row");
+        let _ = std::fs::remove_file(&not_a_dir);
+    }
+
+    #[test]
+    fn v0_14_copying_the_same_image_twice_moves_one_row() {
+        let s = store();
+        let first = s.insert_image_at(None, &pixels(30, 20, 5), 1_000).unwrap();
+        let again = s.insert_image_at(None, &pixels(30, 20, 5), 2_000).unwrap();
+        assert_eq!(first, again);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.blobs.names().unwrap().len(), 1);
+        assert_eq!(s.recent(1)[0].created_at, 2_000);
+    }
+
+    /// Same size, one pixel different: two screenshots, two rows.
+    #[test]
+    fn v0_14_a_near_identical_image_is_a_new_row() {
+        let s = store();
+        let a = pixels(300, 300, 5);
+        let mut b = a.clone();
+        b.pixels[4 * 1000] ^= 1;
+        s.insert_image_at(None, &a, 1_000).unwrap();
+        s.insert_image_at(None, &b, 2_000).unwrap();
+        assert_eq!(s.len(), 2);
+    }
+
+    /// A text search never matches an image row; an empty one lists it.
+    #[test]
+    fn v0_14_text_search_skips_images_and_the_empty_search_lists_them() {
+        let s = store();
+        s.insert_image_at(None, &pixels(4, 4, 1), 1).unwrap();
+        s.insert_at(ClipKind::Text, None, "Image notes", 2).unwrap();
+        assert_eq!(s.search("image", 10).len(), 1);
+        assert_eq!(s.search("", 10).len(), 2);
+    }
+
+    /// A v0.5 database has none of v0.14's columns. Opening it must add them
+    /// and keep every row.
+    #[test]
+    fn v0_14_a_v0_5_database_migrates_in_place() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE clips (id INTEGER PRIMARY KEY, created_at INTEGER NOT NULL,
+             kind TEXT NOT NULL, source_exe TEXT, len INTEGER NOT NULL,
+             nonce BLOB NOT NULL, ciphertext BLOB NOT NULL)",
+            [],
+        )
+        .unwrap();
+        let s = ClipStore::with_connection(conn, &ClipKey::generate()).unwrap();
+        s.insert(ClipKind::Text, None, "old shape").unwrap();
+        s.insert_image(None, &pixels(2, 2, 1)).unwrap();
+        assert_eq!(s.len(), 2);
     }
 
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {

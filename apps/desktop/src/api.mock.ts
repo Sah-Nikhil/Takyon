@@ -404,6 +404,16 @@ const CLIP_FIXTURES: Entry[] = [
     actions: ["paste", "copy_clip", "delete_clip"],
   },
   {
+    id: "clip:28",
+    title: "Image 1920 × 1080",
+    subtitle: "SnippingTool",
+    kind: "clip",
+    // An image clip's icon is its row id, a `takyon-clip` key (`query.rs`).
+    icon: "28",
+    score: 0,
+    actions: ["paste", "copy_clip", "delete_clip"],
+  },
+  {
     id: "clip:30",
     title: "SELECT id, created_at FROM clips ORDER BY created_at DESC",
     kind: "clip",
@@ -458,6 +468,31 @@ function focusCommands(q: string): Entry[] {
   return FOCUS_COMMAND_FIXTURES.filter((e) => words.every((w) => e.title.toLowerCase().includes(w)));
 }
 
+/**
+ * A 64x36 gradient as a PNG data URL, drawn once. Pixels are numbers rather
+ * than colour literals, and the same bytes every run keep screenshots stable.
+ */
+let mockImageUrl = "";
+/** Clip ids deleted this page load, so a delete visibly removes its row. */
+const deletedClips = new Set<string>();
+function mockImage(): string {
+  if (mockImageUrl) return mockImageUrl;
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 36;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  const data = ctx.createImageData(64, 36);
+  for (let i = 0; i < 64 * 36; i++) {
+    const x = i % 64;
+    const y = Math.floor(i / 64);
+    data.data.set([40 + x * 3, 60 + y * 4, 160 - x, 255], i * 4);
+  }
+  ctx.putImageData(data, 0, 0);
+  mockImageUrl = canvas.toDataURL("image/png");
+  return mockImageUrl;
+}
+
 /** Rows for the history surface. Day offsets so grouping has something to do. */
 const now = Math.floor(Date.now() / 1000);
 const CLIP_ROWS: ClipRow[] = [
@@ -468,6 +503,16 @@ const CLIP_ROWS: ClipRow[] = [
     sourceExe: "C:\\Program Files\\Mozilla Firefox\\firefox.exe",
     len: 44,
     preview: "https://github.com/tauri-apps/tauri/releases",
+  },
+  {
+    id: 28,
+    createdAt: now - 3_000,
+    kind: "image",
+    sourceExe: "C:\\Windows\\SystemApps\\SnippingTool.exe",
+    len: 1_482_113,
+    preview: "Image 1920 × 1080",
+    width: 1920,
+    height: 1080,
   },
   {
     id: 30,
@@ -502,7 +547,7 @@ const ACTION_LABELS: Record<string, Action> = {
   delete_clip: {
     id: "delete_clip",
     label: "Delete from history",
-    accelerator: "Ctrl+Backspace",
+    accelerator: "Ctrl+D",
   },
   open_command: { id: "open_command", label: "Open Command", accelerator: "Enter" },
 };
@@ -1250,7 +1295,9 @@ export const mock = {
     if (clips !== null) {
       return {
         seq,
-        entries: CLIP_FIXTURES.filter((e) => e.title.toLowerCase().includes(clips)),
+        entries: CLIP_FIXTURES.filter(
+          (e) => !deletedClips.has(e.id) && e.title.toLowerCase().includes(clips),
+        ),
         statusRow: false,
       };
     }
@@ -1305,11 +1352,12 @@ export const mock = {
   setCalcPolicy: async (mode: CalcPolicy) => {
     lastCalcPolicy = mode;
   },
-  activate: async (_entryId: string, actionId: string) => {
+  activate: async (entryId: string, actionId: string) => {
     // Launching is the one thing the browser build genuinely cannot do. Hiding is
     // what the real path does first, so the mock does that much and stops —
-    // except for the one action Rust does not hide for.
-    if (actionId !== "delete_clip") emitHide();
+    // except for the one action Rust does not hide for, which it applies.
+    if (actionId === "delete_clip") deletedClips.add(entryId);
+    else emitHide();
   },
   /** Retention, recorded rather than applied: there is no history here to sweep. */
   clipRetention: async (): Promise<ClipRetention> => lastRetention,
@@ -1319,15 +1367,20 @@ export const mock = {
     return 0;
   },
   clipClear: async () => 0,
+  clipDiskBytes: async () => 6_291_456,
+  /** A drawn gradient stands in for a screenshot; no protocol handler here. */
+  clipImageUrl: (_id: number, _part: "thumb" | "full") => mockImage(),
   /** Recorded, not applied: there is no native window here to resize. */
   setView: async (view: ViewKind | null) => {
     lastView = view;
   },
   clipPage: async (query: string, limit?: number) => {
     const q = query.trim().toLowerCase();
+    // Images have no text to match, as in Rust: a query never finds one.
+    const live = CLIP_ROWS.filter((c) => !deletedClips.has(`clip:${c.id}`));
     const hits = q
-      ? CLIP_ROWS.filter((c) => c.preview.toLowerCase().includes(q))
-      : CLIP_ROWS;
+      ? live.filter((c) => c.kind === "text" && c.preview.toLowerCase().includes(q))
+      : live;
     return hits.slice(0, limit ?? 200);
   },
   clipBang: async () => lastBang,

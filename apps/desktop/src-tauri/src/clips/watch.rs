@@ -195,12 +195,98 @@ fn capture() {
     if !should_capture(excluded_by_format(), exe.as_deref(), &ctx.blocklist) {
         return;
     }
-    // Already filtered by `text_within_cap`: blank and oversized never get here.
-    let Some(text) = read_text() else {
-        return;
+    // Text wins when both are offered: Excel and Word put a bitmap of the
+    // selection beside its text, and the text is what was copied (v0.14).
+    if has_format(windows::Win32::System::Ole::CF_UNICODETEXT.0 as u32) {
+        // Blank or oversized text falls through to any image beside it.
+        if let Some(text) = read_text() {
+            if let Err(e) = ctx.store.insert(ClipKind::Text, exe.as_deref(), &text) {
+                eprintln!("[takyon] a clip could not be stored: {e}");
+            }
+            return;
+        }
+    }
+    if let Some(pixels) = read_image() {
+        if let Err(e) = ctx.store.insert_image(exe.as_deref(), &pixels) {
+            eprintln!("[takyon] an image clip could not be stored: {e}");
+        }
+    }
+}
+
+#[cfg(windows)]
+fn has_format(format: u32) -> bool {
+    unsafe { windows::Win32::System::DataExchange::IsClipboardFormatAvailable(format).is_ok() }
+}
+
+/// The clipboard's image as pixels, or `None` if it holds none (v0.14).
+///
+/// `PNG` first (a browser's copy keeps alpha there), then `CF_DIBV5`, then
+/// `CF_DIB`. The bytes are copied out and the clipboard closed before decoding,
+/// so a 4K screenshot holds the desktop's clipboard for a memcpy, not an encode.
+#[cfg(windows)]
+pub fn read_image() -> Option<super::image::Rgba> {
+    use windows::core::w;
+    use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
+    use windows::Win32::System::Ole::{CF_DIB, CF_DIBV5};
+
+    let png = unsafe { RegisterClipboardFormatW(w!("PNG")) };
+    if png != 0 {
+        if let Some(pixels) = read_bytes(png).and_then(|b| super::image::decode_png(&b)) {
+            return Some(pixels);
+        }
+    }
+    [CF_DIBV5.0 as u32, CF_DIB.0 as u32]
+        .into_iter()
+        .find_map(|f| read_bytes(f).and_then(|b| super::image::from_dib(&b)))
+}
+
+/// Largest clipboard buffer copied out for an image. A DIB at `MAX_PIXELS` is
+/// 256 MB, so this refuses only what could never become a clip.
+#[cfg(windows)]
+const MAX_IMAGE_BUFFER: usize = 4 * super::image::MAX_PIXELS as usize + 4096;
+
+/// One clipboard format's raw bytes, copied out under the process lock.
+#[cfg(windows)]
+fn read_bytes(format: u32) -> Option<Vec<u8>> {
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     };
-    if let Err(e) = ctx.store.insert(ClipKind::Text, exe.as_deref(), &text) {
-        eprintln!("[takyon] a clip could not be stored: {e}");
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    let _clipboard = super::os::lock();
+    unsafe {
+        if IsClipboardFormatAvailable(format).is_err() {
+            return None;
+        }
+        let mut opened = false;
+        for attempt in 0..10 {
+            if OpenClipboard(None).is_ok() {
+                opened = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1)));
+        }
+        if !opened {
+            return None;
+        }
+        let bytes = (|| {
+            let handle = GetClipboardData(format).ok()?;
+            let global = HGLOBAL(handle.0);
+            let size = GlobalSize(global);
+            if size == 0 || size > MAX_IMAGE_BUFFER {
+                return None;
+            }
+            let ptr = GlobalLock(global) as *const u8;
+            if ptr.is_null() {
+                return None;
+            }
+            let bytes = std::slice::from_raw_parts(ptr, size).to_vec();
+            let _ = GlobalUnlock(global);
+            Some(bytes)
+        })();
+        let _ = CloseClipboard();
+        bytes
     }
 }
 

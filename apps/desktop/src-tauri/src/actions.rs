@@ -46,7 +46,7 @@ const TABLE: &[(ActionId, &str, Option<&str>)] = &[
     (COPY_ANSWER, "Copy answer", Some("Enter")),
     (PASTE, "Paste", Some("Enter")),
     (COPY_CLIP, "Copy to clipboard", Some("Ctrl+Enter")),
-    (DELETE_CLIP, "Delete from history", Some("Ctrl+Backspace")),
+    (DELETE_CLIP, "Delete from history", Some("Ctrl+D")),
     (OPEN_COMMAND, "Open Command", Some("Enter")),
 ];
 
