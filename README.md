@@ -10,7 +10,7 @@ character to the front of the line and the same box reaches further: `!s` answer
 a question from the live web with every source cited, and `!c` hands it to the AI
 CLI you are already signed in to.
 
-Windows only, built on Tauri 2. Current release is **0.11.1**.
+Windows only, built on Tauri 2. Current release is **0.12.3**.
 
 
 
