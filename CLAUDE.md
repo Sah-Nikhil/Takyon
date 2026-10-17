@@ -97,8 +97,8 @@ anyone touches the machine, so it is safe to start but only runs when idle.
 tzdb (**ADR-0038**; staleness watched by TBC-0016). The Calc card names both
 zones in words through `Entry.labels`. A bare time or zone never answers.
 
-**v0.14 image clips are built on Windows; the verify script is unrun**
-(`docs/verify/v0.14.md`). macOS image capture and paste-back are not built;
+**v0.14 image clips are built on Windows; only the verify script's driver has
+run** (`docs/verify/v0.14.md`); the hand-run steps have not. macOS image capture and paste-back are not built;
 v0.12 row 6 remains open. Files and link classification are also open
 (`docs/tbd/v0.14.md`).
 

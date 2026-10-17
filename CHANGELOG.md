@@ -20,7 +20,8 @@ renumbering below records a separate change to the phase plan.
 - **Image-blob crash recovery runs off the startup path.**
 
 **Still open.** macOS image capture and paste-back, file clips, and link
-classification remain in v0.14. `docs/verify/v0.14.md` has not been run.
+classification remain in v0.14. `docs/verify/v0.14.md`'s automated driver
+passes; its hand-run steps have not been run.
 
 **Downgrading below 0.12.3:** older versions show image clips as broken text
 rows and never clean up their blobs. Clear Clipboard History before downgrading.

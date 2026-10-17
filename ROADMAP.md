@@ -704,7 +704,8 @@ restart, and the Files page says plainly when the service is off.
 stored separately. Plan:
 [`docs/plans/v0.14-clipboard-kinds.md`](./docs/plans/v0.14-clipboard-kinds.md).
 
-The Windows image half is built; manual verification is unrun. The user lifted
+The Windows image half is built. `verify-drive-v0.14.ps1` passed on
+2026-10-17; the hand-run verification steps are unrun. The user lifted
 the macOS row 6 gate for Windows on 2026-10-17. macOS image capture and paste,
 `Files`, and link classification remain open.
 
