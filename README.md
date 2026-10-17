@@ -22,20 +22,13 @@ https://github.com/user-attachments/assets/b6913eb0-5b1e-408c-b6a9-f8ffae56e96b
 ---
 
 ## Contents
-
-- [What it does](#what-it-does)
-- [Install](#install)
-- [Using it](#using-it)
-- [Bangs](#bangs)
-- [Connecting your AI](#connecting-your-ai)
-- [Connecting web search](#connecting-web-search)
-- [Settings](#settings)
-- [How it works](#how-it-works)
-- [Performance](#performance)
-- [Development](#development)
-- [Testing](#testing)
-- [Documentation map](#documentation-map)
-- [Status and known limits](#status-and-known-limits)
+|                         |                    |                       |
+| ----------------------- | ------------------ | --------------------- |
+| [What it does](#what-it-does)           | [Install](#install)            | [Using it](#using-it)              |
+| [Bangs](#bangs)                   | [Connecting your AI](#connecting-your-ai) | [Connecting web search](#connecting-web-search) |
+| [Settings](#settings)               | [How it works](#how-it-works)       | [Performance](#performance)           |
+| [Development](#development)            | [Testing](#testing)           | [Documentation map](#documentation-map)     |
+|  | [Status and known limits](#status-and-known-limits)                   |                       |
 
 ---
 <!-- ![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png) -->
