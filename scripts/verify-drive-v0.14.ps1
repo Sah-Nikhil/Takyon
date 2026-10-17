@@ -10,8 +10,8 @@ consequential key is refused unless takyon holds the foreground.
 What it proves that the Rust and visual layers cannot: a real image copy is
 captured by the real watcher into a sealed blob under clips\, the History view
 draws it in the real WebView2, each delete path (Ctrl+D, the Ctrl+K
-menu) removes the row *and* shreds the blob, and Copy puts the image back on the
-clipboard with the same pixels.
+menu) removes the row *and* shreds the blob, Copy puts the image back on the
+clipboard with the same pixels, and a restart reconciles orphans both ways.
 
 Run under Windows PowerShell with -STA: WinForms' Clipboard.SetImage needs it.
   powershell -STA -NoProfile -ExecutionPolicy Bypass -File scripts\verify-drive-v0.14.ps1
@@ -460,6 +460,33 @@ try {
         } else { Skip "P1" "takyon lost the foreground"; Skip "P2" "same" }
     } else { Skip "P1" "could not type"; Skip "P2" "same" }
     Close-Views
+
+    Write-Output "--- R: restart reconciles orphans both ways (verify E2, E3)"
+    if ($script:sqlite) {
+        $names = @((Invoke-Db "clips.db" "SELECT blob FROM clips WHERE kind = 'image' ORDER BY id;") -split "`n" | Where-Object { $_ })
+        if ($names.Count -ge 2) {
+            Stop-App $app
+            $clips = Join-Path $DataDir "clips"
+            $orphan = Join-Path $clips ("f" * 32 + ".bin")
+            Copy-Item (Join-Path $clips "$($names[0]).bin") $orphan
+            Remove-Item (Join-Path $clips "$($names[1]).bin")
+            Set-Content (Join-Path $clips "half.tmp") "partial"
+            $app = Start-App
+            # Recovery runs on a background thread after the hotkey registers.
+            Start-Sleep -Seconds 3
+            Report "R1" (-not (Test-Path $orphan)) "orphan blob with no row was shredded on restart"
+            Report "R2" (-not (Test-Path (Join-Path $clips "half.tmp"))) "partial .tmp was swept on restart"
+            $gone = Invoke-Db "clips.db" "SELECT COUNT(*) FROM clips WHERE blob = '$($names[1])';"
+            $kept = Invoke-Db "clips.db" "SELECT COUNT(*) FROM clips WHERE blob = '$($names[0])';"
+            Report "R3" ($gone -eq "0" -and $kept -eq "1") "row with missing blob dropped ($gone left), intact row kept ($kept)"
+            if (Open-History) {
+                Start-Sleep -Milliseconds 800
+                [void](Save-Shot "R4-history-after-restart")
+                Skip "R4" "look: R4-history-after-restart.png shows History usable after recovery"
+                Close-Views
+            } else { Report "R4" $false "History did not open after the restart" }
+        } else { foreach ($id in "R1", "R2", "R3", "R4") { Skip $id "needs two image rows, found $($names.Count)" } }
+    } else { foreach ($id in "R1", "R2", "R3", "R4") { Skip $id "needs sqlite3" } }
 }
 finally {
     Start-Sleep -Milliseconds 400
