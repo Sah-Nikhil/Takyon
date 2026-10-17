@@ -1080,22 +1080,31 @@ pub fn run() {
                 agents::shellenv::hydrate();
             });
 
-            // Clipboard capture and the retention sweep, off the startup path.
-            // A blocklist that will not open is fatal to capture for the same
-            // reason `clips.db` is: without it there is no second exclusion
-            // mechanism (ADR-0006).
-            match (clip_store, blocklist) {
-                (Some(store), Some(blocklist)) => {
-                    let sweeper = store.clone();
-                    let prefs = prefs.clone();
-                    std::thread::spawn(move || loop {
+            // Recovery and the retention sweep, off the startup path, whenever
+            // `clips.db` opened: stored clips still expire and crash leftovers
+            // still go even when capture is off for want of a blocklist.
+            if let Some(store) = &clip_store {
+                let sweeper = store.clone();
+                let prefs = prefs.clone();
+                std::thread::spawn(move || {
+                    // Image-blob crash recovery (v0.14). Here, not in
+                    // `ClipStore::open`, which runs before the hotkey.
+                    sweeper.recover();
+                    loop {
                         let retention = stored_retention(&prefs);
                         let gone = sweeper.sweep(retention);
                         if gone > 0 {
                             eprintln!("[takyon] retention swept {gone} clips");
                         }
                         std::thread::sleep(SWEEP_EVERY);
-                    });
+                    }
+                });
+            }
+            // A blocklist that will not open is fatal to capture for the same
+            // reason `clips.db` is: without it there is no second exclusion
+            // mechanism (ADR-0006).
+            match (clip_store, blocklist) {
+                (Some(store), Some(blocklist)) => {
                     // The same `Arc` the settings window edits, so an added
                     // executable is excluded from the next capture, not the next
                     // launch.

@@ -4,8 +4,52 @@ Releases of Takyon, newest first. The installer and its SHA-256 live in
 `releases/v{version}/`, which is gitignored — this file is the record that
 survives.
 
-Phase numbers in `ROADMAP.md` and release versions are the same number. The one
-exception is recorded under v0.8 below.
+Release versions identify shipped builds under SemVer; phase numbers name plans
+in `ROADMAP.md`. A finished phase may advance the release minor, while partial
+phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
+renumbering below records a separate change to the phase plan.
+
+## v0.12.3 — Windows image clips (pending release)
+
+- **Image clips on Windows.** Copying an image or taking a `Win+Shift+S`
+  screenshot captures it in Clipboard History. Image thumbnails appear in the
+  Palette and `!v`; the selected clip has a full preview. Paste and copy-back
+  restore the image. Full PNGs live as encrypted blobs under `clips\`.
+- **Delete one Clip** from Clipboard History with its Delete button, `Ctrl+D`,
+  or the `Ctrl+K` action menu. Settings shows Clipboard History's on-disk size.
+- **Image-blob crash recovery runs off the startup path.**
+
+**Still open.** macOS image capture and paste-back, file clips, and link
+classification remain in v0.14. `docs/verify/v0.14.md` has not been run.
+
+**Downgrading below 0.12.3:** older versions show image clips as broken text
+rows and never clean up their blobs. Clear Clipboard History before downgrading.
+
+## v0.12.2 — Agent orchestration and Codex resume
+
+- Added the repository orchestration policy to `AGENTS.md` and `CLAUDE.md`.
+- Fixed Codex argument order so `exec resume <id>` accepts `-C` and `--sandbox`
+  while the prompt still travels on stdin.
+
+## v0.12.1 — Focus bar and CI polish
+
+- The Focus bar became a compact pill with a centered goal, controls that slide
+  out, scrolling for long goals, adjustable opacity, and screen-edge placement.
+  Its buttons stay inside the window during the animation.
+- CI checks out the repository before generating "What's changed" on every
+  event. Live and bench jobs run on pull requests when their paths change.
+
+## v0.12.0 — Focus and time zones
+
+- **Focus (phase v0.16).** Start Soft or Strict Focus sessions from the Palette.
+  Focus categories, app and website blocking, a floating bar, tray status,
+  settings, and session statistics shipped. The manual verification script is
+  unrun.
+- **Time zones (phase v0.17).** Calculator queries such as `12 pm utc`,
+  `3:30pm pst to ist`, and `time in tokyo` answer offline. The card names both
+  zones. The manual verification script is unrun.
+- Vela became the default theme family. DuckDuckGo parsing no longer panics on
+  a multibyte sequence after `%`.
 
 ## v0.11.1 — Agents that npm installed
 

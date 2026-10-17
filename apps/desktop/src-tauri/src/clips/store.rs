@@ -184,12 +184,18 @@ impl ClipStore {
         std::fs::create_dir_all(&dir)?;
         let key = key::load_or_create(&dir)?;
         let conn = Connection::open(dir.join("clips.db")).map_err(sql_err)?;
-        let store = Self::build(conn, &key, Blobs::disk(&dir)?, Some(dir))?;
-        // Once, before the watcher can write: a crash between a blob and its row
-        // leaves one without the other, and both halves are reconciled here.
-        store.blobs.sweep_partial();
-        store.reconcile();
-        Ok(store)
+        // No crash recovery here: this runs before the hotkey registers. The
+        // caller runs `recover` on a background thread (lib.rs).
+        Self::build(conn, &key, Blobs::disk(&dir)?, Some(dir))
+    }
+
+    /// Crash recovery, once per start, off the startup path: shred `.tmp`
+    /// half-writes, then reconcile. Safe beside a live watcher, since both hold
+    /// `publish` and a `.tmp` only exists inside an insert holding it.
+    pub fn recover(&self) {
+        let _publish = self.publish.lock().unwrap_or_else(|e| e.into_inner());
+        self.blobs.sweep_partial();
+        self.reconcile_locked();
     }
 
     /// The half that needs no filesystem, so a test can hand in its own key.
@@ -467,6 +473,11 @@ impl ClipStore {
     /// as empty, it would delete everything.
     pub fn reconcile(&self) {
         let _publish = self.publish.lock().unwrap_or_else(|e| e.into_inner());
+        self.reconcile_locked();
+    }
+
+    /// `reconcile` for a caller already holding `publish`.
+    fn reconcile_locked(&self) {
         let named: rusqlite::Result<Vec<String>> = match self.conn.lock() {
             Ok(conn) => conn
                 .prepare("SELECT blob FROM clips WHERE blob IS NOT NULL")

@@ -712,7 +712,7 @@ the macOS row 6 gate for Windows on 2026-10-17. macOS image capture and paste,
 - [x] Windows `clips/blobs.rs` — encrypted full-PNG blobs, capped at 32 MB encoded PNG and 64 MP, with **overwrite-then-unlink** and startup orphan reconciliation; deletion and retention paths shred blobs
 - [ ] Capture on both platforms. Windows reads text first, then registered `PNG`, `CF_DIBV5`, `CF_DIB`; `CF_HDROP`, macOS types, and `ClipboardStore::read` remain open
 - [ ] Paste-back for both kinds. Windows `Image` writes `CF_DIB` and registered `PNG`; macOS `Image`, `Files`, and link classification remain open
-- [ ] Palette image rows, `!v` preview, and Settings → Clipboard on-disk size. Rust image serving and `clip_disk_bytes` are built; UI integration and manual verification remain open
+- [x] Palette image rows, `!v` preview, and Settings → Clipboard on-disk size. Rust image serving, `clip_disk_bytes`, and UI integration are built; manual verification remains open
 - [x] **ADR-0008 amendment.** Image threat model, exclusion markers, blob destruction, and no-store serving are recorded
 
 **Exit criteria remain open:** copy a screenshot, summon `!v`, paste it into

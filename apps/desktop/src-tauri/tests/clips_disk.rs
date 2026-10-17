@@ -194,7 +194,7 @@ fn v0_14_an_image_blob_is_sealed_on_disk_and_gone_after_delete() {
     );
 }
 
-/// A crash between a blob and its row leaves one without the other. Reopening
+/// A crash between a blob and its row leaves one without the other. Recovery
 /// shreds the orphan file and drops the row whose file is gone.
 #[test]
 fn v0_14_reopening_reconciles_orphans_both_ways() {
@@ -211,9 +211,16 @@ fn v0_14_reopening_reconciles_orphans_both_ways() {
     std::fs::write(blobs.join("half.tmp"), b"partial").expect("partial");
 
     let store = ClipStore::open(Some(dir.to_owned())).expect("reopen");
+    // `open` runs before the hotkey, so it must leave recovery to `recover`.
+    assert_eq!(store.len(), 1, "open reconciled on the startup path");
+    assert!(
+        blobs.join("half.tmp").exists(),
+        "open swept on the startup path"
+    );
+    store.recover();
     assert!(
         store.is_empty(),
-        "a row whose blob vanished survived reopening"
+        "a row whose blob vanished survived recovery"
     );
     assert!(
         blob_files(dir.path()).is_empty(),
