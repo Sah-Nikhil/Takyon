@@ -22,6 +22,7 @@ https://github.com/user-attachments/assets/b6913eb0-5b1e-408c-b6a9-f8ffae56e96b
 ---
 
 ## Contents
+|  |  |  |
 | ----------------------- | ------------------ | --------------------- |
 | [What it does](#what-it-does)           | [Install](#install)            | [Using it](#using-it)              |
 | [Bangs](#bangs)                   | [Connecting your AI](#connecting-your-ai) | [Connecting web search](#connecting-web-search) |
