@@ -163,6 +163,11 @@ export const PAGES: SettingsPage[] = [
         label: "Keep history for",
         keywords: ["retention", "delete", "expiry", "how long"],
       },
+      {
+        id: "clip-disk",
+        label: "On disk",
+        keywords: ["size", "disk", "space", "storage", "images", "screenshots"],
+      },
       { id: "clip-bang", label: "Reach history with !v", keywords: ["bang", "!v"] },
       {
         id: "blocklist",

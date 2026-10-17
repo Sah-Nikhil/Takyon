@@ -65,9 +65,9 @@ caches it off the startup path, and hands it to `probe::resolve`, to every
 spawned Agent, and to Row 2's `PATH` walk. **The Windows half is measured; the
 unix half compiles and has never run** — `docs/verify/v0.11.md` §B is unexecuted,
 and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
-`v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc with a task
-checklist, and `v0.12-macos.md` carries a § Hand-off table breaking the port into
-15 agent-sized units with the files each one needs.
+`v0.13` the OS index, and the unfinished parts of `v0.14` clipboard kinds. Each
+has a plan doc with a task checklist, and `v0.12-macos.md` carries a § Hand-off
+table breaking the port into 15 agent-sized units with the files each one needs.
 
 **v0.11.1 Agent spawning is in, and one Agent phase is still planned.**
 v0.11.1 fixed `!c` and `!s` for npm-installed Agents: the prompt now travels on
@@ -96,6 +96,11 @@ anyone touches the machine, so it is safe to start but only runs when idle.
 `time in tokyo` answer in the calculator, offline, through `jiff`'s bundled
 tzdb (**ADR-0038**; staleness watched by TBC-0016). The Calc card names both
 zones in words through `Entry.labels`. A bare time or zone never answers.
+
+**v0.14 image clips are built on Windows; only the verify script's driver has
+run** (`docs/verify/v0.14.md`); the hand-run steps have not. macOS image capture and paste-back are not built;
+v0.12 row 6 remains open. Files and link classification are also open
+(`docs/tbd/v0.14.md`).
 
 Distribution is undecided — open source vs proprietary is an open question, so
 **avoid GPL dependencies** until it is settled (this already ruled out one option;

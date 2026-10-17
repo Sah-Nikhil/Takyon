@@ -67,6 +67,10 @@ struct ClipRow {
     source_exe: Option<String>,
     len: usize,
     preview: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    height: Option<u32>,
 }
 
 impl From<Clip> for ClipRow {
@@ -78,6 +82,8 @@ impl From<Clip> for ClipRow {
             source_exe: clip.source_exe,
             len: clip.len,
             preview: clip.preview,
+            width: clip.width,
+            height: clip.height,
         }
     }
 }
@@ -254,6 +260,12 @@ fn set_clip_retention(
 #[tauri::command]
 fn clip_clear(clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> usize {
     clips.inner().as_ref().map_or(0, |s| s.clear())
+}
+
+/// Bytes clipboard history occupies on disk, images included (v0.14).
+#[tauri::command]
+fn clip_disk_bytes(clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> u64 {
+    clips.inner().as_ref().map_or(0, |s| s.disk_bytes())
 }
 
 /// Open or close a full-window View (v0.5).
@@ -666,6 +678,48 @@ pub fn run() {
                 });
             },
         )
+        /*
+         Image clips (v0.14): `thumb-<id>` from the row, `full-<id>` from its
+         blob, decrypted per request. `no-store` on both, so WebView2 never
+         writes a screenshot into its disk cache (ADR-0008).
+        */
+        .register_asynchronous_uri_scheme_protocol(clips::SCHEME, |ctx, request, responder| {
+            let store = ctx
+                .app_handle()
+                .try_state::<Option<Arc<ClipStore>>>()
+                .and_then(|s| s.inner().clone());
+            let key = request
+                .uri()
+                .path()
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+
+            std::thread::spawn(move || {
+                let bytes =
+                    store
+                        .zip(clips::parse_image_key(&key))
+                        .and_then(|(s, part)| match part {
+                            clips::ImagePart::Thumb(id) => s.thumbnail(id),
+                            clips::ImagePart::Full(id) => s.image(id),
+                        });
+                let response = match bytes {
+                    Some(bytes) => tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", "image/png")
+                        .header("Cache-Control", "no-store")
+                        .body(bytes),
+                    None => tauri::http::Response::builder()
+                        .status(404)
+                        .header("Cache-Control", "no-store")
+                        .body(Vec::new()),
+                };
+                if let Ok(response) = response {
+                    responder.respond(response);
+                }
+            });
+        })
         .invoke_handler(tauri::generate_handler![
             dismiss,
             open_settings,
@@ -684,6 +738,7 @@ pub fn run() {
             clip_retention_impact,
             set_clip_retention,
             clip_clear,
+            clip_disk_bytes,
             clip_page,
             clip_bang,
             set_clip_bang,
@@ -1025,22 +1080,31 @@ pub fn run() {
                 agents::shellenv::hydrate();
             });
 
-            // Clipboard capture and the retention sweep, off the startup path.
-            // A blocklist that will not open is fatal to capture for the same
-            // reason `clips.db` is: without it there is no second exclusion
-            // mechanism (ADR-0006).
-            match (clip_store, blocklist) {
-                (Some(store), Some(blocklist)) => {
-                    let sweeper = store.clone();
-                    let prefs = prefs.clone();
-                    std::thread::spawn(move || loop {
+            // Recovery and the retention sweep, off the startup path, whenever
+            // `clips.db` opened: stored clips still expire and crash leftovers
+            // still go even when capture is off for want of a blocklist.
+            if let Some(store) = &clip_store {
+                let sweeper = store.clone();
+                let prefs = prefs.clone();
+                std::thread::spawn(move || {
+                    // Image-blob crash recovery (v0.14). Here, not in
+                    // `ClipStore::open`, which runs before the hotkey.
+                    sweeper.recover();
+                    loop {
                         let retention = stored_retention(&prefs);
                         let gone = sweeper.sweep(retention);
                         if gone > 0 {
                             eprintln!("[takyon] retention swept {gone} clips");
                         }
                         std::thread::sleep(SWEEP_EVERY);
-                    });
+                    }
+                });
+            }
+            // A blocklist that will not open is fatal to capture for the same
+            // reason `clips.db` is: without it there is no second exclusion
+            // mechanism (ADR-0006).
+            match (clip_store, blocklist) {
+                (Some(store), Some(blocklist)) => {
                     // The same `Arc` the settings window edits, so an added
                     // executable is excluded from the next capture, not the next
                     // launch.

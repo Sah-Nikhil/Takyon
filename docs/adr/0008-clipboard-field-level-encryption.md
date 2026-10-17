@@ -29,3 +29,24 @@ upgraded to SQLCipher later without changing the threat model's conclusion.
   feature needs the second one.
 - A future reader reaching for SQLCipher should know it was considered and
   deferred, not overlooked.
+
+## Amendment (v0.14): image clips
+
+The accepted metadata leak now includes the presence, dimensions, byte length,
+source and time of image clips. An attacker with the database and blob directory
+can see that you copied 31 characters from Bitwarden at 14:32 **and every
+screenshot you took is in there**, even though the pixels remain encrypted.
+Screenshots can contain a 2FA code, a bank page or a photographed passport, so
+this raises the value of the stolen files without changing the encryption rule.
+
+On Windows, the full PNG is stored as a nonce followed by AES-256-GCM ciphertext
+in a separate blob file; the thumbnail stays encrypted in the row. Windows'
+`ExcludeClipboardContentFromMonitorProcessing` marker and macOS's
+`org.nspasteboard.ConcealedType` marker apply to image clips as they do to text.
+The macOS image capture path remains unbuilt. The `takyon-clip` webview scheme
+decrypts an image per request and sends `Cache-Control: no-store` so WebView2
+does not cache the screenshot on disk.
+
+Deleting an image clip overwrites its blob with zeros, syncs it, then unlinks it.
+Overwrite on an SSD or other flash storage cannot guarantee physical erasure of
+old blocks; the file's bytes were encrypted before they reached storage.

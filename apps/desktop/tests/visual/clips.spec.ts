@@ -30,11 +30,13 @@ test("!v lists clipboard history, newest first", async ({ page }) => {
   await input.fill("!v");
 
   const rows = page.getByRole("option");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   await expect(rows.first()).toContainText("github.com/tauri-apps");
   await expect(rows.first()).toHaveAttribute("data-selected", "true");
+  // An image clip draws its thumbnail in the icon slot (v0.14).
+  await expect(rows.nth(1).locator("img")).toBeVisible();
 
-  await fitTo(page, 3);
+  await fitTo(page, 4);
   await expect(page).toHaveScreenshot("palette-clips.png");
 });
 
@@ -104,8 +106,82 @@ test("Enter on the command opens the history surface", async ({ page }) => {
   // an unscoped query matches "All Types" first.
   const rows = page.getByRole("listbox", { name: "Clipboard history" }).getByRole("option");
   await expect(rows.first()).toHaveAttribute("aria-selected", "true");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
+  // Delete is visible, not only a chord (v0.14): before it, a clip could only
+  // go by waiting out retention unless you knew the chord.
+  await expect(page.getByRole("button", { name: "Delete from history" })).toBeVisible();
+  await expect(page.getByText("Ctrl D", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("clipboard-history.png");
+});
+
+async function openHistory(page: Page) {
+  const input = await open(page);
+  await input.fill("clipboard");
+  await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
+  await input.press("Enter");
+  return page.getByRole("listbox", { name: "Clipboard history" }).getByRole("option");
+}
+
+test("an image clip shows its thumbnail, the image and its size", async ({ page }) => {
+  const rows = await openHistory(page);
+  const image = rows.filter({ hasText: "Image 1920" });
+  await expect(image.locator("img")).toBeVisible();
+  await image.click();
+
+  await expect(page.getByRole("img", { name: "Image 1920 × 1080" })).toBeVisible();
+  await expect(page.getByText("Dimensions")).toBeVisible();
+  await expect(page.getByText("1920 × 1080", { exact: true })).toBeVisible();
+  await expect(page.getByText("1.4 MB")).toBeVisible();
+  await expect(page.getByText("Characters")).toHaveCount(0);
+  await expect(page).toHaveScreenshot("clipboard-history-image.png");
+});
+
+test("the type filter narrows to images", async ({ page }) => {
+  const rows = await openHistory(page);
+  await page.getByRole("combobox", { name: "Type" }).click();
+  await page.getByRole("option", { name: "Images" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Image 1920");
+});
+
+/** The reported bug: yesterday's clip could not be removed until retention. */
+test("Delete removes one clip and selects its neighbour", async ({ page }) => {
+  const rows = await openHistory(page);
+  await rows.filter({ hasText: "SELECT id" }).click();
+  await page.getByRole("button", { name: "Delete from history" }).click();
+
+  await expect(rows).toHaveCount(3);
+  await expect(rows.filter({ hasText: "SELECT id" })).toHaveCount(0);
+  // The row below takes the selection, not the newest: mid-cleanup, the user
+  // keeps their place.
+  await expect(rows.filter({ hasText: "com.v3sper.takyon" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("Ctrl+D deletes the selected clip", async ({ page }) => {
+  const rows = await openHistory(page);
+  await page.getByPlaceholder("Type to filter entries...").press("Control+d");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.filter({ hasText: "github.com" })).toHaveCount(0);
+});
+
+/** The footer advertised Ctrl K here before it did anything. */
+test("Ctrl+K in the history opens the action menu, and Delete works from it", async ({
+  page,
+}) => {
+  const rows = await openHistory(page);
+  await page.getByPlaceholder("Type to filter entries...").press("Control+k");
+  const menu = page.getByLabel("Actions");
+  await expect(menu.getByText("Paste")).toBeVisible();
+  await expect(menu.getByText("Delete from history")).toBeVisible();
+
+  await menu.getByText("Delete from history").click();
+  await expect(menu).toHaveCount(0);
+  await expect(rows).toHaveCount(3);
+  // Focus is back in the filter, so typing carries on filtering.
+  await expect(page.getByPlaceholder("Type to filter entries...")).toBeFocused();
 });
 
 test("the surface filters, and Escape goes back rather than dismissing", async ({
@@ -136,7 +212,7 @@ test("Ctrl+K on a clip offers paste, copy and delete", async ({ page }) => {
   await expect(menu.getByText("Paste")).toBeVisible();
   await expect(menu.getByText("Copy to clipboard")).toBeVisible();
   await expect(menu.getByText("Delete from history")).toBeVisible();
-  await expect(menu.getByText("Ctrl+Backspace")).toBeVisible();
+  await expect(menu.getByText("Ctrl+D")).toBeVisible();
   // Nothing that touches a file: a Clip has no path, and offering one would put
   // clipboard content into Explorer as a path.
   await expect(menu.getByText("Open file location")).toHaveCount(0);

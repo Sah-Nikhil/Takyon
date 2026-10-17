@@ -671,3 +671,11 @@ test("the same switch works once the write is allowed again", async ({ page }) =
   // The stale error must clear, or it reads as describing the write that worked.
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+/** v0.14: images make history heavy, so its size is a number on the page. */
+test("Clipboard History shows what history occupies on disk", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Clipboard History" }).click();
+  await expect(page.getByText("On disk")).toBeVisible();
+  await expect(page.getByText("6.0 MB")).toBeVisible();
+});

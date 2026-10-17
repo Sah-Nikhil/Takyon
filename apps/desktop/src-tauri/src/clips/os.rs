@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use super::blocklist::Blocklist;
 use super::paste::{Paste, FOCUS_SETTLE_MS};
-use super::store::{ClipKind, ClipStore};
+use super::store::ClipStore;
 
 /// The system clipboard: read, write, paste back, and watch for changes.
 ///
@@ -27,6 +27,14 @@ pub trait ClipboardStore: Send + Sync {
 
     /// Replace the clipboard with `text`.
     fn write_text(&self, text: &str) -> Result<(), String>;
+
+    /// Replace the clipboard with an image, given as PNG bytes.
+    ///
+    /// Defaulted to a refusal: only Windows captures images (v0.14), so only
+    /// Windows can hold one to put back. macOS is `docs/tbd/v0.14.md` §1.
+    fn write_image(&self, _png: &[u8]) -> Result<(), String> {
+        Err("Image clips cannot be pasted on this platform yet.".into())
+    }
 
     /// Synthesise the paste chord into whatever holds focus.
     ///
@@ -51,13 +59,12 @@ pub trait ClipboardStore: Send + Sync {
         self.send_paste_chord()
     }
 
-    /// Put a clip on the clipboard, dispatching on its kind.
-    ///
-    /// One kind at v0.5. The match is the seam images and file lists arrive
-    /// through, so it is written rather than assumed away.
+    /// Put a clip on the clipboard in its own format. File lists are the arm
+    /// still to come.
     fn write(&self, paste: &Paste<'_>) -> Result<(), String> {
-        match paste.kind {
-            ClipKind::Text => self.write_text(paste.text),
+        match paste {
+            Paste::Text(text) => self.write_text(text),
+            Paste::Image(png) => self.write_image(png),
         }
     }
 }
@@ -104,6 +111,12 @@ impl ClipboardStore for WindowsClipboard {
 
     fn write_text(&self, text: &str) -> Result<(), String> {
         crate::launch::copy_to_clipboard(text)
+    }
+
+    fn write_image(&self, png: &[u8]) -> Result<(), String> {
+        let pixels = super::image::decode_png(png)
+            .ok_or_else(|| "That image clip could not be decoded.".to_string())?;
+        crate::launch::copy_image_to_clipboard(&super::image::to_dib(&pixels), png)
     }
 
     fn send_paste_chord(&self) -> Result<(), String> {
@@ -253,15 +266,19 @@ mod tests {
     #[test]
     fn v0_11_paste_back_writes_before_it_presses() {
         let fake = Fake::default();
-        fake.paste_back(&Paste {
-            kind: ClipKind::Text,
-            text: "hello",
-        })
-        .unwrap();
+        fake.paste_back(&Paste::Text("hello")).unwrap();
 
         let written = fake.written.lock().unwrap();
         assert_eq!(written.as_slice(), ["hello"]);
         assert_eq!(fake.chords.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+
+    /// One test at a time on the real clipboard. `lock` covers one open/close,
+    /// not a write-then-read, so two parallel round trips read each other's.
+    #[cfg(windows)]
+    fn real_clipboard() -> std::sync::MutexGuard<'static, ()> {
+        static REAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        REAL.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The real Win32 path, end to end, because the fake above proves only that
@@ -271,6 +288,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn v0_11_the_windows_clipboard_round_trips() {
+        let _real = real_clipboard();
         let clipboard = host();
         let before = clipboard.read_text();
 
@@ -288,12 +306,44 @@ mod tests {
     #[test]
     fn v0_11_a_plain_write_presses_nothing() {
         let fake = Fake::default();
-        fake.write(&Paste {
-            kind: ClipKind::Text,
-            text: "hello",
-        })
-        .unwrap();
+        fake.write(&Paste::Text("hello")).unwrap();
 
         assert_eq!(fake.chords.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    /// A platform with no image arm refuses in words and presses nothing,
+    /// rather than pasting whatever text was on the clipboard before.
+    #[test]
+    fn v0_14_an_image_on_a_platform_without_images_is_refused() {
+        let fake = Fake::default();
+        assert!(fake.paste_back(&Paste::Image(&[1, 2, 3])).is_err());
+        assert_eq!(fake.chords.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert!(fake.written.lock().unwrap().is_empty());
+    }
+
+    /// The real Win32 image path: write a clip, read the DIB back as the
+    /// watcher would, and get the same pixels. Restores the text first held.
+    #[cfg(windows)]
+    #[test]
+    fn v0_14_the_windows_clipboard_round_trips_an_image() {
+        use super::super::image::{decode_png, encode_png, Rgba};
+
+        let _real = real_clipboard();
+        let clipboard = host();
+        let before = clipboard.read_text();
+        let shot = Rgba {
+            width: 3,
+            height: 2,
+            pixels: (0..24)
+                .map(|i| if i % 4 == 3 { 255 } else { i * 10 })
+                .collect(),
+        };
+        clipboard.write_image(&encode_png(&shot).unwrap()).unwrap();
+        let read = super::super::watch::read_image();
+        if let Some(before) = before {
+            let _ = clipboard.write_text(&before);
+        }
+        assert_eq!(read, Some(shot.clone()));
+        assert!(decode_png(&encode_png(&shot).unwrap()).is_some());
     }
 }

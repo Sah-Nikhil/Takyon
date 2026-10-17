@@ -8,18 +8,22 @@
  * Two panes, Raycast's shape. Left is the history grouped by day; right is the
  * selected clip with its metadata. **Only previews are in the list** — the full
  * content is fetched per clip, so a filter never ships every matching secret
- * into the webview.
+ * into the webview. Images (v0.14) arrive by URL through `takyon-clip`.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FOOTER_HEIGHT, type ClipRow } from "@takyon/shared";
+import { Trash } from "@phosphor-icons/react";
+import { FOOTER_HEIGHT, type Action, type ClipRow } from "@takyon/shared";
 import * as api from "@/api";
 import { Select } from "@/components/Select";
+import { ActionMenu } from "./ActionMenu";
+import { formatBytes, neighbourAfterDelete } from "./clips";
 
-/** Type filter. One kind stored at v0.5; the control is the seam for images. */
+/** Type filter, one entry per `ClipKind` that Rust stores. */
 const TYPES = [
   { id: "all", label: "All Types" },
   { id: "text", label: "Text" },
+  { id: "image", label: "Images" },
 ] as const;
 
 type TypeId = (typeof TYPES)[number]["id"];
@@ -61,12 +65,21 @@ function appName(exe: string | undefined): string {
 
 function Information({ clip }: { clip: ClipRow }) {
   const when = new Date(clip.createdAt * 1000);
-  const rows: [string, string][] = [
-    ["Source", appName(clip.sourceExe)],
-    ["Type", clip.kind === "text" ? "Text" : clip.kind],
-    ["Characters", clip.len.toLocaleString()],
-    ["Copied", when.toLocaleString()],
-  ];
+  const rows: [string, string][] =
+    clip.kind === "image"
+      ? [
+          ["Source", appName(clip.sourceExe)],
+          ["Type", "Image"],
+          ["Dimensions", `${clip.width ?? "?"} × ${clip.height ?? "?"}`],
+          ["Size", formatBytes(clip.len)],
+          ["Copied", when.toLocaleString()],
+        ]
+      : [
+          ["Source", appName(clip.sourceExe)],
+          ["Type", "Text"],
+          ["Characters", clip.len.toLocaleString()],
+          ["Copied", when.toLocaleString()],
+        ];
   return (
     <div className="mt-4">
       <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-fg/50">
@@ -84,25 +97,39 @@ function Information({ clip }: { clip: ClipRow }) {
   );
 }
 
+function Hint({ label, keys }: { label: string; keys: string }) {
+  return (
+    <>
+      <span>{label}</span>
+      <kbd className="rounded border border-edge bg-key px-1.5 py-0.5 text-[10px] leading-none text-fg/64">
+        {keys}
+      </kbd>
+    </>
+  );
+}
+
 export function ClipboardHistory({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState<TypeId>("all");
   const [clips, setClips] = useState<ClipRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
+  const [menu, setMenu] = useState<Action[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  /** `prefer` survives a reload when still listed; else the newest match. */
   const load = useCallback(
-    (q: string) => {
+    (q: string, prefer?: number | null) => {
       void api.clipPage(q).then((rows) => {
         const shown = type === "all" ? rows : rows.filter((c) => c.kind === type);
         setClips(shown);
-        // Selection follows the newest match. Keeping a selection that filtered
-        // itself out would leave the detail pane describing an invisible row.
-        setSelected((current) =>
-          current !== null && shown.some((c) => c.id === current)
-            ? current
-            : (shown[0]?.id ?? null),
-        );
+        // A selection that filtered itself out would leave the detail pane
+        // describing an invisible row.
+        setSelected((current) => {
+          const want = prefer === undefined ? current : prefer;
+          return want !== null && shown.some((c) => c.id === want)
+            ? want
+            : (shown[0]?.id ?? null);
+        });
       });
     },
     [type],
@@ -128,19 +155,39 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
   const run = useCallback(
     (actionId: string) => {
       if (selected === null) return;
+      const next = neighbourAfterDelete(clips, selected);
       void api.activate(`clip:${selected}`, actionId).then(() => {
         // Deleting edits the list being read, so it is the one action that
         // reloads rather than dismissing.
-        if (actionId === "delete_clip") load(query);
+        if (actionId === "delete_clip") load(query, next);
       });
     },
-    [selected, load, query],
+    [selected, clips, load, query],
   );
+
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    inputRef.current?.focus();
+  }, []);
+
+  /*
+    No `setActionMenu`: that resizes the Palette for its list, and this View is
+    already `VIEW_HEIGHT`. The menu overlays the surface instead.
+   */
+  const openMenu = useCallback(() => {
+    if (selected === null) return;
+    void api.actionsFor(`clip:${selected}`).then((actions) => {
+      if (actions.length > 0) setMenu(actions);
+    });
+  }, [selected]);
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate shadow-panel"
+      className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-plate shadow-panel"
       onKeyDown={(e) => {
+        // The menu handles its own keys; letting them through would move the
+        // selection under a menu still describing the old one.
+        if (menu) return;
         if (e.key === "Escape") {
           // Back one step, not out: Escape here returns to the search that
           // opened this, the same way it closes the action menu first.
@@ -158,9 +205,12 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
         } else if (e.key === "Enter") {
           e.preventDefault();
           run(e.ctrlKey ? "copy_clip" : "paste");
-        } else if (e.key === "Backspace" && e.ctrlKey) {
+        } else if (e.key.toLowerCase() === "d" && e.ctrlKey) {
           e.preventDefault();
           run("delete_clip");
+        } else if (e.key.toLowerCase() === "k" && e.ctrlKey) {
+          e.preventDefault();
+          openMenu();
         }
       }}
     >
@@ -217,8 +267,17 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
                   data-selected={clip.id === selected || undefined}
                   onClick={() => setSelected(clip.id)}
                   onDoubleClick={() => run("paste")}
-                  className="flex w-full items-center rounded-md px-2 py-2 text-left data-[selected=true]:bg-row-selected"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left data-[selected=true]:bg-row-selected"
                 >
+                  {clip.kind === "image" && (
+                    // Fixed box so a late thumbnail never shifts the text.
+                    <img
+                      src={api.clipImageUrl(clip.id, "thumb")}
+                      alt=""
+                      className="h-5 w-8 shrink-0 rounded-sm object-cover"
+                      decoding="async"
+                    />
+                  )}
                   <span className="truncate text-[13px] text-fg">{clip.preview}</span>
                 </button>
               ))}
@@ -229,15 +288,33 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
         <div className="min-w-0 flex-1 overflow-y-auto p-4">
           {current ? (
             <>
-              {/*
-                `pre`, not a div: a clip is text the user copied and whitespace is
-                part of it. Wrapped rather than scrolled sideways, because a long
-                line read left to right is the common case.
-               */}
-              <pre className="max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-seam bg-control p-3 font-mono text-[12px] leading-relaxed text-fg/92">
-                {current.preview}
-              </pre>
+              {current.kind === "image" ? (
+                <div className="grid h-[220px] place-items-center overflow-hidden rounded-lg border border-seam bg-control p-2">
+                  <img
+                    src={api.clipImageUrl(current.id, "full")}
+                    alt={current.preview}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              ) : (
+                /*
+                  `pre`, not a div: a clip is text the user copied and whitespace
+                  is part of it. Wrapped rather than scrolled sideways, because a
+                  long line read left to right is the common case.
+                 */
+                <pre className="max-h-[220px] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-seam bg-control p-3 font-mono text-[12px] leading-relaxed text-fg/92">
+                  {current.preview}
+                </pre>
+              )}
               <Information clip={current} />
+              <button
+                type="button"
+                onClick={() => run("delete_clip")}
+                className="mt-4 flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1.5 text-[12px] text-fg/72 hover:bg-row-selected hover:text-fg"
+              >
+                <Trash weight="duotone" className="size-3.5" />
+                Delete from history
+              </button>
             </>
           ) : (
             <div className="text-[13px] text-fg/56">Select a clip to see it here.</div>
@@ -251,19 +328,28 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
       >
         <span className="text-[11px] text-fg/60">Clipboard History</span>
         <div className="flex items-center gap-2 text-[11px] text-fg/60">
-          <span>Paste</span>
-          <kbd className="rounded border border-edge bg-key px-1.5 py-0.5 text-[10px] leading-none text-fg/64">
-            ↵
-          </kbd>
+          <Hint label="Paste" keys="↵" />
           <span aria-hidden className="text-fg/15">
             |
           </span>
-          <span>Actions</span>
-          <kbd className="rounded border border-edge bg-key px-1.5 py-0.5 text-[10px] leading-none text-fg/64">
-            Ctrl K
-          </kbd>
+          <Hint label="Delete" keys="Ctrl D" />
+          <span aria-hidden className="text-fg/15">
+            |
+          </span>
+          <Hint label="Actions" keys="Ctrl K" />
         </div>
       </div>
+
+      {menu && (
+        <ActionMenu
+          actions={menu}
+          onRun={(actionId) => {
+            closeMenu();
+            run(actionId);
+          }}
+          onClose={closeMenu}
+        />
+      )}
     </div>
   );
 }

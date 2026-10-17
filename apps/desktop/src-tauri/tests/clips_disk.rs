@@ -146,3 +146,84 @@ fn v0_5_a_sweep_keeps_everything_inside_the_window() {
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].preview, "kept");
 }
+
+/// An image whose pixels spell out a recognisable run, so a leak is findable.
+fn screenshot() -> takyon_lib::clips::image::Rgba {
+    let pixels = (0..64 * 64)
+        .flat_map(|i| [(i % 256) as u8, 0x5a, (i / 64) as u8, 255])
+        .collect();
+    takyon_lib::clips::image::Rgba {
+        width: 64,
+        height: 64,
+        pixels,
+    }
+}
+
+/// Every blob file under `clips\`, by path.
+fn blob_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(dir.join(takyon_lib::clips::blobs::DIR))
+        .map(|d| d.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default()
+}
+
+/// v0.14's exit criterion on disk: the blob is ciphertext, and deleting the
+/// row takes the file with it.
+#[test]
+fn v0_14_an_image_blob_is_sealed_on_disk_and_gone_after_delete() {
+    let dir = TempDir::new("clips-image");
+    let store = ClipStore::open(Some(dir.to_owned())).expect("open");
+    let id = store.insert_image(None, &screenshot()).expect("insert");
+    let png = store.image(id).expect("decrypts");
+
+    let files = blob_files(dir.path());
+    assert_eq!(files.len(), 1, "one image, one blob file");
+    let sealed = std::fs::read(&files[0]).expect("read blob");
+    assert!(
+        !contains(&sealed, &png[..32]),
+        "the blob holds the PNG in clear"
+    );
+    assert!(
+        !contains(&on_disk(dir.path()), b"IHDR"),
+        "clips.db holds a PNG in clear"
+    );
+
+    assert_eq!(store.delete(id), 1);
+    assert!(
+        blob_files(dir.path()).is_empty(),
+        "the blob outlived its row"
+    );
+}
+
+/// A crash between a blob and its row leaves one without the other. Recovery
+/// shreds the orphan file and drops the row whose file is gone.
+#[test]
+fn v0_14_reopening_reconciles_orphans_both_ways() {
+    let dir = TempDir::new("clips-orphans");
+    let store = ClipStore::open(Some(dir.to_owned())).expect("open");
+    store.insert_image(None, &screenshot()).expect("insert");
+    drop(store);
+
+    let blobs = dir.path().join(takyon_lib::clips::blobs::DIR);
+    for file in blob_files(dir.path()) {
+        std::fs::remove_file(file).expect("remove");
+    }
+    std::fs::write(blobs.join(format!("{}.bin", "0".repeat(32))), b"orphan").expect("orphan");
+    std::fs::write(blobs.join("half.tmp"), b"partial").expect("partial");
+
+    let store = ClipStore::open(Some(dir.to_owned())).expect("reopen");
+    // `open` runs before the hotkey, so it must leave recovery to `recover`.
+    assert_eq!(store.len(), 1, "open reconciled on the startup path");
+    assert!(
+        blobs.join("half.tmp").exists(),
+        "open swept on the startup path"
+    );
+    store.recover();
+    assert!(
+        store.is_empty(),
+        "a row whose blob vanished survived recovery"
+    );
+    assert!(
+        blob_files(dir.path()).is_empty(),
+        "an orphan or partial file survived"
+    );
+}

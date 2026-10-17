@@ -738,7 +738,7 @@ export function Palette() {
           // Destroys the clip, and only a clip: the chord is not offered on any
           // other Kind, and sending it would surface an error toast for a
           // keystroke that should have done nothing.
-          if (e.key === "Backspace" && e.ctrlKey) {
+          if (e.key.toLowerCase() === "d" && e.ctrlKey) {
             if (selectedKind === "clip") {
               e.preventDefault();
               run(selected, "delete_clip");
