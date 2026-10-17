@@ -12,11 +12,12 @@ CLI you are already signed in to.
 
 Windows only, built on Tauri 2. Current release is **0.11.1**.
 
-https://github.com/user-attachments/assets/09e3139d-1733-439d-9d12-37144a444d52
 
-*Thirty-three seconds: the hotkey, an app, a calculation, clipboard history, the
-file index, a Windows setting, `!c` handing a line to Claude Code, and `!s`
-reading four pages and citing them.*
+
+https://github.com/user-attachments/assets/b6913eb0-5b1e-408c-b6a9-f8ffae56e96b
+
+
+<!-- *Thirty-three seconds: the hotkey, an app, a calculation, clipboard history, the file index, a Windows setting, `!c` handing a line to Claude Code, and `!s` reading four pages and citing them.* -->
 
 ![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png)
 
