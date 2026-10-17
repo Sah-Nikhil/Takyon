@@ -19,8 +19,6 @@ https://github.com/user-attachments/assets/b6913eb0-5b1e-408c-b6a9-f8ffae56e96b
 
 <!-- *Thirty-three seconds: the hotkey, an app, a calculation, clipboard history, the file index, a Windows setting, `!c` handing a line to Claude Code, and `!s` reading four pages and citing them.* -->
 
-![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png)
-
 ---
 
 ## Contents
@@ -40,7 +38,7 @@ https://github.com/user-attachments/assets/b6913eb0-5b1e-408c-b6a9-f8ffae56e96b
 - [Status and known limits](#status-and-known-limits)
 
 ---
-
+<!-- ![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png) -->
 ## What it does
 
 **Launches things.** Start menu shortcuts, Store and UWP apps, executables on
