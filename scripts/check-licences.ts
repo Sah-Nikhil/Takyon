@@ -1,5 +1,6 @@
 /**
- * Enforce CLAUDE.md's "avoid GPL dependencies" while distribution is undecided.
+ * Enforce CLAUDE.md's "avoid GPL dependencies": Takyon is CC-BY-NC-SA-4.0 (ADR-0039),
+ * and copyleft or CC-SA/NC terms in a dependency would bind the combined binary.
  *
  * Every crate in `Cargo.lock` (all targets) and every installed JS package must be
  * usable under at least one licence outside the copyleft families below. An SPDX

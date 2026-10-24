@@ -76,9 +76,9 @@ running. **v0.15** (`docs/plans/v0.15-agent-streaming.md`) moves each Agent to a
 live two-way process, t3code's chat path, for token streaming and a permission UI,
 superseding v0.8's fresh process per Turn.
 
-Distribution is undecided — open source vs proprietary is an open question, so
-**avoid GPL dependencies** until it is settled (this already ruled out one option;
-see ADR-0005).
+**Licence: source-available under `CC-BY-NC-SA-4.0` (ADR-0039)**, not open
+source. **GPL dependencies stay banned**: GPL cannot ship in a noncommercial
+binary.
 
 ## Communication
 **Always use the `/homonid` skill in this repo at max setting.** Invoke it at the start of every

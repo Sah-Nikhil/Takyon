@@ -42,10 +42,11 @@ function local(skipPreflight: boolean) {
   /*
     `tauri build`, never a bare `cargo build --release`: that exe launches with a dead
     frontend. `tauri build` runs `beforeBuildCommand` and sets the TAURI_ENV_* asset
-    embedding needs (CLAUDE.md, Gotchas).
+    embedding needs (CLAUDE.md, Gotchas). Root `build` script, so the notices
+    bundle config applies here as in CI.
   */
   console.log("\nBuilding the installer (tauri build)...\n");
-  const code = runInherit(["bun", "--cwd=apps/desktop", "run", "tauri", "build"], ROOT);
+  const code = runInherit(["bun", "run", "build"], ROOT);
   if (code !== 0) {
     console.error(`tauri build failed (exit ${code})`);
     process.exit(code);

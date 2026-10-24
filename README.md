@@ -470,5 +470,23 @@ appearance, PATH hydration.
 
 ## Licence
 
-Undecided. Open source against proprietary is still an open question, which is
-why the project avoids GPL dependencies.
+Takyon is **source-available, not open source.** Its code and documentation
+are licensed under [Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+(`CC-BY-NC-SA-4.0`). The full text is in [LICENSE](./LICENSE).
+
+- **You may** use, study and modify Takyon for any noncommercial purpose, and
+  share it or your changes for free.
+- **You must** credit Takyon, say what you changed, and share anything based
+  on it under the same licence.
+- **You may not** sell Takyon, charge for copies, or use any part of its code
+  in a commercial product or service.
+- **Using it at work is fine.** [NOTICE](./NOTICE) adds a permission for any
+  individual to run Takyon as their own productivity tool, including in their
+  job.
+
+The name and logo are not covered by the licence; see
+[TRADEMARK.md](./TRADEMARK.md). Contributions are welcome under the terms in
+[CONTRIBUTING.md](./CONTRIBUTING.md). Third-party components keep their own
+licences, and their notices ship with every installer. Why this licence, and
+not an open source one: [ADR-0039](./docs/adr/0039-source-available-under-cc-by-nc-sa.md).

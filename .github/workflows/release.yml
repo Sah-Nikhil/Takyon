@@ -150,7 +150,8 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile
-      - run: bun --cwd=apps/desktop run tauri build --target aarch64-apple-darwin
+      # `--config` bundles THIRD_PARTY_NOTICES.txt, as the root `build` script does.
+      - run: bun --cwd=apps/desktop run tauri build --config src-tauri/tauri.bundle.conf.json --target aarch64-apple-darwin
       - name: Record the disk image hash
         run: |
           cd apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg

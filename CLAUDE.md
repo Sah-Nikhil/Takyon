@@ -102,10 +102,13 @@ run** (`docs/verify/v0.14.md`); the hand-run steps have not. macOS image capture
 v0.12 row 6 remains open. Files and link classification are also open
 (`docs/tbd/v0.14.md`).
 
-Distribution is undecided — open source vs proprietary is an open question, so
-**avoid GPL dependencies** until it is settled (this already ruled out one option;
-see ADR-0005). `bun run check:licences` enforces it over every crate and JS
-package, LGPL included, and runs in `lint` and CI.
+**Licence: source-available under `CC-BY-NC-SA-4.0` (ADR-0039)**, not open
+source; never call it open source in copy or docs. `LICENSE` is the verbatim CC
+text and is never edited; the work-use permission lives in `NOTICE`, the name
+and logo in `TRADEMARK.md`, contribution terms in `CONTRIBUTING.md`. **GPL
+dependencies stay banned**: GPL forbids added restrictions, so it cannot ship in
+a noncommercial binary. `bun run check:licences` enforces it over every crate and
+JS package, LGPL and CC-SA/NC included, and runs in `lint` and CI.
 
 ## Communication
 **Always use the `/homonid` skill in this repo at max setting.** Invoke it at the start of every
@@ -405,6 +408,10 @@ the next.
   in the one way that looks like a Rust bug. `tauri build` runs
   `beforeBuildCommand` and sets the `TAURI_ENV_*` the asset embedding depends on;
   cargo alone does neither. Cost an hour of chasing a phantom regression once.
+  A bare `tauri build` is wrong too: only the root `build` script passes
+  `--config src-tauri/tauri.bundle.conf.json`, which bundles
+  `THIRD_PARTY_NOTICES.txt`. Without it the installer ships no dependency
+  notices, which MIT and Apache-2.0 require (ADR-0039).
 - **An Agent's prompt never goes in argv, and nothing with a line break may.**
   Rust routes a `.bat`/`.cmd` through `cmd.exe` and, since CVE-2024-24576,
   refuses any argument holding `

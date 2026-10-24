@@ -1,0 +1,54 @@
+Takyon
+Copyright (c) 2026 Nikhil Sah
+https://github.com/Sah-Nikhil/Takyon
+
+Takyon is source-available software. It is not open source.
+
+LICENCE
+
+Takyon's own source code and documentation are licensed under the Creative
+Commons Attribution-NonCommercial-ShareAlike 4.0 International licence
+(SPDX: CC-BY-NC-SA-4.0), except the name and mark described under NAME AND
+LOGO below. The full text is in LICENSE and at
+https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+
+In short, and without changing the licence: you may use, study, modify and
+share Takyon for noncommercial purposes, you must credit Takyon and say what
+you changed, and anything you share that is based on Takyon must carry the
+same licence. Nobody may sell Takyon, charge for copies of it, or use any part
+of it in a commercial product or service.
+
+ADDITIONAL PERMISSION: PERSONAL USE AT WORK
+
+In addition to CC-BY-NC-SA-4.0, Nikhil Sah grants any individual permission
+to install and run unmodified official releases of Takyon, or a version they
+have modified only for their own use, as a personal productivity tool,
+including in the course of their employment or business.
+
+This permission does not allow distributing, selling, sublicensing, hosting or
+bundling Takyon or any part of it, or using any part of its code in another
+product or service. Those remain governed by CC-BY-NC-SA-4.0 alone.
+
+THIRD-PARTY COMPONENTS
+
+Takyon includes third-party components under their own licences, mostly MIT
+and Apache-2.0. Those licences apply to those components and are not changed
+by Takyon's licence. Their notices ship with every installer as
+THIRD_PARTY_NOTICES.txt.
+
+NAME AND LOGO
+
+The name "Takyon" and the Takyon mark are not licensed under
+CC-BY-NC-SA-4.0, which licenses neither trademarks nor patents. The mark
+(brand/geometry.js, the path data in docs/brand.md) and every icon generated
+from it (brand/svg/, apps/desktop/src-tauri/icons/, apps/desktop/public/)
+are all rights reserved and covered by TRADEMARK.md. brand/build.mjs is code
+and falls under the licence.
+
+CONTRIBUTIONS
+
+Contributions are accepted under the terms in CONTRIBUTING.md.
+
+CONTACT
+
+For any use these terms do not cover: sah.nikhil11@gmail.com

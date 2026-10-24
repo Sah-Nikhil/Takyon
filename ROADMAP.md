@@ -814,7 +814,9 @@ still opens whatever is called that, and the first-Entry budget holds.
 - [ ] First-run experience: hotkey introduction, autostart prompt, permissions
 - [ ] Full benchmark pass against all four budgets on a cold machine
 - [ ] Revisit `docs/tbc/0002` with real numbers and resolve or retire it
-- [ ] Decide open source vs proprietary, and license accordingly
+- [x] Decide open source vs proprietary, and license accordingly — source-available under CC BY-NC-SA 4.0 ([ADR-0039](./docs/adr/0039-source-available-under-cc-by-nc-sa.md))
+- [ ] Lawyer review of `NOTICE`'s work-use permission and `CONTRIBUTING.md`'s contribution terms, before the first outside contribution is merged
+- [ ] Register the Takyon name (IP India, Class 9) after a clearance search; switch ™ to ® only once registered
 
 **Exit criteria:** someone who is not you installs it and uses it for a week.
 
@@ -829,8 +831,9 @@ These block nothing today but should be settled before they become expensive:
   clean where the users are (ADR-0011's own survey). ADR-0020 then folded the
   name into the Windows identity slug, `com.v3sper.takyon`, on the reasoning that
   the cheapest moment to do that is before anything is signed or distributed.
-- **Open source vs proprietary.** Constrains dependency licensing; already ruled
-  out one option (ADR-0005).
+- ~~**Open source vs proprietary.**~~ **Settled** by ADR-0039: source-available
+  under CC BY-NC-SA 4.0, with a work-use permission in `NOTICE`. The GPL
+  dependency ban stays.
 - **Portable / no-installer mode** — in scope or not.
 - ~~**macOS.**~~ **Settled and scheduled** — it is v0.12, with ADR-0026 to
   ADR-0030 behind it. What is still open there is *sequencing*: v0.11 to v0.15
