@@ -40,4 +40,5 @@ These assets are all rights reserved. The licence does not cover them.
 
 ## Questions
 
-For anything this page does not cover, contact sah.nikhil11@gmail.com.
+For anything this page does not cover, open an issue at
+<https://github.com/Sah-Nikhil/Takyon/issues>.
