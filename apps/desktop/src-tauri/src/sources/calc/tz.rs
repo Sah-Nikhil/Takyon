@@ -160,11 +160,11 @@ fn clock_face(t: Time, hour24: bool) -> String {
     format!("{h12}:{m:02} {meridiem}")
 }
 
-const MONTHS: [&str; 12] = [
+pub(super) const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-fn weekday(w: Weekday) -> &'static str {
+pub(super) fn weekday(w: Weekday) -> &'static str {
     match w {
         Weekday::Monday => "Mon",
         Weekday::Tuesday => "Tue",
