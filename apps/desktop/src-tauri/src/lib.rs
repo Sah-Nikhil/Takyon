@@ -36,6 +36,7 @@ pub mod sources;
 pub mod superkey;
 pub mod tray;
 pub mod uiaccess;
+pub mod update;
 pub mod version;
 pub mod window;
 
@@ -130,6 +131,8 @@ fn query(
         .entries
         .first()
         .is_some_and(|e| e.kind == entry::EntryKind::Calc);
+    // Compact's update pill fits the input line; Expanded's row fits its
+    // fixed window. Neither needs extra native height (ADR-0040).
     window::set_rows(&app, result.entries.len(), result.status_row, calc_card);
     result
 }
@@ -588,6 +591,12 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        // ADR-0040. Registered on every build; only `update::update_check` and
+        // `update_install` reach it, and both answer `Unconfigured` without the
+        // key and feed `release.yml` merges in. No `updater:` capability, so the
+        // webview cannot call the plugin's own commands.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(update::Pending::default())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 // ADR-0011. Without this the plugin keys the `Run` value off
@@ -814,7 +823,14 @@ pub fn run() {
             focus::ipc::focus_bar_fit,
             focus::ipc::focus_bar_reveal,
             focus::ipc::focus_clear_history,
-            focus::ipc::focus_stats
+            focus::ipc::focus_stats,
+            update::update_check,
+            update::update_install,
+            update::update_install_now,
+            update::update_notice,
+            update::update_notice_dismiss,
+            update::update_auto_check,
+            update::set_update_auto_check
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1016,6 +1032,9 @@ pub fn run() {
             // Deferred init. Nothing below is on any latency budget, and two of the
             // three can block: `blocking_show` deadlocks if called on the main
             // thread, and the autostart registry write is disk-bound.
+            // Launch bookkeeping and the daily update check; sleeps 90 s first.
+            update::start(handle.clone());
+
             let deferred = handle.clone();
             let focus_prefs = prefs.clone();
             let focus_prefs_icons = prefs.clone();

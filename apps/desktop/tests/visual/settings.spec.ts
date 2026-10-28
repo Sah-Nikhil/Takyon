@@ -553,6 +553,99 @@ test("About names the version and the identity slug", async ({ page }) => {
   });
 });
 
+/** Pick what the next update check finds (`api.mock.ts`). */
+const updateScenario = (page: import("@playwright/test").Page, scenario: string) =>
+  page.evaluate((s) => {
+    (
+      window as unknown as { __takyon_mock: { setUpdateScenario: (s: string) => void } }
+    ).__takyon_mock.setUpdateScenario(s);
+  }, scenario);
+
+const updateChecks = (page: import("@playwright/test").Page) =>
+  page.evaluate(() =>
+    (
+      window as unknown as { __takyon_mock: { updateCheckCount: () => number } }
+    ).__takyon_mock.updateCheckCount(),
+  );
+
+/**
+ * ADR-0040: opening About makes no request. The button is the only way to the
+ * feed, and an available update shows its notes before anything downloads.
+ */
+test("opening About makes no check; the button checks, then offers the install", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await expect(page.getByText("Published by V3SPER")).toBeVisible();
+  await expect(page.getByText("Look for a new version now.")).toBeVisible();
+  expect(await updateChecks(page)).toBe(0);
+
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText("Takyon 1.0.0 is available.", { exact: false })).toBeVisible();
+  await expect(page.getByText("What's new in 1.0.0")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Install and restart" })).toBeEnabled();
+  expect(await updateChecks(page)).toBe(1);
+
+  await expect(page).toHaveScreenshot("settings-about-update.png", {
+    mask: [page.getByText(`Version ${APP_VERSION}`)],
+  });
+
+  // A real install exits into the installer; the row holds there with the button off.
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(page.getByText("Installing. Takyon closes and opens again by itself.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Install and restart" })).toBeDisabled();
+});
+
+/** The daily check is on unless switched off, and the switch applies on change. */
+test("the daily update check is on by default and switches off", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  const daily = page.getByRole("switch", { name: "Check for updates automatically" });
+  await expect(daily).toHaveAttribute("aria-checked", "true");
+  await daily.click();
+  await expect(daily).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("status")).toHaveText("Applied");
+});
+
+test("an update check says plainly when there is nothing newer", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "current");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText(`Takyon ${APP_VERSION} is the latest version.`)).toBeVisible();
+});
+
+/** Every local and bench build: no feed in its config, so it says so instead of failing. */
+test("a build with no update feed says it cannot update itself", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "unconfigured");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText("This build can't update itself.", { exact: false })).toBeVisible();
+});
+
+test("an unreachable feed is an error beside the button, and retrying works", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "offline");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByRole("alert")).toContainText("Couldn't reach the update feed");
+
+  await updateScenario(page, "current");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+/** A bad signature must read as "nothing ran", and leave Install there to retry. */
+test("a download that fails its signature check installs nothing", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "badSignature");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(page.getByRole("alert")).toContainText("Nothing was installed");
+  await expect(page.getByRole("button", { name: "Install and restart" })).toBeEnabled();
+});
+
 /**
  * Task 4: the box searches *settings*, not page names. "retention" is what
  * someone types and no page is called that.

@@ -9,6 +9,19 @@ in `ROADMAP.md`. A finished phase may advance the release minor, while partial
 phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
 renumbering below records a separate change to the phase plan.
 
+## v0.12.4 — In-app updates (pending release)
+
+- **In-app updates.** Takyon checks GitHub Releases once a day and shows a new
+  version on the Palette's empty line: a pill in Compact, a row in Expanded.
+  Enter installs it; the installer is signature-checked before it runs. After
+  an update, the same place offers "See what's new". Settings › About checks on
+  demand and has a switch that turns the daily check off. This release has to
+  be installed by hand; later ones install from the Palette or About.
+- Installer and executable name **V3SPER** as the publisher. `!s` requests
+  identify as `Takyon/0.9 (V3SPER)`.
+- Release notes lead with this file's section; GitHub then credits pull request
+  authors, including the maintainer, in its generated list.
+
 ## v0.12.3 — Windows image clips (pending release)
 
 - **Image clips on Windows.** Copying an image or taking a `Win+Shift+S`

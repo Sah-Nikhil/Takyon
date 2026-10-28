@@ -3,8 +3,10 @@
 A local-first keyboard launcher for Windows — a Spotlight/Raycast alternative built
 on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
-anything leaves the machine, with one stated exception: Focus fetches site icons
-once after first launch and when a site is added (**ADR-0037**).
+anything leaves the machine, with two stated exceptions: Focus fetches site icons
+once after first launch and when a site is added (**ADR-0037**), and
+an update check reaches GitHub Releases once a day (on by default, off switch
+in About) and when an update button is pressed (**ADR-0040**).
 
 **Status: v0.1 through v0.10 are built.** The Palette is warm, the hotkey works,
 and it finds and launches applications, files, clipboard history and
@@ -240,8 +242,10 @@ under `docs/`.
   anything with a `cfg(windows)` arm.
 - release, local: `bun run release --local` — preflight (typecheck, lint, test),
   `tauri build`, then the installer into `releases/v{version}/` with its SHA-256.
-  Same layout as tesseract's `releases/`, and `releases/` is gitignored. No
-  `latest.json` or `.sig` yet; the updater is a v1.0 item.
+  Same layout as tesseract's `releases/`, and `releases/` is gitignored. A
+  local build carries no updater key and reports updates as off; only
+  `release.yml` signs the installer and writes `latest.json` (**ADR-0040**,
+  setup in `docs/verify/updater.md` §S).
 - release, GitHub: `bun run release --git <version>` — on a `main` level with
   `origin/main`: bump, preflight, commit the version files and `Cargo.lock` as
   `UPDATE d<phase>.<n> version <version>`, push, wait for CI to register, then tag

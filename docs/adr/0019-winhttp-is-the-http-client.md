@@ -1,8 +1,13 @@
 ---
 status: accepted
+amended-by: 0040
 ---
 
 # `!s` speaks HTTP through WinHTTP, not through a Rust client
+
+> **Amended by [ADR-0040](0040-updates-are-signed-and-only-on-request.md).** `!s`
+> stays on WinHTTP. The in-app updater is the one exception: it uses the
+> plugin's `reqwest` over Schannel (`native-tls`) with the system proxy on.
 
 Web search needs two kinds of request: one call to a search API (ADR-0021), and
 a parallel fan-out that reads the pages it names. Both go through **WinHTTP**, the

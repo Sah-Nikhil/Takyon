@@ -135,6 +135,16 @@ export const PAGES: SettingsPage[] = [
     tier: "app",
     Component: About,
     controls: [
+      {
+        id: "updates",
+        label: "Software update",
+        keywords: ["update", "upgrade", "new version", "check for updates", "install"],
+      },
+      {
+        id: "update-auto",
+        label: "Check for updates automatically",
+        keywords: ["update", "daily", "background", "automatic", "privacy", "network"],
+      },
       { id: "hotkey-status", label: "Global hotkey", keywords: ["alt space", "shortcut"] },
       { id: "identity", label: "Package identity", keywords: ["version", "slug", "data folder"] },
     ],

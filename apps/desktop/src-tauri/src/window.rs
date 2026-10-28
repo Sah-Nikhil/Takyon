@@ -390,6 +390,9 @@ pub const NO_FOCUS_STEAL_ENV: &str = "TAKYON_NO_FOCUS_STEAL";
 pub struct ShowPayload {
     pub show_id: u64,
     pub no_focus_steal: bool,
+    /// The update row to draw on the empty line (ADR-0040).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notice: Option<crate::update::Notice>,
 }
 
 /// How long after a show a focus-loss event is ignored.
@@ -457,6 +460,9 @@ pub fn show(app: &AppHandle, bench: &Bench) {
 
     place_on_cursor_monitor(app, &win);
 
+    // Expanded has a fixed-height row; Compact keeps its one-line height.
+    let notice = crate::update::notice();
+
     // Stamped before `show()`, not after: the stray focus event can be delivered
     // while we are still inside these calls.
     *LAST_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
@@ -485,6 +491,7 @@ pub fn show(app: &AppHandle, bench: &Bench) {
         ShowPayload {
             show_id,
             no_focus_steal: no_focus_steal(),
+            notice,
         },
     );
 }

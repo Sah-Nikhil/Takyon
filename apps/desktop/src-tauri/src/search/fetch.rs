@@ -29,7 +29,7 @@ use super::SearchError;
 /// What Takyon calls itself to a server. Its own constant: a blank agent is
 /// refused outright by a noticeable share of sites.
 #[cfg(windows)]
-const AGENT: &str = "Takyon/0.9 (+https://github.com/Sah-Nikhil)";
+const AGENT: &str = "Takyon/0.9 (V3SPER)";
 
 /// Per-request timeouts, milliseconds. Resolve, connect, send, receive.
 #[cfg(windows)]

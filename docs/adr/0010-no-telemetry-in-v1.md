@@ -1,9 +1,15 @@
 ---
 status: accepted
+amended-by: 0040
 pairs-with: ADR-0002
 ---
 
 # V1 ships zero telemetry; analytics are post-V1, opt-in, and never carry query content
+
+> **Amended by [ADR-0040](0040-updates-are-signed-and-only-on-request.md).** The
+> update clause below now reads: one update check a day, on by default, switched
+> off in Settings › About. It carries no identifier and no content. The rest
+> stands.
 
 Takyon V1 sends nothing anywhere. No analytics, no automatic crash reports, no
 update pings beyond the explicit updater check. Crash information is written to a

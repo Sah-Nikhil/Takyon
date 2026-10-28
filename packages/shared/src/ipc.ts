@@ -43,7 +43,31 @@ export interface ShowPayload {
    * or inspecting the Palette in devtools destroys it every time.
    */
   noFocusSteal: boolean;
+  /** The update row for the empty line, read from memory in Rust (ADR-0040). */
+  notice?: UpdateNotice;
 }
+
+/**
+ * `update::Notice`: the Palette's update row. `available` installs on Enter;
+ * `whatsNew` opens the installed version's release page.
+ */
+export type UpdateNotice =
+  | { kind: "available"; version: string }
+  | { kind: "whatsNew"; version: string; url: string };
+
+/**
+ * `update::UpdateCheck`: what an update check found (ADR-0040).
+ * `unconfigured` is every build `release.yml` did not sign: no feed, no request.
+ */
+export type UpdateCheck =
+  | { state: "unconfigured" }
+  | { state: "current"; version: string }
+  | { state: "available"; version: string; notes?: string };
+
+/** `update::UpdateProgress`: Install's progress. `total` is absent when unknown. */
+export type UpdateProgress =
+  | { phase: "downloading"; downloaded: number; total?: number }
+  | { phase: "installing" };
 
 /** Whether the global hotkey is live, and if not, why not. */
 export interface HotkeyStatus {

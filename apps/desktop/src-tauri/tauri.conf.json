@@ -32,8 +32,15 @@
       "csp": "default-src 'self'; img-src 'self' data: asset: http://asset.localhost http://takyon-icon.localhost http://takyon-favicon.localhost http://takyon-clip.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    }
+  },
   "bundle": {
     "active": true,
+    "publisher": "V3SPER",
     "targets": "all",
     "windows": {
       "nsis": {

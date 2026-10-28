@@ -261,7 +261,7 @@ mod tests {
     /// root, so no machine ships with a default pointing at nothing.
     #[test]
     fn v0_7_probing_keeps_only_candidates_that_exist() {
-        let home = PathBuf::from(r"C:\Users\sahni");
+        let home = PathBuf::from(r"C:\Users\Example");
         let candidates = code_candidates(&home);
         let kept = probe(&candidates, |p| p == Path::new(r"C:\Programming"));
         assert_eq!(kept, vec![PathBuf::from(r"C:\Programming")]);
@@ -271,7 +271,7 @@ mod tests {
     /// index, and the roots editor is how a code folder gets added by hand.
     #[test]
     fn v0_7_probing_nothing_yields_no_code_root() {
-        let candidates = code_candidates(Path::new(r"C:\Users\sahni"));
+        let candidates = code_candidates(Path::new(r"C:\Users\Example"));
         assert!(probe(&candidates, |_| false).is_empty());
     }
 
@@ -279,7 +279,7 @@ mod tests {
     /// rather than picking up a stray `~\code` alongside it.
     #[test]
     fn v0_7_the_candidate_list_is_ordered_and_deduplicated() {
-        let home = PathBuf::from(r"C:\Users\sahni");
+        let home = PathBuf::from(r"C:\Users\Example");
         let kept = probe(&code_candidates(&home), |_| true);
         assert_eq!(kept.first(), Some(&PathBuf::from(r"C:\Programming")));
         assert_eq!(kept.len(), code_candidates(&home).len());
@@ -296,14 +296,14 @@ mod tests {
     #[test]
     fn v0_7_a_root_inside_another_root_is_dropped() {
         let roots = vec![
-            PathBuf::from(r"C:\Users\sahni\OneDrive"),
-            PathBuf::from(r"C:\Users\sahni\OneDrive\Documents"),
+            PathBuf::from(r"C:\Users\Example\OneDrive"),
+            PathBuf::from(r"C:\Users\Example\OneDrive\Documents"),
             PathBuf::from(r"C:\Programming"),
         ];
         assert_eq!(
             subsume(roots),
             vec![
-                PathBuf::from(r"C:\Users\sahni\OneDrive"),
+                PathBuf::from(r"C:\Users\Example\OneDrive"),
                 PathBuf::from(r"C:\Programming"),
             ]
         );
@@ -314,12 +314,12 @@ mod tests {
     #[test]
     fn v0_7_the_ancestor_wins_regardless_of_order() {
         let roots = vec![
-            PathBuf::from(r"C:\Users\sahni\OneDrive\Documents"),
-            PathBuf::from(r"C:\Users\sahni\OneDrive"),
+            PathBuf::from(r"C:\Users\Example\OneDrive\Documents"),
+            PathBuf::from(r"C:\Users\Example\OneDrive"),
         ];
         assert_eq!(
             subsume(roots),
-            vec![PathBuf::from(r"C:\Users\sahni\OneDrive")]
+            vec![PathBuf::from(r"C:\Users\Example\OneDrive")]
         );
     }
 

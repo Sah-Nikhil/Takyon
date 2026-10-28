@@ -467,3 +467,48 @@ fn v0_3_camel_case_argument_names_reach_snake_case_parameters() {
         "actions_for did not accept entryId: {response}"
     );
 }
+
+/// A mock app with the real update commands. Its config has no updater block,
+/// which is what every local and bench build carries (ADR-0040).
+fn mock_update() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
+    let app = mock_builder()
+        .invoke_handler(tauri::generate_handler![
+            takyon_lib::update::update_check,
+            takyon_lib::update::update_install
+        ])
+        .build(mock_context(noop_assets()))
+        .expect("mock app");
+    app.manage(takyon_lib::update::Pending::default());
+    let webview = tauri::WebviewWindowBuilder::new(&app, "settings", Default::default())
+        .build()
+        .expect("mock window");
+    (app, webview)
+}
+
+/// No key, no feed: the answer comes back without a request, as `ipc.ts` spells it.
+#[test]
+fn updater_a_build_without_a_feed_says_so_instead_of_checking() {
+    let (_app, webview) = mock_update();
+    let response = call(&webview, "update_check", serde_json::json!({}));
+    assert_eq!(response, serde_json::json!({ "state": "unconfigured" }));
+}
+
+/// Install only ever acts on what a check found; it never fetches on its own.
+#[test]
+fn updater_install_before_a_check_is_refused() {
+    let (_app, webview) = mock_update();
+    let refusal = get_ipc_response(
+        &webview,
+        InvokeRequest {
+            cmd: "update_install".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(),
+            body: serde_json::json!({ "onProgress": "__CHANNEL__:7" }).into(),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    )
+    .expect_err("install ran with nothing checked");
+    assert_eq!(refusal, serde_json::json!("Check for updates first."));
+}

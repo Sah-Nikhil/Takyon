@@ -85,8 +85,8 @@ function local(skipPreflight: boolean) {
   console.log(`  ${(bytes.length / 1024 / 1024).toFixed(1)} MB`);
   console.log(`  SHA-256: ${hash}`);
   console.log(`  recorded in releases/v${version}/SHA256SUMS.txt`);
-  // No `latest.json` or `.sig`: an unsigned manifest would pass for an update feed.
-  console.log("\nNo latest.json or .sig — the updater is a v1.0 item.");
+  // Unsigned on purpose: release.yml alone holds the key and writes latest.json (ADR-0040).
+  console.log("\nNo latest.json or .sig — this build reports updates as off.");
   console.log("The helper is also unsigned, so the Palette will not appear over");
   console.log("elevated windows. See docs/plans/uiaccess-signing.md.");
 }

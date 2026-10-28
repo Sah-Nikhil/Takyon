@@ -4,11 +4,13 @@ name: release
 # (`bun run bump`), committing, then pushing the commit and its tag together —
 # CI has to have run on the same commit, see `preflight`.
 #
-# No secrets are needed. There is no updater yet, so nothing here signs an
-# artefact or writes a `latest.json`: `tauri-plugin-updater` is a v1.0 item
-# (ROADMAP), and an unsigned manifest would look like a working update feed
-# while being one nothing can verify. Assets are the installer and its
-# SHA256SUMS.txt, the same pair `bun run release` writes into `releases/`.
+# Signs the Windows installer for the in-app updater and publishes `latest.json`
+# beside it (ADR-0040). Needs, from Settings > Secrets and variables > Actions:
+#   secret   TAURI_SIGNING_PRIVATE_KEY            contents of the minisign .key file
+#   secret   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   its password (empty if it has none)
+#   variable TAKYON_UPDATER_PUBKEY                contents of the matching .key.pub
+# The secrets reach `tauri build` alone and are never echoed. Setup steps:
+# docs/verify/updater.md, section S.
 
 on:
   push:
@@ -39,6 +41,20 @@ jobs:
             echo "tag ${GITHUB_REF_NAME} does not match tauri.conf.json version v$V"
             exit 1
           fi
+
+      # Before the hour-long wait, not after it. A missing secret or a malformed
+      # pubkey would otherwise fail the build job, or publish a feed no installed
+      # copy can verify. Tests presence only; nothing here prints a value.
+      - name: Check the updater signing setup
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAKYON_UPDATER_PUBKEY: ${{ vars.TAKYON_UPDATER_PUBKEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Secret TAURI_SIGNING_PRIVATE_KEY is not set. See docs/verify/updater.md, section S."
+            exit 1
+          fi
+          bun scripts/updater.ts config "$RUNNER_TEMP/updater.conf.json"
 
       - name: Find this commit's CI run
         id: ci_run
@@ -99,10 +115,32 @@ jobs:
           path: ~\.bun\install\cache
           key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile
+      # The pubkey and feed are merged in here rather than committed, so local
+      # and bench builds need no key and report updates as off (ADR-0040).
+      - name: Write the updater build config
+        shell: bash
+        env:
+          TAKYON_UPDATER_PUBKEY: ${{ vars.TAKYON_UPDATER_PUBKEY }}
+        run: bun scripts/updater.ts config "$RUNNER_TEMP/updater.conf.json"
       # `tauri build`, never a bare `cargo build --release`. A bare cargo build
       # produces a takyon.exe that launches, registers the hotkey and shows the
-      # Palette with a completely dead frontend (CLAUDE.md, Gotchas).
-      - run: bun run build
+      # Palette with a completely dead frontend (CLAUDE.md, Gotchas). The signing
+      # key exists in this step's environment only; tauri writes the `.sig`.
+      - name: Build and sign the installer
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bun run build --config "$RUNNER_TEMP/updater.conf.json"
+      # The app's own check, run here first: a secret and pubkey from two key
+      # pairs would publish an update every installed copy refuses.
+      - name: Verify the installer signature
+        shell: bash
+        env:
+          TAKYON_UPDATER_PUBKEY: ${{ vars.TAKYON_UPDATER_PUBKEY }}
+        run: |
+          cd apps/desktop/src-tauri/target/release/bundle/nsis
+          for f in *-setup.exe; do bun "$GITHUB_WORKSPACE/scripts/updater.ts" verify "$f"; done
       # `sha256sum` format, two spaces, so `sha256sum -c` verifies it directly.
       # Same file `bun run release` writes locally.
       - name: Record the installer hash
@@ -116,6 +154,7 @@ jobs:
           name: windows-nsis
           path: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig
             apps/desktop/src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
 
   # There is no macOS build yet, and this job cannot succeed until there is:
@@ -174,19 +213,37 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
+      # For scripts/updater.ts and CHANGELOG.md. No `bun install`: the script
+      # imports nothing outside the repo.
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
       - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           path: dist
       - run: ls -la dist
+      # Verifies the signature again before writing the feed. Windows only: the
+      # macOS job builds no updater artefact (ADR-0040).
+      - name: Write latest.json and the release notes
+        env:
+          TAKYON_UPDATER_PUBKEY: ${{ vars.TAKYON_UPDATER_PUBKEY }}
+        run: bun scripts/updater.ts manifest dist "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/notes.md"
+      # CHANGELOG.md's section leads; GitHub's generated "What's Changed" and
+      # "New Contributors" follow it (softprops appends them to `body_path`).
+      - name: Assemble the release body
+        run: |
+          {
+            cat "$RUNNER_TEMP/notes.md"
+            echo
+            echo "---"
+            echo
+            echo 'Verify a download with `sha256sum -c SHA256SUMS.txt`.'
+            echo
+            echo "Installed copies check daily unless disabled in Settings > About; updates can also be checked there on demand."
+            echo 'The installer has an updater signature (`.sig`), checked before it runs; `latest.json` is the update feed.'
+          } > "$RUNNER_TEMP/body.md"
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
-          # Says what the assets do and do not carry, so nobody waits for an
-          # in-app update that does not exist yet.
-          body: |
-            Verify a download with `sha256sum -c SHA256SUMS.txt`.
-
-            No in-app updater in this release — `tauri-plugin-updater` is a v1.0
-            item, so there is no `latest.json` and no signature to check.
+          body_path: ${{ runner.temp }}/body.md

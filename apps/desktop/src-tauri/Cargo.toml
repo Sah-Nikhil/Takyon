@@ -5,7 +5,7 @@ members = ["uiaccess"]
 name = "takyon"
 version = "0.12.3"
 description = "Takyon - a local-first keyboard launcher for Windows"
-authors = ["Nikhil Sah"]
+authors = ["V3SPER"]
 edition = "2021"
 license = "CC-BY-NC-SA-4.0"
 rust-version = "1.77"
@@ -38,6 +38,15 @@ tauri-plugin-autostart = "2"
 # second of which silently loses the race.
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
+# In-app update (ADR-0040): signed NSIS installer from GitHub Releases, checked
+# only on a button press. `native-tls` is schannel on Windows, so OS trust store
+# and no rustls/ring; no `zip`, the feed points at the bare installer.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls"] }
+# Not used directly. Turns on reqwest's `system-proxy` for the updater above, so
+# it honours the Windows proxy setting the way WinHTTP does (ADR-0019).
+reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
+# Version compare for the Palette update row. Already in `Cargo.lock` via the plugin.
+semver = "1"
 serde_json = "1"
 # The fan-out in `query.rs` (§3). Sources are queried in parallel with a shared
 # deadline; a scoped pool means a slow Source burns its own thread rather than

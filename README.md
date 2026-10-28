@@ -460,7 +460,11 @@ appearance, PATH hydration.
 - **The Windows-key binding has not been driven by hand.** It ships off by
   default and every claim about it is reasoned rather than observed —
   `docs/verify/v0.10.md` section E, which nothing can automate.
-- **No updater.** Releases carry no `latest.json` or signature yet.
+- **Updates.** Takyon checks GitHub Releases once a day and shows a new version
+  on the Palette's empty line; Enter installs the signed installer. The check
+  carries no identifier and turns off in Settings › About. The first release
+  that carries the updater still has to be installed by hand, and
+  `docs/verify/updater.md` has not been run.
 - **Windows only.** The frontend is portable and the workspace was split for a
   second target, but 7,410 lines of the Rust core call Win32 and nothing carries
   a macOS arm. `docs/plans/v0.12-macos.md` sizes the port.

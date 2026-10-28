@@ -30,6 +30,7 @@ import type {
   AgentSnapshot,
   FileIndexReport,
   HotkeyStatus,
+  UpdateNotice,
   ViewKind,
 } from "@takyon/shared";
 import { AGENT_LABELS, agentSummary, blockedReason, pickAgent } from "@/agents/status";
@@ -54,6 +55,7 @@ import { Footer } from "./Footer";
 import { EntryRow } from "./EntryRow";
 import { groupEntries } from "./groups";
 import { ActionMenu } from "./ActionMenu";
+import { NOTICE_ID, NoticePill, NoticeRow, noticeCopy, type NoticeBusy } from "./UpdateNotice";
 
 /**
  * What a click does, per Kind. Mirrors `actions::for_modifiers` with no modifier.
@@ -140,6 +142,13 @@ export function Palette() {
   const [web, setWeb] = useState<WebMode | null>(null);
   /** The query the search view is answering. Null when the view is closed. */
   const [searching, setSearching] = useState<string | null>(null);
+  /*
+    The update row (ADR-0040), handed over by the show event from Rust's memory.
+    A ref too: `runQuery` is stable, and selects the row on the empty line.
+   */
+  const [notice, setNotice] = useState<UpdateNotice | null>(null);
+  const noticeRef = useRef<UpdateNotice | null>(null);
+  const [noticeBusy, setNoticeBusy] = useState<NoticeBusy>(null);
   const filesBang = value.trimStart().toLowerCase().startsWith("!e");
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -193,7 +202,9 @@ export function Palette() {
       // Stability rule freezes it ~100 ms after the last keystroke so that a late
       // Source cannot move what Enter is about to launch; until then, "the top
       // one" is the whole rule.
-      setSelected(result.entries[0]?.id ?? "");
+      setSelected(
+        q.trim() === "" && noticeRef.current ? NOTICE_ID : (result.entries[0]?.id ?? ""),
+      );
 
       // §10's "hotkey to first Entry" budget. Reported only when an Entry is
       // actually on screen — the empty query on every show would otherwise
@@ -208,6 +219,15 @@ export function Palette() {
 
   useEffect(() => {
     void api.hotkeyStatus().then(setHotkey);
+  }, []);
+
+  // For a mount after the first show, which never saw its payload.
+  useEffect(() => {
+    void api.updateNotice().then((n) => {
+      noticeRef.current = n;
+      setNotice(n);
+      if (n) setSelected(NOTICE_ID);
+    });
   }, []);
 
   /*
@@ -260,6 +280,12 @@ export function Palette() {
       // Dropped rather than kept: an Agent signed in or out through its CLI
       // between two summons, and a stale card is worse than a second probe.
       setAgents(null);
+      // Rust read it from memory before showing and sized the window for it.
+      noticeRef.current = payload.notice ?? null;
+      setNotice(payload.notice ?? null);
+      setSelected(payload.notice ? NOTICE_ID : "");
+      // A failed install says so once; an install still downloading keeps going.
+      setNoticeBusy((b) => (b && typeof b === "object" && "error" in b ? null : b));
       setShown(true);
       // The Settings window may have written a preference while the Palette was
       // hidden. Re-reading here is what makes the two windows agree without any
@@ -410,6 +436,28 @@ export function Palette() {
     setView("focus");
     void api.setView("focus");
   }, [focusBang, focusLine]);
+
+  /*
+    Enter on the update row. Installing exits into the installer on Windows, so
+    success never comes back; a failure stays on the row until the next show.
+   */
+  const activateNotice = useCallback(() => {
+    if (!notice) return;
+    if (notice.kind === "whatsNew") {
+      noticeRef.current = null;
+      setNotice(null);
+      void api.dismissUpdateNotice();
+      void api.openUrl(notice.url);
+      return;
+    }
+    if (noticeBusy && !(typeof noticeBusy === "object" && "error" in noticeBusy)) return;
+    setNoticeBusy({ downloaded: 0 });
+    api
+      .updateInstallNow((p) =>
+        setNoticeBusy(p.phase === "installing" ? "installing" : { downloaded: p.downloaded, total: p.total }),
+      )
+      .catch((e: unknown) => setNoticeBusy({ error: e instanceof Error ? e.message : String(e) }));
+  }, [notice, noticeBusy]);
 
   const closeMenu = useCallback(() => {
     setMenu(null);
@@ -619,6 +667,10 @@ export function Palette() {
             ? `Focus on ${focusBang.goal} for ${lengthText(focusBang.lengthMs)} — press Enter`
             : `Focus on ${focusBang.goal} — press Enter to pick a length`;
 
+  /* Empty line only: Compact pill, Expanded row. */
+  const showNotice = notice !== null && value === "" && view === null;
+  const noticeSelected = showNotice && selected === NOTICE_ID;
+
   const showList =
     expanded ||
     entries.length > 0 ||
@@ -745,6 +797,17 @@ export function Palette() {
             }
             return;
           }
+          // Expanded notice sits above Entries; Up from first Entry returns to it.
+          if (e.key === "ArrowUp" && expanded && showNotice && selected === entries[0]?.id) {
+            e.preventDefault();
+            setSelected(NOTICE_ID);
+            return;
+          }
+          if (e.key === "Enter" && noticeSelected) {
+            e.preventDefault();
+            activateNotice();
+            return;
+          }
           if (e.key === "Enter") {
             e.preventDefault();
             // `!c` has no Entry to activate: the answer streams into a surface
@@ -781,6 +844,14 @@ export function Palette() {
             placeholder="Search"
             className="h-12 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/50"
           />
+          {showNotice && !expanded && notice && (
+            <NoticePill
+              notice={notice}
+              busy={noticeBusy}
+              selected={noticeSelected}
+              onActivate={activateNotice}
+            />
+          )}
 
         </div>
 
@@ -819,6 +890,15 @@ export function Palette() {
               Above the results, not below: Stale means the list may be missing
               rows, and a caveat under the answer is one nobody reads (ADR-0007).
              */}
+            {showNotice && expanded && notice && (
+              <Command.Item
+                value={NOTICE_ID}
+                onSelect={activateNotice}
+                className="cursor-default rounded-md data-[selected=true]:bg-row-selected"
+              >
+                <NoticeRow notice={notice} busy={noticeBusy} />
+              </Command.Item>
+            )}
             {fileIndexNote && (
               <div
                 className="flex items-center px-2 text-[13px] text-fg/56"
@@ -905,7 +985,9 @@ export function Palette() {
             // of a menu that has nothing to open. `null` where there is nothing
             // for Enter to do either — an unanswerable Agent, or no question yet.
             hint={
-              ask
+              noticeSelected && notice
+                ? noticeCopy(notice, noticeBusy).action
+                : ask
                 ? ask.query && !askBlocked
                   ? "Ask"
                   : null
