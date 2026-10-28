@@ -240,8 +240,8 @@ jobs:
             echo
             echo 'Verify a download with `sha256sum -c SHA256SUMS.txt`.'
             echo
-            echo "Installed copies update from Settings > About > Software update. Takyon never checks on its own;"
-            echo 'the installer is signed (`.sig`) and checked before it runs, and `latest.json` is the update feed.'
+            echo "Installed copies check daily unless disabled in Settings > About; updates can also be checked there on demand."
+            echo 'The installer has an updater signature (`.sig`), checked before it runs; `latest.json` is the update feed.'
           } > "$RUNNER_TEMP/body.md"
       - uses: softprops/action-gh-release@v3
         with:
