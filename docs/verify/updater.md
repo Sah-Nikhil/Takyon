@@ -57,7 +57,7 @@ Needs a tag pushed by the user (`bun run release --git <version>`).
 
 | # | Step | Expected | Status |
 |---|---|---|---|
-| B1 | Open the GitHub release for the tag | Assets: `Takyon_<v>_x64-setup.exe`, `Takyon_<v>_x64-setup.exe.sig`, `SHA256SUMS.txt`, `latest.json`. The body is the version's `CHANGELOG.md` section, the verification note, then GitHub's generated "What's Changed" crediting outside contributors. Confirm the owner's account is absent. About shows the `CHANGELOG.md` section only, with no account names | |
+| B1 | Open the GitHub release for the tag | Assets: `Takyon_<v>_x64-setup.exe`, `Takyon_<v>_x64-setup.exe.sig`, `SHA256SUMS.txt`, `latest.json`. The body is the version's `CHANGELOG.md` section, the verification note, then GitHub's generated "What's Changed" crediting pull request authors, including the maintainer. About shows the `CHANGELOG.md` section only | |
 | B2 | `curl -L https://github.com/<owner>/<repo>/releases/latest/download/latest.json` | `version` is the tag without `v`; both `windows-x86_64` and `windows-x86_64-nsis` point at this release's installer | |
 | B3 | Right-click the downloaded installer › Properties › Details; after installing, Settings › Apps › Installed apps | Company and publisher read **V3SPER**. No personal name anywhere on either | |
 | B4 | In the workflow run's logs, search for the private key's first characters and for the password | Not present. Secrets are masked and no step echoes them | |

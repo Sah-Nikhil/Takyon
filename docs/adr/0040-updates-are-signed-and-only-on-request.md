@@ -106,7 +106,7 @@ What remains is size and an async runtime, and Tauri already ships `tokio`.
 | Enter opens About instead of installing | Safer against a stray Enter, but slower; the user chose Raycast's behaviour |
 | Own updater on WinHTTP plus `minisign-verify` | Re-implements the download, signature and NSIS hand-off the plugin already tests, for one fewer HTTP stack |
 | Commit the public key and feed in `tauri.conf.json` | Every local and bench build would then need the private key to build at all, or would ship a key with no signed artefacts behind it |
-| `generate_release_notes` alone for the release body | It lists pull request titles, not what changed for a user. The body leads with the `CHANGELOG.md` section and keeps the generated list under it. `.github/release.yml` excludes the owner's account while crediting outside contributors; `latest.json` carries the `CHANGELOG.md` section only |
+| `generate_release_notes` alone for the release body | It lists pull request titles, not what changed for a user. The body leads with the `CHANGELOG.md` section and keeps the generated list under it, crediting all pull request authors; `latest.json` carries the `CHANGELOG.md` section only |
 
 ## Consequences
 

@@ -19,8 +19,8 @@ renumbering below records a separate change to the phase plan.
   be installed by hand; later ones install from the Palette or About.
 - Installer and executable name **V3SPER** as the publisher. `!s` requests
   identify as `Takyon/0.9 (V3SPER)`.
-- Release notes lead with this file's section; GitHub then credits outside
-  contributors in its generated pull request list.
+- Release notes lead with this file's section; GitHub then credits pull request
+  authors, including the maintainer, in its generated list.
 
 ## v0.12.3 — Windows image clips (pending release)
 

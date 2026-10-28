@@ -230,7 +230,6 @@ jobs:
         run: bun scripts/updater.ts manifest dist "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/notes.md"
       # CHANGELOG.md's section leads; GitHub's generated "What's Changed" and
       # "New Contributors" follow it (softprops appends them to `body_path`).
-      # .github/release.yml credits outside contributors without naming owner.
       - name: Assemble the release body
         run: |
           {
