@@ -21,9 +21,14 @@
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "com.v3sper.launcher"
 !macroend
 
+; Skipped when the in-app updater runs the installer (`/UPDATE`, ADR-0040). Tauri's
+; template already skips its own Run cleanup in that mode; an update that ran this
+; would turn autostart off on every upgrade.
 !macro NSIS_HOOK_POSTUNINSTALL
-  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "com.v3sper.takyon"
-  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "com.v3sper.takyon"
+  ${If} $UpdateMode <> 1
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "com.v3sper.takyon"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "com.v3sper.takyon"
+  ${EndIf}
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "com.v3sper.launcher"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "com.v3sper.launcher"
 !macroend

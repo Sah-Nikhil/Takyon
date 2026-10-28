@@ -8,7 +8,7 @@
  * "no network on the Bangless path" stays checkable by reading.
  */
 
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -54,6 +54,9 @@ import {
   type ViewKind,
   type FileIndexReport,
   type HotkeyStatus,
+  type UpdateCheck,
+  type UpdateNotice,
+  type UpdateProgress,
   type QueryResult,
   type SettingsSnapshot,
   type ShowPayload,
@@ -74,6 +77,47 @@ export const openSettings = () =>
 
 export const hotkeyStatus = () =>
   inTauri ? invoke<HotkeyStatus>("hotkey_status") : mock.hotkeyStatus();
+
+/**
+ * Ask the update feed whether a newer Takyon exists (ADR-0040). The only path
+ * to it is About's button: nothing calls this on mount, show or a timer.
+ */
+export const updateCheck = () =>
+  inTauri ? invoke<UpdateCheck>("update_check") : mock.updateCheck();
+
+/**
+ * Download, verify and install what the last check found. On Windows the app
+ * exits into the installer, so a resolve means it never happened there.
+ */
+export function updateInstall(onProgress: (p: UpdateProgress) => void): Promise<void> {
+  if (!inTauri) return mock.updateInstall(onProgress);
+  const channel = new Channel<UpdateProgress>();
+  channel.onmessage = onProgress;
+  return invoke<void>("update_install", { onProgress: channel });
+}
+
+/** Enter on the Palette's update row: asks the feed if this run never did. */
+export function updateInstallNow(onProgress: (p: UpdateProgress) => void): Promise<void> {
+  if (!inTauri) return mock.updateInstallNow(onProgress);
+  const channel = new Channel<UpdateProgress>();
+  channel.onmessage = onProgress;
+  return invoke<void>("update_install_now", { onProgress: channel });
+}
+
+/** The update row Rust holds in memory. The show event carries it too. */
+export const updateNotice = () =>
+  inTauri ? invoke<UpdateNotice | null>("update_notice") : mock.updateNotice();
+
+/** "See what's new" was opened; Rust drops the row until the next update. */
+export const dismissUpdateNotice = () =>
+  inTauri ? invoke<void>("update_notice_dismiss") : mock.dismissUpdateNotice();
+
+/** The daily background check (ADR-0040). On unless switched off. */
+export const updateAutoCheck = () =>
+  inTauri ? invoke<boolean>("update_auto_check") : mock.updateAutoCheck();
+
+export const setUpdateAutoCheck = (on: boolean) =>
+  inTauri ? invoke<void>("set_update_auto_check", { on }) : mock.setUpdateAutoCheck(on);
 
 /** Whether file Entries join Bangless results (v0.7 task 11). Default off. */
 export const setFilesBangless = (on: boolean) =>

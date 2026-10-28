@@ -47,6 +47,9 @@ import type {
   FocusStartRequest,
   FocusStats,
   FocusView,
+  UpdateCheck,
+  UpdateNotice,
+  UpdateProgress,
 } from "@takyon/shared";
 
 type ShowListener = (payload: ShowPayload) => void;
@@ -287,7 +290,11 @@ export function setAgentSignedOut(kind: AgentKind) {
  * clears and focuses it.
  */
 export function emitShow(noFocusSteal = true) {
-  const payload: ShowPayload = { showId: nextShowId++, noFocusSteal };
+  const payload: ShowPayload = {
+    showId: nextShowId++,
+    noFocusSteal,
+    ...(updateNoticeState ? { notice: updateNoticeState } : {}),
+  };
   for (const l of showListeners) l(payload);
 }
 
@@ -771,6 +778,33 @@ export function setAutostart(on: boolean) {
 
 export function failAutostart(message: string | null) {
   autostartFailure = message;
+}
+
+/**
+ * What the next update check finds (ADR-0040). Every state needs a feed, a
+ * signature or a broken network to reach for real; `offline` and `badSignature`
+ * are the two failures About must word differently.
+ */
+export type UpdateScenario = "available" | "current" | "unconfigured" | "offline" | "badSignature";
+let updateScenario: UpdateScenario = "available";
+let updateChecks = 0;
+let updateFound = false;
+export function setUpdateScenario(scenario: UpdateScenario) {
+  updateScenario = scenario;
+}
+/** How many checks ran, so a test can prove About never checks on its own. */
+export function updateCheckCount() {
+  return updateChecks;
+}
+
+/**
+ * The Palette's update row. None by default, so every existing Palette baseline
+ * stays as it was; a test that wants one asks for it before the next show.
+ */
+let updateNoticeState: UpdateNotice | null = null;
+let autoCheck = true;
+export function setUpdateNotice(notice: UpdateNotice | null) {
+  updateNoticeState = notice;
 }
 
 /** The same, for a `settings.db` write. An unwritable database is the real case. */
@@ -1440,6 +1474,60 @@ export const mock = {
       ? {}
       : { error: "Another application is already holding it." }),
   }),
+  updateCheck: async (): Promise<UpdateCheck> => {
+    updateChecks++;
+    updateFound = false;
+    switch (updateScenario) {
+      case "unconfigured":
+        return { state: "unconfigured" };
+      case "current":
+        return { state: "current", version: __APP_VERSION__ };
+      case "offline":
+        throw new Error("Couldn't reach the update feed. Check the connection and try again.");
+      default:
+        updateFound = true;
+        return {
+          state: "available",
+          version: "1.0.0",
+          notes: [
+            "- **Update notices.** The Palette shows when a new version is ready.",
+            "- Faster first paint.",
+          ].join("\n\n"),
+        };
+    }
+  },
+  /** Halts at `installing`, as a real one does: Windows exits into the installer. */
+  updateInstall: async (onProgress: (p: UpdateProgress) => void): Promise<void> => {
+    if (!updateFound) throw new Error("Check for updates first.");
+    const total = 8_000_000;
+    for (const downloaded of [2_000_000, 6_000_000, total]) {
+      onProgress({ phase: "downloading", downloaded, total });
+    }
+    if (updateScenario === "badSignature") {
+      throw new Error("The download failed its signature check. Nothing was installed.");
+    }
+    onProgress({ phase: "installing" });
+    await new Promise<never>(() => {});
+  },
+  /** Same rule as Rust: a row from an earlier run checks again before installing. */
+  updateInstallNow: async (onProgress: (p: UpdateProgress) => void): Promise<void> => {
+    if (!updateFound) {
+      if (updateScenario === "offline") {
+        throw new Error("Couldn't reach the update feed. Check the connection and try again.");
+      }
+      updateFound = updateScenario === "available" || updateScenario === "badSignature";
+      if (!updateFound) throw new Error("Takyon is already up to date.");
+    }
+    return mock.updateInstall(onProgress);
+  },
+  updateNotice: async () => updateNoticeState,
+  dismissUpdateNotice: async () => {
+    if (updateNoticeState?.kind === "whatsNew") updateNoticeState = null;
+  },
+  updateAutoCheck: async () => autoCheck,
+  setUpdateAutoCheck: async (on: boolean) => {
+    autoCheck = on;
+  },
   reportFirstPixel: async (_showId: number) => {},
   reportFirstEntry: async (_seq: number) => {},
   autostartIsEnabled: async () => lastAutostart,

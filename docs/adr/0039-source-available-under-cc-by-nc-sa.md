@@ -89,7 +89,7 @@ compensation, for everyone, with no institutional carve-out.
   source code versus binaries and is incompatible with software licences.
   Neither bites here: dependencies keep their own MIT and Apache-2.0 licences,
   and no GPL code may enter (below).
-- **No patent grant from the licensor.** Nikhil Sah holds no patents, so users
+- **No patent grant from the licensor.** V3SPER holds no patents, so users
   lose nothing today. Contributors' patents are covered by the contribution
   terms.
 - **GitHub will not name the licence** in the repository sidebar. Its detector

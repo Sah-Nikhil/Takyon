@@ -32,6 +32,9 @@ import {
   setWebKeyStored,
   setIndexing,
   setStoredPreference,
+  setUpdateNotice,
+  setUpdateScenario,
+  updateCheckCount,
 } from "./api.mock";
 import { load } from "./prefs";
 import "./styles.css";
@@ -62,6 +65,12 @@ if (!inTauri) {
     // has. A test that needs the unregistered state asks for it.
     setAutostart,
     failPreferenceWrite,
+    // What an update check finds, and how many ran. A real check needs a signed
+    // release feed; the count proves About never checks unasked (ADR-0040).
+    setUpdateScenario,
+    updateCheckCount,
+    // The Palette's update row, which needs a background check to exist.
+    setUpdateNotice,
     // What "Settings wrote a preference while the Palette was hidden" looks like
     // when there is no settings.db to write to.
     setStoredPreference,

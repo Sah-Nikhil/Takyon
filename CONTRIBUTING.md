@@ -17,12 +17,12 @@ else) to this repository, you agree that:
    or you have the right to submit it under these terms. If your employer has
    rights to work you create, you have its permission or it has waived those
    rights.
-2. **Copyright licence.** You grant Nikhil Sah a perpetual, worldwide,
+2. **Copyright licence.** You grant V3SPER a perpetual, worldwide,
    non-exclusive, royalty-free, irrevocable licence to use, reproduce, modify,
    prepare derivative works of, publicly display, distribute and sublicense
    your contribution. This includes the right to license it, as part of Takyon
    or separately, under any terms, including terms other than CC BY-NC-SA 4.0.
-3. **Patent licence.** You grant Nikhil Sah, and everyone who receives Takyon,
+3. **Patent licence.** You grant V3SPER, and everyone who receives Takyon,
    a perpetual, worldwide, non-exclusive, royalty-free, irrevocable patent
    licence to make, use, sell, offer to sell, import and otherwise transfer
    your contribution, alone or combined with Takyon, under any patent claims
@@ -30,7 +30,7 @@ else) to this repository, you agree that:
 4. **You keep your copyright.** These terms are a licence, not an assignment.
    You remain free to use your own contribution in any way you like.
 5. **No warranty, no obligation.** You provide the contribution as is, and
-   Nikhil Sah is not obliged to use it.
+   V3SPER is not obliged to use it.
 6. **Third-party material** is identified as such in the pull request, with its
    licence. It must be compatible with Takyon: no GPL, LGPL, AGPL or other
    copyleft code, which `bun run check:licences` also enforces for

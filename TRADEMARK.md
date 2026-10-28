@@ -34,7 +34,7 @@ These assets are all rights reserved. The licence does not cover them.
   name such as "Takyon Plus" or "Tachyon Launcher".
 - Distribute a modified version with the Takyon logo or icons. Replace them
   with your own before sharing it.
-- Suggest that Nikhil Sah made, endorses or supports your version.
+- Suggest that V3SPER made, endorses or supports your version.
 - Use the name or logo in a product name, domain name, app store listing or
   social media handle.
 

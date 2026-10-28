@@ -1,6 +1,6 @@
 # Takyon licence research
 
-Prepared 2026-10-23 for Nikhil Sah. Scope: choosing a licence for github.com/Sah-Nikhil/Takyon that keeps the source public, lets anyone use, study, modify and contribute, and stops anyone from selling, repackaging, rebranding or commercially exploiting any part of it.
+Prepared 2026-10-23 for V3SPER. Scope: choosing a licence for github.com/Sah-Nikhil/Takyon that keeps the source public, lets anyone use, study, modify and contribute, and stops anyone from selling, repackaging, rebranding or commercially exploiting any part of it.
 
 > **Superseded in part by [ADR-0039](../adr/0039-source-available-under-cc-by-nc-sa.md).**
 > This report recommends PolyForm Noncommercial 1.0.0. That recommendation was
@@ -190,7 +190,7 @@ unless you rewrite or remove every outside contribution. ADR-0005 keeps the prop
 
 ### 4.3 Recommendation
 
-- Use an **individual CLA modelled on the Apache ICLA** (<https://www.apache.org/licenses/contributor-agreements.html>), with "the Foundation" replaced by "Nikhil Sah". Its licence-grant structure (perpetual, worldwide, non-exclusive, royalty-free, irrevocable, including the right to sublicense) gives you the relicensing freedom. Add one explicit sentence: "You agree that the Licensor may license your Contribution under any terms, including commercial and proprietary terms." Have a lawyer glance at it once; it is a one-time cost.
+- Use an **individual CLA modelled on the Apache ICLA** (<https://www.apache.org/licenses/contributor-agreements.html>), with "the Foundation" replaced by "V3SPER". Its licence-grant structure (perpetual, worldwide, non-exclusive, royalty-free, irrevocable, including the right to sublicense) gives you the relicensing freedom. Add one explicit sentence: "You agree that the Licensor may license your Contribution under any terms, including commercial and proprietary terms." Have a lawyer glance at it once; it is a one-time cost.
 - **Tooling: CLA Assistant hosted at cla-assistant.io.** It is "provided by SAP as a free hosted offering" [observed, <https://github.com/cla-assistant/cla-assistant>]. You store the CLA as a GitHub Gist, the bot comments on each PR, and the PR status updates when the contributor signs.
 - **Avoid `contributor-assistant/github-action`** (CLA Assistant Lite). The repo is archived and its maintainer says it is "no longer actively maintained" [observed, <https://github.com/contributor-assistant/github-action>].
 - For small outside fixes before the CLA bot is in place, ask for a one-line PR comment agreeing to the CLA, or reimplement the fix yourself.
@@ -242,7 +242,7 @@ The Noncommercial Organizations clause permits use by any "charitable organizati
 
 **Recommendation**: keep `LICENSE` as verbatim PolyForm NC and add a short, separate **additional permission**. The licence itself says it does not "prevent the licensor from granting licenses to anyone else" [observed]. Suggested wording (have a lawyer check it):
 
-> Additional permission. In addition to the PolyForm Noncommercial License 1.0.0, Nikhil Sah grants any individual permission to install and run unmodified official releases of Takyon, or a version they have modified only for their own use, as a personal productivity tool, including in the course of their employment or business. This permission does not allow distributing, selling, sublicensing, hosting or bundling Takyon or any part of it, or using any part of its code in another product or service.
+> Additional permission. In addition to the PolyForm Noncommercial License 1.0.0, V3SPER grants any individual permission to install and run unmodified official releases of Takyon, or a version they have modified only for their own use, as a personal productivity tool, including in the course of their employment or business. This permission does not allow distributing, selling, sublicensing, hosting or bundling Takyon or any part of it, or using any part of its code in another product or service.
 
 If you instead want work use banned, say so plainly in the README so nobody is surprised.
 
@@ -272,7 +272,7 @@ If you instead want work use banned, say so plainly in the README so nobody is s
 | No resale / repackaging | PolyForm NC: selling is a commercial purpose |
 | No rebranding as own | `Required Notice:` line + `TRADEMARK.md` + ™ (section 6) |
 | No commercial derivative, even partial | PolyForm NC changes licence limited to permitted purposes |
-| Room to sell commercial licences or relicense later | CLA plus your sole authorship today (188 of 188 commits are by Nikhil Sah [observed, `git log`]) |
+| Room to sell commercial licences or relicense later | CLA plus your sole authorship today (188 of 188 commits are by V3SPER [observed, `git log`]) |
 
 ### Gaps no licence closes
 
@@ -289,7 +289,7 @@ If you instead want work use banned, say so plainly in the README so nobody is s
 | File | Content |
 |---|---|
 | `LICENSE` | Verbatim text of <https://polyformproject.org/licenses/noncommercial/1.0.0.txt>, nothing added, so tools match it |
-| `NOTICE` | `Required Notice: Copyright (c) 2025-2026 Nikhil Sah (https://github.com/Sah-Nikhil/Takyon)` (adjust the start year to the first commit); scope ("applies to Takyon's own source; third-party components keep their licences, see THIRD_PARTY_NOTICES"); the additional work-use permission (7.3) if you adopt it; a note that `brand/` assets are all rights reserved and covered by `TRADEMARK.md`; and "For commercial licensing, contact …" |
+| `NOTICE` | `Required Notice: Copyright (c) 2025-2026 V3SPER (https://github.com/Sah-Nikhil/Takyon)` (adjust the start year to the first commit); scope ("applies to Takyon's own source; third-party components keep their licences, see THIRD_PARTY_NOTICES"); the additional work-use permission (7.3) if you adopt it; a note that `brand/` assets are all rights reserved and covered by `TRADEMARK.md`; and "For commercial licensing, contact …" |
 | `CONTRIBUTING.md` | How to contribute; that every PR needs the CLA (bot-enforced); the git and commit conventions from `CLAUDE.md` |
 | `CLA.md` (or a Gist linked by cla-assistant.io) | Individual CLA based on the Apache ICLA, granting the right to sublicense and relicense (section 4.3) |
 | `TRADEMARK.md` | Name and logo policy (section 6) |
@@ -317,7 +317,7 @@ You may not sell, resell, repackage or rebrand Takyon, or use any part of its
 code in a commercial product or service. For a commercial licence, contact
 <email>.
 
-"Takyon" and the Takyon mark are trademarks of Nikhil Sah; forks must use a
+"Takyon" and the Takyon mark are trademarks of V3SPER; forks must use a
 different name. See [TRADEMARK.md](TRADEMARK.md).
 
 Contributions are welcome and require signing the [CLA](CLA.md), which lets

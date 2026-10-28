@@ -522,7 +522,7 @@ mod tests {
     fn v0_11_the_path_is_read_from_between_the_markers_through_the_noise() {
         let noisy = format!(
             "Last login: Tue Sep  2 09:14:22\n\
-             \u{1b}]0;nikhil@mac\u{7}oh-my-zsh: 3 plugins loaded\n\
+             \u{1b}]0;user@mac\u{7}oh-my-zsh: 3 plugins loaded\n\
              direnv: loading ~/.envrc\n\
              {SENTINEL_START}\n\
              \u{1b}[32m/opt/homebrew/bin:/usr/bin:/bin\u{1b}[0m\n\

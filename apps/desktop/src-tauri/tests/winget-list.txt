@@ -65,7 +65,7 @@ R for Windows 4.5.2
 R for Windows 4.6.1
 Roblox Player
 Roblox Player
-Roblox Player for sahni
+Roblox Player for Example
 RStudio
 Rustup: the Rust toolchain installer
 scrcpy

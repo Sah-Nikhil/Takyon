@@ -28,7 +28,7 @@ describe("parseReleaseArgs", () => {
 describe("nextDevNumber", () => {
   test("increments the newest dev number, stepping over merges", () => {
     const log = [
-      "Merge pull request #16 from Sah-Nikhil/cc/single-provider-auto-activate-f1f21c",
+      "Merge pull request #16 from example/cc/single-provider-auto-activate-f1f21c",
       "FIX d0.11.12 DuckDuckGo 202 reads as rate limiting, live test waits it out",
       "FIX d0.11.11 bench reports crash vs hang, stops gating CI and releases",
     ];
