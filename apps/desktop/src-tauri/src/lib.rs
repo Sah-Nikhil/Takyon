@@ -27,6 +27,7 @@ pub mod icons;
 pub mod identity;
 pub mod index;
 pub mod launch;
+pub mod notices;
 pub mod prefs;
 pub mod query;
 pub mod rank;
@@ -830,7 +831,8 @@ pub fn run() {
             update::update_notice,
             update::update_notice_dismiss,
             update::update_auto_check,
-            update::set_update_auto_check
+            update::set_update_auto_check,
+            notices::third_party_licences
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

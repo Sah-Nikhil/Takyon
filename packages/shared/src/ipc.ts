@@ -842,3 +842,36 @@ export interface FocusStats {
   /** Block list keys by times blocked, most first, at most ten. */
   blocked: { key: string; count: number }[];
 }
+
+/**
+ * `THIRD_PARTY_NOTICES.json`: About's licence list, generated beside the
+ * notices file by `scripts/third-party-notices.ts` from the same components.
+ * Rust passes the file through unread (`notices.rs`).
+ */
+export interface ThirdPartyLicences {
+  /** Crates first, then npm, each by name then version. */
+  components: LicenceComponent[];
+  /** Deduplicated: several components point at one text by index. */
+  texts: LicenceText[];
+}
+
+export interface LicenceComponent {
+  kind: "crate" | "npm";
+  name: string;
+  version: string;
+  /** SPDX expression as the package declares it. `null`: none declared. */
+  licence: string | null;
+  /** The expression with SPDX names expanded, e.g. `MIT License (MIT)`. */
+  licenceName: string | null;
+  repository: string | null;
+  /** Indices into `texts`. */
+  texts: number[];
+  /** True when the package ships no text and `texts` are canonical SPDX copies. */
+  canonical: boolean;
+}
+
+export interface LicenceText {
+  /** File name, e.g. `LICENSE-MIT`, or the SPDX id for a canonical text. */
+  name: string;
+  text: string;
+}

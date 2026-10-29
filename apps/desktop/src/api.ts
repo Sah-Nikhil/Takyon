@@ -60,6 +60,7 @@ import {
   type QueryResult,
   type SettingsSnapshot,
   type ShowPayload,
+  type ThirdPartyLicences,
 } from "@takyon/shared";
 import { mock } from "./api.mock";
 
@@ -118,6 +119,10 @@ export const updateAutoCheck = () =>
 
 export const setUpdateAutoCheck = (on: boolean) =>
   inTauri ? invoke<void>("set_update_auto_check", { on }) : mock.setUpdateAutoCheck(on);
+
+/** About's licence list, read from the bundled manifest only when its view opens. */
+export const thirdPartyLicences = () =>
+  inTauri ? invoke<ThirdPartyLicences>("third_party_licences") : mock.thirdPartyLicences();
 
 /** Whether file Entries join Bangless results (v0.7 task 11). Default off. */
 export const setFilesBangless = (on: boolean) =>

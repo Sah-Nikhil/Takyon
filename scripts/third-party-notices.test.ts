@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   bundledJs,
+  catalogue,
   licenceFiles,
   render,
   shippedCrates,
@@ -217,5 +218,91 @@ describe("render", () => {
   test("no canonical appendix when every package ships its texts", () => {
     const out = render([components[0]!], canonical);
     expect(out).not.toContain("Canonical");
+  });
+});
+
+describe("catalogue", () => {
+  const canonical = { "Apache-2.0": "Canonical Apache", MIT: "Canonical MIT" };
+  const components: Component[] = [
+    {
+      kind: "npm",
+      name: "react",
+      version: "19.0.0",
+      licence: "MIT",
+      repository: "https://github.com/facebook/react",
+      files: [{ name: "LICENSE", text: "Copyright Meta" }],
+    },
+    {
+      kind: "crate",
+      name: "serde",
+      version: "1.0.0",
+      licence: "MIT OR Apache-2.0",
+      repository: null,
+      files: [
+        { name: "LICENSE-APACHE", text: "Apache text" },
+        { name: "LICENSE-MIT", text: "Copyright Tolnay" },
+      ],
+    },
+    {
+      kind: "crate",
+      name: "anyhow",
+      version: "1.0.0",
+      licence: "MIT OR Apache-2.0",
+      repository: null,
+      files: [{ name: "LICENSE-APACHE", text: "Apache text" }],
+    },
+    { kind: "crate", name: "bare", version: "0.1.0", licence: "Apache-2.0", repository: null, files: [] },
+    { kind: "crate", name: "undeclared", version: "0.1.0", licence: null, repository: null, files: [] },
+  ];
+
+  test("lists crates before npm, sorted, whatever the input order", () => {
+    const out = catalogue([...components].reverse(), canonical);
+    expect(out.components.map((c) => `${c.kind} ${c.name}`)).toEqual([
+      "crate anyhow",
+      "crate bare",
+      "crate serde",
+      "crate undeclared",
+      "npm react",
+    ]);
+    expect(out).toEqual(catalogue(components, canonical));
+  });
+
+  test("an identical text is stored once and both components point at it", () => {
+    const out = catalogue(components, canonical);
+    const [anyhow, , serde] = out.components;
+    expect(out.texts.filter((t) => t.text === "Apache text")).toHaveLength(1);
+    expect(anyhow!.texts[0]).toBe(serde!.texts[0]!);
+    expect(serde!.texts.map((i) => out.texts[i]!.name)).toEqual(["LICENSE-APACHE", "LICENSE-MIT"]);
+  });
+
+  test("identical text keeps each component's own filename", () => {
+    const out = catalogue(
+      [
+        components[0]!,
+        { ...components[0]!, name: "another", files: [{ name: "COPYING", text: "Copyright Meta" }] },
+      ],
+      canonical,
+    );
+    expect(out.components.map((c) => out.texts[c.texts[0]!]!.name)).toEqual(["COPYING", "LICENSE"]);
+  });
+
+  test("a component shipping no text gets the canonical one, marked as such", () => {
+    const out = catalogue(components, canonical);
+    const bare = out.components.find((c) => c.name === "bare")!;
+    expect(bare.canonical).toBe(true);
+    expect(bare.texts.map((i) => out.texts[i])).toEqual([{ name: "Apache-2.0", text: "Canonical Apache" }]);
+  });
+
+  test("names the SPDX ids and keeps a missing licence as null", () => {
+    const out = catalogue(components, canonical);
+    expect(out.components.find((c) => c.name === "serde")!.licenceName).toBe(
+      "MIT License (MIT) OR Apache License 2.0 (Apache-2.0)",
+    );
+    expect(out.components.find((c) => c.name === "undeclared")).toMatchObject({
+      licence: null,
+      licenceName: null,
+      texts: [],
+      canonical: false,
+    });
   });
 });
