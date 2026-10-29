@@ -14,7 +14,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::real_apps;
+use common::{real_apps, TempDir};
 use serde_json::Value;
 use takyon_lib::entry::{Action, EntryId};
 use takyon_lib::frecency::Frecency;
@@ -511,4 +511,101 @@ fn updater_install_before_a_check_is_refused() {
     )
     .expect_err("install ran with nothing checked");
     assert_eq!(refusal, serde_json::json!("Check for updates first."));
+}
+
+/// `interface LicenceComponent` in `packages/shared/src/ipc.ts`.
+const LICENCE_COMPONENT_KEYS: [&str; 8] = [
+    "kind",
+    "name",
+    "version",
+    "licence",
+    "licenceName",
+    "repository",
+    "texts",
+    "canonical",
+];
+
+/// The real command. Debug builds fall back to the generator's output beside
+/// `Cargo.toml`; with none generated, the refusal must say how to make one.
+#[test]
+fn notices_the_licence_list_reaches_the_wire_as_an_object_not_a_string() {
+    let app = mock_builder()
+        .invoke_handler(tauri::generate_handler![
+            takyon_lib::notices::third_party_licences
+        ])
+        .build(mock_context(noop_assets()))
+        .expect("mock app");
+    let webview = tauri::WebviewWindowBuilder::new(&app, "settings", Default::default())
+        .build()
+        .expect("mock window");
+    let generated = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(takyon_lib::notices::FILE)
+        .is_file();
+    let response = get_ipc_response(
+        &webview,
+        InvokeRequest {
+            cmd: "third_party_licences".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(),
+            body: serde_json::json!({}).into(),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    );
+    if !generated {
+        let refusal = response.expect_err("no file, yet the command answered");
+        assert!(
+            refusal.as_str().unwrap().contains("bun run notices"),
+            "{refusal}"
+        );
+        return;
+    }
+    let body: Value = response
+        .expect("command was rejected")
+        .deserialize()
+        .expect("response was not JSON");
+    let texts = body["texts"].as_array().expect("texts is an array");
+    let components = body["components"]
+        .as_array()
+        .expect("components is an array");
+    assert!(!components.is_empty());
+    for c in components {
+        let mut keys: Vec<&str> = c.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        let mut want = LICENCE_COMPONENT_KEYS.to_vec();
+        want.sort_unstable();
+        assert_eq!(keys, want, "{c}");
+        for i in c["texts"].as_array().unwrap() {
+            assert!(
+                (i.as_u64().unwrap() as usize) < texts.len(),
+                "dangling text index in {c}"
+            );
+        }
+    }
+}
+
+#[test]
+fn notices_reader_reports_missing_and_damaged_files() {
+    let dir = TempDir::new("notices-errors");
+    let path = dir.path().join(takyon_lib::notices::FILE);
+    let err = takyon_lib::notices::read(std::slice::from_ref(&path)).unwrap_err();
+    assert!(err.contains("licence list") || err.contains(takyon_lib::notices::FILE));
+
+    std::fs::write(&path, "{\"components\": [").unwrap();
+    assert!(takyon_lib::notices::read(&[path])
+        .unwrap_err()
+        .contains("damaged"));
+}
+
+#[test]
+fn notices_reader_uses_first_existing_file_without_reencoding() {
+    let dir = TempDir::new("notices-read");
+    let path = dir.path().join(takyon_lib::notices::FILE);
+    let body = "{\"components\":[],\"texts\":[]}\n";
+    std::fs::write(&path, body).unwrap();
+    assert_eq!(
+        takyon_lib::notices::read(&[dir.path().join("absent.json"), path]).unwrap(),
+        body
+    );
 }

@@ -692,6 +692,22 @@ no timezone logic. Contract checks for `FocusView`, `FocusSettings` and
 async: it walks the process table and the registry. `focus_members` resolves a
 Focus category against the apps Source for its Settings page.
 
+**Third-party licences (About)** add one read-only command:
+
+```ts
+export const thirdPartyLicences = () => invoke<ThirdPartyLicences>("third_party_licences");
+```
+
+The body is `THIRD_PARTY_NOTICES.json`, which `scripts/third-party-notices.ts`
+writes beside `THIRD_PARTY_NOTICES.txt` from the same component list, and
+`tauri.bundle.conf.json` ships both as resources. The generator is typed against
+`ThirdPartyLicences` in `packages/shared`, so the shape has one owner; `notices.rs`
+checks the file is JSON and returns it as a raw `ipc::Response` without
+re-encoding it. Debug builds also look beside `Cargo.toml`, so `bun run dev` works
+after `bun run notices`. The file is read when the licence view opens and at no
+other time: never at startup and never on the Palette path. The UI never parses
+the human-readable text file.
+
 ---
 
 ## 9. Bang parsing

@@ -2,6 +2,7 @@
  * Write `THIRD_PARTY_NOTICES.txt`: licence and notice text of every third-party
  * component the installer distributes. MIT wants its notice in all copies,
  * Apache-2.0 §4 the licence plus any NOTICE file, so `tauri build` runs this first.
+ * `THIRD_PARTY_NOTICES.json` carries the same components for About's list.
  *
  * Shipped means compiled in: crates on normal edges from `takyon` for the target
  * triple, and JS reached through `@takyon/desktop`'s production dependencies.
@@ -12,11 +13,14 @@
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import type { LicenceComponent, LicenceText, ThirdPartyLicences } from "../packages/shared/src/ipc";
 
 const ROOT = resolve(import.meta.dir, "..");
 const MANIFEST = join(ROOT, "apps/desktop/src-tauri/Cargo.toml");
 const APP = join(ROOT, "apps/desktop");
 const OUT = join(ROOT, "apps/desktop/src-tauri/THIRD_PARTY_NOTICES.txt");
+/** Read by `notices.rs` when About's licence list opens. Never parsed from the text file. */
+const OUT_JSON = join(ROOT, "apps/desktop/src-tauri/THIRD_PARTY_NOTICES.json");
 /** Tauri sets this for `beforeBuildCommand`; bare runs mean the Windows installer. */
 const TARGET = process.env.TAURI_ENV_TARGET_TRIPLE || "x86_64-pc-windows-msvc";
 
@@ -26,6 +30,35 @@ const SHIPPED_ROOTS = ["takyon"];
 const BUILD_ONLY = new Set(["@tailwindcss/vite"]);
 
 const LICENCE_FILE = /^(?:licen[cs]e|copying|copyright|notice)/i;
+
+/** SPDX full names for licences in current shipped dependency metadata. */
+const LICENCE_NAMES: Record<string, string> = {
+  "0BSD": "BSD Zero Clause License",
+  "Apache-2.0": "Apache License 2.0",
+  "BSD-2-Clause": 'BSD 2-Clause "Simplified" License',
+  "BSD-3-Clause": 'BSD 3-Clause "New" or "Revised" License',
+  "CC0-1.0": "Creative Commons Zero v1.0 Universal",
+  MIT: "MIT License",
+  "MIT-0": "MIT No Attribution",
+  "MPL-2.0": "Mozilla Public License 2.0",
+  "Unicode-3.0": "Unicode License v3",
+  Unlicense: "The Unlicense",
+  Zlib: "zlib License",
+};
+
+/** Crate archives omit workspace-root licence files; pinned copies live beside this script. */
+const UPSTREAM_LICENCES: Record<string, string[]> = {
+  "alloc-stdlib@0.2.4": ["alloc-stdlib-0.2.4-LICENSE.txt"],
+  "defmt-parser@1.0.0": ["defmt-parser-1.0.0-LICENSE-APACHE.txt", "defmt-parser-1.0.0-LICENSE-MIT.txt"],
+  "unic-char-property@0.9.0": ["unic-0.9.0-LICENSE-APACHE.txt", "unic-0.9.0-LICENSE-MIT.txt"],
+  "unic-char-range@0.9.0": ["unic-0.9.0-LICENSE-APACHE.txt", "unic-0.9.0-LICENSE-MIT.txt"],
+  "unic-common@0.9.0": ["unic-0.9.0-LICENSE-APACHE.txt", "unic-0.9.0-LICENSE-MIT.txt"],
+  "unic-ucd-ident@0.9.0": ["unic-0.9.0-LICENSE-APACHE.txt", "unic-0.9.0-LICENSE-MIT.txt"],
+  "unic-ucd-version@0.9.0": ["unic-0.9.0-LICENSE-APACHE.txt", "unic-0.9.0-LICENSE-MIT.txt"],
+  "webview2-com@0.38.2": ["webview2-com-LICENSE.txt"],
+  "webview2-com-macros@0.8.1": ["webview2-com-macros-LICENSE.txt"],
+  "webview2-com-sys@0.38.2": ["webview2-com-LICENSE.txt"],
+};
 
 export type LicenceFile = { name: string; text: string };
 export type Component = {
@@ -75,6 +108,13 @@ export function licenceFiles(dir: string, declared?: string | null): LicenceFile
   const declaredName = declared?.replaceAll("\\", "/");
   if (declaredName && !names.includes(declaredName) && existsSync(join(dir, declaredName))) names.push(declaredName);
   return names.sort(compare).map((name) => ({ name, text: normalise(readFileSync(join(dir, name), "utf8")) }));
+}
+
+function upstreamLicenceFiles(name: string, version: string): LicenceFile[] {
+  return (UPSTREAM_LICENCES[`${name}@${version}`] ?? []).map((file) => ({
+    name: `${file.slice(file.lastIndexOf("-LICENSE") + 1, -4)} (upstream source)`,
+    text: normalise(readFileSync(join(import.meta.dir, "licences/upstream", file), "utf8")),
+  }));
 }
 
 /** External crates reached from `roots` over normal edges. Path crates are ours, walked but not listed. */
@@ -179,6 +219,16 @@ function licenceIds(expression: string): string[] {
   return [...new Set(ids)];
 }
 
+/** Expand SPDX ids; preserve OR choices and AND obligations from package metadata. */
+function licenceNames(expression: string): string {
+  return expression.replaceAll("/", " OR ").replace(/[^\s()]+/g, (token) => {
+    if (token === "OR" || token === "AND" || token === "WITH") return token;
+    const name = LICENCE_NAMES[token];
+    if (!name) throw new Error(`unknown SPDX licence id ${token}`);
+    return `${name} (${token})`;
+  });
+}
+
 const label = (c: Component) => `${c.kind} ${c.name} ${c.version}`;
 const rule = (char: string) => char.repeat(78);
 
@@ -190,7 +240,7 @@ export function render(components: Component[], canonical: Record<string, string
   const texts = new Map<string, { id: number; name: string; users: string[] }>();
   const appendix = new Set<string>();
   const entries = sorted.map((c) => {
-    const lines = [label(c), `  Licence: ${c.licence ?? "none declared"}`];
+    const lines = [label(c), `  Licence: ${c.licence ? licenceNames(c.licence) : "none declared"}`];
     if (c.repository) lines.push(`  Repository: ${c.repository}`);
     if (c.files.length > 0) {
       const refs = c.files.map((f) => {
@@ -217,12 +267,14 @@ export function render(components: Component[], canonical: Record<string, string
     "THIRD-PARTY NOTICES FOR TAKYON",
     "",
     "Takyon includes the third-party components listed below. Each one remains",
-    "under its own licence, reproduced here as its authors ship it. Those licences",
-    "are separate from Takyon's own licence, CC-BY-NC-SA-4.0, which covers only",
-    "Takyon's code and does not change the terms of any component listed here.",
+    "under its declared licence. OR means a choice; AND means both apply. The",
+    "licence names and identifiers come from SPDX. Texts come from component",
+    "archives or pinned upstream source; canonical texts cover remaining gaps.",
+    "Those licences are separate from Takyon's own CC-BY-NC-SA-4.0 licence.",
+    "It covers only Takyon's code and does not change their terms.",
     "",
-    "This file is generated at build time from the components compiled into",
-    "this release.",
+    "This file is generated at build time from the production dependency graphs",
+    "for this release.",
     "",
     rule("="),
     `Components (${sorted.length})`,
@@ -244,6 +296,38 @@ export function render(components: Component[], canonical: Record<string, string
   return `${out.join("\n")}\n`;
 }
 
+/** About's licence list: same components and texts as `render`, as data. */
+export function catalogue(components: Component[], canonical: Record<string, string>): ThirdPartyLicences {
+  const sorted = [...components].sort(
+    (a, b) => compare(a.kind, b.kind) || compare(a.name, b.name) || compare(a.version, b.version),
+  );
+  const texts: LicenceText[] = [];
+  const index = new Map<string, number>();
+  const intern = (name: string, text: string) => {
+    const identity = `${name}\u0000${text}`;
+    let at = index.get(identity);
+    if (at === undefined) index.set(identity, (at = texts.push({ name, text }) - 1));
+    return at;
+  };
+  const list = sorted.map((c): LicenceComponent => {
+    const ids = c.files.length > 0 || !c.licence ? [] : licenceIds(c.licence).filter((id) => canonical[id]);
+    return {
+      kind: c.kind,
+      name: c.name,
+      version: c.version,
+      licence: c.licence,
+      licenceName: c.licence ? licenceNames(c.licence) : null,
+      repository: c.repository,
+      texts:
+        c.files.length > 0
+          ? c.files.map((f) => intern(f.name, f.text))
+          : ids.map((id) => intern(id, canonical[id]!)),
+      canonical: c.files.length === 0 && ids.length > 0,
+    };
+  });
+  return { components: list, texts };
+}
+
 function cargoComponents(): Component[] {
   const proc = Bun.spawnSync([
     "cargo",
@@ -258,14 +342,17 @@ function cargoComponents(): Component[] {
   ]);
   if (proc.exitCode !== 0) throw new Error(`cargo metadata failed:\n${proc.stderr.toString()}`);
   const meta = JSON.parse(proc.stdout.toString()) as CargoMetadata;
-  return shippedCrates(meta, SHIPPED_ROOTS).map((p) => ({
-    kind: "crate",
-    name: p.name,
-    version: p.version,
-    licence: p.license,
-    repository: p.repository,
-    files: licenceFiles(dirname(p.manifest_path), p.license_file),
-  }));
+  return shippedCrates(meta, SHIPPED_ROOTS).map((p) => {
+    const files = licenceFiles(dirname(p.manifest_path), p.license_file);
+    return {
+      kind: "crate",
+      name: p.name,
+      version: p.version,
+      licence: p.license,
+      repository: p.repository,
+      files: files.length > 0 ? files : upstreamLicenceFiles(p.name, p.version),
+    };
+  });
 }
 
 function canonicalTexts(): Record<string, string> {
@@ -280,7 +367,9 @@ function canonicalTexts(): Record<string, string> {
 if (import.meta.main) {
   const crates = cargoComponents();
   const js = bundledJs(APP, BUILD_ONLY).map(({ dir: _dir, ...c }) => c);
-  writeFileSync(OUT, render([...crates, ...js], canonicalTexts()));
+  const canonical = canonicalTexts();
+  writeFileSync(OUT, render([...crates, ...js], canonical));
+  writeFileSync(OUT_JSON, `${JSON.stringify(catalogue([...crates, ...js], canonical))}\n`);
   const bare = [...crates, ...js].filter((c) => c.files.length === 0).length;
   console.log(
     `third-party-notices: ${crates.length} crates (${TARGET}), ${js.length} JS packages, ${bare} without a shipped licence text`,

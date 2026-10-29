@@ -8,14 +8,17 @@
  *
  * Mounting this page makes no request (ADR-0040). The feed is reached from the
  * button below, the Palette's update row, and the daily check the switch governs.
+ * The licence list is a sub-view and reads its file only when opened.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { Answer } from "@/components/Answer";
 import { Lockup } from "@/components/Lockup";
 import * as api from "@/api";
 import type { HotkeyStatus, UpdateCheck } from "@takyon/shared";
 import { Group, Row, Switch, useApplied } from "../controls";
+import { CrumbContext } from "../crumb";
+import { Licences } from "./Licences";
 
 /** ADR-0011: the slug is what Windows keys off, and it is not the display name. */
 const IDENTITY = "com.v3sper.takyon";
@@ -33,6 +36,8 @@ export function About() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoCheck, setAutoCheck] = useState<boolean | null>(null);
+  const [licences, setLicences] = useState(false);
+  const setCrumb = useContext(CrumbContext);
   const daily = useApplied(api.setUpdateAutoCheck, api.updateAutoCheck);
   const toggleDaily = useCallback(
     (on: boolean) => void daily.apply(on, (next) => setAutoCheck(next)),
@@ -72,6 +77,13 @@ export function About() {
   };
 
   const available = check?.state === "available" ? check : null;
+
+  const openLicences = () => {
+    setLicences(true);
+    setCrumb({ label: "Third-party licences", back: () => (setLicences(false), setCrumb(null)) });
+  };
+
+  if (licences) return <Licences />;
 
   return (
     <>
@@ -141,6 +153,22 @@ export function About() {
           description="What the startup entry, the single-instance lock and the data folder are named after. Independent of the display name (ADR-0011)."
         >
           <span className="font-mono text-[12.5px] text-fg/80">{IDENTITY}</span>
+        </Row>
+      </Group>
+
+      <Group title="Legal">
+        <Row
+          id="licences"
+          label="Third-party licences"
+          description="Search dependencies listed in Takyon's bundled notices. Read their licence texts offline."
+        >
+          <button
+            type="button"
+            onClick={openLicences}
+            className="rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg/86 transition-colors hover:text-fg"
+          >
+            View
+          </button>
         </Row>
       </Group>
     </>

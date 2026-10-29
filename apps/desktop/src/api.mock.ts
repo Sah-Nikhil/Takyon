@@ -50,6 +50,7 @@ import type {
   UpdateCheck,
   UpdateNotice,
   UpdateProgress,
+  ThirdPartyLicences,
 } from "@takyon/shared";
 
 type ShowListener = (payload: ShowPayload) => void;
@@ -807,6 +808,95 @@ export function setUpdateNotice(notice: UpdateNotice | null) {
   updateNoticeState = notice;
 }
 
+/**
+ * About's licence list. A handful of real-looking rows rather than the 356 a
+ * build ships: the visual layer checks layout, search and expansion, and the
+ * Rust contract test checks the generated file.
+ */
+const MIT =
+  "MIT License\n\nCopyright (c) Meta Platforms, Inc. and affiliates.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction.";
+const LICENCES: ThirdPartyLicences = {
+  components: [
+    {
+      kind: "crate",
+      name: "jiff",
+      version: "0.2.15",
+      licence: "Unlicense OR MIT",
+      licenceName: "The Unlicense (Unlicense) OR MIT License (MIT)",
+      repository: "https://github.com/BurntSushi/jiff",
+      texts: [1, 2],
+      canonical: false,
+    },
+    {
+      kind: "crate",
+      name: "serde",
+      version: "1.0.228",
+      licence: "MIT OR Apache-2.0",
+      licenceName: "MIT License (MIT) OR Apache License 2.0 (Apache-2.0)",
+      repository: "https://github.com/serde-rs/serde",
+      texts: [3, 4],
+      canonical: false,
+    },
+    {
+      kind: "crate",
+      name: "tauri",
+      version: "2.11.5",
+      licence: "Apache-2.0 OR MIT",
+      licenceName: "Apache License 2.0 (Apache-2.0) OR MIT License (MIT)",
+      repository: "https://github.com/tauri-apps/tauri",
+      texts: [3, 4],
+      canonical: false,
+    },
+    {
+      kind: "crate",
+      name: "windows-link",
+      version: "0.2.1",
+      licence: "MIT OR Apache-2.0",
+      licenceName: "MIT License (MIT) OR Apache License 2.0 (Apache-2.0)",
+      repository: null,
+      texts: [5],
+      canonical: true,
+    },
+    {
+      kind: "npm",
+      name: "@phosphor-icons/react",
+      version: "2.1.10",
+      licence: "MIT",
+      licenceName: "MIT License (MIT)",
+      repository: "https://github.com/phosphor-icons/react",
+      texts: [2],
+      canonical: false,
+    },
+    {
+      kind: "npm",
+      name: "react",
+      version: "19.2.0",
+      licence: "MIT",
+      licenceName: "MIT License (MIT)",
+      repository: "https://github.com/facebook/react",
+      texts: [0],
+      canonical: false,
+    },
+  ],
+  texts: [
+    { name: "LICENSE", text: MIT },
+    { name: "UNLICENSE", text: "This is free and unencumbered software released into the public domain." },
+    { name: "LICENSE-MIT", text: "The MIT License (MIT)\n\nCopyright (c) 2015 Andrew Gallant" },
+    { name: "LICENSE-APACHE", text: "Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/\n\nTERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION" },
+    { name: "LICENSE-MIT", text: "Permission is hereby granted, free of charge, to any\nperson obtaining a copy of this software." },
+    { name: "MIT", text: "MIT License\n\nCopyright (c) <year> <copyright holders>" },
+  ],
+};
+let licenceLoads = 0;
+let licenceFailure: string | null = null;
+/** How many times the list was read, so a test can prove About alone reads nothing. */
+export function licenceLoadCount() {
+  return licenceLoads;
+}
+export function failLicences(message: string | null) {
+  licenceFailure = message;
+}
+
 /** The same, for a `settings.db` write. An unwritable database is the real case. */
 let preferenceFailure: string | null = null;
 export function failPreferenceWrite(message: string | null) {
@@ -1536,6 +1626,11 @@ export const mock = {
   updateNotice: async () => updateNoticeState,
   dismissUpdateNotice: async () => {
     if (updateNoticeState?.kind === "whatsNew") updateNoticeState = null;
+  },
+  thirdPartyLicences: async (): Promise<ThirdPartyLicences> => {
+    licenceLoads++;
+    if (licenceFailure) throw new Error(licenceFailure);
+    return LICENCES;
   },
   updateAutoCheck: async () => autoCheck,
   setUpdateAutoCheck: async (on: boolean) => {

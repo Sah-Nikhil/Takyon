@@ -33,6 +33,8 @@ import {
   setIndexing,
   setStoredPreference,
   setUpdateNotice,
+  failLicences,
+  licenceLoadCount,
   setUpdateScenario,
   updateCheckCount,
 } from "./api.mock";
@@ -71,6 +73,10 @@ if (!inTauri) {
     updateCheckCount,
     // The Palette's update row, which needs a background check to exist.
     setUpdateNotice,
+    // About's licence list: a refusal on demand, and a read count proving the
+    // list loads only when its view opens.
+    failLicences,
+    licenceLoadCount,
     // What "Settings wrote a preference while the Palette was hidden" looks like
     // when there is no settings.db to write to.
     setStoredPreference,

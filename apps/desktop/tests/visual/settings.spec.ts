@@ -646,6 +646,78 @@ test("a download that fails its signature check installs nothing", async ({ page
   await expect(page.getByRole("button", { name: "Install and restart" })).toBeEnabled();
 });
 
+const licenceLoads = (page: import("@playwright/test").Page) =>
+  page.evaluate(() =>
+    (
+      window as unknown as { __takyon_mock: { licenceLoadCount: () => number } }
+    ).__takyon_mock.licenceLoadCount(),
+  );
+
+/**
+ * About / Third-party licences: read only when opened, searchable by name and
+ * by licence, each row opening onto its texts. Fixture rows, not the real 356.
+ */
+test("the licence list loads only when opened, then searches and expands", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await expect(page.getByText("Third-party licences")).toBeVisible();
+  expect(await licenceLoads(page)).toBe(0);
+
+  await page.getByRole("button", { name: "View" }).click();
+  await expect(page.getByRole("button", { name: "About", exact: true }).last()).toBeVisible();
+  await expect(page.getByText("6 components")).toBeVisible();
+  // StrictMode mounts effects twice in dev; the claim is zero before opening.
+  expect(await licenceLoads(page)).toBeGreaterThan(0);
+  await expect(page).toHaveScreenshot("settings-licences.png");
+
+  const search = page.getByLabel("Search components and licences");
+  // By licence name, not only the SPDX id the row shows.
+  await search.fill("apache license");
+  await expect(page.getByText("3 of 6")).toBeVisible();
+  await search.fill("react");
+  await expect(page.getByText("2 of 6")).toBeVisible();
+  await search.fill("nothing-ships-this");
+  await expect(page.getByText("No component matches")).toBeVisible();
+  await search.press("Escape");
+  await expect(page.getByText("6 components")).toBeVisible();
+
+  const serde = page.getByRole("button", { name: /^serde/ });
+  await serde.click();
+  await expect(serde).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("MIT License (MIT) OR Apache License 2.0 (Apache-2.0)")).toBeVisible();
+  await expect(page.getByText("TERMS AND CONDITIONS FOR USE", { exact: false })).toBeVisible();
+  await expect(page).toHaveScreenshot("settings-licences-open.png");
+
+  // A package shipping no text says the standard one stands in.
+  await page.getByRole("button", { name: /^windows-link/ }).click();
+  await expect(page.getByText("ships no licence text", { exact: false })).toBeVisible();
+
+  // The crumb leads back to About's own view.
+  await page.locator("main h1").getByRole("button", { name: "About" }).click();
+  await expect(page.getByText("Published by V3SPER")).toBeVisible();
+});
+
+test("settings search finds the licence list by the American spelling", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByLabel("Search settings").fill("license");
+  await page.getByRole("button", { name: /Third-party licences/ }).click();
+  await expect(page.locator("#setting-licences")).toBeVisible();
+  expect(await licenceLoads(page)).toBe(0);
+});
+
+test("a missing licence list says so in place of the rows", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.evaluate(() =>
+    (
+      window as unknown as { __takyon_mock: { failLicences: (m: string | null) => void } }
+    ).__takyon_mock.failLicences("The licence list is missing from this install. Reinstalling Takyon restores it."),
+  );
+  await page.getByRole("button", { name: "About" }).click();
+  await page.getByRole("button", { name: "View" }).click();
+  await expect(page.getByRole("alert")).toContainText("Reinstalling Takyon restores it.");
+  await expect(page.getByLabel("Search components and licences")).toBeDisabled();
+});
+
 /**
  * Task 4: the box searches *settings*, not page names. "retention" is what
  * someone types and no page is called that.
