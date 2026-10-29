@@ -9,7 +9,15 @@ in `ROADMAP.md`. A finished phase may advance the release minor, while partial
 phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
 renumbering below records a separate change to the phase plan.
 
-## v0.12.4 — In-app updates (pending release)
+## v0.12.5 — Date questions (pending release)
+
+- The calculator answers date shifts (`30 days from now`, `45 days ago was?`), day counts (`how many days until 20 September 2027`), weekdays (`what day of the week is 20 Sep 2027?`), and signed spans (`days between 21 Dec 2027 and 5 Apr 2039`). Enter copies the answer.
+- `next Friday` means the first Friday strictly after today. `two weeks from Friday` starts at that Friday. Dates without a year use the next occurrence for future questions and the previous occurrence for past questions. Spans require years on calendar endpoints.
+- Answers use the local calendar date and run offline. Incomplete questions and ambiguous numeric dates stay searches.
+
+**Still open.** `docs/verify/v0.18.md` has not been run by hand. Business days, holidays, and localized month names remain outside the date grammar.
+
+## v0.12.4 — In-app updates
 
 - **In-app updates.** Takyon checks GitHub Releases once a day and shows a new
   version on the Palette's empty line: a pill in Compact, a row in Expanded.
