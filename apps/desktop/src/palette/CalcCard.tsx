@@ -47,7 +47,13 @@ function Half({
 }) {
   return (
     <div className="flex min-w-0 flex-col items-center justify-center gap-2 px-4">
-      <div className="w-full truncate text-center text-[26px] font-semibold leading-none text-fg">
+      <div
+        className={`w-full text-center font-semibold text-fg ${
+          long && value.length > 22
+            ? "line-clamp-3 break-words text-[16px] leading-[1.15]"
+            : "truncate text-[26px] leading-none"
+        }`}
+      >
         {tinted ? tint(value) : value}
       </div>
       {/*

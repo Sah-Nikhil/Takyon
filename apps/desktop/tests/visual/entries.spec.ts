@@ -457,6 +457,15 @@ test("the footer says Copy answer against a calculation", async ({ page }) => {
   await expect(page.getByText("Actions").locator("..")).toContainText("Copy answer");
 });
 
+test("a compound date card shows every step in Compact mode", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("1 month and 1 day and 1 month and 1 day from now");
+  const value = page.getByText("today + 1 month + 1 day + 1 month + 1 day");
+  await expect(value).toBeVisible();
+  const fits = await value.evaluate((node) => node.scrollHeight <= node.clientHeight);
+  expect(fits).toBe(true);
+});
+
 /** No selected row over an empty Palette, so nothing to describe. */
 test("an empty Palette draws no footer", async ({ page }) => {
   await open(page);

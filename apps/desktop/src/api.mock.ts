@@ -843,9 +843,22 @@ const TZ_FIXTURES: Record<string, Entry> = {
   },
 };
 
+/** Four-step date card exercises Compact value wrapping. */
+const DATE_FIXTURES: Record<string, Entry> = {
+  "1 month and 1 day and 1 month and 1 day from now": {
+    id: "calc:30 December 2026",
+    title: "30 December 2026",
+    subtitle: "today + 1 month + 1 day + 1 month + 1 day",
+    kind: "calc",
+    score: 1000,
+    actions: ["copy_answer"],
+    labels: ["today · Wed 28 Oct 2026", "Wednesday"],
+  },
+};
+
 function calcFixture(q: string): Entry[] {
-  const tz = TZ_FIXTURES[q.trim()];
-  if (tz) return [tz];
+  const card = TZ_FIXTURES[q.trim()] ?? DATE_FIXTURES[q.trim()];
+  if (card) return [card];
   const answer = CALC_FIXTURES[q.trim()];
   if (!answer) return [];
   return [
