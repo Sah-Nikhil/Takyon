@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { nextDevNumber, parseReleaseArgs } from "./release-utils";
+import { BUMP_COMMIT_FILES, nextDevNumber, parseReleaseArgs, releaseDirtyFiles } from "./release-utils";
+
+describe("releaseDirtyFiles", () => {
+  test("keeps release notes with the version bump and reports unrelated edits", () => {
+    expect(BUMP_COMMIT_FILES).toContain("CHANGELOG.md");
+    expect(releaseDirtyFiles(" M CHANGELOG.md\n M package.json\n M README.md\n")).toEqual(["README.md"]);
+  });
+});
 
 describe("parseReleaseArgs", () => {
   test("--local builds here and may skip preflight", () => {

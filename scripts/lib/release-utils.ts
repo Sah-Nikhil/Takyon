@@ -22,12 +22,25 @@ export const VERSION_TOML_FILES = [
   "apps/desktop/src-tauri/uiaccess/Cargo.toml",
 ];
 
-/** Everything a version bump commit holds: the six files plus the lock they change. */
+/** Release commit contents: notes, version files, lockfile, and release flow fix. */
 export const BUMP_COMMIT_FILES = [
   ...VERSION_JSON_FILES,
   ...VERSION_TOML_FILES,
   "apps/desktop/src-tauri/Cargo.lock",
+  "CHANGELOG.md",
+  "scripts/release.ts",
+  "scripts/lib/release-utils.ts",
+  "scripts/lib/release-utils.test.ts",
 ];
+
+/** Paths changed locally beyond release notes and version files. */
+export function releaseDirtyFiles(status: string): string[] {
+  return status
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.slice(3))
+    .filter((file) => !BUMP_COMMIT_FILES.includes(file));
+}
 
 export type ReleaseArgs =
   | { mode: "local"; skipPreflight: boolean }

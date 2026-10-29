@@ -9,6 +9,10 @@ in `ROADMAP.md`. A finished phase may advance the release minor, while partial
 phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
 renumbering below records a separate change to the phase plan.
 
+## v0.12.7 — Third-party licences
+
+- Settings › About now lists bundled dependencies, versions, and licences. Search the list and read available licence texts offline.
+
 ## v0.12.6 — More calendar questions
 
 - Count weeks until, since, or between dates as whole weeks plus remaining days. Count business or working days as Monday through Friday, excluding the start date and including the target; holidays are not excluded.
