@@ -203,6 +203,42 @@ test("the surface filters, and Escape goes back rather than dismissing", async (
   await expect(page.getByPlaceholder("Search")).toHaveValue("");
 });
 
+/**
+ * The highlight moved but the list did not: arrowing past the bottom of the
+ * history left the selected row off-screen. Four clips do not overflow a full
+ * window, so the viewport is shrunk until the list must scroll.
+ */
+test("arrow keys scroll the history list to keep the selected row in view", async ({ page }) => {
+  const rows = await openHistory(page);
+  await page.setViewportSize({ width: 640, height: 220 });
+
+  const list = page.getByRole("listbox", { name: "Clipboard history" });
+  expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+
+  // Inside the list's own box, not the page's: the page never scrolls here.
+  const inList = (row: ReturnType<typeof rows.last>) =>
+    row.evaluate((el) => {
+      const box = el.closest('[role="listbox"]')!.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      return r.top >= box.top && r.bottom <= box.bottom;
+    });
+
+  const filter = page.getByPlaceholder("Type to filter entries...");
+  for (let i = 0; i < 3; i++) await filter.press("ArrowDown");
+  await expect(rows.last()).toHaveAttribute("aria-selected", "true");
+  expect(await inList(rows.last())).toBe(true);
+  expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+  for (let i = 0; i < 3; i++) await filter.press("ArrowUp");
+  await expect(rows.first()).toHaveAttribute("aria-selected", "true");
+  expect(await inList(rows.first())).toBe(true);
+  // Back to the top edge of the content: the heading sits under the list's own
+  // padding, which is allowed to stay hidden.
+  expect(
+    await list.evaluate((el) => el.scrollTop <= parseFloat(getComputedStyle(el).paddingTop)),
+  ).toBe(true);
+});
+
 test("Ctrl+K on a clip offers paste, copy and delete", async ({ page }) => {
   const input = await open(page);
   await input.fill("!v");
