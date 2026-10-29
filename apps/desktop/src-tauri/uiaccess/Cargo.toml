@@ -1,6 +1,6 @@
 [package]
 name = "takyon-uiaccess-helper"
-version = "0.12.4"
+version = "0.12.5"
 description = "Brings the Takyon Palette to the foreground over elevated windows"
 edition = "2021"
 license = "CC-BY-NC-SA-4.0"
