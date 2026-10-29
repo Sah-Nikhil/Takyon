@@ -1,14 +1,14 @@
-//! Date arithmetic: shifts (`30 days from now`) and countdowns (`days until
-//! 20 Sep 2027`). Civil dates through `jiff`, today from the local zone the
-//! [`Clock`] carries. Offline; parses whole phrases word by word.
+//! Date arithmetic: shifts (`30 days from now`), countdowns (`days until
+//! 20 Sep 2027`), spans (`days between`), weekdays (`what weekday is`) and
+//! `next Friday`. Civil dates via `jiff`, today in the [`Clock`]'s zone; offline.
 //!
-//! A count of days is target minus today, so tomorrow is 1 and a past date is
-//! negative. Month and year shifts clamp to month end (31 Jan + 1 month is 28
-//! or 29 Feb). A date with no year is the nearest occurrence: next for a shift
-//! or `until`, last for `since`. Numeric dates other than ISO are refused, as
-//! `20/09` and `09/20` read differently by locale.
+//! Day count = target minus today: tomorrow 1, past negative. Month and year
+//! shifts clamp to month end (31 Jan + 1 month = 28 or 29 Feb). Year-less date =
+//! nearest: next for a shift or `until`, last for `since`. Non-ISO numeric
+//! dates refused: `20/09` vs `09/20` depends on locale.
 //!
-//! Never answers a bare date or a bare `today`: those are searches.
+//! `next Friday` is strictly after today. Never answers a bare date, weekday
+//! or `today`: those are searches.
 
 use jiff::civil::{Date, Weekday};
 use jiff::Span;
@@ -17,11 +17,18 @@ use super::tz::{Clock, Reply, MONTHS};
 
 /// Answer a date question, or decline.
 pub fn answer(body: &str, clock: &Clock) -> Option<Reply> {
-    let lower = body.trim().to_lowercase().replace(',', " ");
+    let lower = body
+        .trim()
+        .to_lowercase()
+        .replace(',', " ")
+        .replace('\u{2019}', "'");
     let lower = lower.trim_end_matches(['?', '.', '!']);
     let words: Vec<&str> = lower.split_whitespace().collect();
     let today = clock.now.to_zoned(clock.local.clone()).date();
-    countdown(&words, today).or_else(|| shift(&words, today))
+    countdown(&words, today)
+        .or_else(|| between(&words, today))
+        .or_else(|| weekday(&words, today))
+        .or_else(|| shift(&words, today))
 }
 
 /// Strip `prefix` from the front of `words`.
@@ -55,12 +62,18 @@ const UNTIL: &[&[&str]] = &[
     &["days", "till"],
     &["days", "til"],
     &["days", "left", "until"],
+    &["how", "long", "until"],
+    &["how", "long", "till"],
+    &["how", "long", "is", "it", "until"],
+    &["how", "long", "is", "it", "till"],
 ];
 
 const SINCE: &[&[&str]] = &[
     &["how", "many", "days", "since"],
     &["how", "many", "days", "has", "it", "been", "since"],
     &["days", "since"],
+    &["how", "long", "since"],
+    &["how", "long", "has", "it", "been", "since"],
 ];
 
 /// `days until <date>`, `how many days is <date> in`, `days since <date>`.
@@ -79,10 +92,9 @@ fn countdown(words: &[&str], today: Date) -> Option<Reply> {
     };
     let days = today.until(target.date).ok()?.get_days();
     let days = if since { -days } else { days };
-    let unit = if days.abs() == 1 { "day" } else { "days" };
     let word = if since { "since" } else { "until" };
     Some(Reply {
-        display: format!("{days} {unit}"),
+        display: count(days),
         from: full(target.date),
         labels: [
             weekday_name(target.date.weekday()).to_string(),
@@ -91,14 +103,89 @@ fn countdown(words: &[&str], today: Date) -> Option<Reply> {
     })
 }
 
+const BETWEEN: &[&[&str]] = &[
+    &["days", "between"],
+    &["how", "many", "days", "between"],
+    &["how", "many", "days", "are", "there", "between"],
+];
+
+/// `days between <date> and <date>`: second minus first, signed.
+fn between(words: &[&str], today: Date) -> Option<Reply> {
+    let rest = strip_any(words, BETWEEN)?;
+    let at = rest.iter().position(|w| *w == "and")?;
+    let first = between_day(&rest[..at], today)?;
+    let second = between_day(&rest[at + 1..], today)?;
+    let days = first.date.until(second.date).ok()?.get_days();
+    Some(Reply {
+        display: count(days),
+        from: first.said,
+        labels: [
+            format!("to {}", second.said),
+            "days between \u{b7} second minus first".to_string(),
+        ],
+    })
+}
+
+/// Yearless calendar endpoints can reverse order across New Year; require years.
+fn between_day(words: &[&str], today: Date) -> Option<Anchor> {
+    match words {
+        ["today"] | ["now"] | ["tomorrow"] | ["yesterday"] | ["next", _] => {}
+        _ => {
+            let last = words.last()?;
+            let has_year = last.len() == 4 && last.bytes().all(|b| b.is_ascii_digit());
+            if !has_year && !last.contains('-') {
+                return None;
+            }
+        }
+    }
+    day(words, today, true)
+}
+
+/// `3 days`, `-1 day`.
+fn count(days: i32) -> String {
+    let unit = if days.abs() == 1 { "day" } else { "days" };
+    format!("{days} {unit}")
+}
+
+/// Weekday questions, and whether a year-less date looks forward (`was` looks back).
+const WEEKDAY_ASK: &[(&[&str], bool)] = &[
+    (&["what", "day", "of", "the", "week", "is"], true),
+    (&["what", "day", "of", "the", "week", "was"], false),
+    (
+        &["what", "day", "of", "the", "week", "will", "it", "be"],
+        true,
+    ),
+    (&["which", "day", "of", "the", "week", "is"], true),
+    (&["which", "day", "of", "the", "week", "was"], false),
+    (&["what", "weekday", "is"], true),
+    (&["what", "weekday", "was"], false),
+    (&["what", "weekday", "will", "it", "be"], true),
+];
+
+/// `what weekday is 20 Sep 2027`: the weekday, with the full date under it.
+fn weekday(words: &[&str], today: Date) -> Option<Reply> {
+    let (core, forward) = WEEKDAY_ASK
+        .iter()
+        .find_map(|(ask, forward)| Some((strip(words, ask)?, *forward)))?;
+    let to = target(core, true, today, forward)?;
+    Some(Reply {
+        display: weekday_name(to.date.weekday()).to_string(),
+        from: to.from,
+        labels: [to.label, full(to.date)],
+    })
+}
+
 /// Wrappers that turn a phrase into a question. Only a wrapped phrase may be
 /// a lone anchor (`what date is tomorrow`) or `in 3 weeks`.
 const ASK: &[&[&str]] = &[
+    &["which", "day", "falls"],
     &["what", "date", "is"],
     &["what", "day", "is"],
     &["what", "date", "is", "it"],
     &["what", "date", "will", "it", "be"],
     &["what", "day", "will", "it", "be"],
+    &["what", "date", "was"],
+    &["what", "day", "was"],
     &["what", "date", "was", "it"],
     &["what", "day", "was", "it"],
     &["what", "is", "the", "date"],
@@ -111,6 +198,8 @@ const ASKED: &[&[&str]] = &[
     &["is", "what", "day"],
     &["will", "be", "what", "date"],
     &["was", "what", "date"],
+    &["what", "date", "will", "it", "be"],
+    &["what", "day", "will", "it", "be"],
 ];
 
 /// `30 days from now`, `2 weeks ago`, `today + 1 month`, `what date is tomorrow`.
@@ -118,20 +207,41 @@ fn shift(words: &[&str], today: Date) -> Option<Reply> {
     let wrapped = ASK
         .iter()
         .rev()
-        .find_map(|p| strip(words, p))
-        .or_else(|| ASKED.iter().find_map(|s| strip_end(words, s)));
-    let core = wrapped.unwrap_or(words);
-    if core.is_empty() {
-        return None;
-    }
+        .find_map(|p| Some((strip(words, p)?, !p.contains(&"was"))))
+        .or_else(|| {
+            ASKED
+                .iter()
+                .find_map(|s| Some((strip_end(words, s)?, !s.contains(&"was"))))
+        });
+    let core = wrapped.map(|(core, _)| core).unwrap_or(words);
+    let forward = wrapped.map(|(_, forward)| forward).unwrap_or(true);
+    let to = target(core, wrapped.is_some(), today, forward)?;
+    Some(Reply {
+        display: full(to.date),
+        from: to.from,
+        labels: [to.label, weekday_name(to.date.weekday()).to_string()],
+    })
+}
 
+/// A shift's result, its left half, and that half's label.
+struct Target {
+    date: Date,
+    from: String,
+    label: String,
+}
+
+/// Resolve a shift or anchor. Only a `wrapped` question may be a lone anchor
+/// or `in 3 weeks`; `next Friday` stands alone unwrapped.
+fn target(core: &[&str], wrapped: bool, today: Date, forward: bool) -> Option<Target> {
     let (anchor, by) = match parse_shift(core, today) {
         Some(found) => found,
-        None if wrapped.is_some() => match core {
-            ["in", n, unit] => (anchor_today(today), Some(step(n, unit, 1)?)),
-            _ => (day(core, today, true)?, None),
+        None => match core {
+            [] => return None,
+            ["in", n, unit] if wrapped => (anchor_today(today), Some(step(n, unit, 1)?)),
+            ["next", _] => (day(core, today, forward)?, None),
+            _ if wrapped => (day(core, today, forward)?, None),
+            _ => return None,
         },
-        None => return None,
     };
 
     let (date, from) = match by {
@@ -142,21 +252,30 @@ fn shift(words: &[&str], today: Date) -> Option<Reply> {
         }
         None => (anchor.date, anchor.said.clone()),
     };
-    Some(Reply {
-        display: full(date),
+    Some(Target {
+        date,
         from,
-        labels: [anchor.label, weekday_name(date.weekday()).to_string()],
+        label: anchor.label,
     })
 }
 
 /// A shift with its anchor, in any of the unwrapped spellings.
 fn parse_shift(core: &[&str], today: Date) -> Option<(Anchor, Option<Step>)> {
+    if let [n, unit, "ago", "was"] = core {
+        return Some((anchor_today(today), Some(step(n, unit, -1)?)));
+    }
     if let [n, unit, "ago"] = core {
         return Some((anchor_today(today), Some(step(n, unit, -1)?)));
     }
     if let [n, unit, dir @ ("from" | "after" | "before"), rest @ ..] = core {
         let sign = if *dir == "before" { -1 } else { 1 };
-        return Some((day(rest, today, true)?, Some(step(n, unit, sign)?)));
+        let by = step(n, unit, sign)?;
+        // Bare weekday only in `<n> weeks from Friday`; `30 days from monday` stays a search.
+        let anchor = day(rest, today, true).or_else(|| match rest {
+            [w] if *dir == "from" && matches!(by.unit, Unit::Week) => upcoming(w, today, ""),
+            _ => None,
+        })?;
+        return Some((anchor, Some(by)));
     }
     // `<anchor> + <n> <unit>`: the operator is third from the end.
     let [rest @ .., op, n, unit] = core else {
@@ -210,10 +329,14 @@ impl Step {
     }
 }
 
-/// `30 days`, `a week`. Digits only, at most six: no signs, no decimals.
+/// `30 days`, `a week`, `two weeks`. Digits at most six: no signs, no decimals.
 fn step(n: &str, unit: &str, sign: i64) -> Option<Step> {
+    const WORDS: [&str; 9] = [
+        "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    ];
     let count = match n {
         "a" | "an" | "one" => 1,
+        _ if WORDS.contains(&n) => WORDS.iter().position(|w| *w == n)? as i64 + 2,
         _ if (1..=6).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()) => {
             n.parse().ok()?
         }
@@ -249,13 +372,30 @@ fn relative(said: &str, date: Date, today: Date) -> Anchor {
     }
 }
 
-/// `today`, `tomorrow`, `yesterday`, `now`, or a calendar date. `forward`
+/// First `name`d weekday strictly after today, so a week on that weekday.
+/// `said` prefixes the name on the card.
+fn upcoming(name: &str, today: Date, said: &str) -> Option<Anchor> {
+    let w = WEEKDAYS
+        .into_iter()
+        .find(|w| weekday_name(*w).eq_ignore_ascii_case(name))?;
+    let ahead = (w.to_monday_zero_offset() - today.weekday().to_monday_zero_offset()).rem_euclid(7);
+    let ahead = if ahead == 0 { 7 } else { ahead };
+    let date = today.checked_add(Span::new().days(i64::from(ahead))).ok()?;
+    Some(Anchor {
+        date,
+        said: format!("{said}{}", weekday_name(w)),
+        label: short(date),
+    })
+}
+
+/// `today`, `tomorrow`, `yesterday`, `now`, `next Friday`, or a calendar date. `forward`
 /// picks the next occurrence of a year-less date, else the last.
 fn day(words: &[&str], today: Date, forward: bool) -> Option<Anchor> {
     let offset = match words {
         ["now"] | ["today"] => 0,
         ["tomorrow"] => 1,
         ["yesterday"] => -1,
+        ["next", w] => return upcoming(w, today, "next "),
         _ => {
             let date = calendar(words, today, forward)?;
             return Some(Anchor {
@@ -392,6 +532,16 @@ fn short(date: Date) -> String {
         date.year()
     )
 }
+
+const WEEKDAYS: [Weekday; 7] = [
+    Weekday::Monday,
+    Weekday::Tuesday,
+    Weekday::Wednesday,
+    Weekday::Thursday,
+    Weekday::Friday,
+    Weekday::Saturday,
+    Weekday::Sunday,
+];
 
 fn weekday_name(w: Weekday) -> &'static str {
     match w {
