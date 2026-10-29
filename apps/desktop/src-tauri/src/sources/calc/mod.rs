@@ -779,6 +779,10 @@ mod tests {
     /// The asked-for countdown spellings, every string the card draws.
     #[test]
     fn date_days_until_a_date_counts_from_today_exclusive() {
+        assert_eq!(
+            date_title("days to september 10").as_deref(),
+            Some("317 days")
+        );
         let expected = card(
             "327 days",
             "20 September 2027",
@@ -893,6 +897,8 @@ mod tests {
             "days gone",
             "days until dawn",
             "days until",
+            "days to",
+            "days to die",
             "30 days",
             "in 30 days",
             "30 days from",
@@ -937,6 +943,51 @@ mod tests {
             "in 45 days",
             "what date will it be",
             "what date was",
+            "last friday night",
+            "this friday night",
+            "last fri",
+            "this week",
+            "friday in",
+            "friday in 3",
+            "friday in 3 days",
+            "the day after tomorrow",
+            "day after",
+            "day after day",
+            "end of month",
+            "end of next month",
+            "the end of the month",
+            "end of the world",
+            "days left",
+            "days left in",
+            "days left in this",
+            "days left in this week",
+            "september 10 next",
+            "next year",
+            "this year",
+            "last year",
+            "weeks until",
+            "weeks until dawn",
+            "weekdays",
+            "business days",
+            "business days until",
+            "3 months and",
+            "3 months and 10 days",
+            "1 year 2 months",
+            "3 months and from now",
+            "3 months and 10 nights from now",
+            "2 days 3 hours from now",
+            "10 business days",
+            "business days from now",
+            "10 business from now",
+            "leap year",
+            "is 2028",
+            "is 2028 a leap",
+            "is 28 a leap year",
+            "first monday",
+            "first monday in november 2027",
+            "the first monday in november",
+            "what's the first monday",
+            "what's the first monday in narnia",
         ] {
             assert_eq!(
                 answer_at(input, Policy::Automatic, &day()),
@@ -1042,7 +1093,6 @@ mod tests {
             date_title("days between today and tomorrow").as_deref(),
             Some("1 day")
         );
-        assert_eq!(date_title("days between 1 jan and 31 dec"), None);
         assert_eq!(
             date("how long until 20 Sep 2027?"),
             card(
@@ -1113,6 +1163,386 @@ mod tests {
         );
     }
 
+    /// Whole weeks plus leftover days, signed; the day total sits in the label.
+    #[test]
+    fn date_weeks_until_and_between_show_weeks_and_days() {
+        assert_eq!(
+            date("how many weeks until September 10"),
+            card(
+                "45 weeks, 2 days",
+                "10 September 2027",
+                "Friday",
+                "weeks until \u{b7} 317 days \u{b7} today is Wed 28 Oct 2026",
+            )
+        );
+        for (input, title) in [
+            ("weeks until 1 nov 2026", "0 weeks, 4 days"),
+            ("weeks until 25 nov 2026", "4 weeks"),
+            ("weeks until 20 oct 2026", "-1 week, -1 day"),
+            ("weeks since 28 sep 2026", "4 weeks, 2 days"),
+            ("weeks between 1 jan 2027 and 15 jan 2027", "2 weeks"),
+            (
+                "how many weeks between 15 jan 2027 and 1 jan 2027",
+                "-2 weeks",
+            ),
+            ("weeks between 21 dec 2027 and 5 apr 2039", "589 weeks"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+    }
+
+    /// Mon-Fri only, holidays count: start excluded, target included, past negative.
+    #[test]
+    fn date_weekdays_until_skip_weekends_only() {
+        assert_eq!(
+            date("how many weekdays until September 10"),
+            card(
+                "227 weekdays",
+                "10 September 2027",
+                "Friday",
+                "weekdays until \u{b7} Mon-Fri, holidays count \u{b7} today is Wed 28 Oct 2026",
+            )
+        );
+        for (input, title) in [
+            ("business days until 30 oct 2026", "2 business days"),
+            ("working days until 2 nov 2026", "3 working days"),
+            ("weekdays until 31 oct 2026", "2 weekdays"),
+            ("weekdays until today", "0 weekdays"),
+            ("weekdays until 26 oct 2026", "-2 weekdays"),
+            ("how many business days until 29 oct 2026", "1 business day"),
+            (
+                "business days between 30 oct 2026 and 2 nov 2026",
+                "1 business day",
+            ),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+    }
+
+    /// First yearless end = next on or after today; second = first on or after the first.
+    #[test]
+    fn date_yearless_spans_resolve_in_order_and_show_years() {
+        assert_eq!(
+            date("how many days between September 10 and October 2"),
+            card(
+                "22 days",
+                "10 September 2027",
+                "to 2 October 2027",
+                "days between \u{b7} second minus first",
+            )
+        );
+        for (input, title) in [
+            ("days between 1 jan and 31 dec", "364 days"),
+            ("days between 25 dec and 5 jan", "11 days"),
+            ("days between 10 oct and 1 nov", "22 days"),
+            ("days between today and 28 oct", "0 days"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+        let (_, from, [to, _]) = date("days between 25 dec and 5 jan").unwrap();
+        assert_eq!(
+            (from.as_str(), to.as_str()),
+            ("25 December 2026", "to 5 January 2027")
+        );
+    }
+
+    /// `last` is strictly before today, `this` is the Mon-Sun week holding
+    /// today, and `<weekday> in N weeks` counts from the next one.
+    #[test]
+    fn date_last_this_and_weekday_in_weeks() {
+        assert_eq!(
+            date("last Friday"),
+            card(
+                "23 October 2026",
+                "last Friday",
+                "Fri 23 Oct 2026",
+                "Friday"
+            )
+        );
+        assert_eq!(
+            date("friday in 3 weeks"),
+            card(
+                "20 November 2026",
+                "Friday in 3 weeks",
+                "Fri 20 Nov 2026",
+                "Friday"
+            )
+        );
+        for (input, title) in [
+            ("last wednesday", "21 October 2026"),
+            ("this friday", "30 October 2026"),
+            ("this monday", "26 October 2026"),
+            ("this wednesday", "28 October 2026"),
+            ("this sunday", "1 November 2026"),
+            ("wednesday in 2 weeks", "18 November 2026"),
+            ("what date is friday in a week", "6 November 2026"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+        assert_eq!(
+            date_title("friday in 3 weeks"),
+            date_title("3 weeks from friday")
+        );
+        assert_eq!(
+            date_title("days until last friday").as_deref(),
+            Some("-5 days")
+        );
+    }
+
+    /// Two-day hops and relative years, on the local date.
+    #[test]
+    fn date_day_after_tomorrow_and_next_year() {
+        assert_eq!(
+            date("day after tomorrow"),
+            card(
+                "30 October 2026",
+                "day after tomorrow",
+                "today \u{b7} Wed 28 Oct 2026",
+                "Friday"
+            )
+        );
+        assert_eq!(
+            date("September 10 next year"),
+            card(
+                "10 September 2027",
+                "10 September 2027",
+                "Fri 10 Sep 2027",
+                "Friday"
+            )
+        );
+        for (input, title) in [
+            ("what date is the day after tomorrow", "30 October 2026"),
+            ("day before yesterday", "26 October 2026"),
+            ("10 sep this year", "10 September 2026"),
+            ("what date was 10 sep last year", "10 September 2025"),
+            ("days until day after tomorrow", "2 days"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+    }
+
+    /// Counts to a period's end exclude today; `end of` is a date.
+    #[test]
+    fn date_days_left_and_end_of_period() {
+        assert_eq!(
+            date("days left in this month"),
+            card(
+                "3 days",
+                "31 October 2026",
+                "Saturday",
+                "days left in October 2026 \u{b7} after today \u{b7} today is Wed 28 Oct 2026",
+            )
+        );
+        assert_eq!(
+            date("what date is the end of next month"),
+            card(
+                "30 November 2026",
+                "end of next month",
+                "today \u{b7} Wed 28 Oct 2026",
+                "Monday"
+            )
+        );
+        for (input, title) in [
+            ("days left this year", "64 days"),
+            ("how many days are left in the year?", "64 days"),
+            ("days remaining in the month", "3 days"),
+            ("weekdays left this month", "2 weekdays"),
+            ("weeks left this year", "9 weeks, 1 day"),
+            ("what date is the end of this year", "31 December 2026"),
+            ("what date is end of month", "31 October 2026"),
+            ("what date was the end of last month", "30 September 2026"),
+            ("days until the end of the month", "3 days"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+        let (_, _, [_, right]) = date("days left this year").unwrap();
+        assert_eq!(
+            right,
+            "days left in 2026 \u{b7} after today \u{b7} today is Wed 28 Oct 2026"
+        );
+    }
+
+    /// Units apply in spoken order, each month or year step clamping on its
+    /// own: `1 day and 1 month` from 30 Jan differs from `1 month and 1 day`.
+    #[test]
+    fn date_compound_shifts_apply_in_spoken_order() {
+        let (title, from, _) = date("1 month and 1 day and 1 month and 1 day from now").unwrap();
+        assert_eq!(title, "30 December 2026");
+        assert!(from.contains("+ 1 month + 1 day + 1 month + 1 day"));
+        assert_eq!(
+            date_title("1 day and 1 day and 1 day and 1 day and 1 day from now"),
+            None
+        );
+        assert_eq!(
+            date("3 months and 10 days from now"),
+            card(
+                "7 February 2027",
+                "today + 3 months + 10 days",
+                "today \u{b7} Wed 28 Oct 2026",
+                "Sunday"
+            )
+        );
+        assert_eq!(
+            date("1 year, 2 months ago"),
+            card(
+                "28 August 2025",
+                "today - 1 year - 2 months",
+                "today \u{b7} Wed 28 Oct 2026",
+                "Thursday"
+            )
+        );
+        for (input, title) in [
+            ("1 month and 1 day from 30 jan 2027", "1 March 2027"),
+            ("1 day and 1 month from 30 jan 2027", "28 February 2027"),
+            ("1 year and 1 month from 29 feb 2028", "28 March 2029"),
+            ("today + 1 month and 3 days", "1 December 2026"),
+            ("what date is in 3 months and 10 days", "7 February 2027"),
+            ("2 weeks 3 days from now", "14 November 2026"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+    }
+
+    /// Business days step over Sat and Sun only and always land on a weekday.
+    #[test]
+    fn date_business_day_shifts_skip_weekends() {
+        assert_eq!(
+            date("10 business days from now"),
+            card(
+                "11 November 2026",
+                "today + 10 business days",
+                "today \u{b7} Wed 28 Oct 2026",
+                "Wednesday"
+            )
+        );
+        for (input, title) in [
+            ("5 business days from now", "4 November 2026"),
+            ("1 business day from 30 oct 2026", "2 November 2026"),
+            ("1 business day from 31 oct 2026", "2 November 2026"),
+            ("5 business days from 31 oct 2026", "6 November 2026"),
+            ("3 business days ago", "23 October 2026"),
+            ("10 weekdays ago", "14 October 2026"),
+            ("2 working days after 30 oct 2026", "3 November 2026"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+    }
+
+    /// Gregorian rule: every fourth year, except centuries not divisible by 400.
+    #[test]
+    fn date_leap_year_questions_answer_directly() {
+        assert_eq!(
+            date("is 2028 a leap year?"),
+            card(
+                "2028 is a leap year",
+                "2028",
+                "366 days",
+                "29 February 2028 is a Tuesday"
+            )
+        );
+        assert_eq!(
+            date("is 2027 a leap year"),
+            card(
+                "2027 is not a leap year",
+                "2027",
+                "365 days",
+                "next leap year 2028"
+            )
+        );
+        for (input, title) in [
+            ("is 2000 a leap year", "2000 is a leap year"),
+            ("was 1900 a leap year?", "1900 is not a leap year"),
+            ("will 2100 be a leap year", "2100 is not a leap year"),
+            ("is 2024 leap year", "2024 is a leap year"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+        let (_, _, [_, next]) = date("is 1900 a leap year").unwrap();
+        assert_eq!(next, "next leap year 1904");
+    }
+
+    /// `first`..`fifth` or `last` of a weekday in a month; no fifth, no answer.
+    #[test]
+    fn date_nth_weekday_of_a_month() {
+        assert_eq!(
+            date_title("what's the fifth Monday in February").as_deref(),
+            Some("29 February 2044")
+        );
+        assert_eq!(
+            date("what's the first Monday in November 2027?"),
+            card(
+                "1 November 2027",
+                "first Monday in November 2027",
+                "Mon 1 Nov 2027",
+                "Monday"
+            )
+        );
+        for (input, title) in [
+            (
+                "what is the last friday of november 2026",
+                "27 November 2026",
+            ),
+            ("when is the 2nd tuesday in march 2027", "9 March 2027"),
+            (
+                "what's the fifth monday in november 2026",
+                "30 November 2026",
+            ),
+            ("what's the first monday in november", "2 November 2026"),
+            ("what date is the first monday in october", "4 October 2027"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+        assert_eq!(date("what's the fifth friday in november 2026"), None);
+    }
+
+    /// Ages and birthdays only from a birth date typed in the query; nothing stored.
+    #[test]
+    fn date_personal_questions_need_the_date_in_the_query() {
+        assert_eq!(
+            date("how old will I be on 10 Sep 2027 if born 20 Sep 2000"),
+            card(
+                "26 years",
+                "born 20 September 2000",
+                "Wed 20 Sep 2000",
+                "age on 10 September 2027"
+            )
+        );
+        assert_eq!(
+            date("days until my birthday on September 10"),
+            card(
+                "317 days",
+                "10 September 2027",
+                "Friday",
+                "days until your birthday \u{b7} today is Wed 28 Oct 2026",
+            )
+        );
+        for (input, title) in [
+            ("how old am i if i was born on 2000-09-20", "26 years"),
+            ("how old was i on 1 jan 2010 if born 20 sep 2000", "9 years"),
+            (
+                "how old will i be on 20 sep 2027 if born 20 sep 2000",
+                "27 years",
+            ),
+            ("days until my birthday if born 29 oct 2000", "1 day"),
+            ("how many days until my birthday on 28 oct", "0 days"),
+        ] {
+            assert_eq!(date_title(input).as_deref(), Some(title), "{input}");
+        }
+        for input in [
+            "days until my birthday",
+            "how many days until my birthday",
+            "my birthday",
+            "how old am i",
+            "how old will i be on 10 sep 2027",
+            "how old am i if born",
+            "how old am i if born 20 sep",
+            "how old am i if born 1 jan 2030",
+            "how old is the universe",
+        ] {
+            assert_eq!(answer_at(input, Policy::Automatic, &day()), None, "{input}");
+        }
+    }
+
     /// Enter copies the title: the date, or the day count with its unit.
     #[test]
     fn date_an_answer_is_one_calc_card_and_copies_its_title() {
@@ -1130,6 +1560,9 @@ mod tests {
             ("what day of the week is 20 Sep 2027", "Monday"),
             ("days between 21 Dec 2027 and 5 Apr 2039", "4123 days"),
             ("next friday", "30 October 2026"),
+            ("how many weeks until 10 sep 2027", "45 weeks, 2 days"),
+            ("10 business days from now", "11 November 2026"),
+            ("is 2028 a leap year?", "2028 is a leap year"),
         ] {
             let entries = source.query(&Query::new(input), Duration::from_millis(20));
             assert_eq!(entries.len(), 1, "{input}");
