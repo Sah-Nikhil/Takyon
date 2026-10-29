@@ -20,6 +20,7 @@ import {
   nextDevNumber,
   parseReleaseArgs,
   preflight,
+  releaseDirtyFiles,
   runInherit,
   type ReleaseArgs,
 } from "./lib/release-utils";
@@ -95,7 +96,7 @@ function local(skipPreflight: boolean) {
 function capture(cmd: string[]): string {
   const proc = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
   if (proc.exitCode !== 0) fail(`${cmd.join(" ")} failed:\n${proc.stderr.toString().trim()}`);
-  return proc.stdout.toString().trim();
+  return proc.stdout.toString().trimEnd();
 }
 
 function step(cmd: string[], recovery?: string) {
@@ -120,11 +121,7 @@ async function git(version: string) {
   if (capture(["git", "rev-parse", "HEAD"]) !== capture(["git", "rev-parse", "origin/main"])) {
     fail("main is not level with origin/main. Pull or push first, so the tag lands on what CI tested.");
   }
-  const dirty = capture(["git", "status", "--porcelain"])
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => line.slice(3).trim())
-    .filter((file) => !BUMP_COMMIT_FILES.includes(file));
+  const dirty = releaseDirtyFiles(capture(["git", "status", "--porcelain"]));
   if (dirty.length > 0) fail(`Uncommitted changes outside the version files:\n  ${dirty.join("\n  ")}`);
   if (capture(["git", "tag", "--list", tag]) || capture(["git", "ls-remote", "--tags", "origin", tag])) {
     fail(`${tag} already exists.`);
