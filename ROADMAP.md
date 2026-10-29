@@ -806,6 +806,20 @@ still opens whatever is called that, and the first-Entry budget holds.
 
 ---
 
+## v0.18 — Date arithmetic
+
+**Goal:** Answer calendar shifts and day countdowns in the calculator, offline. Plan: [`docs/plans/v0.18-date-arithmetic.md`](./docs/plans/v0.18-date-arithmetic.md). Requested 2026-10-28; implementation built, manual verification pending.
+
+- [x] Full-date shifts, signed day counts, local today, month-end and leap-year rules
+- [x] Conservative grammar, calculator Policy, Calc card and copy behavior
+- [x] Full suite with frontend dependencies installed
+- [ ] [`docs/verify/v0.18.md`](./docs/verify/v0.18.md) run against a release build
+- [ ] Performance budgets measured
+
+**Exit criteria:** The two requested questions answer correctly, ordinary searches keep their top Entry, and first-Entry latency stays under 30 ms.
+
+---
+
 ## v1.0 — Ship
 
 - [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing
