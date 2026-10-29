@@ -9,7 +9,16 @@ in `ROADMAP.md`. A finished phase may advance the release minor, while partial
 phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
 renumbering below records a separate change to the phase plan.
 
-## v0.12.5 — Date questions (pending release)
+## v0.12.6 — More calendar questions
+
+- Count weeks until, since, or between dates as whole weeks plus remaining days. Count business or working days as Monday through Friday, excluding the start date and including the target; holidays are not excluded.
+- Ask for last or this weekday, a weekday in a number of weeks, the day after tomorrow, a date next year, or days left in a month or year. Compound shifts apply units in the order written. Yearless date spans use a coherent forward range.
+- Ask whether a year is a leap year, find a numbered weekday in a month, or calculate age and days until a birthday when the birth date appears in the query. The calculator stores no birth date.
+- Long compound calculations remain visible in the Compact Palette. Date answers still run offline and copy with Enter.
+
+**Still open.** `docs/verify/v0.18.md` has not been run by hand. Holidays require a future calendar source; localized month names remain outside the grammar.
+
+## v0.12.5 — Date questions
 
 - The calculator answers date shifts (`30 days from now`, `45 days ago was?`), day counts (`how many days until 20 September 2027`), weekdays (`what day of the week is 20 Sep 2027?`), and signed spans (`days between 21 Dec 2027 and 5 Apr 2039`). Enter copies the answer.
 - `next Friday` means the first Friday strictly after today. `two weeks from Friday` starts at that Friday. Dates without a year use the next occurrence for future questions and the previous occurrence for past questions. Spans require years on calendar endpoints.
