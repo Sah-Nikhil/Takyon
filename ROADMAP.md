@@ -777,6 +777,7 @@ macOS refuses in words. Planned, not built.
 - [x] Palette Entries (Start, Complete, Pause, Resume Focus Session) and the start form; `!f`, off by default
 - [x] Floating bar that never takes focus, collapsible to the tray (no flash in tray mode, §7)
 - [x] Settings → Focus with Stats as its own sub-view (Focus / Stats, a line over a gradient); Coming soon rows for Scheduled sessions and Locked
+- [x] End of a session: confetti from both bottom corners (Raycast's cannon, without the focus steal), or a toast when Confetti is off or motion is reduced. Verify §C 5–8, unrun
 - [ ] [`docs/verify/v0.16.md`](./docs/verify/v0.16.md) driven against a release build
 
 **Exit criteria:** a Soft session blocks Discord and youtube.com in Chrome and

@@ -6,6 +6,7 @@
 pub mod bar;
 pub mod browser;
 pub mod categories;
+pub mod celebrate;
 pub mod duration;
 pub mod icons;
 pub mod identity;

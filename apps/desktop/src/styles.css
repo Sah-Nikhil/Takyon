@@ -100,6 +100,18 @@
     polarities — stays locked at Cherenkov cyan, because those are identity.
   */
   --mark-particle: var(--color-accent);
+
+  /*
+    Focus confetti (`Celebration.tsx`), fixed like the health dots: a party in
+    one theme's two hues reads as a glitch. Here, not in `@theme`, which drops
+    a variable no class uses, and only canvas reads these. Tailwind's 400s.
+  */
+  --confetti-1: oklch(71.2% 0.194 13.428);
+  --confetti-2: oklch(75% 0.183 55.934);
+  --confetti-3: oklch(85.2% 0.199 91.936);
+  --confetti-4: oklch(79.2% 0.209 151.711);
+  --confetti-5: oklch(70.7% 0.165 254.624);
+  --confetti-6: oklch(71.4% 0.203 305.504);
 }
 
 /*

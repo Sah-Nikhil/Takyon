@@ -181,6 +181,9 @@ export function Focus() {
             </Row>
           </>
         )}
+        <Row id="focus-confetti" label="Confetti" description="When a session ends. Off, or with reduced motion, shows a small notice instead.">
+          <Switch label="Confetti" checked={settings.confetti} onChange={(on) => set("focus.confetti", on ? "1" : "0")} />
+        </Row>
         <Row id="focus-restore" label="Restore terminated apps" description="Reopen apps Focus quit when the session ends.">
           <Switch label="Restore terminated apps" checked={settings.restoreApps} onChange={(on) => set("focus.restore_apps", on ? "1" : "0")} />
         </Row>

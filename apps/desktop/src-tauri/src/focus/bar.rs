@@ -16,7 +16,7 @@ pub const LABEL: &str = "focusbar";
 
 /// Logical pill height. Width follows the pill's content ([`fit`]), within
 /// [`MIN_WIDTH`]..[`MAX_WIDTH`]; [`START_WIDTH`] until the page measures.
-const PILL_H: f64 = 40.0;
+pub(crate) const PILL_H: f64 = 40.0;
 /// Room above and below the pill for the hover buttons: 30 px, a 6 px gap to
 /// the pill, 6 px of headroom so their entry overshoot is not clipped by the
 /// window edge. Mirrored in `FocusBar.tsx`.
@@ -338,14 +338,14 @@ fn build(app: &AppHandle) {
 
 /// Show without taking focus. Tauri's `show()` is `SW_SHOW`, which activates.
 #[cfg(windows)]
-fn float(window: &tauri::WebviewWindow) {
+pub(crate) fn float(window: &tauri::WebviewWindow) {
     if let Ok(hwnd) = window.hwnd() {
         float_quietly(hwnd.0 as isize);
     }
 }
 
 #[cfg(not(windows))]
-fn float(window: &tauri::WebviewWindow) {
+pub(crate) fn float(window: &tauri::WebviewWindow) {
     let _ = window.show();
 }
 

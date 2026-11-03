@@ -2,7 +2,8 @@ import { expect, test, type Page } from "./fixtures";
 import { paletteHeight, VIEW_HEIGHT } from "@takyon/shared";
 
 /**
- * v0.16's visual layer: the Focus view, the floating bar, Settings → Focus and
+ * v0.16's visual layer: the Focus view, the floating bar, the end-of-session
+ * confetti and toast, Settings → Focus and
  * Focus Stats. The session is the mock's (`api.mock.ts` § Focus); blocking,
  * clock and store are Rust's, answered in `tests/focus.rs`.
  */
@@ -239,6 +240,60 @@ test.describe("the floating bar", () => {
   });
 });
 
+test.describe("the end of a session", () => {
+  /** Painted pixels in each bottom corner's quarter, in the whole canvas, and in colour. */
+  async function paint(page: Page) {
+    return page.getByTestId("confetti").evaluate((el) => {
+      const c = el as HTMLCanvasElement;
+      const data = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+      let left = 0;
+      let right = 0;
+      let all = 0;
+      let coloured = 0;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] === 0) continue;
+        all++;
+        // Tokens read wrong paint black: `@theme` once dropped them unused.
+        if (Math.max(data[i - 3]!, data[i - 2]!, data[i - 1]!) > 100) coloured++;
+        const x = ((i - 3) / 4) % c.width;
+        const y = Math.floor((i - 3) / 4 / c.width);
+        if (y > c.height / 2 && x < c.width / 4) left++;
+        if (y > c.height / 2 && x > (c.width * 3) / 4) right++;
+      }
+      return { left, right, all, coloured };
+    });
+  }
+
+  test("confetti leaves both bottom corners and is gone by the end", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/?window=celebrate&style=confetti&goal=Write");
+    await expect.poll(async () => (await paint(page)).left, { timeout: 2_000 }).toBeGreaterThan(0);
+    const early = await paint(page);
+    expect(early.right).toBeGreaterThan(0);
+    expect(early.coloured).toBeGreaterThan(early.all / 2);
+    // CONFETTI_MS is 3.6 s; the canvas clears itself after.
+    await expect.poll(async () => (await paint(page)).all, { timeout: 6_000 }).toBe(0);
+  });
+
+  test("the toast names the goal", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 64 });
+    await page.goto("/?window=celebrate&style=toast&goal=Write%20Focus%20manual%20page");
+    const toast = page.getByTestId("focus-toast");
+    await expect(toast).toContainText("Focus session complete");
+    await expect(toast).toContainText("Write Focus manual page");
+    await expect(toast).toHaveCSS("opacity", "1");
+    await expect(page).toHaveScreenshot("focus-toast.png");
+  });
+
+  test("the toast fades out on its own", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 64 });
+    await page.goto("/?window=celebrate&style=toast&goal=Write");
+    const toast = page.getByTestId("focus-toast");
+    await expect(toast).toHaveCSS("opacity", "1");
+    await expect(toast).toHaveCSS("opacity", "0", { timeout: 5_000 });
+  });
+});
+
 test.describe("Settings", () => {
   test.use({ viewport: { width: 880, height: 900 } });
 
@@ -248,6 +303,7 @@ test.describe("Settings", () => {
     await expect(page.getByRole("combobox", { name: "Snooze duration" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Floating bar position" })).toContainText("Bottom");
     await expect(page.getByRole("slider", { name: "Floating bar opacity" })).toHaveValue("90");
+    await expect(page.getByRole("switch", { name: "Confetti" })).toBeChecked();
     await expect(page.getByText("Video & streaming")).toBeVisible();
     await expect(page.getByText("Scheduled sessions")).toBeVisible();
     await expect(page.getByText("Coming soon", { exact: true }).first()).toBeVisible();
