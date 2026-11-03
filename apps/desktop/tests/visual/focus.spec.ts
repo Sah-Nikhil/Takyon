@@ -275,6 +275,20 @@ test.describe("the end of a session", () => {
     await expect.poll(async () => (await paint(page)).all, { timeout: 6_000 }).toBe(0);
   });
 
+  test("a lower confetti amount fires less paper", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const busiest = async (amount: number) => {
+      await page.goto(`/?window=celebrate&style=confetti&amount=${amount}&goal=x`);
+      await page.waitForTimeout(900);
+      return (await paint(page)).all;
+    };
+    const most = await busiest(100);
+    const least = await busiest(40);
+    expect(least).toBeGreaterThan(0);
+    // 60 pieces against 150 per corner: well under, whatever the random throw.
+    expect(least).toBeLessThan(most * 0.7);
+  });
+
   test("the toast names the goal", async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 64 });
     await page.goto("/?window=celebrate&style=toast&goal=Write%20Focus%20manual%20page");
@@ -304,6 +318,7 @@ test.describe("Settings", () => {
     await expect(page.getByRole("combobox", { name: "Floating bar position" })).toContainText("Bottom");
     await expect(page.getByRole("slider", { name: "Floating bar opacity" })).toHaveValue("90");
     await expect(page.getByRole("switch", { name: "Confetti" })).toBeChecked();
+    await expect(page.getByRole("slider", { name: "Confetti amount" })).toHaveValue("70");
     await expect(page.getByText("Video & streaming")).toBeVisible();
     await expect(page.getByText("Scheduled sessions")).toBeVisible();
     await expect(page.getByText("Coming soon", { exact: true }).first()).toBeVisible();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CONFETTI_MS, launch, opacity, seeded, step } from "./confetti";
+import { CONFETTI_MS, MOST, launch, opacity, perCorner, seeded, step } from "./confetti";
 
 const W = 1920;
 const H = 1080;
@@ -47,6 +47,15 @@ describe("confetti", () => {
     small.forEach((p, i) => {
       expect(big[i]!.y / (H * 2)).toBeCloseTo(p.y / H, 5);
     });
+  });
+
+  test("the amount scales pieces per corner, held to Settings' 40 to 100", () => {
+    expect(perCorner(100)).toBe(MOST);
+    expect(perCorner(40)).toBe(Math.round(MOST * 0.4));
+    expect(perCorner(10)).toBe(perCorner(40));
+    expect(perCorner(250)).toBe(MOST);
+    expect(perCorner(Number.NaN)).toBe(MOST);
+    expect(launch(W, H, 6, seeded(1), 40).length).toBe(2 * perCorner(40));
   });
 
   test("it fades to nothing by the end of the show and stays gone", () => {

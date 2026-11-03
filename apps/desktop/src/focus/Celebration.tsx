@@ -17,7 +17,9 @@ const COLOURS = 6;
 export function Celebration() {
   const params = new URLSearchParams(window.location.search);
   const goal = params.get("goal") ?? "";
-  return params.get("style") === "toast" ? <Toast goal={goal} /> : <Cannons />;
+  // Rust always sends it; 70 mirrors `celebrate.rs` `AMOUNT` for a bare URL.
+  const amount = Number(params.get("amount") ?? 70);
+  return params.get("style") === "toast" ? <Toast goal={goal} /> : <Cannons amount={amount} />;
 }
 
 /** Live colour tokens from `styles.css`; canvas cannot read `var()` itself. */
@@ -46,7 +48,7 @@ function draw(ctx: CanvasRenderingContext2D, pieces: Piece[], fill: string[], al
   }
 }
 
-function Cannons() {
+function Cannons({ amount }: { amount: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -58,7 +60,7 @@ function Cannons() {
     el.height = Math.round(h * dpr);
     ctx.scale(dpr, dpr);
     const fill = colours();
-    const pieces = launch(w, h, COLOURS);
+    const pieces = launch(w, h, COLOURS, Math.random, amount);
     let start: number | null = null;
     let last = 0;
     let frame = 0;
@@ -75,7 +77,7 @@ function Cannons() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [amount]);
 
   return <canvas ref={canvas} data-testid="confetti" aria-hidden className="pointer-events-none fixed inset-0 size-full" />;
 }

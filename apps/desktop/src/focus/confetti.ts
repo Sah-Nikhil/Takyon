@@ -8,7 +8,8 @@
 
 /** Whole show, launch to last piece gone. `celebrate.rs` sizes the window's life to it. */
 export const CONFETTI_MS = 3_600;
-const PER_CORNER = 110;
+/** Pieces per corner at 100 % (`focus.confetti_amount`). Settings offers 40 to 100. */
+export const MOST = 150;
 /** Up from horizontal, toward the middle of the screen, ± `SPREAD`. */
 const ANGLE = (62 * Math.PI) / 180;
 const SPREAD = (22 * Math.PI) / 180;
@@ -53,11 +54,24 @@ export function seeded(seed: number): () => number {
   };
 }
 
+/** Pieces per corner for an amount in percent, held to Settings' 40 to 100. */
+export function perCorner(amount: number): number {
+  const share = Number.isFinite(amount) ? Math.min(100, Math.max(40, amount)) : 100;
+  return Math.round((MOST * share) / 100);
+}
+
 /** Both corners' worth of pieces, at the corners, already moving. */
-export function launch(width: number, height: number, colours: number, random: () => number = Math.random): Piece[] {
+export function launch(
+  width: number,
+  height: number,
+  colours: number,
+  random: () => number = Math.random,
+  amount = 100,
+): Piece[] {
   const pieces: Piece[] = [];
+  const count = perCorner(amount);
   for (const left of [true, false]) {
-    for (let i = 0; i < PER_CORNER; i++) {
+    for (let i = 0; i < count; i++) {
       const up = ANGLE + (random() * 2 - 1) * SPREAD;
       const speed = height * (SPEED[0] + random() * SPEED[1]);
       pieces.push({

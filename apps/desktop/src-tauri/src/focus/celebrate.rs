@@ -59,10 +59,22 @@ impl Style {
     }
 }
 
-/// The page URL. The goal travels in the query, so the page needs no IPC.
-pub fn url(style: Style, goal: &str) -> String {
+/// Default and range of `focus.confetti_amount`, percent of `confetti.ts`'s
+/// `MOST` pieces. Below 40 two corners read as a misfire, not a celebration.
+pub const AMOUNT: (u32, std::ops::RangeInclusive<u32>) = (70, 40..=100);
+
+/// The stored amount, or the default when absent or out of range.
+pub fn amount(value: Option<&str>) -> u32 {
+    value
+        .and_then(|v| v.trim().parse().ok())
+        .filter(|v| AMOUNT.1.contains(v))
+        .unwrap_or(AMOUNT.0)
+}
+
+/// The page URL. Goal and amount travel in the query, so the page needs no IPC.
+pub fn url(style: Style, goal: &str, amount: u32) -> String {
     format!(
-        "index.html?window=celebrate&style={}&goal={}",
+        "index.html?window=celebrate&style={}&amount={amount}&goal={}",
         style.slug(),
         crate::search::fetch::percent_encode(goal)
     )
@@ -169,15 +181,17 @@ fn build(app: &AppHandle, prefs: &Prefs, style: Style, goal: &str) -> Option<tau
             toast_rect(area(work.position, work.size), scale, place, dragged)
         }
     };
-    let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App(url(style, goal).into()))
-        .title("Takyon Focus")
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .shadow(false)
-        .visible(false);
+    let share = amount(prefs.get(prefs::FOCUS_CONFETTI_AMOUNT).as_deref());
+    let builder =
+        WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App(url(style, goal, share).into()))
+            .title("Takyon Focus")
+            .resizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .shadow(false)
+            .visible(false);
     #[cfg(windows)]
     let builder = builder.transparent(true);
     let window = match builder.build() {
@@ -239,13 +253,23 @@ mod tests {
     #[test]
     fn v0_16_the_goal_reaches_the_page_as_one_query_value() {
         assert_eq!(
-            url(Style::Confetti, "Write report & ship"),
-            "index.html?window=celebrate&style=confetti&goal=Write%20report%20%26%20ship"
+            url(Style::Confetti, "Write report & ship", 70),
+            "index.html?window=celebrate&style=confetti&amount=70&goal=Write%20report%20%26%20ship"
         );
         assert_eq!(
-            url(Style::Toast, ""),
-            "index.html?window=celebrate&style=toast&goal="
+            url(Style::Toast, "", 100),
+            "index.html?window=celebrate&style=toast&amount=100&goal="
         );
+    }
+
+    #[test]
+    fn v0_16_confetti_amount_out_of_range_reads_as_the_default() {
+        assert_eq!(amount(Some("40")), 40);
+        assert_eq!(amount(Some("100")), 100);
+        assert_eq!(amount(Some("30")), AMOUNT.0);
+        assert_eq!(amount(Some("110")), AMOUNT.0);
+        assert_eq!(amount(Some("x")), AMOUNT.0);
+        assert_eq!(amount(None), AMOUNT.0);
     }
 
     /// 1920x1032 work area (48 px taskbar) at 100 %: a 360x64 toast.

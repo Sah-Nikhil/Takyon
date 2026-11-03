@@ -148,6 +148,9 @@ pub const FOCUS_RESTORE_APPS: &str = "focus.restore_apps";
 /// Confetti when a session ends; `"0"` = a toast instead. Default on.
 pub const FOCUS_CONFETTI: &str = "focus.confetti";
 
+/// How much confetti, percent of the most, 40 to 100. Read by `celebrate::amount`.
+pub const FOCUS_CONFETTI_AMOUNT: &str = "focus.confetti_amount";
+
 /// Running-session indicator: `"bar"` (default) or `"tray"`.
 pub const FOCUS_SURFACE: &str = "focus.surface";
 
