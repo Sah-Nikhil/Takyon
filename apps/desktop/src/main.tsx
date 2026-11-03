@@ -1,5 +1,5 @@
 /**
- * One bundle, three windows: Palette, Settings, Focus bar. Which one this root
+ * One bundle, four windows: Palette, Settings, Focus bar, Focus celebration. Which one this root
  * is depends on `?window=` in the URL, set where each window is built. A second HTML
  * entry point would mean a second Vite build and a second cold start; the Palette
  * is warm precisely so nothing pays a cold start.
@@ -11,6 +11,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { Palette } from "./palette/Palette";
 import { Settings } from "./settings/Settings";
 import { FocusBar } from "./focus/FocusBar";
+import { Celebration } from "./focus/Celebration";
 import { inTauri } from "./api";
 import {
   bannerRequest,
@@ -109,7 +110,15 @@ if (!inTauri) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {kind === "settings" ? <Settings /> : kind === "bar" ? <FocusBar /> : <Palette />}
+      {kind === "settings" ? (
+        <Settings />
+      ) : kind === "bar" ? (
+        <FocusBar />
+      ) : kind === "celebrate" ? (
+        <Celebration />
+      ) : (
+        <Palette />
+      )}
     </ErrorBoundary>
   </React.StrictMode>,
 );

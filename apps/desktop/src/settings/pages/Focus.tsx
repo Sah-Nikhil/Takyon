@@ -181,6 +181,25 @@ export function Focus() {
             </Row>
           </>
         )}
+        <Row id="focus-confetti" label="Confetti" description="When a session ends. Off, or with reduced motion, shows a small notice instead.">
+          <Switch label="Confetti" checked={settings.confetti} onChange={(on) => set("focus.confetti", on ? "1" : "0")} />
+        </Row>
+        {settings.confetti && (
+          <Row id="focus-confetti-amount" label="Confetti amount" description="How much paper each corner fires.">
+            <Slider
+              label="Confetti amount"
+              min={40}
+              max={100}
+              step={10}
+              value={settings.confettiAmount}
+              format={(v) => `${v}%`}
+              onChange={(v) => {
+                setSettings({ ...settings, confettiAmount: v });
+                void api.focusSetSetting("focus.confetti_amount", String(v));
+              }}
+            />
+          </Row>
+        )}
         <Row id="focus-restore" label="Restore terminated apps" description="Reopen apps Focus quit when the session ends.">
           <Switch label="Restore terminated apps" checked={settings.restoreApps} onChange={(on) => set("focus.restore_apps", on ? "1" : "0")} />
         </Row>

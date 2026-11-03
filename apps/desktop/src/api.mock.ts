@@ -1066,6 +1066,8 @@ let focusLast: BlockList = { categories: ["social", "video"], items: ["exe:disco
 const focusPrefs: FocusSettings = {
   snoozeMinutes: 3,
   restoreApps: false,
+  confetti: true,
+  confettiAmount: 70,
   surface: "bar",
   bang: false,
   hurdleShutdown: "strict",
@@ -1365,6 +1367,8 @@ const focusMock = {
     const k = key.replace("focus.", "");
     if (k === "snooze_minutes") focusPrefs.snoozeMinutes = Number(value);
     if (k === "restore_apps") focusPrefs.restoreApps = value === "1";
+    if (k === "confetti") focusPrefs.confetti = value === "1";
+    if (k === "confetti_amount") focusPrefs.confettiAmount = Number(value);
     if (k === "surface") focusPrefs.surface = value as FocusSettings["surface"];
     if (k === "bang") focusPrefs.bang = value === "1";
     if (k === "hurdle_shutdown")

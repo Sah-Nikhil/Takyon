@@ -22,22 +22,22 @@ use super::store::Outcome;
 )]
 pub enum Signal {
     /// The session changed; redraw.
-    View {
-        view: View,
-    },
+    View { view: View },
     /// Something was blocked. `snoozable` drives the bar's Snooze button.
     Blocked {
         key: String,
         label: String,
         snoozable: bool,
     },
+    /// `celebrate`: the goal, when the user saw it end. None for a session
+    /// found over at startup, which gets no confetti hours late.
     Ended {
         outcome: Outcome,
+        #[serde(skip)]
+        celebrate: Option<String>,
     },
     /// The bar's look changed in Settings; it redraws without a restart.
-    Bar {
-        opacity: u32,
-    },
+    Bar { opacity: u32 },
 }
 
 pub type Emit = Arc<dyn Fn(Signal) + Send + Sync>;
@@ -150,7 +150,13 @@ mod imp {
             pump(Duration::from_millis(250));
             let now = now_ms();
             if let Some(outcome) = focus.tick(now) {
-                emit(Signal::Ended { outcome });
+                // Running a tick ago: it ran out now, not while Takyon was off.
+                let celebrate = st
+                    .last_view
+                    .as_ref()
+                    .filter(|v| v.running)
+                    .map(|v| v.goal.clone());
+                emit(Signal::Ended { outcome, celebrate });
             }
             let view = focus.view(now);
             // Any end, expiry or an early Complete from IPC: both reach here

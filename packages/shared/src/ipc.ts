@@ -794,6 +794,10 @@ export interface FocusSettings {
   /** 0 = No Snooze. */
   snoozeMinutes: number;
   restoreApps: boolean;
+  /** Confetti when a session ends; off = a toast. */
+  confetti: boolean;
+  /** Percent of the most confetti, 40 to 100. */
+  confettiAmount: number;
   surface: "bar" | "tray";
   bang: boolean;
   hurdleShutdown: "strict" | "always" | "never";

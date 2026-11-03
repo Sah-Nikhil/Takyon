@@ -30,7 +30,15 @@ pub const EVENT_FOCUS: &str = "takyon://focus";
 /// The themed block page for the running session, shared with the runtime.
 pub type PagePath = Arc<Mutex<Option<PathBuf>>>;
 
+/// Every Focus signal leaves here, so a live end celebrates on either path.
 pub fn emit(app: &AppHandle, signal: Signal) {
+    if let Signal::Ended {
+        celebrate: Some(goal),
+        ..
+    } = &signal
+    {
+        super::celebrate::fire(app, goal.clone());
+    }
     let _ = app.emit(EVENT_FOCUS, signal);
 }
 
@@ -167,12 +175,14 @@ pub fn focus_extend(
 
 #[tauri::command]
 pub fn focus_complete(app: AppHandle, focus: State<'_, Arc<Focus>>) -> Result<View, FocusError> {
+    let goal = focus.view(now_ms()).goal;
     let result = after(&app, focus.complete(now_ms()));
     if result.is_ok() {
         emit(
             &app,
             Signal::Ended {
                 outcome: super::store::Outcome::Completed,
+                celebrate: Some(goal),
             },
         );
     }
@@ -443,6 +453,8 @@ pub fn focus_last_list(prefs: State<'_, Arc<Prefs>>) -> BlockList {
 pub struct FocusSettings {
     snooze_minutes: u32,
     restore_apps: bool,
+    confetti: bool,
+    confetti_amount: u32,
     surface: String,
     bang: bool,
     hurdle_shutdown: String,
@@ -472,6 +484,8 @@ fn settings_of(prefs: &Prefs) -> FocusSettings {
         snooze_minutes: super::settings::snooze_ms(get(prefs::FOCUS_SNOOZE).as_deref())
             .map_or(0, |ms| (ms / 60_000) as u32),
         restore_apps: prefs::flag(prefs, prefs::FOCUS_RESTORE_APPS, false),
+        confetti: prefs::flag(prefs, prefs::FOCUS_CONFETTI, true),
+        confetti_amount: super::celebrate::amount(get(prefs::FOCUS_CONFETTI_AMOUNT).as_deref()),
         surface: get(prefs::FOCUS_SURFACE).unwrap_or_else(|| "bar".into()),
         bang: prefs::flag(prefs, prefs::FOCUS_BANG, false),
         hurdle_shutdown: get(prefs::FOCUS_HURDLE_SHUTDOWN).unwrap_or_else(|| "strict".into()),
@@ -514,12 +528,17 @@ pub fn focus_set_setting(
 ) -> Result<(), String> {
     let ok = match key.as_str() {
         prefs::FOCUS_SNOOZE => matches!(value.as_str(), "0" | "1" | "3" | "5" | "10"),
-        prefs::FOCUS_RESTORE_APPS | prefs::FOCUS_BANG => matches!(value.as_str(), "0" | "1"),
+        prefs::FOCUS_RESTORE_APPS | prefs::FOCUS_BANG | prefs::FOCUS_CONFETTI => {
+            matches!(value.as_str(), "0" | "1")
+        }
         prefs::FOCUS_SURFACE => matches!(value.as_str(), "bar" | "tray"),
         prefs::FOCUS_HURDLE_SHUTDOWN | prefs::FOCUS_HURDLE_IDLE => {
             matches!(value.as_str(), "strict" | "always" | "never")
         }
         prefs::FOCUS_BAR_PLACE => matches!(value.as_str(), "top" | "bottom"),
+        prefs::FOCUS_CONFETTI_AMOUNT => value
+            .parse::<u32>()
+            .is_ok_and(|v| super::celebrate::AMOUNT.1.contains(&v)),
         prefs::FOCUS_BAR_OPACITY => value
             .parse::<u32>()
             .is_ok_and(|v| BAR_OPACITY.1.contains(&v)),
@@ -591,6 +610,8 @@ mod tests {
                 "bang",
                 "barOpacity",
                 "barPlace",
+                "confetti",
+                "confettiAmount",
                 "hurdleIdle",
                 "hurdleShutdown",
                 "restoreApps",
@@ -604,6 +625,8 @@ mod tests {
         );
         assert_eq!(v["barPlace"], "bottom");
         assert_eq!(v["barOpacity"], 90);
+        assert_eq!(v["confetti"], true, "confetti on until turned off");
+        assert_eq!(v["confettiAmount"], 70);
     }
 
     #[test]
