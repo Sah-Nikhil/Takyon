@@ -133,10 +133,46 @@ pub const THEME_DARK: &str = "ui.theme.dark";
 pub const THEME_LIGHT: &str = "ui.theme.light";
 
 /// The family a fresh install gets. Must match `DEFAULT_THEME` in `themes.ts`.
-pub const DEFAULT_THEME: &str = "graphite";
+pub const DEFAULT_THEME: &str = "vela";
 
 /// The Palette's shape: `"compact"` (default) or `"expanded"`.
 pub const WINDOW_MODE: &str = "ui.window-mode";
+
+/// Snooze length in minutes for Soft Focus sessions; `"0"` = No Snooze.
+/// Absent = 3, Raycast's default. Read by `focus::settings::snooze_ms`.
+pub const FOCUS_SNOOZE: &str = "focus.snooze_minutes";
+
+/// Reopen apps Focus quit when the session ends. `"1"`/`"0"`, default off.
+pub const FOCUS_RESTORE_APPS: &str = "focus.restore_apps";
+
+/// Running-session indicator: `"bar"` (default) or `"tray"`.
+pub const FOCUS_SURFACE: &str = "focus.surface";
+
+/// Where the floating bar opens: `"bottom"` (default) or `"top"`, centred.
+pub const FOCUS_BAR_PLACE: &str = "focus.bar_place";
+
+/// Where the user last dragged the bar, `"cx,y"` (centre, top) in physical
+/// pixels. Empty or
+/// absent = [`FOCUS_BAR_PLACE`]'s spot; changing that setting clears it.
+pub const FOCUS_BAR_POSITION: &str = "focus.bar_position";
+
+/// Floating bar panel opacity, percent, 30 to 100. Default 90.
+pub const FOCUS_BAR_OPACITY: &str = "focus.bar_opacity";
+
+/// Whether `!f` starts sessions. `"1"`/`"0"`, **default off**.
+pub const FOCUS_BANG: &str = "focus.bang";
+
+/// When shutdown is held during a session: `strict` (default), `always`, `never`.
+pub const FOCUS_HURDLE_SHUTDOWN: &str = "focus.hurdle_shutdown";
+
+/// When idle sleep is held off during a session. Same values as above.
+pub const FOCUS_HURDLE_IDLE: &str = "focus.hurdle_idle";
+
+/// Last Block list started, JSON. The form's default and `!f`'s list.
+pub const FOCUS_LAST_LIST: &str = "focus.last_list";
+
+/// `"1"` once the built-in Focus sites' icons were fetched (ADR-0037).
+pub const FOCUS_ICONS_FETCHED: &str = "focus.icons_fetched";
 
 /// Whether tapping the Windows key opens the Palette (v0.10). Default off.
 ///

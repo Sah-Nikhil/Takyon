@@ -1,19 +1,15 @@
 /**
  * An Agent's answer, rendered (v0.9, links added v0.10).
  *
- * Agents write markdown whatever they are asked for, and the answer used to be
- * drawn as plain text, so `**August 2, 2027**` arrived with its asterisks. This
- * renders the inline marks an answer actually uses — bold, italic, inline code,
- * and `[Name](3)` links onto a source — and paragraph breaks. Nothing else: no
- * headings, no lists, no arbitrary URLs.
+ * Agents write markdown regardless, and plain text showed `**August 2, 2027**` with
+ * its asterisks. Renders the inline marks answers use (bold, italic, inline code,
+ * `[Name](3)` links onto a source) and paragraph breaks. No headings, lists or URLs.
  *
- * **Never HTML.** Every node here is React text; there is no `innerHTML` on this
- * path. Answer text comes from a model that has just read pages off the open
- * web (`docs/tbd/v0.9.md` §9), so it is content, never markup.
+ * **Never HTML.** Every node is React text, no `innerHTML`: answer text comes from a
+ * model that just read the open web (`docs/tbd/v0.9.md` §9).
  *
- * **A link target is a number, never a URL.** `answerText.ts` refuses anything
- * else, so a model that invents an address cannot put one on screen and the
- * click can only ever open a source Rust already fetched.
+ * **A link target is a number, never a URL.** `answerText.ts` refuses anything else,
+ * so a click only ever opens a source Rust already fetched.
  */
 
 import { type ReactNode } from "react";

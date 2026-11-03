@@ -6,8 +6,8 @@
  * from a window that failed to load at all. That ambiguity cost a v0.6 debugging
  * session, so the failure now says what it was.
  *
- * Deliberately no styling beyond the inline rules: the boundary has to work when
- * the stylesheet is the thing that failed.
+ * Inline rules only, since the stylesheet may be what failed: theme tokens with
+ * `Canvas`/`CanvasText` system-colour fallbacks, never a colour of its own.
  */
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
@@ -40,8 +40,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
         style={{
           padding: 24,
           font: "13px/1.5 Consolas, monospace",
-          color: "#e6edf3",
-          background: "#0b0e12",
+          color: "var(--color-fg, CanvasText)",
+          background: "var(--color-plate, Canvas)",
           height: "100%",
           overflow: "auto",
           whiteSpace: "pre-wrap",

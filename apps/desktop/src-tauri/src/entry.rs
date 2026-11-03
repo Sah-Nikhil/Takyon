@@ -240,6 +240,10 @@ pub struct Entry {
     /// rows: see `version.rs` for why it is not read for everything.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// The two labels under a Calc card's halves, in place of `Expression` and
+    /// `Result`. A time zone answer names both zones in words here (v0.17).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<[String; 2]>,
 }
 
 /// Id of one `Ctrl+K` action.
@@ -529,6 +533,7 @@ mod tests {
             score: 1.0,
             actions: vec![],
             version: None,
+            labels: None,
         };
         let v: serde_json::Value = serde_json::to_value(&e).unwrap();
         assert!(v.get("subtitle").is_none());

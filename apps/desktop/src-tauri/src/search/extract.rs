@@ -159,7 +159,9 @@ mod tests {
     use super::*;
 
     fn article(body: &str) -> String {
-        format!("<html><head><title>A page</title></head><body><article>{body}</article></body></html>")
+        format!(
+            "<html><head><title>A page</title></head><body><article>{body}</article></body></html>"
+        )
     }
 
     /// Enough prose to clear the floor, so a fixture is about what is being
@@ -216,14 +218,20 @@ mod tests {
     /// returning `None` rather than a line of navigation dressed as an article.
     #[test]
     fn v0_9_a_page_with_no_prose_yields_nothing() {
-        assert_eq!(readable("<html><body><div id=root></div></body></html>"), None);
+        assert_eq!(
+            readable("<html><body><div id=root></div></body></html>"),
+            None
+        );
         assert_eq!(readable(""), None);
     }
 
     /// Entities are decoded, or a quoted answer arrives full of `&quot;`.
     #[test]
     fn v0_9_common_entities_are_decoded() {
-        let html = article(&format!("<p>Ferrari &amp; Co. said &quot;no&quot;.</p>{}", prose(4)));
+        let html = article(&format!(
+            "<p>Ferrari &amp; Co. said &quot;no&quot;.</p>{}",
+            prose(4)
+        ));
         let text = readable(&html).expect("prose is readable");
         assert!(text.contains(r#"Ferrari & Co. said "no"."#), "got: {text}");
     }

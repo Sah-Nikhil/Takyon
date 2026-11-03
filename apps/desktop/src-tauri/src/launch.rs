@@ -31,16 +31,17 @@ pub fn open(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
             None,
             &path.to_string_lossy(),
             args.as_deref(),
-            working_dir.as_ref().map(|d| d.to_string_lossy().to_string()).as_deref(),
+            working_dir
+                .as_ref()
+                .map(|d| d.to_string_lossy().to_string())
+                .as_deref(),
         ),
         LaunchTarget::Aumid(aumid) => {
             shell_execute(None, &format!(r"shell:AppsFolder\{aumid}"), None, None)
         }
         // Through the launcher, never the game's own executable. Each URI and why
         // it is shaped that way lives in `GameLauncher::uri`.
-        LaunchTarget::Game { launcher, id } => {
-            shell_execute(None, &launcher.uri(id), None, None)
-        }
+        LaunchTarget::Game { launcher, id } => shell_execute(None, &launcher.uri(id), None, None),
         // A URI the shell resolves itself — `ms-settings:bluetooth`. Same call as
         // a `steam://` URL; the shell picks the handler.
         LaunchTarget::Uri(uri) => shell_execute(None, uri, None, None),
@@ -66,7 +67,10 @@ pub fn run_as_admin(target: &LaunchTarget) -> Result<Option<PathBuf>, String> {
             Some("runas"),
             &path.to_string_lossy(),
             args.as_deref(),
-            working_dir.as_ref().map(|d| d.to_string_lossy().to_string()).as_deref(),
+            working_dir
+                .as_ref()
+                .map(|d| d.to_string_lossy().to_string())
+                .as_deref(),
         ),
         _ => Err("This kind of application cannot be run as administrator.".into()),
     }
@@ -129,9 +133,7 @@ fn shell_execute(
 ) -> Result<Option<PathBuf>, String> {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::UI::Shell::{
-        ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
-    };
+    use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
     let verb = verb.map(HSTRING::from);
@@ -173,7 +175,9 @@ fn shell_execute(
     if !info.hProcess.is_invalid() {
         // `SEE_MASK_NOCLOSEPROCESS` hands us the handle to close. Closing it does
         // not end the process; leaking it would hold a dead one alive all session.
-        unsafe { let _ = CloseHandle(info.hProcess); };
+        unsafe {
+            let _ = CloseHandle(info.hProcess);
+        };
     }
     Ok(image)
 }
@@ -305,21 +309,19 @@ fn open_application(path: &str, arguments: &[&str]) -> Result<Option<PathBuf>, S
     }
 
     let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
-    let handler = block2::RcBlock::new(
-        move |app: *mut NSRunningApplication, err: *mut NSError| {
-            // SAFETY: AppKit passes objects that are valid for this call.
-            let outcome = if !err.is_null() {
-                Err(unsafe { (*err).localizedDescription() }.to_string())
-            } else if app.is_null() {
-                Ok(None)
-            } else {
-                Ok(unsafe { (*app).bundleURL() }
-                    .and_then(|u| u.path())
-                    .map(|p| p.to_string()))
-            };
-            let _ = tx.send(outcome);
-        },
-    );
+    let handler = block2::RcBlock::new(move |app: *mut NSRunningApplication, err: *mut NSError| {
+        // SAFETY: AppKit passes objects that are valid for this call.
+        let outcome = if !err.is_null() {
+            Err(unsafe { (*err).localizedDescription() }.to_string())
+        } else if app.is_null() {
+            Ok(None)
+        } else {
+            Ok(unsafe { (*app).bundleURL() }
+                .and_then(|u| u.path())
+                .map(|p| p.to_string()))
+        };
+        let _ = tx.send(outcome);
+    });
 
     NSWorkspace::sharedWorkspace().openApplicationAtURL_configuration_completionHandler(
         &url,
@@ -450,8 +452,7 @@ pub fn shell_item_is_bindable(pidl_bytes: &[u8]) -> bool {
 
     let _com = crate::com::ComScope::new();
     with_aligned_pidl(pidl_bytes, |pidl| {
-        let item: Result<IShellItem, _> =
-            unsafe { SHCreateItemFromIDList(pidl as *const _) };
+        let item: Result<IShellItem, _> = unsafe { SHCreateItemFromIDList(pidl as *const _) };
         Ok(item.is_ok())
     })
     .unwrap_or(false)
@@ -519,9 +520,7 @@ unsafe fn open_clipboard_retrying() -> Result<(), String> {
 #[cfg(windows)]
 pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     use windows::Win32::Foundation::{HANDLE, HGLOBAL};
-    use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, SetClipboardData,
-    };
+    use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_UNICODETEXT;
 
@@ -563,6 +562,62 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     }
 }
 
+/// Put an image on the clipboard: `CF_DIB` for every target, plus the
+/// registered `PNG` format that browsers and Office read for alpha (v0.14).
+///
+/// Windows synthesises `CF_DIBV5` and `CF_BITMAP` from the DIB on request.
+#[cfg(windows)]
+pub fn copy_image_to_clipboard(dib: &[u8], png: &[u8]) -> Result<(), String> {
+    use windows::core::w;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, RegisterClipboardFormatW,
+    };
+    use windows::Win32::System::Ole::CF_DIB;
+
+    let _clipboard = crate::clips::os::lock();
+
+    unsafe {
+        open_clipboard_retrying()?;
+        let result = (|| -> Result<(), String> {
+            EmptyClipboard().map_err(|e| format!("could not clear the clipboard: {e}"))?;
+            set_clipboard_bytes(CF_DIB.0 as u32, dib)?;
+            // Optional: the DIB alone is a complete paste, so a refused PNG
+            // costs alpha in some targets and nothing else.
+            let png_format = RegisterClipboardFormatW(w!("PNG"));
+            if png_format != 0 {
+                let _ = set_clipboard_bytes(png_format, png);
+            }
+            Ok(())
+        })();
+        let _ = CloseClipboard();
+        result
+    }
+}
+
+/// Copy `bytes` into a movable global and hand it to the open clipboard.
+///
+/// Freed here only on failure: on success the clipboard owns it.
+#[cfg(windows)]
+unsafe fn set_clipboard_bytes(format: u32, bytes: &[u8]) -> Result<(), String> {
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+    use windows::Win32::System::DataExchange::SetClipboardData;
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+    let handle: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, bytes.len())
+        .map_err(|e| format!("could not allocate for the clipboard: {e}"))?;
+    let ptr = GlobalLock(handle);
+    if ptr.is_null() {
+        let _ = GlobalFree(Some(handle));
+        return Err("could not lock the clipboard buffer".into());
+    }
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast::<u8>(), bytes.len());
+    let _ = GlobalUnlock(handle);
+    if let Err(e) = SetClipboardData(format, Some(HANDLE(handle.0))) {
+        let _ = GlobalFree(Some(handle));
+        return Err(format!("could not set the clipboard: {e}"));
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

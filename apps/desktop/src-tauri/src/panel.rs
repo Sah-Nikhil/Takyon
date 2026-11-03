@@ -43,7 +43,8 @@ pub fn configure(app: &AppHandle) {
 
     ns.setLevel(NSFloatingWindowLevel);
     ns.setCollectionBehavior(
-        NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary,
+        NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary,
     );
 
     // Without this the Palette disappears the moment the app it is floating over

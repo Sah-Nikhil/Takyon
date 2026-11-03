@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use super::probe::{self, PROBE_TIMEOUT};
 use super::turn::TurnEvent;
-use super::{AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState};
+use super::{
+    AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState,
+};
 
 pub struct ClaudeDriver;
 
@@ -70,12 +72,14 @@ impl AgentDriver for ClaudeDriver {
 
     fn turn_args(&self, req: &TurnRequest) -> Vec<String> {
         let mut args = vec![
+            // No positional prompt: `-p` reads it from stdin (ADR-0032).
             "-p".into(),
-            req.prompt.clone(),
             "--output-format".into(),
             "stream-json".into(),
             // stream-json refuses to emit without it, rather than warning.
             "--verbose".into(),
+            // Token deltas as `stream_event` lines, whole messages still after.
+            "--include-partial-messages".into(),
             // Nobody is there to answer a permission prompt: a Turn that waits on
             // one waits forever. Denying is the only honest setting until v1.0
             // gives follow-up Turns a permission UI (docs/tbd/v0.8.md).
@@ -107,6 +111,11 @@ impl AgentDriver for ClaudeDriver {
         args
     }
 
+    /// The bare prompt: the style already travels in `--append-system-prompt`.
+    fn turn_input(&self, req: &TurnRequest) -> String {
+        req.prompt.clone()
+    }
+
     /// Claude has no working-directory flag; it uses the process cwd.
     fn cwd_is_process_cwd(&self) -> bool {
         true
@@ -122,8 +131,31 @@ impl AgentDriver for ClaudeDriver {
                     model: text_at(&json, "model"),
                 })
             }
-            // Text blocks arrive whole, one per assistant message. Thinking
-            // blocks are in the same array and are deliberately dropped.
+            // Partial messages. A text delta renders now; `message_start` resets
+            // `streamed` so the next whole message knows whether it is news.
+            "stream_event" => {
+                let event = json.get("event")?;
+                match event.get("type").and_then(Value::as_str)? {
+                    "message_start" => {
+                        state.streamed = false;
+                        None
+                    }
+                    "content_block_delta" => {
+                        let delta = event.get("delta")?;
+                        if delta.get("type").and_then(Value::as_str) != Some("text_delta") {
+                            return None;
+                        }
+                        let text = text_at(delta, "text")?;
+                        state.streamed = true;
+                        Some(TurnEvent::Text { delta: text })
+                    }
+                    _ => None,
+                }
+            }
+            // Text blocks arrive whole, one per assistant message: rendered only
+            // when no delta streamed them, else the answer doubles. Thinking
+            // blocks sit in the same array and are dropped.
+            "assistant" if state.streamed => None,
             "assistant" => {
                 let blocks = json.pointer("/message/content")?.as_array()?;
                 let delta: String = blocks
@@ -136,10 +168,11 @@ impl AgentDriver for ClaudeDriver {
             // The result line repeats the whole answer, which is already on
             // screen. Only its error form is news.
             "result" if json.get("is_error").and_then(Value::as_bool) == Some(true) => {
-                Some(TurnEvent::Failed {
-                    message: text_at(&json, "result")
+                Some(TurnEvent::agent_error(
+                    LABEL,
+                    text_at(&json, "result")
                         .unwrap_or_else(|| "Claude Code stopped with an error.".into()),
-                })
+                ))
             }
             _ => None,
         }
@@ -173,7 +206,10 @@ fn unverified(version: Option<String>, message: &str) -> Snapshot {
 
 /// Turn one `claude auth status --json` payload into a Snapshot.
 pub fn snapshot_from_auth(version: Option<String>, json: &Value) -> Snapshot {
-    let logged_in = json.get("loggedIn").and_then(Value::as_bool).unwrap_or(false);
+    let logged_in = json
+        .get("loggedIn")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     if !logged_in {
         return Snapshot {
             kind: AgentKind::Claude,
@@ -273,7 +309,9 @@ fn title_case_words(value: &str) -> String {
         .map(|part| {
             let mut chars = part.chars();
             match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+                Some(first) => {
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                }
                 None => String::new(),
             }
         })
@@ -302,7 +340,10 @@ mod tests {
         assert!(snap.installed);
         assert_eq!(snap.health, Health::Ready);
         assert_eq!(snap.sign_in.status, SignInStatus::In);
-        assert_eq!(snap.sign_in.label.as_deref(), Some("Claude Pro Subscription"));
+        assert_eq!(
+            snap.sign_in.label.as_deref(),
+            Some("Claude Pro Subscription")
+        );
         assert_eq!(snap.sign_in.account.as_deref(), Some("someone@example.com"));
         assert!(snap.message.is_none());
     }
@@ -319,21 +360,33 @@ mod tests {
     /// An API key beats the subscription, and Bedrock is read from apiProvider.
     #[test]
     fn v0_8_claude_account_labels_follow_t3_codes_rules() {
-        assert_eq!(auth_label(Some("pro"), Some("apiKey")).as_deref(), Some("Claude API Key"));
-        assert_eq!(auth_label(Some("max20"), None).as_deref(), Some("Claude Max 20x Subscription"));
+        assert_eq!(
+            auth_label(Some("pro"), Some("apiKey")).as_deref(),
+            Some("Claude API Key")
+        );
+        assert_eq!(
+            auth_label(Some("max20"), None).as_deref(),
+            Some("Claude Max 20x Subscription")
+        );
         assert_eq!(
             auth_label(Some("claudeEnterpriseSubscription"), None).as_deref(),
             Some("Claude Enterprise Subscription")
         );
         assert_eq!(auth_label(None, None), None);
-        assert_eq!(api_provider_label(Some("bedrock")).as_deref(), Some("Amazon Bedrock"));
+        assert_eq!(
+            api_provider_label(Some("bedrock")).as_deref(),
+            Some("Amazon Bedrock")
+        );
         assert_eq!(api_provider_label(Some("firstParty")), None);
     }
 
     /// An unknown plan name is title-cased rather than dropped.
     #[test]
     fn v0_8_an_unknown_claude_plan_still_reads_as_english() {
-        assert_eq!(subscription_auth_label("super_duper"), "Claude Super Duper Subscription");
+        assert_eq!(
+            subscription_auth_label("super_duper"),
+            "Claude Super Duper Subscription"
+        );
     }
 
     /// The init line is where the session id to resume comes from.
@@ -363,12 +416,79 @@ mod tests {
             {"type":"text","text":"Hello"}]}}"#;
         assert_eq!(
             ClaudeDriver.parse_line(line, &mut state),
-            Some(TurnEvent::Text { delta: "Hello".into() })
+            Some(TurnEvent::Text {
+                delta: "Hello".into()
+            })
         );
 
         let thinking_only =
             r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"x"}]}}"#;
         assert_eq!(ClaudeDriver.parse_line(thinking_only, &mut state), None);
+    }
+
+    /// `--include-partial-messages` on Claude 2.1, haiku, trimmed to the fields
+    /// read: thinking block, two text deltas, then the whole text message.
+    const PARTIAL_RUN: [&str; 8] = [
+        r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[]}},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"","estimated_tokens":null}},"session_id":"s-1"}"#,
+        r#"{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"thinking","thinking":"","signature":"Er"}]},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ok"}},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" then"}},"session_id":"s-1"}"#,
+        r#"{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"ok then"}]},"session_id":"s-1"}"#,
+        r#"{"type":"stream_event","event":{"type":"message_stop"},"session_id":"s-1"}"#,
+    ];
+
+    fn texts(lines: &[&str], state: &mut TurnState) -> Vec<String> {
+        lines
+            .iter()
+            .filter_map(|line| match ClaudeDriver.parse_line(line, state) {
+                Some(TurnEvent::Text { delta }) => Some(delta),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Deltas stream, and the whole message after them does not repeat them.
+    #[test]
+    fn v0_11_1_claude_deltas_stream_and_render_once() {
+        let mut state = TurnState::default();
+        assert_eq!(texts(&PARTIAL_RUN, &mut state), ["ok", " then"]);
+    }
+
+    /// A message with no deltas, a Claude ignoring the flag, still renders whole.
+    #[test]
+    fn v0_11_1_a_claude_message_without_deltas_falls_back_to_its_text() {
+        let mut state = TurnState::default();
+        let whole = [PARTIAL_RUN[0], PARTIAL_RUN[6]];
+        assert_eq!(texts(&whole, &mut state), ["ok then"]);
+    }
+
+    /// `message_start` resets: a second message with no deltas is still news.
+    #[test]
+    fn v0_11_1_each_claude_message_decides_for_itself() {
+        let mut state = TurnState::default();
+        let second =
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"more"}]}}"#;
+        let lines = [PARTIAL_RUN.as_slice(), &[PARTIAL_RUN[0], second]].concat();
+        assert_eq!(texts(&lines, &mut state), ["ok", " then", "more"]);
+    }
+
+    /// The prompt is stdin, bare: the style is already the system prompt.
+    #[test]
+    fn v0_11_1_claude_reads_the_bare_prompt_from_stdin() {
+        let req = TurnRequest {
+            prompt: "line one\nline two".into(),
+            cwd: std::path::PathBuf::from("."),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        assert_eq!(ClaudeDriver.turn_input(&req), "line one\nline two");
+        let args = ClaudeDriver.turn_args(&req);
+        assert_eq!(args[0], "-p");
+        assert!(args.contains(&"--include-partial-messages".to_string()));
     }
 
     /// The result line repeats the answer, so only its error form is news.
@@ -381,7 +501,7 @@ mod tests {
         let bad = r#"{"type":"result","is_error":true,"result":"Credit balance too low"}"#;
         assert_eq!(
             ClaudeDriver.parse_line(bad, &mut state),
-            Some(TurnEvent::Failed { message: "Credit balance too low".into() })
+            Some(TurnEvent::agent_error(LABEL, "Credit balance too low"))
         );
     }
 
@@ -390,7 +510,10 @@ mod tests {
     #[test]
     fn v0_8_a_half_line_parses_to_nothing_rather_than_to_text() {
         let mut state = TurnState::default();
-        assert_eq!(ClaudeDriver.parse_line(r#"{"type":"assis"#, &mut state), None);
+        assert_eq!(
+            ClaudeDriver.parse_line(r#"{"type":"assis"#, &mut state),
+            None
+        );
         assert_eq!(ClaudeDriver.parse_line("not json at all", &mut state), None);
     }
 
@@ -406,12 +529,18 @@ mod tests {
             tools: false,
         };
         let args = ClaudeDriver.turn_args(&base);
-        let tools = args.iter().position(|a| a == "--tools").expect("tools flag");
+        let tools = args
+            .iter()
+            .position(|a| a == "--tools")
+            .expect("tools flag");
         assert_eq!(args[tools + 1], "");
         assert!(args.contains(&"stream-json".to_string()));
         assert!(args.contains(&"--verbose".to_string()));
 
-        let with_tools = ClaudeDriver.turn_args(&TurnRequest { tools: true, ..base.clone() });
+        let with_tools = ClaudeDriver.turn_args(&TurnRequest {
+            tools: true,
+            ..base.clone()
+        });
         assert!(!with_tools.contains(&"--tools".to_string()));
     }
 
@@ -426,9 +555,15 @@ mod tests {
             effort: Some("high".into()),
             tools: false,
         });
-        let model = args.iter().position(|a| a == "--model").expect("model flag");
+        let model = args
+            .iter()
+            .position(|a| a == "--model")
+            .expect("model flag");
         assert_eq!(args[model + 1], "opus");
-        let effort = args.iter().position(|a| a == "--effort").expect("effort flag");
+        let effort = args
+            .iter()
+            .position(|a| a == "--effort")
+            .expect("effort flag");
         assert_eq!(args[effort + 1], "high");
     }
 
@@ -460,9 +595,15 @@ mod tests {
             effort: None,
             tools: true,
         });
-        let resume = args.iter().position(|a| a == "--resume").expect("resume flag");
+        let resume = args
+            .iter()
+            .position(|a| a == "--resume")
+            .expect("resume flag");
         assert_eq!(args[resume + 1], "s-1");
-        let model = args.iter().position(|a| a == "--model").expect("model flag");
+        let model = args
+            .iter()
+            .position(|a| a == "--model")
+            .expect("model flag");
         assert_eq!(args[model + 1], "opus");
     }
 }

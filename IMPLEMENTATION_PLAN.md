@@ -81,6 +81,12 @@ applications disappeared. Measured in [`docs/tbd/v0.2.md`](./docs/tbd/v0.2.md)
 §9; the rule is [ADR-0014](./docs/adr/0014-durable-identity-wins-a-collision.md).
 The working directory is *not* part of the id.
 
+**Amended at v0.17.** `Entry` gains `labels: Option<[String; 2]>`, set only on
+a Calc Entry that answers a time zone question: the two zones in words, drawn
+under the card's halves in place of `Expression` and `Result`. Absent, not
+null, everywhere else (`tests/ipc.rs`). `version` (v0.3) is likewise optional
+and not in the block above.
+
 `subtitle` is populated by the Source but **shown only when it disambiguates** —
 [ADR-0016](./docs/adr/0016-the-second-line-is-disambiguation.md). The pipeline
 clears it on every Entry whose title is unique in the list being returned.
@@ -372,6 +378,31 @@ runs with `PRAGMA secure_delete = ON` and follows with
 `PRAGMA wal_checkpoint(TRUNCATE)`. "The row is deleted" and "the secret is gone"
 are different claims and this feature needs the second one.
 
+### `focus.db` (v0.16)
+
+```sql
+CREATE TABLE sessions (
+  id INTEGER PRIMARY KEY, goal TEXT NOT NULL,
+  strictness TEXT NOT NULL,          -- "soft" | "strict"; "locked" later (ADR-0036)
+  block_list TEXT NOT NULL,          -- JSON {categories, items}
+  started_at INTEGER NOT NULL, planned_ms INTEGER NOT NULL,
+  clock TEXT NOT NULL,               -- the whole session::Clock as JSON
+  ended_at INTEGER, outcome TEXT     -- "expired" | "completed"
+);
+CREATE TABLE session_events (session_id, at, kind, target);  -- blocked|snoozed|paused|resumed|refused
+CREATE TABLE categories (id INTEGER PRIMARY KEY, name, icon, copied_from);
+CREATE TABLE category_items (category_id, key, label, PRIMARY KEY (category_id, key));
+CREATE TABLE builtin_edits (category, key, label, removed, PRIMARY KEY (category, key));
+```
+
+The running session is the row with `ended_at IS NULL`, read in deferred init
+behind the hotkey and resumed (`focus::service`). The clock is stored whole so a
+restart resumes Pauses and sleep exactly. History is kept until cleared; nothing
+in it is secret in ADR-0008's sense. Preferences are `focus.*` keys in
+`settings.db`. Built-in Focus categories are not stored: `categories.json` is
+compiled in, and `builtin_edits` holds only the user's additions and removals,
+laid over it by `categories::with_edits`.
+
 ---
 
 ## 5. The file index (v0.7)
@@ -524,6 +555,29 @@ a cycle. It runs on a background thread so hide stays instant.
 Deferred init: the hotkey is live within ~50 ms of launch; index, icons and
 databases open afterward.
 
+**Agent processes live one summon (v0.11.1, ADR-0033).** Every Agent spawn, Turn
+or probe, goes through `agents::job::spawn`: one Job Object with
+`KILL_ON_JOB_CLOSE`, the child created suspended, assigned, then resumed. On unix
+it is a process group (`setsid`, `kill(-pgid)`) with no crash cover. `Turns`
+carries a visibility gate that defaults to closed. `window::show` opens it;
+`window::hide` closes it (which cancels every Turn) and calls
+`Searches::cancel_all`, both before `EVENT_HIDE`, so dismissal never waits on the
+webview. `start` refuses while the gate is closed, registers the Turn before
+spawning, and `run` re-checks the gate after attaching the job. Termination never
+blocks; each Turn's own thread reaps. The prompt goes on stdin, never argv
+(ADR-0032), and `turn::spawn` is the only Turn spawn path.
+
+**Focus (v0.16).** One `focus` thread, started in deferred init: MTA COM for
+UI Automation (ADR-0035), a hidden *top-level* window (message-only windows miss
+`WM_POWERBROADCAST` and `WM_QUERYENDSESSION`), and a 250 ms tick that polls the
+foreground and, every 2 s, the process table. Quits run on short-lived threads
+so a 2 s grace never stalls the tick. The floating bar is a third webview,
+`focusbar`, built off the main thread when a session starts and destroyed when it
+ends, so the idle budget never carries it; `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`
+are set after build and it is shown with `SW_SHOWNOACTIVATE` (`bar::float_quietly`),
+because Tauri has no option for either and its `show()` activates. The hidden
+window is `focus::power::Watch`, testable on its own thread.
+
 ---
 
 ## 8. The IPC contract
@@ -596,6 +650,27 @@ export const agentPathReport = () => invoke<PathReport | null>("agent_path_repor
 and nowhere else, because the only moment the answer matters is when someone is
 looking at an Agent that was not found.
 
+v0.11.1 changes the shape of a failed Turn on `takyon://turn`. Rust sends facts
+and `status.ts`'s `turnFailureCopy` words them, the split `Snapshot` already
+follows. `TurnEvent::Failed { failure }` flattens beside `kind`:
+
+```ts
+type TurnFailure = {
+  reason: "notFound" | "launcherBroken" | "spawnFailed" | "agentError" | "exited" | "silent";
+  agent: string;      // display label
+  binary?: string;    // notFound: the command; launcherBroken: the shim's path
+  code?: number;      // exited, absent when killed
+  detail?: string;    // stderr's tail or the io::Error, at most 2,000 characters
+  message?: string;   // agentError: the Agent's own words
+};
+// { turnId, kind: "failed", ...TurnFailure }
+```
+
+`launcherBroken` is exit 9009 or t3code's six localised "is not recognized"
+sentences. `silent` is a clean exit with no text. When the parser already emitted
+the Agent's own `agentError`, the exit adds nothing, and a cancelled Turn emits
+nothing at all.
+
 **`file_index_status` is not a field on `QueryResult`.** The state changes on the
 walk's schedule rather than the user's, so riding the keystroke path would ship
 the same three words on every keypress. It is asked when `!e` is typed and
@@ -606,6 +681,32 @@ Types live in `packages/shared` and mirror the Rust structs. **Contract tests
 assert that Rust's serialised output matches these types** — that is the one
 test that catches fixture drift, which is the silent failure mode of the mocked
 visual layer (TBC-0007).
+
+**Focus (v0.16)** adds `focus_*` commands (`focus/ipc.rs`) and one event,
+`takyon://focus`, carrying `FocusSignal`: `view` on every change of shape,
+`blocked` with the target and whether it is snoozable, `ended`. The view carries
+`endsAt`, not a ticking value, so every surface counts down locally. Durations
+and stats take the frontend's local time (`localMsOfDay`, UTC offset): Rust holds
+no timezone logic. Contract checks for `FocusView`, `FocusSettings` and
+`FocusStats` live beside the structs. `focus_preview` returns `Refusal`s and is
+async: it walks the process table and the registry. `focus_members` resolves a
+Focus category against the apps Source for its Settings page.
+
+**Third-party licences (About)** add one read-only command:
+
+```ts
+export const thirdPartyLicences = () => invoke<ThirdPartyLicences>("third_party_licences");
+```
+
+The body is `THIRD_PARTY_NOTICES.json`, which `scripts/third-party-notices.ts`
+writes beside `THIRD_PARTY_NOTICES.txt` from the same component list, and
+`tauri.bundle.conf.json` ships both as resources. The generator is typed against
+`ThirdPartyLicences` in `packages/shared`, so the shape has one owner; `notices.rs`
+checks the file is JSON and returns it as a raw `ipc::Response` without
+re-encoding it. Debug builds also look beside `Cargo.toml`, so `bun run dev` works
+after `bun run notices`. The file is read when the licence view opens and at no
+other time: never at startup and never on the Palette path. The UI never parses
+the human-readable text file.
 
 ---
 

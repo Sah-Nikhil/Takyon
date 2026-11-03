@@ -79,7 +79,12 @@ pub fn prompt(question: &str, citations: &[Citation]) -> String {
 
     let share = PROMPT_BUDGET / citations.len().max(1);
     for (i, cited) in citations.iter().enumerate() {
-        out.push_str(&format!("[{}] {}\n{}\n", i + 1, cited.hit.title, cited.hit.url));
+        out.push_str(&format!(
+            "[{}] {}\n{}\n",
+            i + 1,
+            cited.hit.title,
+            cited.hit.url
+        ));
         match &cited.text {
             Some(text) => {
                 out.push_str(&text.chars().take(share).collect::<String>());
@@ -131,7 +136,10 @@ mod tests {
     /// a thinner answer reads as a complete one (v0.9 Traps).
     #[test]
     fn v0_9_an_unreadable_page_stays_in_the_prompt_as_its_snippet() {
-        let cited = citations(vec![hit(1)], vec![Err(SearchError::Failed("timeout".into()))]);
+        let cited = citations(
+            vec![hit(1)],
+            vec![Err(SearchError::Failed("timeout".into()))],
+        );
         assert!(cited[0].text.is_none());
         let prompt = prompt("why", &cited);
         assert!(prompt.contains("could not be read"));
@@ -177,7 +185,10 @@ mod tests {
     fn v0_9_the_prompt_asks_for_a_headline_and_labelled_findings() {
         let prompt = prompt("what happened in the chiefs game", &[]);
         assert!(prompt.contains("HEADLINE:"), "no headline instruction");
-        assert!(prompt.contains("**Label**"), "no labelled-bullet instruction");
+        assert!(
+            prompt.contains("**Label**"),
+            "no labelled-bullet instruction"
+        );
         assert!(prompt.contains("- "), "no bullet instruction");
     }
 
@@ -187,8 +198,14 @@ mod tests {
     fn v0_9_the_prompt_asks_the_sources_to_be_compared() {
         let prompt = prompt("who won", &[]);
         let lower = prompt.to_lowercase();
-        assert!(lower.contains("disagree"), "nothing about conflicting sources");
-        assert!(lower.contains("across"), "nothing about reading across sources");
+        assert!(
+            lower.contains("disagree"),
+            "nothing about conflicting sources"
+        );
+        assert!(
+            lower.contains("across"),
+            "nothing about reading across sources"
+        );
     }
 
     /// `!s` asks whoever `!c` would ask, so a Codex-only machine still answers.
@@ -207,7 +224,9 @@ mod tests {
     fn v0_9_no_switched_on_agent_means_no_summariser() {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         for kind in crate::agents::AgentKind::ALL {
-            prefs.set(&crate::prefs::ask_enabled_key(kind), "0").unwrap();
+            prefs
+                .set(&crate::prefs::ask_enabled_key(kind), "0")
+                .unwrap();
         }
         assert_eq!(agent(&prefs), None);
     }

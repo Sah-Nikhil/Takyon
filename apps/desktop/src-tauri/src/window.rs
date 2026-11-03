@@ -88,6 +88,8 @@ pub enum View {
     /// `!s` with a question typed. Same height and same reason: a streamed
     /// answer over a source list, both scrolling (v0.9).
     Web,
+    /// The Focus start form, or the running session's controls (v0.16).
+    Focus,
 }
 
 /// How tall a full-window View is, logical pixels.
@@ -187,7 +189,9 @@ pub fn content_height(shape: Shape) -> u32 {
     let with_menu = match shape.menu_actions {
         // `max`, never a sum: the menu sits on top of the list rather than below
         // it, so a tall list already has the room and only a short one has to grow.
-        Some(actions) => content.max(MENU_CHROME + actions as u32 * ACTION_ROW_HEIGHT + MENU_MARGIN),
+        Some(actions) => {
+            content.max(MENU_CHROME + actions as u32 * ACTION_ROW_HEIGHT + MENU_MARGIN)
+        }
         None => content,
     };
 
@@ -352,7 +356,9 @@ fn apply(app: &AppHandle, shape: Shape) {
     let height = scaled(content_height(shape));
 
     let Ok(size) = win.inner_size() else { return };
-    let Ok(scale) = win.scale_factor() else { return };
+    let Ok(scale) = win.scale_factor() else {
+        return;
+    };
     // Physical pixels, because that is what `inner_size` reports. Rounded, not
     // truncated: at 125% a logical 68 is 85 physical, and truncating would fail
     // the comparison every time and resize on every keystroke.
@@ -373,12 +379,10 @@ pub const EVENT_SHOW: &str = "takyon://show";
 /// Emitted when the Palette is hidden. Must match `EVENT_HIDE` in the same file.
 pub const EVENT_HIDE: &str = "takyon://hide";
 
-/// Set to `1` to show without taking foreground, and suppress
-/// dismiss-on-focus-loss.
+/// `1` shows without taking foreground and suppresses dismiss-on-focus-loss.
 ///
-/// Without it, inspecting the Palette is impossible — devtools takes focus and the
-/// focus-loss rule hides what you were inspecting. An env var rather than a build
-/// flag, so a release binary can be debugged in the field.
+/// Else devtools takes focus and focus loss hides what you inspect. Env var, not a
+/// build flag, so a release binary is debuggable in the field.
 pub const NO_FOCUS_STEAL_ENV: &str = "TAKYON_NO_FOCUS_STEAL";
 
 #[derive(Clone, Serialize)]
@@ -386,14 +390,16 @@ pub const NO_FOCUS_STEAL_ENV: &str = "TAKYON_NO_FOCUS_STEAL";
 pub struct ShowPayload {
     pub show_id: u64,
     pub no_focus_steal: bool,
+    /// The update row to draw on the empty line (ADR-0040).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notice: Option<crate::update::Notice>,
 }
 
 /// How long after a show a focus-loss event is ignored.
 ///
-/// Show and `set_focus()` are not atomic — WebView2's child takes keyboard focus
-/// after the outer window activates, and Tauri can deliver a `Focused(false)` in
-/// between. Acting on it presented as "every second press does nothing". 300 ms
-/// covers the handover without swallowing a real click-away.
+/// Show and `set_focus()` are not atomic: WebView2's child takes focus after the
+/// window activates, and a `Focused(false)` between made every second press a no-op.
+/// 300 ms covers the handover without swallowing a real click-away.
 const FOCUS_GRACE: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// When the Palette was last shown. Read by [`should_hide_on_focus_loss`].
@@ -407,7 +413,10 @@ pub fn should_hide_on_focus_loss(app: &AppHandle) -> bool {
     if no_focus_steal() {
         return false;
     }
-    if !palette(app).and_then(|w| w.is_visible().ok()).unwrap_or(false) {
+    if !palette(app)
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false)
+    {
         return false;
     }
     let last = *LAST_SHOWN.lock().unwrap_or_else(|e| e.into_inner());
@@ -451,6 +460,9 @@ pub fn show(app: &AppHandle, bench: &Bench) {
 
     place_on_cursor_monitor(app, &win);
 
+    // Expanded has a fixed-height row; Compact keeps its one-line height.
+    let notice = crate::update::notice();
+
     // Stamped before `show()`, not after: the stray focus event can be delivered
     // while we are still inside these calls.
     *LAST_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
@@ -458,6 +470,9 @@ pub fn show(app: &AppHandle, bench: &Bench) {
     if let Err(e) = win.show() {
         eprintln!("[takyon] could not show the Palette: {e}");
         return;
+    }
+    if let Some(turns) = app.try_state::<std::sync::Arc<crate::agents::turn::Turns>>() {
+        turns.set_visible(true);
     }
 
     if !no_focus_steal() {
@@ -476,6 +491,7 @@ pub fn show(app: &AppHandle, bench: &Bench) {
         ShowPayload {
             show_id,
             no_focus_steal: no_focus_steal(),
+            notice,
         },
     );
 }
@@ -492,6 +508,9 @@ pub fn hide(app: &AppHandle, reason: &str) {
     let _ = reason;
 
     let Some(win) = palette(app) else { return };
+    // Every Agent process dies with the Palette, in Rust, before React hears of
+    // it (ADR-0033). Terminate only: each Turn's own thread reaps.
+    stop_agents(app);
     if let Err(e) = win.hide() {
         eprintln!("[takyon] could not hide the Palette: {e}");
         return;
@@ -509,14 +528,24 @@ pub fn hide(app: &AppHandle, reason: &str) {
     trim_working_set_async();
 }
 
+/// Close the Turn gate, stop every `!s`, kill every Agent tree. Never blocks.
+fn stop_agents(app: &AppHandle) {
+    if let Some(turns) = app.try_state::<std::sync::Arc<crate::agents::turn::Turns>>() {
+        turns.set_visible(false);
+    }
+    if let Some(searches) = app.try_state::<std::sync::Arc<crate::search::ipc::Searches>>() {
+        searches.cancel_all();
+    }
+}
+
 /// The hotkey toggles: it opens the Palette and closes it again.
 ///
-/// Three ways out — hotkey, Escape, clicking away — and all three must work; hard
-/// to dismiss is worse than hard to summon. Visibility is read from the window,
-/// never mirrored into a bool: the focus-loss handler can hide it at any moment,
-/// and a stale flag makes every second press a no-op.
+/// Three ways out (hotkey, Escape, click away), all must work. Visibility is read from
+/// the window, never mirrored: focus loss hides it anytime, and a stale flag no-ops.
 pub fn toggle(app: &AppHandle, bench: &Bench) {
-    let visible = palette(app).and_then(|w| w.is_visible().ok()).unwrap_or(false);
+    let visible = palette(app)
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
     if visible {
         hide(app, "hotkey toggle");
     } else {
@@ -537,7 +566,9 @@ fn place_on_cursor_monitor(app: &AppHandle, win: &WebviewWindow) {
             _ => return,
         }
     } else {
-        let Ok(cursor) = app.cursor_position() else { return };
+        let Ok(cursor) = app.cursor_position() else {
+            return;
+        };
         match app.monitor_from_point(cursor.x, cursor.y) {
             Ok(Some(m)) => m,
             // No monitor for that point is possible mid-hotplug. Leaving the
@@ -579,10 +610,8 @@ fn is_foreground(win: &WebviewWindow) -> bool {
 
 /// Release the working set of this process **and every process below it**.
 ///
-/// Trimming only ours is pointless: the memory ADR-0003 trades away lives in
-/// WebView2's browser, renderer and GPU processes, which are descendants rather
-/// than children. A *hint* only — Windows may refuse, and the pages return as
-/// soft faults on the next show. TBC-0002 budgets 5-15 ms for that.
+/// ADR-0003's memory lives in WebView2's browser, renderer and GPU descendants, not
+/// ours. A *hint*: Windows may refuse; pages soft-fault back on show (TBC-0002: 5-15 ms).
 #[cfg(windows)]
 fn trim_working_set_async() {
     // Off the hide path on purpose. Enumerating the process table costs a couple
@@ -739,8 +768,12 @@ mod tests {
     /// which presented as the hotkey working only every second press.
     #[test]
     fn v0_1_a_focus_loss_during_the_show_handover_is_ignored() {
-        assert!(focus_loss_is_stray(Some(std::time::Duration::from_millis(0))));
-        assert!(focus_loss_is_stray(Some(std::time::Duration::from_millis(299))));
+        assert!(focus_loss_is_stray(Some(std::time::Duration::from_millis(
+            0
+        ))));
+        assert!(focus_loss_is_stray(Some(std::time::Duration::from_millis(
+            299
+        ))));
     }
 
     /// A real click-away must never be swallowed. Clicking away is one of only
@@ -748,8 +781,12 @@ mod tests {
     /// would trade a flaky hotkey for a Palette you cannot dismiss.
     #[test]
     fn v0_1_a_real_click_away_still_dismisses() {
-        assert!(!focus_loss_is_stray(Some(std::time::Duration::from_millis(301))));
-        assert!(!focus_loss_is_stray(Some(std::time::Duration::from_secs(30))));
+        assert!(!focus_loss_is_stray(Some(
+            std::time::Duration::from_millis(301)
+        )));
+        assert!(!focus_loss_is_stray(Some(std::time::Duration::from_secs(
+            30
+        ))));
         // No recorded show at all: nothing to be an artefact of.
         assert!(!focus_loss_is_stray(None));
     }
@@ -960,7 +997,10 @@ mod tests {
         card.calc_card = true;
         assert_eq!(content_height(card), EXPANDED_HEIGHT);
         // And Compact still does, or the two modes would be the same thing.
-        assert_ne!(content_height(shape(0, false, None)), content_height(shape(8, false, None)));
+        assert_ne!(
+            content_height(shape(0, false, None)),
+            content_height(shape(8, false, None))
+        );
     }
 
     /// v0.10: a View outranks Expanded, in that order and not the other one.

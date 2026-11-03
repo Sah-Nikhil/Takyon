@@ -20,12 +20,14 @@ pub mod com;
 pub mod crashlog;
 pub mod entry;
 pub mod firstrun;
+pub mod focus;
 pub mod frecency;
 pub mod hotkey;
 pub mod icons;
 pub mod identity;
 pub mod index;
 pub mod launch;
+pub mod notices;
 #[cfg(target_os = "macos")]
 pub mod panel;
 pub mod prefs;
@@ -37,6 +39,7 @@ pub mod sources;
 pub mod superkey;
 pub mod tray;
 pub mod uiaccess;
+pub mod update;
 pub mod version;
 pub mod window;
 
@@ -68,6 +71,10 @@ struct ClipRow {
     source_exe: Option<String>,
     len: usize,
     preview: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    height: Option<u32>,
 }
 
 impl From<Clip> for ClipRow {
@@ -79,6 +86,8 @@ impl From<Clip> for ClipRow {
             source_exe: clip.source_exe,
             len: clip.len,
             preview: clip.preview,
+            width: clip.width,
+            height: clip.height,
         }
     }
 }
@@ -125,6 +134,8 @@ fn query(
         .entries
         .first()
         .is_some_and(|e| e.kind == entry::EntryKind::Calc);
+    // Compact's update pill fits the input line; Expanded's row fits its
+    // fixed window. Neither needs extra native height (ADR-0040).
     window::set_rows(&app, result.entries.len(), result.status_row, calc_card);
     result
 }
@@ -224,10 +235,7 @@ fn clip_retention(prefs: tauri::State<'_, Arc<prefs::Prefs>>) -> String {
 /// Read *before* the change, so the confirmation can name the real number rather
 /// than "some items" (v0.5 traps). Zero for a window that removes nothing.
 #[tauri::command]
-fn clip_retention_impact(
-    value: String,
-    clips: tauri::State<'_, Option<Arc<ClipStore>>>,
-) -> usize {
+fn clip_retention_impact(value: String, clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> usize {
     let Some(store) = clips.inner() else {
         return 0;
     };
@@ -260,6 +268,12 @@ fn clip_clear(clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> usize {
     clips.inner().as_ref().map_or(0, |s| s.clear())
 }
 
+/// Bytes clipboard history occupies on disk, images included (v0.14).
+#[tauri::command]
+fn clip_disk_bytes(clips: tauri::State<'_, Option<Arc<ClipStore>>>) -> u64 {
+    clips.inner().as_ref().map_or(0, |s| s.disk_bytes())
+}
+
 /// Open or close a full-window View (v0.5).
 ///
 /// The Palette grows into the surface rather than opening a window: a third
@@ -271,6 +285,7 @@ fn set_view(app: tauri::AppHandle, view: Option<String>) {
         Some("clipboard-history") => Some(window::View::ClipboardHistory),
         Some("ask") => Some(window::View::Ask),
         Some("web") => Some(window::View::Web),
+        Some("focus") => Some(window::View::Focus),
         _ => None,
     };
     window::set_view(&app, view);
@@ -320,7 +335,10 @@ fn set_clip_bang(
 /// Executables whose clipboard is never recorded (ADR-0006).
 #[tauri::command]
 fn clip_blocklist(blocklist: tauri::State<'_, Option<Arc<Blocklist>>>) -> Vec<String> {
-    blocklist.inner().as_ref().map_or_else(Vec::new, |b| b.all())
+    blocklist
+        .inner()
+        .as_ref()
+        .map_or_else(Vec::new, |b| b.all())
 }
 
 /// Add or remove one executable. The store reloads its own cache on write, so the
@@ -637,6 +655,12 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        // ADR-0040. Registered on every build; only `update::update_check` and
+        // `update_install` reach it, and both answer `Unconfigured` without the
+        // key and feed `release.yml` merges in. No `updater:` capability, so the
+        // webview cannot call the plugin's own commands.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(update::Pending::default())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 // ADR-0011. Without this the plugin keys the `Run` value off
@@ -676,7 +700,9 @@ pub fn run() {
                     // A miss is cosmetic: the row is already on screen with its
                     // placeholder. Never a panic — this path is reachable from the
                     // webview, so it is reachable from anything the webview loads.
-                    None => tauri::http::Response::builder().status(404).body(Vec::new()),
+                    None => tauri::http::Response::builder()
+                        .status(404)
+                        .body(Vec::new()),
                 };
                 if let Ok(response) = response {
                     responder.respond(response);
@@ -684,14 +710,10 @@ pub fn run() {
             });
         })
         /*
-          Favicons for `!s` sources (ADR-0022). Its own scheme rather than a
-          second key space inside `takyon-icon`: that store is keyed by an
-          application's path and mtime, this one by host, and one cache with two
-          key shapes is a cache nobody can reason about.
-
-          Asynchronous for the same reason as icons — a disk read must not run on
-          the thread WebView2 renders with.
-         */
+         Favicons for `!s` sources (ADR-0022). Own scheme, not a second key space
+         in `takyon-icon`: that store keys by app path and mtime, this by host.
+         Asynchronous like icons: no disk read on WebView2's render thread.
+        */
         .register_asynchronous_uri_scheme_protocol(
             search::favicon::SCHEME,
             |_ctx, request, responder| {
@@ -704,8 +726,8 @@ pub fn run() {
                     .to_string();
 
                 std::thread::spawn(move || {
-                    let bytes = identity::data_dir()
-                        .and_then(|dir| search::favicon::cached(&dir, &host));
+                    let bytes =
+                        identity::data_dir().and_then(|dir| search::favicon::cached(&dir, &host));
                     let response = match bytes {
                         // The bytes may be .ico, .png or .svg. No Content-Type is
                         // sent on purpose: the sniffing WebView2 does is right
@@ -729,6 +751,48 @@ pub fn run() {
                 });
             },
         )
+        /*
+         Image clips (v0.14): `thumb-<id>` from the row, `full-<id>` from its
+         blob, decrypted per request. `no-store` on both, so WebView2 never
+         writes a screenshot into its disk cache (ADR-0008).
+        */
+        .register_asynchronous_uri_scheme_protocol(clips::SCHEME, |ctx, request, responder| {
+            let store = ctx
+                .app_handle()
+                .try_state::<Option<Arc<ClipStore>>>()
+                .and_then(|s| s.inner().clone());
+            let key = request
+                .uri()
+                .path()
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+
+            std::thread::spawn(move || {
+                let bytes =
+                    store
+                        .zip(clips::parse_image_key(&key))
+                        .and_then(|(s, part)| match part {
+                            clips::ImagePart::Thumb(id) => s.thumbnail(id),
+                            clips::ImagePart::Full(id) => s.image(id),
+                        });
+                let response = match bytes {
+                    Some(bytes) => tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", "image/png")
+                        .header("Cache-Control", "no-store")
+                        .body(bytes),
+                    None => tauri::http::Response::builder()
+                        .status(404)
+                        .header("Cache-Control", "no-store")
+                        .body(Vec::new()),
+                };
+                if let Ok(response) = response {
+                    responder.respond(response);
+                }
+            });
+        })
         .invoke_handler(tauri::generate_handler![
             dismiss,
             open_settings,
@@ -747,6 +811,7 @@ pub fn run() {
             clip_retention_impact,
             set_clip_retention,
             clip_clear,
+            clip_disk_bytes,
             clip_page,
             clip_bang,
             set_clip_bang,
@@ -798,7 +863,43 @@ pub fn run() {
             search::ipc::web_search,
             search::ipc::web_cancel,
             search::ipc::open_url,
-            search::ipc::open_web_query
+            search::ipc::open_web_query,
+            focus::ipc::focus_parse_duration,
+            focus::ipc::focus_parse_bang,
+            focus::ipc::focus_view,
+            focus::ipc::focus_preview,
+            focus::ipc::focus_start,
+            focus::ipc::focus_pause,
+            focus::ipc::focus_resume,
+            focus::ipc::focus_extend,
+            focus::ipc::focus_complete,
+            focus::ipc::focus_snooze,
+            focus::ipc::focus_type_goal,
+            focus::ipc::focus_reset_friction,
+            focus::ipc::focus_categories,
+            focus::ipc::focus_members,
+            focus::ipc::focus_fetch_icons,
+            focus::ipc::focus_edit_builtin,
+            focus::ipc::focus_reset_builtin,
+            focus::ipc::focus_save_category,
+            focus::ipc::focus_delete_category,
+            focus::ipc::focus_export_categories,
+            focus::ipc::focus_import_categories,
+            focus::ipc::focus_last_list,
+            focus::ipc::focus_settings,
+            focus::ipc::focus_set_setting,
+            focus::ipc::focus_bar_fit,
+            focus::ipc::focus_bar_reveal,
+            focus::ipc::focus_clear_history,
+            focus::ipc::focus_stats,
+            update::update_check,
+            update::update_install,
+            update::update_install_now,
+            update::update_notice,
+            update::update_notice_dismiss,
+            update::update_auto_check,
+            update::set_update_auto_check,
+            notices::third_party_licences
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -946,6 +1047,7 @@ pub fn run() {
             // a keystroke can arrive before the Palette has mounted, and `!v`
             // silently falling through would look like a broken Bang.
             pipeline.set_bang_enabled(prefs::flag(&prefs, prefs::CLIPS_BANG, true));
+            pipeline.set_focus_bang(prefs::flag(&prefs, prefs::FOCUS_BANG, false));
             // Same reason, and it was the gap v0.6 closed: the policy was pushed
             // from the frontend only, so every keystroke before the Palette
             // mounted answered under Automatic whatever the user had chosen.
@@ -961,7 +1063,10 @@ pub fn run() {
             // reason: the row is drawn on the keystroke path and DPAPI is a
             // file read plus a syscall.
             pipeline.set_web_key_present(
-                identity::data_dir().as_deref().map(search::key::present).unwrap_or(false),
+                identity::data_dir()
+                    .as_deref()
+                    .map(search::key::present)
+                    .unwrap_or(false),
             );
             // Interface size, placement and window mode into atomics, before the
             // first show: all three sit on latency paths and must never reach
@@ -972,6 +1077,19 @@ pub fn run() {
             app.manage(Arc::new(agents::turn::Turns::default()));
             // Same shape as `Turns`: nothing runs until someone types `!s`.
             app.manage(Arc::new(search::ipc::Searches::default()));
+
+            // Focus (v0.16). Opening `focus.db` is one SQLite open; resuming a
+            // session walks game libraries, so that waits for the deferred thread.
+            let focus_store = focus::store::Store::open(identity::data_dir())
+                .or_else(|e| {
+                    eprintln!("[takyon] focus.db could not be opened: {e}");
+                    focus::store::Store::open(None)
+                })
+                .expect("an in-memory database always opens");
+            let focus = Arc::new(focus::Focus::new(focus_store, Box::new(focus::ThisMachine)));
+            let focus_page: focus::ipc::PagePath = Arc::new(std::sync::Mutex::new(None));
+            app.manage(focus.clone());
+            app.manage(focus_page.clone());
 
             // The first thing that makes the app useful, and it stays first.
             // Reads `settings.db` so a rebound hotkey survives a restart: one
@@ -1013,8 +1131,65 @@ pub fn run() {
             // Deferred init. Nothing below is on any latency budget, and two of the
             // three can block: `blocking_show` deadlocks if called on the main
             // thread, and the autostart registry write is disk-bound.
+            // Launch bookkeeping and the daily update check; sleeps 90 s first.
+            update::start(handle.clone());
+
             let deferred = handle.clone();
+            let focus_prefs = prefs.clone();
+            let focus_prefs_icons = prefs.clone();
             std::thread::spawn(move || {
+                // First, so a Strict session survives a reboot before anything
+                // slower runs: right after the hotkey (ADR-0036).
+                if focus.resume_running() {
+                    if let Ok(mut page) = focus_page.lock() {
+                        *page = focus::ipc::write_page(None);
+                    }
+                }
+                let signals = deferred.clone();
+                let surface_prefs = focus_prefs.clone();
+                // The tray line's block half; cleared when no session runs.
+                let last_block: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+                let last_view: std::sync::Mutex<focus::service::View> = Default::default();
+                focus::runtime::spawn(
+                    focus,
+                    focus_prefs,
+                    focus_page,
+                    Arc::new(move |signal| {
+                        // The bar or the tray line follows every change of view.
+                        let tray_only =
+                            surface_prefs.get(prefs::FOCUS_SURFACE).as_deref() == Some("tray");
+                        let mut block = last_block.lock().unwrap_or_else(|p| p.into_inner());
+                        let mut shown = last_view.lock().unwrap_or_else(|p| p.into_inner());
+                        match &signal {
+                            focus::runtime::Signal::View { view } => {
+                                focus::bar::set(&signals, view.running && !tray_only);
+                                if !view.running {
+                                    *block = None;
+                                }
+                                *shown = view.clone();
+                            }
+                            focus::runtime::Signal::Blocked { label, .. } => {
+                                *block = Some(label.clone());
+                                if tray_only {
+                                    tray::flash(&signals);
+                                }
+                            }
+                            focus::runtime::Signal::Ended { .. } => *block = None,
+                            focus::runtime::Signal::Bar { .. } => {}
+                        }
+                        let status = tray::focus_status(&shown, block.as_deref());
+                        tray::set_status(&signals, status.as_deref());
+                        drop((block, shown));
+                        focus::ipc::emit(&signals, signal);
+                    }),
+                );
+                // Its own thread, a minute late: the login budget never shares
+                // the network with it.
+                let icon_prefs = focus_prefs_icons;
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    focus::ipc::fetch_builtin_icons(&icon_prefs);
+                });
                 tray::self_heal_autostart(&deferred);
                 uiaccess::start(&deferred);
                 firstrun::maybe_enable(&deferred);
@@ -1023,22 +1198,31 @@ pub fn run() {
                 agents::shellenv::hydrate();
             });
 
-            // Clipboard capture and the retention sweep, off the startup path.
-            // A blocklist that will not open is fatal to capture for the same
-            // reason `clips.db` is: without it there is no second exclusion
-            // mechanism (ADR-0006).
-            match (clip_store, blocklist) {
-                (Some(store), Some(blocklist)) => {
-                    let sweeper = store.clone();
-                    let prefs = prefs.clone();
-                    std::thread::spawn(move || loop {
+            // Recovery and the retention sweep, off the startup path, whenever
+            // `clips.db` opened: stored clips still expire and crash leftovers
+            // still go even when capture is off for want of a blocklist.
+            if let Some(store) = &clip_store {
+                let sweeper = store.clone();
+                let prefs = prefs.clone();
+                std::thread::spawn(move || {
+                    // Image-blob crash recovery (v0.14). Here, not in
+                    // `ClipStore::open`, which runs before the hotkey.
+                    sweeper.recover();
+                    loop {
                         let retention = stored_retention(&prefs);
                         let gone = sweeper.sweep(retention);
                         if gone > 0 {
                             eprintln!("[takyon] retention swept {gone} clips");
                         }
                         std::thread::sleep(SWEEP_EVERY);
-                    });
+                    }
+                });
+            }
+            // A blocklist that will not open is fatal to capture for the same
+            // reason `clips.db` is: without it there is no second exclusion
+            // mechanism (ADR-0006).
+            match (clip_store, blocklist) {
+                (Some(store), Some(blocklist)) => {
                     // The same `Arc` the settings window edits, so an added
                     // executable is excluded from the next capture, not the next
                     // launch.

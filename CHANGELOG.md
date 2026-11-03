@@ -4,8 +4,164 @@ Releases of Takyon, newest first. The installer and its SHA-256 live in
 `releases/v{version}/`, which is gitignored — this file is the record that
 survives.
 
-Phase numbers in `ROADMAP.md` and release versions are the same number. The one
-exception is recorded under v0.8 below.
+Release versions identify shipped builds under SemVer; phase numbers name plans
+in `ROADMAP.md`. A finished phase may advance the release minor, while partial
+phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
+renumbering below records a separate change to the phase plan.
+
+## v0.12.8 — Clipboard History selection
+
+- Arrow-key selection now scrolls Clipboard History to keep the selected row visible, including its day heading when the row starts a group.
+
+## v0.12.7 — Third-party licences
+
+- Settings › About now lists bundled dependencies, versions, and licences. Search the list and read available licence texts offline.
+
+## v0.12.6 — More calendar questions
+
+- Count weeks until, since, or between dates as whole weeks plus remaining days. Count business or working days as Monday through Friday, excluding the start date and including the target; holidays are not excluded.
+- Ask for last or this weekday, a weekday in a number of weeks, the day after tomorrow, a date next year, or days left in a month or year. Compound shifts apply units in the order written. Yearless date spans use a coherent forward range.
+- Ask whether a year is a leap year, find a numbered weekday in a month, or calculate age and days until a birthday when the birth date appears in the query. The calculator stores no birth date.
+- Long compound calculations remain visible in the Compact Palette. Date answers still run offline and copy with Enter.
+
+**Still open.** `docs/verify/v0.18.md` has not been run by hand. Holidays require a future calendar source; localized month names remain outside the grammar.
+
+## v0.12.5 — Date questions
+
+- The calculator answers date shifts (`30 days from now`, `45 days ago was?`), day counts (`how many days until 20 September 2027`), weekdays (`what day of the week is 20 Sep 2027?`), and signed spans (`days between 21 Dec 2027 and 5 Apr 2039`). Enter copies the answer.
+- `next Friday` means the first Friday strictly after today. `two weeks from Friday` starts at that Friday. Dates without a year use the next occurrence for future questions and the previous occurrence for past questions. Spans require years on calendar endpoints.
+- Answers use the local calendar date and run offline. Incomplete questions and ambiguous numeric dates stay searches.
+
+**Still open.** `docs/verify/v0.18.md` has not been run by hand. Business days, holidays, and localized month names remain outside the date grammar.
+
+## v0.12.4 — In-app updates
+
+- **In-app updates.** Takyon checks GitHub Releases once a day and shows a new
+  version on the Palette's empty line: a pill in Compact, a row in Expanded.
+  Enter installs it; the installer is signature-checked before it runs. After
+  an update, the same place offers "See what's new". Settings › About checks on
+  demand and has a switch that turns the daily check off. This release has to
+  be installed by hand; later ones install from the Palette or About.
+- Installer and executable name **V3SPER** as the publisher. `!s` requests
+  identify as `Takyon/0.9 (V3SPER)`.
+- Release notes lead with this file's section; GitHub then credits pull request
+  authors, including the maintainer, in its generated list.
+
+## v0.12.3 — Windows image clips (pending release)
+
+- **Image clips on Windows.** Copying an image or taking a `Win+Shift+S`
+  screenshot captures it in Clipboard History. Image thumbnails appear in the
+  Palette and `!v`; the selected clip has a full preview. Paste and copy-back
+  restore the image. Full PNGs live as encrypted blobs under `clips\`.
+- **Delete one Clip** from Clipboard History with its Delete button, `Ctrl+D`,
+  or the `Ctrl+K` action menu. Settings shows Clipboard History's on-disk size.
+- **Image-blob crash recovery runs off the startup path.**
+
+**Still open.** macOS image capture and paste-back, file clips, and link
+classification remain in v0.14. `docs/verify/v0.14.md`'s automated driver
+passes; its hand-run steps have not been run.
+
+**Downgrading below 0.12.3:** older versions show image clips as broken text
+rows and never clean up their blobs. Clear Clipboard History before downgrading.
+
+## v0.12.2 — Agent orchestration and Codex resume
+
+- Added the repository orchestration policy to `AGENTS.md` and `CLAUDE.md`.
+- Fixed Codex argument order so `exec resume <id>` accepts `-C` and `--sandbox`
+  while the prompt still travels on stdin.
+
+## v0.12.1 — Focus bar and CI polish
+
+- The Focus bar became a compact pill with a centered goal, controls that slide
+  out, scrolling for long goals, adjustable opacity, and screen-edge placement.
+  Its buttons stay inside the window during the animation.
+- CI checks out the repository before generating "What's changed" on every
+  event. Live and bench jobs run on pull requests when their paths change.
+
+## v0.12.0 — Focus and time zones
+
+- **Focus (phase v0.16).** Start Soft or Strict Focus sessions from the Palette.
+  Focus categories, app and website blocking, a floating bar, tray status,
+  settings, and session statistics shipped. The manual verification script is
+  unrun.
+- **Time zones (phase v0.17).** Calculator queries such as `12 pm utc`,
+  `3:30pm pst to ist`, and `time in tokyo` answer offline. The card names both
+  zones. The manual verification script is unrun.
+- Vela became the default theme family. DuckDuckGo parsing no longer panics on
+  a multibyte sequence after `%`.
+
+## v0.11.1 — Agents that npm installed
+
+Two defects behind one symptom: an Agent that Settings called Ready failed every
+Turn, and a cancelled Turn kept spending tokens. Both appear only when the Agent
+was installed with npm, which is how the test laptop had opencode.
+
+- **An Agent's prompt travels on stdin** (ADR-0032). npm installs a batch file,
+  not an executable, and since CVE-2024-24576 Rust refuses to pass any argument
+  holding a carriage return or line feed through `cmd.exe`. `styled_prompt`
+  always holds a blank line, so every first Turn to Codex or opencode died with
+  `batch file arguments are invalid`, and every `!s` with it, because `!s` writes
+  its answer through the same path. Settings still read Ready, because the probes
+  are all one-liners. The prompt now goes on stdin, and stdin is closed
+  afterwards, or the Agent waits for EOF forever.
+- **Every Agent process dies with the Palette** (ADR-0033). `Child::kill` calls
+  `TerminateProcess` on the one process Takyon started, which for an npm Agent is
+  `cmd.exe` — leaving `node` and the real CLI running, reading nothing and still
+  billing. Each spawn now gets its own Job Object with `KILL_ON_JOB_CLOSE`, and
+  the child is created suspended and resumed only once it has been assigned, so
+  there is no window it could escape through.
+
+**Unverified.** Neither fix has run against a genuine `npm i -g` install. The
+`.cmd` path is covered here by fake Agents (`echo.cmd`, `hang.cmd`, `nonode.cmd`)
+and by an ignored live test that wraps each real CLI in a forwarding `.cmd`, but
+the real shape, with a `node` hop in the middle, exists only on the laptop that
+reported it. `docs/verify/v0.11.1.md` section A is the script.
+
+## v0.11 — PATH hydration
+
+A GUI process on Windows inherits the `PATH` that existed when Explorer started,
+and on macOS inherits almost nothing. An Agent CLI installed since the last login
+was therefore invisible to Takyon while being perfectly findable in any terminal
+— the kind of failure that makes a launcher look broken for a reason the user
+cannot see.
+
+- **Takyon asks the system for the real `PATH`.** `agents/shellenv.rs` reads
+  `HKCU\Environment` and the machine `Path` on Windows, and asks the login shell
+  on unix. The result is cached off the startup path and handed to
+  `probe::resolve`, to every spawned Agent, and to the `PATH` walk that finds
+  command-line applications. Settings, Agents states what it found: *PATH read
+  from the registry: 42 folders, 3 more than Takyon was launched with.*
+- **A second, deeper pass for per-session version managers.** `fnm` sets `PATH`
+  from a PowerShell profile into a per-session directory the registry cannot see
+  by construction. `hydrate_deep` loads the profile and captures it, but only
+  when the first probe found nothing at all, once per process, because it costs
+  1.46 s against the registry read's 1.2 ms. nvm-for-Windows, Volta and scoop do
+  not need it: each adds one fixed shim directory at install, so the registry
+  read already sees them.
+- **A sole installed Agent leads on a first run** (ADR-0031). Someone with only
+  Codex installed used to open Settings and find it ranked second, under a Claude
+  Code row reading "Not found". `!c` reached it anyway, but the page made Takyon
+  look as though it had chosen wrong. When the probe finds exactly one Agent and
+  no choice is stored, that Agent is ranked first and switched on, once.
+- **CI ran for the first time.** v0.10.1 shipped the workflows and recorded that
+  neither had ever executed, because there was no remote. There is one now:
+  typecheck, lint and every test layer on each push, the live DuckDuckGo test and
+  the bench harness on a schedule, with per-job timeouts and pinned toolchains.
+  `lint` also gained the comment, colour and licence checks, so all three block.
+- **`bun run release`**, in `--local` and `--git` shapes: preflight, build, then
+  the installer and its SHA-256 into `releases/`; `--git` adds the version bump,
+  the tag and the push that makes `release.yml` publish. Bare `bun run release`
+  refuses.
+
+**What it does not do.** The whole unix arm compiles for `aarch64-apple-darwin`
+and has never executed — every claim about it is reasoning rather than
+observation, and `docs/verify/v0.11.md` section B is unrun. The deep pass has
+never been watched actually recovering a folder, because this machine has no
+`fnm`. A `Restricted` execution policy stops the profile loading at all,
+silently, and is deliberately not worked around: forcing a profile the machine's
+own policy refuses is not Takyon's call. And a CLI installed after launch still
+needs a restart before it appears as an Entry, though `!c` finds it immediately;
+v0.13 owns that.
 
 ## v0.10.1 — What driving the release found
 

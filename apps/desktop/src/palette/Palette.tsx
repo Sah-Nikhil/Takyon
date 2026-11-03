@@ -30,6 +30,7 @@ import type {
   AgentSnapshot,
   FileIndexReport,
   HotkeyStatus,
+  UpdateNotice,
   ViewKind,
 } from "@takyon/shared";
 import { AGENT_LABELS, agentSummary, blockedReason, pickAgent } from "@/agents/status";
@@ -37,10 +38,24 @@ import { AskView } from "./AskView";
 import { SearchView } from "./SearchView";
 import { CalcCard } from "./CalcCard";
 import { ClipboardHistory } from "./ClipboardHistory";
+import { FocusView } from "@/focus/FocusView";
+import type { Intent as FocusIntent } from "@/focus/FocusRunning";
+import { liveTheme } from "@/focus/FocusForm";
+import { lengthText } from "@/focus/format";
+import type { FocusBangLine } from "@takyon/shared";
+
+/** Focus command Entries and the intent each opens the Focus view with. */
+const FOCUS_COMMANDS: Record<string, FocusIntent> = {
+  "command:focus-start": "start",
+  "command:focus-complete": "complete",
+  "command:focus-pause": "pause",
+  "command:focus-resume": "resume",
+};
 import { Footer } from "./Footer";
 import { EntryRow } from "./EntryRow";
 import { groupEntries } from "./groups";
 import { ActionMenu } from "./ActionMenu";
+import { NOTICE_ID, NoticePill, NoticeRow, noticeCopy, type NoticeBusy } from "./UpdateNotice";
 
 /**
  * What a click does, per Kind. Mirrors `actions::for_modifiers` with no modifier.
@@ -81,6 +96,12 @@ export function Palette() {
     nothing in here can do.
    */
   const [view, setView] = useState<ViewKind | null>(null);
+  /** Which Focus command opened the Focus view (v0.16). */
+  const [focusIntent, setFocusIntent] = useState<FocusIntent>("start");
+  /** `!f`: the line as typed, and what Rust read out of it (v0.16). */
+  const [focusLine, setFocusLine] = useState<string | null>(null);
+  const [focusBang, setFocusBang] = useState<FocusBangLine | null>(null);
+  const [focusGoal, setFocusGoal] = useState<string | undefined>(undefined);
   /** Action labels for the footer, by id. Fetched once; Rust owns the words. */
   const [labels, setLabels] = useState<Record<string, Action>>({});
   /*
@@ -107,6 +128,8 @@ export function Palette() {
     three process spawns (v0.8 Traps).
    */
   const [agents, setAgents] = useState<AgentSnapshot[] | null>(null);
+  /** Whether a probe is in flight, so a typed question fires exactly one. */
+  const probing = useRef(false);
   /**
    * The question the Ask view is answering, and who is answering it. Null when
    * the view is closed. Resolved at Enter, so a later probe cannot move it.
@@ -119,6 +142,13 @@ export function Palette() {
   const [web, setWeb] = useState<WebMode | null>(null);
   /** The query the search view is answering. Null when the view is closed. */
   const [searching, setSearching] = useState<string | null>(null);
+  /*
+    The update row (ADR-0040), handed over by the show event from Rust's memory.
+    A ref too: `runQuery` is stable, and selects the row on the empty line.
+   */
+  const [notice, setNotice] = useState<UpdateNotice | null>(null);
+  const noticeRef = useRef<UpdateNotice | null>(null);
+  const [noticeBusy, setNoticeBusy] = useState<NoticeBusy>(null);
   const filesBang = value.trimStart().toLowerCase().startsWith("!e");
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -165,11 +195,16 @@ export function Palette() {
       setEntries(result.entries);
       setAsk(result.ask ?? null);
       setWeb(result.web ?? null);
+      setFocusLine(result.focus?.line ?? null);
+      if (result.focus) void api.focusParseBang(result.focus.line).then(setFocusBang);
+      else setFocusBang(null);
       // Selection follows the top Entry on every new result set. From v0.3 the
       // Stability rule freezes it ~100 ms after the last keystroke so that a late
       // Source cannot move what Enter is about to launch; until then, "the top
       // one" is the whole rule.
-      setSelected(result.entries[0]?.id ?? "");
+      setSelected(
+        q.trim() === "" && noticeRef.current ? NOTICE_ID : (result.entries[0]?.id ?? ""),
+      );
 
       // §10's "hotkey to first Entry" budget. Reported only when an Entry is
       // actually on screen — the empty query on every show would otherwise
@@ -186,17 +221,35 @@ export function Palette() {
     void api.hotkeyStatus().then(setHotkey);
   }, []);
 
+  // For a mount after the first show, which never saw its payload.
+  useEffect(() => {
+    void api.updateNotice().then((n) => {
+      noticeRef.current = n;
+      setNotice(n);
+      if (n) setSelected(NOTICE_ID);
+    });
+  }, []);
+
   /*
     Probed on the first `!c` of a summon, then reused. Once rather than on an
     interval, unlike the file index: an Agent's Sign-in state changes when the
     user runs a CLI command, not while they type.
    */
   useEffect(() => {
-    if (ask === null || agents !== null) return;
+    if (ask === null || agents !== null || probing.current) return;
+    // One probe in flight, ever. `ask` is a fresh object per keystroke and the
+    // probe takes seconds, so without the ref a typed question fires one probe
+    // per character — 30 `opencode` processes for a sentence (v0.11.1).
+    probing.current = true;
     let live = true;
-    void api.agentSnapshots().then((all) => {
-      if (live) setAgents(all);
-    });
+    void api
+      .agentSnapshots()
+      .then((all) => {
+        if (live) setAgents(all);
+      })
+      .finally(() => {
+        probing.current = false;
+      });
     return () => {
       live = false;
     };
@@ -227,6 +280,12 @@ export function Palette() {
       // Dropped rather than kept: an Agent signed in or out through its CLI
       // between two summons, and a stale card is worse than a second probe.
       setAgents(null);
+      // Rust read it from memory before showing and sized the window for it.
+      noticeRef.current = payload.notice ?? null;
+      setNotice(payload.notice ?? null);
+      setSelected(payload.notice ? NOTICE_ID : "");
+      // A failed install says so once; an install still downloading keeps going.
+      setNoticeBusy((b) => (b && typeof b === "object" && "error" in b ? null : b));
       setShown(true);
       // The Settings window may have written a preference while the Palette was
       // hidden. Re-reading here is what makes the two windows agree without any
@@ -353,6 +412,53 @@ export function Palette() {
     void api.setView("web");
   }, [web]);
 
+  /*
+    Enter on `!f`. With a length, the session starts with the last Block list;
+    without one, the form opens with the goal already typed.
+   */
+  const startFocusBang = useCallback(() => {
+    if (focusLine === null || !focusBang) return;
+    if (focusBang.lengthMs) {
+      const lengthMs = focusBang.lengthMs;
+      void api
+        .focusLastList()
+        .then((list) => api.focusStart({ goal: focusBang.goal, lengthMs, strict: false, list, theme: liveTheme() }))
+        .finally(() => {
+          setFocusIntent("start");
+          setFocusGoal(undefined);
+          setView("focus");
+          void api.setView("focus");
+        });
+      return;
+    }
+    setFocusGoal(focusBang.goal);
+    setFocusIntent("start");
+    setView("focus");
+    void api.setView("focus");
+  }, [focusBang, focusLine]);
+
+  /*
+    Enter on the update row. Installing exits into the installer on Windows, so
+    success never comes back; a failure stays on the row until the next show.
+   */
+  const activateNotice = useCallback(() => {
+    if (!notice) return;
+    if (notice.kind === "whatsNew") {
+      noticeRef.current = null;
+      setNotice(null);
+      void api.dismissUpdateNotice();
+      void api.openUrl(notice.url);
+      return;
+    }
+    if (noticeBusy && !(typeof noticeBusy === "object" && "error" in noticeBusy)) return;
+    setNoticeBusy({ downloaded: 0 });
+    api
+      .updateInstallNow((p) =>
+        setNoticeBusy(p.phase === "installing" ? "installing" : { downloaded: p.downloaded, total: p.total }),
+      )
+      .catch((e: unknown) => setNoticeBusy({ error: e instanceof Error ? e.message : String(e) }));
+  }, [notice, noticeBusy]);
+
   const closeMenu = useCallback(() => {
     setMenu(null);
     void api.setActionMenu(null);
@@ -366,7 +472,13 @@ export function Palette() {
       // reaches the shell and the window stays up.
       if (actionId === "open_command") {
         void api.activate(entryId, actionId);
-        openView("clipboard-history");
+        const focus = FOCUS_COMMANDS[entryId];
+        if (focus) {
+          setFocusIntent(focus);
+          openView("focus");
+        } else {
+          openView("clipboard-history");
+        }
         return;
       }
       // No hide here either: Rust hides inside `activate`, before it asks the
@@ -543,9 +655,26 @@ export function Palette() {
     window — it is always there, because a fixed-height panel with the list
     branch switched off is a tall empty box with a hairline across the top.
    */
+  /* `!f`'s one row: what Enter will start, or why it cannot yet. */
+  const focusNote =
+    focusLine === null
+      ? null
+      : !focusBang || !focusBang.goal
+        ? "Start a Focus session: a goal and a length, like write report 45m"
+        : focusBang.error
+          ? `${focusBang.goal} · ${focusBang.error}`
+          : focusBang.lengthMs
+            ? `Focus on ${focusBang.goal} for ${lengthText(focusBang.lengthMs)} — press Enter`
+            : `Focus on ${focusBang.goal} — press Enter to pick a length`;
+
+  /* Empty line only: Compact pill, Expanded row. */
+  const showNotice = notice !== null && value === "" && view === null;
+  const noticeSelected = showNotice && selected === NOTICE_ID;
+
   const showList =
     expanded ||
     entries.length > 0 ||
+    focusNote !== null ||
     webNote !== null ||
     fileIndexNote !== null ||
     askNote !== null;
@@ -579,6 +708,14 @@ export function Palette() {
     `VIEW_HEIGHT`, so a list left mounted under it would be a second scrollable
     thing in a window sized for one.
    */
+  if (view === "focus") {
+    return (
+      <div className="relative flex h-full w-full flex-col p-2">
+        <FocusView intent={focusIntent} initialGoal={focusGoal} onClose={closeView} />
+      </div>
+    );
+  }
+
   if (view === "clipboard-history") {
     return (
       <div className="relative flex h-full w-full flex-col p-2">
@@ -653,11 +790,22 @@ export function Palette() {
           // Destroys the clip, and only a clip: the chord is not offered on any
           // other Kind, and sending it would surface an error toast for a
           // keystroke that should have done nothing.
-          if (e.key === "Backspace" && e.ctrlKey) {
+          if (e.key.toLowerCase() === "d" && e.ctrlKey) {
             if (selectedKind === "clip") {
               e.preventDefault();
               run(selected, "delete_clip");
             }
+            return;
+          }
+          // Expanded notice sits above Entries; Up from first Entry returns to it.
+          if (e.key === "ArrowUp" && expanded && showNotice && selected === entries[0]?.id) {
+            e.preventDefault();
+            setSelected(NOTICE_ID);
+            return;
+          }
+          if (e.key === "Enter" && noticeSelected) {
+            e.preventDefault();
+            activateNotice();
             return;
           }
           if (e.key === "Enter") {
@@ -666,6 +814,7 @@ export function Palette() {
             // rather than being launched.
             if (ask) startAsk();
             else if (web) startSearch();
+            else if (focusLine !== null) startFocusBang();
             else run(selected, actionForEvent(e, selectedKind));
           }
         }}
@@ -695,6 +844,14 @@ export function Palette() {
             placeholder="Search"
             className="h-12 w-full bg-transparent text-[15px] text-fg outline-none placeholder:text-fg/50"
           />
+          {showNotice && !expanded && notice && (
+            <NoticePill
+              notice={notice}
+              busy={noticeBusy}
+              selected={noticeSelected}
+              onActivate={activateNotice}
+            />
+          )}
 
         </div>
 
@@ -733,6 +890,15 @@ export function Palette() {
               Above the results, not below: Stale means the list may be missing
               rows, and a caveat under the answer is one nobody reads (ADR-0007).
              */}
+            {showNotice && expanded && notice && (
+              <Command.Item
+                value={NOTICE_ID}
+                onSelect={activateNotice}
+                className="cursor-default rounded-md data-[selected=true]:bg-row-selected"
+              >
+                <NoticeRow notice={notice} busy={noticeBusy} />
+              </Command.Item>
+            )}
             {fileIndexNote && (
               <div
                 className="flex items-center px-2 text-[13px] text-fg/56"
@@ -756,6 +922,15 @@ export function Palette() {
                 data-testid="web-note"
               >
                 {webNote}
+              </div>
+            )}
+            {focusNote && (
+              <div
+                className="flex items-center px-2 text-[13px] text-fg/80"
+                style={{ height: ROW_HEIGHT }}
+                data-testid="focus-note"
+              >
+                {focusNote}
               </div>
             )}
             {askNote && (
@@ -810,7 +985,9 @@ export function Palette() {
             // of a menu that has nothing to open. `null` where there is nothing
             // for Enter to do either — an unanswerable Agent, or no question yet.
             hint={
-              ask
+              noticeSelected && notice
+                ? noticeCopy(notice, noticeBusy).action
+                : ask
                 ? ask.query && !askBlocked
                   ? "Ask"
                   : null
@@ -818,7 +995,11 @@ export function Palette() {
                   ? web.query
                     ? "Search"
                     : null
-                  : undefined
+                  : focusLine !== null
+                    ? focusBang?.goal
+                      ? "Start Focus"
+                      : null
+                    : undefined
             }
           />
         )}

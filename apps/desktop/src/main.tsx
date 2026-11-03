@@ -1,6 +1,6 @@
 /**
- * One bundle, two windows. Which one this root is depends on `?window=` in the
- * URL, set by the Tauri window definitions in `tauri.conf.json`. A second HTML
+ * One bundle, three windows: Palette, Settings, Focus bar. Which one this root
+ * is depends on `?window=` in the URL, set where each window is built. A second HTML
  * entry point would mean a second Vite build and a second cold start; the Palette
  * is warm precisely so nothing pays a cold start.
  */
@@ -10,6 +10,7 @@ import ReactDOM from "react-dom/client";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Palette } from "./palette/Palette";
 import { Settings } from "./settings/Settings";
+import { FocusBar } from "./focus/FocusBar";
 import { inTauri } from "./api";
 import {
   bannerRequest,
@@ -19,16 +20,23 @@ import {
   failAutostart,
   failPreferenceWrite,
   menuRequest,
+  failTurns,
   failWebSearch,
   holdSearchAtReading,
   openedUrls,
   setAnswer,
   setAutostart,
+  setAgentMissing,
   setAgentSignedOut,
   setAskOrder,
   setWebKeyStored,
   setIndexing,
   setStoredPreference,
+  setUpdateNotice,
+  failLicences,
+  licenceLoadCount,
+  setUpdateScenario,
+  updateCheckCount,
 } from "./api.mock";
 import { load } from "./prefs";
 import "./styles.css";
@@ -41,12 +49,9 @@ const kind = new URLSearchParams(window.location.search).get("window") ?? "palet
 // hidden, so the read lands long before any show could paint a frame.
 void load();
 
-// Outside Tauri there is no hotkey to press, so the show event would never fire
-// and the Palette would sit unfocused forever. Playwright and the browser console
-// drive it through here instead. Never exposed in the real app.
-// `setIndexing` joins them for the same reason: the window between login and the
-// application walk finishing is a few hundred milliseconds long, which no test
-// could catch by timing, and it has its own row in the Palette.
+// Outside Tauri no hotkey fires the show event, so Playwright and the console drive
+// it here; never exposed in the real app. `setIndexing` too: the login-to-walk-done
+// window is too short for any test to catch by timing, and it has its own row.
 if (!inTauri) {
   (window as unknown as Record<string, unknown>).__takyon_mock = {
     emitShow,
@@ -62,6 +67,16 @@ if (!inTauri) {
     // has. A test that needs the unregistered state asks for it.
     setAutostart,
     failPreferenceWrite,
+    // What an update check finds, and how many ran. A real check needs a signed
+    // release feed; the count proves About never checks unasked (ADR-0040).
+    setUpdateScenario,
+    updateCheckCount,
+    // The Palette's update row, which needs a background check to exist.
+    setUpdateNotice,
+    // About's licence list: a refusal on demand, and a read count proving the
+    // list loads only when its view opens.
+    failLicences,
+    licenceLoadCount,
     // What "Settings wrote a preference while the Palette was hidden" looks like
     // when there is no settings.db to write to.
     setStoredPreference,
@@ -72,10 +87,15 @@ if (!inTauri) {
     // Every Agent signed out is the only state that blocks `!c` now that the
     // preference is an order, and no fixture is in it.
     setAgentSignedOut,
+    // One Agent installed on a first run, which ADR-0031 ranks first. No fixture
+    // is in that state.
+    setAgentMissing,
     // Whether `!s` holds a key. Rust keeps it DPAPI-wrapped on disk, which a
     // browser cannot reach, so the no-key state is unreachable without this.
     setWebKeyStored,
     failWebSearch,
+    // A Turn failing with a given reason. Real failures need a broken install.
+    failTurns,
     // Hold a search at its reading phase, which otherwise lasts 20ms.
     holdSearchAtReading,
     // What the mock Agent answers, so the renderer can be driven with markdown.
@@ -89,7 +109,7 @@ if (!inTauri) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {kind === "settings" ? <Settings /> : <Palette />}
+      {kind === "settings" ? <Settings /> : kind === "bar" ? <FocusBar /> : <Palette />}
     </ErrorBoundary>
   </React.StrictMode>,
 );

@@ -91,6 +91,41 @@ export function Row({
 }
 
 /** A two-state switch. Pill rather than a checkbox, matching the reference. */
+/** A range with its value read out beside it, in the accent. */
+export function Slider({
+  value,
+  min,
+  max,
+  step = 1,
+  label,
+  format = String,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  label: string;
+  format?: (v: number) => string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <span className="flex items-center gap-3">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-1 w-32 cursor-pointer accent-accent"
+      />
+      <span className="w-10 text-right font-mono text-[12px] tabular-nums text-fg/70">{format(value)}</span>
+    </span>
+  );
+}
+
 export function Switch({
   checked,
   disabled,

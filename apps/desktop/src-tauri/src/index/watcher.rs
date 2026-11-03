@@ -186,7 +186,12 @@ impl Watcher {
                 let exclude = exclude.clone();
                 let stop = stop.0 as usize;
                 std::thread::spawn(move || {
-                    watch_root(root, exclude, tx, windows::Win32::Foundation::HANDLE(stop as _))
+                    watch_root(
+                        root,
+                        exclude,
+                        tx,
+                        windows::Win32::Foundation::HANDLE(stop as _),
+                    )
                 })
             })
             .collect();
@@ -447,7 +452,10 @@ mod tests {
             name: "gone.md".into(),
         }];
         let changes = to_changes(Path::new(r"C:\Data"), &notes, &[]);
-        assert_eq!(changes, vec![Change::Removed(PathBuf::from(r"C:\Data\gone.md"))]);
+        assert_eq!(
+            changes,
+            vec![Change::Removed(PathBuf::from(r"C:\Data\gone.md"))]
+        );
     }
 
     /// Names are all this index holds, so a write to an existing file is not an

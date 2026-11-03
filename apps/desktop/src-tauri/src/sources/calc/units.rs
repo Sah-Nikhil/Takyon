@@ -40,44 +40,163 @@ struct Unit {
 /// number. The `KiB` spellings are accepted and mean the same.
 const UNITS: &[Unit] = &[
     // Length
-    unit(&["mm", "millimetre", "millimetres", "millimeter", "millimeters"], Dim::Length, 0.001, "mm"),
-    unit(&["cm", "centimetre", "centimetres", "centimeter", "centimeters"], Dim::Length, 0.01, "cm"),
-    unit(&["m", "metre", "metres", "meter", "meters"], Dim::Length, 1.0, "m"),
-    unit(&["km", "kilometre", "kilometres", "kilometer", "kilometers"], Dim::Length, 1000.0, "km"),
+    unit(
+        &[
+            "mm",
+            "millimetre",
+            "millimetres",
+            "millimeter",
+            "millimeters",
+        ],
+        Dim::Length,
+        0.001,
+        "mm",
+    ),
+    unit(
+        &[
+            "cm",
+            "centimetre",
+            "centimetres",
+            "centimeter",
+            "centimeters",
+        ],
+        Dim::Length,
+        0.01,
+        "cm",
+    ),
+    unit(
+        &["m", "metre", "metres", "meter", "meters"],
+        Dim::Length,
+        1.0,
+        "m",
+    ),
+    unit(
+        &["km", "kilometre", "kilometres", "kilometer", "kilometers"],
+        Dim::Length,
+        1000.0,
+        "km",
+    ),
     unit(&["in", "inch", "inches"], Dim::Length, 0.0254, "in"),
     unit(&["ft", "foot", "feet"], Dim::Length, 0.3048, "ft"),
     unit(&["yd", "yard", "yards"], Dim::Length, 0.9144, "yd"),
     unit(&["mi", "mile", "miles"], Dim::Length, 1609.344, "mi"),
-    unit(&["nmi", "nauticalmile", "nauticalmiles"], Dim::Length, 1852.0, "nmi"),
+    unit(
+        &["nmi", "nauticalmile", "nauticalmiles"],
+        Dim::Length,
+        1852.0,
+        "nmi",
+    ),
     // Mass
     unit(&["mg", "milligram", "milligrams"], Dim::Mass, 1e-6, "mg"),
     unit(&["g", "gram", "grams"], Dim::Mass, 0.001, "g"),
-    unit(&["kg", "kilogram", "kilograms", "kilo", "kilos"], Dim::Mass, 1.0, "kg"),
-    unit(&["t", "tonne", "tonnes", "metricton"], Dim::Mass, 1000.0, "t"),
+    unit(
+        &["kg", "kilogram", "kilograms", "kilo", "kilos"],
+        Dim::Mass,
+        1.0,
+        "kg",
+    ),
+    unit(
+        &["t", "tonne", "tonnes", "metricton"],
+        Dim::Mass,
+        1000.0,
+        "t",
+    ),
     unit(&["oz", "ounce", "ounces"], Dim::Mass, 0.028349523125, "oz"),
-    unit(&["lb", "lbs", "pound", "pounds"], Dim::Mass, 0.45359237, "lb"),
+    unit(
+        &["lb", "lbs", "pound", "pounds"],
+        Dim::Mass,
+        0.45359237,
+        "lb",
+    ),
     unit(&["st", "stone", "stones"], Dim::Mass, 6.35029318, "st"),
     // Temperature. The one dimension with an offset.
-    unit(&["c", "celsius", "centigrade"], Dim::Temperature, 1.0, "\u{00b0}C"),
-    Unit { names: &["f", "fahrenheit"], dim: Dim::Temperature, factor: 5.0 / 9.0, offset: -160.0 / 9.0, label: "\u{00b0}F" },
-    Unit { names: &["k", "kelvin"], dim: Dim::Temperature, factor: 1.0, offset: -273.15, label: "K" },
+    unit(
+        &["c", "celsius", "centigrade"],
+        Dim::Temperature,
+        1.0,
+        "\u{00b0}C",
+    ),
+    Unit {
+        names: &["f", "fahrenheit"],
+        dim: Dim::Temperature,
+        factor: 5.0 / 9.0,
+        offset: -160.0 / 9.0,
+        label: "\u{00b0}F",
+    },
+    Unit {
+        names: &["k", "kelvin"],
+        dim: Dim::Temperature,
+        factor: 1.0,
+        offset: -273.15,
+        label: "K",
+    },
     // Data
     unit(&["byte", "bytes"], Dim::Data, 1.0, "bytes"),
-    unit(&["kb", "kib", "kilobyte", "kilobytes"], Dim::Data, 1024.0, "KB"),
-    unit(&["mb", "mib", "megabyte", "megabytes"], Dim::Data, 1048576.0, "MB"),
-    unit(&["gb", "gib", "gigabyte", "gigabytes"], Dim::Data, 1073741824.0, "GB"),
-    unit(&["tb", "tib", "terabyte", "terabytes"], Dim::Data, 1099511627776.0, "TB"),
-    unit(&["pb", "pib", "petabyte", "petabytes"], Dim::Data, 1125899906842624.0, "PB"),
+    unit(
+        &["kb", "kib", "kilobyte", "kilobytes"],
+        Dim::Data,
+        1024.0,
+        "KB",
+    ),
+    unit(
+        &["mb", "mib", "megabyte", "megabytes"],
+        Dim::Data,
+        1048576.0,
+        "MB",
+    ),
+    unit(
+        &["gb", "gib", "gigabyte", "gigabytes"],
+        Dim::Data,
+        1073741824.0,
+        "GB",
+    ),
+    unit(
+        &["tb", "tib", "terabyte", "terabytes"],
+        Dim::Data,
+        1099511627776.0,
+        "TB",
+    ),
+    unit(
+        &["pb", "pib", "petabyte", "petabytes"],
+        Dim::Data,
+        1125899906842624.0,
+        "PB",
+    ),
     unit(&["bit", "bits"], Dim::Data, 0.125, "bits"),
     unit(&["kbit", "kilobit", "kilobits"], Dim::Data, 128.0, "kbit"),
-    unit(&["mbit", "megabit", "megabits"], Dim::Data, 131072.0, "Mbit"),
-    unit(&["gbit", "gigabit", "gigabits"], Dim::Data, 134217728.0, "Gbit"),
+    unit(
+        &["mbit", "megabit", "megabits"],
+        Dim::Data,
+        131072.0,
+        "Mbit",
+    ),
+    unit(
+        &["gbit", "gigabit", "gigabits"],
+        Dim::Data,
+        134217728.0,
+        "Gbit",
+    ),
     // Time. Months and years are absent on purpose: both are ambiguous, and a
     // launcher answering "3 months" with a number derived from 30.44 days is
     // making up precision it does not have.
-    unit(&["ms", "millisecond", "milliseconds"], Dim::Time, 0.001, "ms"),
-    unit(&["s", "sec", "secs", "second", "seconds"], Dim::Time, 1.0, "s"),
-    unit(&["min", "mins", "minute", "minutes"], Dim::Time, 60.0, "min"),
+    unit(
+        &["ms", "millisecond", "milliseconds"],
+        Dim::Time,
+        0.001,
+        "ms",
+    ),
+    unit(
+        &["s", "sec", "secs", "second", "seconds"],
+        Dim::Time,
+        1.0,
+        "s",
+    ),
+    unit(
+        &["min", "mins", "minute", "minutes"],
+        Dim::Time,
+        60.0,
+        "min",
+    ),
     unit(&["h", "hr", "hrs", "hour", "hours"], Dim::Time, 3600.0, "h"),
     unit(&["d", "day", "days"], Dim::Time, 86400.0, "d"),
     unit(&["wk", "week", "weeks"], Dim::Time, 604800.0, "wk"),
@@ -85,7 +204,13 @@ const UNITS: &[Unit] = &[
 
 /// The offset-free case, which is every unit but two.
 const fn unit(names: &'static [&'static str], dim: Dim, factor: f64, label: &'static str) -> Unit {
-    Unit { names, dim, factor, offset: 0.0, label }
+    Unit {
+        names,
+        dim,
+        factor,
+        offset: 0.0,
+        label,
+    }
 }
 
 /// A conversion request, split out of the raw input.
@@ -126,7 +251,11 @@ pub fn split(input: &str) -> Option<Conversion<'_>> {
     }
     let from = lookup(&trimmed[cut.len()..])?;
 
-    Some(Conversion { expression: cut, from, to })
+    Some(Conversion {
+        expression: cut,
+        from,
+        to,
+    })
 }
 
 /// Find the ` to ` or ` in ` that separates the two units.
@@ -231,7 +360,10 @@ mod tests {
     /// rather than being two separate features.
     #[test]
     fn v0_4_the_left_side_is_still_an_expression() {
-        assert_eq!(split("(40+5) kg to lb").unwrap().expression.trim(), "(40+5)");
+        assert_eq!(
+            split("(40+5) kg to lb").unwrap().expression.trim(),
+            "(40+5)"
+        );
     }
 
     /// Without the keyword there is nothing to convert, and guessing is what puts

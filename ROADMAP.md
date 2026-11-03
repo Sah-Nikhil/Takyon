@@ -98,7 +98,7 @@ the things v0.2 could not see.
 - [x] **System entries Source** — control panel tasks via the All Tasks shell folder (`{ED7BA470-…}`, **198 tasks** walked with the `IEnumShellItems` path `appsfolder.rs` uses) plus a curated `ms-settings:` table (35 pages). Two Kinds, split once the 198 tasks were seen competing: `System` (the 35 curated pages) **shares the App rank tier**, `SystemTask` (the control-panel tasks) sits below every app because they are long sentences that only ever match by word prefix — a settings page is a destination like an app, so it competes on match quality and Frecency rather than sitting below apps (corrected after `display` surfaced `DisplaySwitch` above the Display page; IMPLEMENTATION_PLAN §3). Launch is by the item's captured **PIDL** through `SEE_MASK_IDLIST`, not a parsing name — an All Tasks item is positional (`::{ControlPanel}\0\…`) and has no reparseable name. `ComScope` extracted to `com.rs`, now shared by three callers. All 198 PIDLs bind for launch in a test; the actual window-open is manual (verify §SY). Closed the largest v0.2 coverage gap — Raycast surfaces ~1187 here and Takyon surfaced none
 - [x] **Game launcher Sources** — built as a seam rather than one more special case. `GameLibrary` (`sources/apps/games.rs`) with **Steam and Epic** behind it, and one `LaunchTarget::Game { launcher, id }` replacing the per-store variant that was starting to multiply. Steam's EntryIds are untouched by the move: `steam:440` is what v0.2 wrote and what `{slug}:{id}` still produces, so nothing learned was invalidated. Epic reads the `.item` JSON manifests and **existence-checks the executable** — all seven on the dev machine are stale, so the Source correctly contributes **nothing here**, while Raycast lists all seven as launchable. DLC needs no rule: its manifest names no executable. Games launch through the launcher's own URI, never their exe (`com.epicgames.launcher://apps/<AppName>?action=launch&silent=true`), so DRM, cloud saves and playtime all still work. **Xbox and Game Pass need no Source at all** — MSIX packages with AUMIDs, already listed by `appsfolder.rs`. GOG and Battle.net are neither installed here nor built: both would be written blind against docs and verified against nothing ([`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §9). EA stays deferred — its install path exists only in a log, not a manifest
 - [x] **Desktop shortcuts**, reusing the `.lnk` walk, **kept only when no other Source already found the app**. Desktop loses every collision so `EntryId` stays on the Start Menu copy. Top level only — a folder on the Desktop is the user's filing, not an application menu. **The roots come from `SHGetKnownFolderPath`, not `%USERPROFILE%\Desktop`**, and that is not pedantry: this machine's Desktop is OneDrive-redirected, so the env-var path holds 9 stale shortcuts while the real one holds 15. Measured: **15 shortcuts, 0 new applications** — 13 already found at the same target, and both Roblox entries point at an old `C:\Program Files` install that the Start Menu copy supersedes. The rule earns nothing here and costs one `read_dir` of two directories; it pays on a machine where a portable executable's only shortcut is on the Desktop
-- [x] **winget Source — measured, and declined.** Not 4 packages on the dev machine but **115**, and the measurement was decisive against building it twice over. Every launchable one is already reachable by the name a person would type — `terminal`, `visual studio code`, `onedrive`, `ollama`, `rustup`, `zen`, `docker` — while the apparent misses are winget's own naming ("Roblox Player for sahni") and runtimes nobody launches (VC++ redistributables, `WindowsAppRuntime.*`, SDKs, a printer driver). More decisively: **`winget list` carries no launch target** — a package id and a version, no path, no AUMID, and no "winget run" — so the Source could only list rows it cannot open. It is an installer inventory, not an application list ([`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §12; listing checked in at `tests/winget-list.txt`)
+- [x] **winget Source — measured, and declined.** Not 4 packages on the dev machine but **115**, and the measurement was decisive against building it twice over. Every launchable one is already reachable by the name a person would type — `terminal`, `visual studio code`, `onedrive`, `ollama`, `rustup`, `zen`, `docker` — while the apparent misses are winget's own naming ("Roblox Player for Example") and runtimes nobody launches (VC++ redistributables, `WindowsAppRuntime.*`, SDKs, a printer driver). More decisively: **`winget list` carries no launch target** — a package id and a version, no path, no AUMID, and no "winget run" — so the Source could only list rows it cannot open. It is an installer inventory, not an application list ([`docs/tbd/v0.3.md`](./docs/tbd/v0.3.md) §12; listing checked in at `tests/winget-list.txt`)
 
 **Exit criteria:** after a week of use, your ten most-used applications are all
 reachable in one or two keystrokes — and the new Sources have pushed none of them
@@ -462,13 +462,15 @@ it needs a key on this machine.*
   selection. Thirty-one occurrences across seven files, now zero: no file under
   `apps/desktop/src` names a colour, bar Windows' own close-button red
 - [x] **Five themes, each carrying both halves** ([ADR-0023](./docs/adr/0023-themes-are-families-with-both-halves.md)):
-  Graphite (default), Vela, Cherenkov, Aurora, Halide. The model is
+  Graphite, Vela, Cherenkov, Aurora, Halide. The model is
   [t3code](https://github.com/pingdotgg/t3code)'s `themePalettes.ts` and so is the
   picker — a grid of cards, each a lit sphere of that family's own colours,
   because five near-black rectangles are five identical rectangles. **This closes
   the colour question `docs/brand.md` left open**, and Cherenkov stops being the
   default: a launcher opens over whatever wallpaper you have, and only a neutral
-  plate never argues with it
+  plate never argues with it. That last reasoning handed the default to Graphite
+  and was later overruled — the default is **Vela**
+  ([ADR-0034](./docs/adr/0034-vela-is-the-default-family.md))
 - [x] **Seven roles per half, everything else derived.** v0.6's two rules survive
   — surfaces raised rather than grey, every separation an alpha of the foreground
   — so `--color-hairline`, `--color-edge`, `--color-seam`, `--color-key`,
@@ -580,6 +582,7 @@ machine, the unix half compiles and has never run.
 - [x] `sources/apps/path.rs` gains a macOS arm that checks the exec bit rather than an extension list. Written whole rather than deferred: it compiles under `bun run check:macos` today, and only its runtime verification waits for a Mac
 - [x] **Every spawned Agent gets the hydrated `PATH` too**, not only the resolution. A `claude` from `bun add -g` is a shim that re-execs `node`, so a child holding the login `PATH` fails at its own first step on a machine where resolution just succeeded. Not in the plan; added during the build
 - [x] **The PowerShell profile pass**, gated on a probe that found nothing at all and run once per process. `fnm` sets `PATH` to a per-session folder from `$PROFILE` and never writes `HKCU\Environment`, so the cheap read cannot see it by construction. Narrower than it first looks: nvm-for-Windows, Volta and scoop each add a fixed folder at install, which the registry already sees. Measured: 1.46 s against the registry's 1.2 ms, which is why it is gated rather than default. Copied from t3code's conditional second pass after reading its source
+- [x] **A sole installed Agent leads on a first run** ([ADR-0031](./docs/adr/0031-a-sole-installed-agent-leads-on-a-first-run.md)). With no Agent choice stored and exactly one Agent installed, the probe ranks that Agent first and switches it on, once. Not in the plan; added after the phase merged
 - [ ] The unix half run on a real Mac — [`docs/verify/v0.11.md`](./docs/verify/v0.11.md) §B, which needs v0.12 *(needs a Mac)*
 - [ ] The profile pass seen to actually recover a folder — [`docs/verify/v0.11.md`](./docs/verify/v0.11.md) §A.6 *(needs `fnm` specifically; the other managers cannot reproduce it)*
 
@@ -592,6 +595,45 @@ machine, the unix half compiles and has never run.
 folders, 50 of them new, with Claude and opencode still resolving. The unix half
 is entirely reasoned: it compiles for `aarch64-apple-darwin` and no login shell
 has ever been spawned by it.
+
+---
+
+## v0.11.1 — Agents on npm installs
+
+**Goal:** `!c` and `!s` work with an Agent installed as an npm `.cmd` shim, and
+every process they start is gone the moment the Palette hides. Plan:
+[`docs/plans/v0.11.1-agent-spawning.md`](./docs/plans/v0.11.1-agent-spawning.md).
+
+Found on a test laptop, not by the suite: opencode from `npm i -g` failed every
+Turn with `batch file arguments are invalid`, because the prompt travels in argv
+and Rust's standard library refuses a line break in a `.cmd`'s arguments
+(the CVE-2024-24576 hardening). This machine's Agents are all real executables,
+so it never ran here. Auditing the spawn path found the worse defect beside it:
+cancelling a Turn kills `cmd.exe` and leaves `node` and the Agent running.
+Built.
+
+- [x] **The prompt travels on stdin**, never in argv — `turn_input` on `AgentDriver`, `-p` with no positional for Claude, a trailing `-` for Codex, no message for opencode. Also clears argv's 32,767 and `cmd.exe`'s 8,191-character ceilings, which `!s`'s prompt is past
+- [x] **Agent processes die with the Palette** — one Job Object per spawn (suspended, assigned, resumed; `KILL_ON_JOB_CLOSE`), a visibility gate on `Turns`, and `cancel_all` in `window::hide` before `EVENT_HIDE`. Closes the in-flight `agent_ask` race, the late `!s` Turn and the spawn-to-registration window, and makes a Takyon crash take its children with it
+- [x] **Failures are facts** — `TurnFailure` (`notFound`, `launcherBroken`, `spawnFailed`, `agentError`, `exited`, `silent`) on the wire, copy in `status.ts`. Exit 9009 from a shim whose `node` is missing reads as that, not as a stderr tail
+- [x] **Resolution from `PATHEXT`**, which drops the unspawnable `.ps1`, plus Volta, `Programs\nodejs` and scoop in `extra_dirs` — both from t3code's `shell.ts`
+- [x] **Claude streams token by token** — `--include-partial-messages`, without rendering the final `assistant` message a second time
+- [x] A `.cmd` fake-Agent integration test that fails today with the reported error, and a job test asserting no process survives a cancel
+- [x] **One Agent probe in flight at a time** - found by driving the build: `ask` is a fresh object per keystroke, so a typed question fired one three-spawn probe per character
+- [x] ADR-0032 (an Agent's prompt travels on stdin) and ADR-0033 (Agent processes die with the Palette), written with the code
+
+**Exit criteria:** on a machine whose Agents are npm `.cmd` installs, `!c` and
+`!s` answer with each of the three, including a multi-line question. Dismissing
+the Palette mid-answer — by hotkey, by Escape and by clicking away — leaves no
+process Takyon started.
+
+**Where it stands:** the reported error is gone, and the fix is proven against
+real Agents here: the ignored live test wraps each installed CLI in a forwarding
+`.cmd` and all three answered through it. The npm shape itself has still only
+been faked, because every Agent on this machine is a real executable, so
+`docs/verify/v0.11.1.md` section A can only be run on the laptop that reported
+it. Section C, nothing surviving a dismissal, is driven by
+`scripts/verify-drive-v0.11.1.ps1`, which passes all five routes against the
+release build: hotkey, Escape, focus loss, `!s`, and killing Takyon outright.
 
 ---
 
@@ -671,30 +713,135 @@ restart, and the Files page says plainly when the service is off.
 stored separately. Plan:
 [`docs/plans/v0.14-clipboard-kinds.md`](./docs/plans/v0.14-clipboard-kinds.md).
 
-Both platforms in one phase. Neither today captures anything but text.
+The Windows image half is built. `verify-drive-v0.14.ps1` passed on
+2026-10-17; the hand-run verification steps are unrun. The user lifted
+the macOS row 6 gate for Windows on 2026-10-17. macOS image capture and paste,
+`Files`, and link classification remain open.
 
-- [ ] `ClipKind` grows `Image` and `Files`, with the schema migration. **`Files` stores paths, never contents** — a copied 40 GB folder is a couple of hundred bytes
-- [ ] `clips/blobs.rs` — encrypted blob files, capped at 32 MB, with **overwrite-then-unlink** and a startup orphan sweep. Every path that destroys clipboard data goes through it, so it lands with its own tests first
-- [ ] Capture on both platforms — `CF_DIB`/`CF_HDROP`, `public.png`/`public.file-url` — behind `ClipboardStore`
-- [ ] Paste-back for both kinds, and link classification on `Text` with a favicon and an Open action
-- [ ] Palette rows, `!v` preview, and a Settings → Clipboard figure for what the history occupies on disk
-- [ ] **ADR-0008 amendment, written with the schema and not after it.** "An attacker learns you copied 31 characters from Bitwarden" becomes "…and every screenshot you took is in there"
+- [ ] `ClipKind` grows `Image` and `Files`. Windows `Image` and the schema migration are built; `Files` remains open. **`Files` stores paths, never contents**
+- [x] Windows `clips/blobs.rs` — encrypted full-PNG blobs, capped at 32 MB encoded PNG and 64 MP, with **overwrite-then-unlink** and startup orphan reconciliation; deletion and retention paths shred blobs
+- [ ] Capture on both platforms. Windows reads text first, then registered `PNG`, `CF_DIBV5`, `CF_DIB`; `CF_HDROP`, macOS types, and `ClipboardStore::read` remain open
+- [ ] Paste-back for both kinds. Windows `Image` writes `CF_DIB` and registered `PNG`; macOS `Image`, `Files`, and link classification remain open
+- [x] Palette image rows, `!v` preview, and Settings → Clipboard on-disk size. Rust image serving, `clip_disk_bytes`, and UI integration are built; manual verification remains open
+- [x] **ADR-0008 amendment.** Image threat model, exclusion markers, blob destruction, and no-store serving are recorded
 
-**Exit criteria:** copy a screenshot, summon `!v`, paste it into another
-application and get the image. Set retention to one day and confirm both the row
-and its blob are gone. Copy a password and confirm nothing is recorded.
+**Exit criteria remain open:** copy a screenshot, summon `!v`, paste it into
+another application and get the image. Set retention to one day and confirm both
+the row and its blob are gone. Copy a password and confirm nothing is recorded
+on both platforms. See [`docs/tbd/v0.14.md`](./docs/tbd/v0.14.md).
+
+---
+
+## v0.15 — Agent streaming and permissions
+
+**Goal:** all three Agents stream token by token, and a follow-up Turn can ask
+before it touches anything. Plan:
+[`docs/plans/v0.15-agent-streaming.md`](./docs/plans/v0.15-agent-streaming.md).
+
+Needs v0.11.1 first. `codex exec --json` and `opencode run --format json` cannot
+stream — Codex's JSONL printer maps a message only on completion, opencode's `run`
+emits text only once a part has finished — and nothing driven through argv and
+stdout can answer a permission prompt. So each Agent moves to a live, two-way
+process, t3code's chat path: Claude on stream-json input, Codex on `app-server`,
+opencode on `serve`. **This supersedes v0.8's fresh process per Turn**, and keeps
+v0.11.1's rule: a live process lasts one summon and dies when the Palette hides.
+Planned, not built.
+
+- [ ] Session registry — one live process per conversation inside v0.11.1's jobs, respawn and resume by session id on a crash, each Agent opting in separately with the one-shot path kept as fall-back
+- [ ] **Claude** — `--input-format stream-json`, `--include-partial-messages`, `--permission-prompts host`. Promotion replaces the tools-off process with a tools-on one started with `--resume`
+- [ ] **Codex** — `codex app-server` over JSON-RPC: `thread/start` or `thread/resume`, `turn/start`, `item/agentMessage/delta`, `turn/interrupt`, both `requestApproval` requests. The used subset pinned against `codex app-server generate-json-schema`, because the protocol is marked `[experimental]`
+- [ ] **opencode** — `opencode serve` on `127.0.0.1` with a per-spawn password, `promptAsync`, SSE events, `session.abort`. No idle TTL: t3code keeps its server 30 s, the Palette rule does not
+- [ ] Loopback HTTP and SSE over `std::net::TcpStream`, proposed as an ADR-0019 amendment — no TLS, no proxy, portable to macOS without `URLSession`
+- [ ] **Permission prompts** — `PermissionRequested` / `PermissionResolved`, `agent_permission_reply`, an approve/deny row in the Chat Surface. Allow means once. Closes [`docs/tbd/v0.8.md`](./docs/tbd/v0.8.md) §1
+- [ ] Probes — Codex from `account/read`, opencode from the provider list's `connected` set. Claude's `auth status --json` stays
+- [ ] First-token latency measured on a first Turn and a follow-up, before and after. Closes [`docs/tbd/v0.8.md`](./docs/tbd/v0.8.md) §8
+
+**Exit criteria:** in `!c` and `!s`, all three Agents stream token by token. A
+follow-up asking for a file edit shows a permission prompt in the Chat Surface;
+Approve writes the file and Deny does not. Hiding the Palette at any moment —
+mid-answer, or with a prompt pending — leaves no process Takyon started.
+
+---
+
+## v0.16 — Focus
+
+**Goal:** a Focus session blocks the apps and websites you name for as long as
+you say, like Raycast Focus, with no elevation, no service, no extension and no
+network request. Plan: [`docs/plans/v0.16-focus.md`](./docs/plans/v0.16-focus.md).
+
+Independent of v0.11 to v0.15 and not a v1.0 blocker. Apps are quit through
+`WM_CLOSE` and then `TerminateProcess`; websites are caught by reading the active
+tab's address bar through UI Automation and sent to a local block page
+(**ADR-0035**). Two strictness levels, Soft and Strict, chosen per session;
+Locked needs a service and waits for its own ADR (**ADR-0036**). Windows only;
+macOS refuses in words. Planned, not built.
+
+- [x] **Spike first:** UI Automation reads and navigates the address bar. **Go** (2026-10-06): Chrome, Edge, Helium, Firefox (Store) and Zen pass every step. ADR-0035 § Spike result. Block page designed: `src-tauri/focus/blocked.html`
+- [x] `focus/` module and `focus.db`; a running session resumes at startup, in deferred init behind the hotkey
+- [x] App blocking: foreground every 250 ms and the process table every 2 s (polled, not hooked: [`docs/tbd/v0.16.md`](./docs/tbd/v0.16.md) §3); `WM_CLOSE`, grace, terminate; an elevated app is recorded as refused. Naming it on the start form is §6
+- [x] Website blocking: supported-browser table, themed `blocked.html` per session, tab restore (lazy on the next visit after an early Complete, §4)
+- [x] Snooze, Pause, Complete, Edit (+10 min); Strict friction; sleep pauses the clock
+- [x] Strict hurdles: shutdown reason screen and idle-sleep hold, each switchable (never exercised by hand yet, §1)
+- [x] Six built-in Focus categories in `categories.json`, Games filled in from Steam and Epic install directories; custom ones with import and export
+- [x] Palette Entries (Start, Complete, Pause, Resume Focus Session) and the start form; `!f`, off by default
+- [x] Floating bar that never takes focus, collapsible to the tray (no flash in tray mode, §7)
+- [x] Settings → Focus with Stats as its own sub-view (Focus / Stats, a line over a gradient); Coming soon rows for Scheduled sessions and Locked
+- [ ] [`docs/verify/v0.16.md`](./docs/verify/v0.16.md) driven against a release build
+
+**Exit criteria:** a Soft session blocks Discord and youtube.com in Chrome and
+Firefox, restores the tabs when it completes, and lets Snooze and Pause through.
+A Strict session survives Task Manager and a reboot with the right time left,
+and holds shutdown behind its reason. Focus stats shows the history. No network
+request anywhere.
+
+---
+
+## v0.17 — Time zones
+
+**Goal:** `12 pm utc`, `3:30pm pst to ist` and `time in tokyo` answer in the
+calculator, offline, from tzdb data bundled through `jiff` (already in
+`Cargo.lock`). Plan: [`docs/plans/v0.17-time-zones.md`](./docs/plans/v0.17-time-zones.md).
+Asked for on 2026-10-07; v0.4 never planned it. Not a v1.0 blocker. Built
+2026-10-07; the verify script is unrun.
+
+- [x] ADR-0038 (`jiff`) and TBC-0016 for bundled tzdb staleness
+- [x] `calc/tz.rs`: time-of-day parser, IANA ids, cities, abbreviations with one fixed reading each (`ist` India, `cst` US Central, `bst` London)
+- [x] `answer_at` seam with `now` and the local zone injected; the local zone follows jiff's 5-minute cache rather than a show hook
+- [x] The Calc card names both zones in words under its halves, through a new optional `Entry.labels`
+- [ ] [`docs/verify/v0.17.md`](./docs/verify/v0.17.md) run against a release build
+
+**Exit criteria:** correct answers on both sides of a DST change, a bare city
+still opens whatever is called that, and the first-Entry budget holds.
+
+---
+
+## v0.18 — Date arithmetic
+
+**Goal:** Answer calendar shifts and day countdowns in the calculator, offline. Plan: [`docs/plans/v0.18-date-arithmetic.md`](./docs/plans/v0.18-date-arithmetic.md). Requested 2026-10-28; implementation built, manual verification pending.
+
+- [x] Full-date shifts, signed day counts, local today, month-end and leap-year rules
+- [x] Conservative grammar, calculator Policy, Calc card and copy behavior
+- [x] Full suite with frontend dependencies installed
+- [ ] [`docs/verify/v0.18.md`](./docs/verify/v0.18.md) run against a release build
+- [ ] Performance budgets measured
+
+**Exit criteria:** The two requested questions answer correctly, ordinary searches keep their top Entry, and first-Entry latency stays under 30 ms.
 
 ---
 
 ## v1.0 — Ship
 
-- [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing, `tauri-plugin-updater`
+- [ ] NSIS installer into `C:\Program Files\Takyon` (UIAccess needs a trusted location), code signing
+- [x] `tauri-plugin-updater`: signed installer and `latest.json` from `release.yml`, checked only from Settings › About ([ADR-0040](./docs/adr/0040-updates-are-signed-and-only-on-request.md))
+- [ ] Updater key setup and [`docs/verify/updater.md`](./docs/verify/updater.md) run across two real releases
 - [ ] **Defender quarantines the installed binary** as `Trojan:Win32/Bearfoos.A!ml`, a behavioural false positive that reads as an installer failure: the install completes and the exe is deleted seconds later. Both installers and the binary scan clean on demand, so it is the running process being scored, not the file. Submit the installer to Microsoft as a false positive, and reconsider writing the `Run` key on the same day as first install — [`docs/tbd/v0.9.md`](./docs/tbd/v0.9.md) §11
 - [ ] **Quote the `Run` value.** `auto-launch` writes it unquoted; harmless from `%LOCALAPPDATA%`, a fragility once the path contains a space
 - [ ] First-run experience: hotkey introduction, autostart prompt, permissions
 - [ ] Full benchmark pass against all four budgets on a cold machine
 - [ ] Revisit `docs/tbc/0002` with real numbers and resolve or retire it
-- [ ] Decide open source vs proprietary, and license accordingly
+- [x] Decide open source vs proprietary, and license accordingly — source-available under CC BY-NC-SA 4.0 ([ADR-0039](./docs/adr/0039-source-available-under-cc-by-nc-sa.md))
+- [ ] Lawyer review of `NOTICE`'s work-use permission and `CONTRIBUTING.md`'s contribution terms, before the first outside contribution is merged
+- [ ] Register the Takyon name (IP India, Class 9) after a clearance search; switch ™ to ® only once registered
 
 **Exit criteria:** someone who is not you installs it and uses it for a week.
 
@@ -709,10 +856,12 @@ These block nothing today but should be settled before they become expensive:
   clean where the users are (ADR-0011's own survey). ADR-0020 then folded the
   name into the Windows identity slug, `com.v3sper.takyon`, on the reasoning that
   the cheapest moment to do that is before anything is signed or distributed.
-- **Open source vs proprietary.** Constrains dependency licensing; already ruled
-  out one option (ADR-0005).
+- ~~**Open source vs proprietary.**~~ **Settled** by ADR-0039: source-available
+  under CC BY-NC-SA 4.0, with a work-use permission in `NOTICE`. The GPL
+  dependency ban stays.
 - **Portable / no-installer mode** — in scope or not.
 - ~~**macOS.**~~ **Settled and scheduled** — it is v0.12, with ADR-0026 to
-  ADR-0030 behind it. What is still open there is *sequencing*: v0.11 to v0.14
+  ADR-0030 behind it. What is still open there is *sequencing*: v0.11 to v0.15
   sit before v1.0 in this file, and whether they genuinely ship before the
-  code-signing certificate and the updater is a call nobody has made.
+  code-signing certificate and the updater is a call nobody has made. Whether
+  v0.15 should come before macOS rather than after v0.14 is the same open call.

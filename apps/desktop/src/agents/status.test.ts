@@ -7,6 +7,7 @@ import {
   canAsk,
   pathSummary,
   pickAgent,
+  turnFailureCopy,
   versionLabel,
 } from "./status";
 
@@ -176,5 +177,71 @@ describe("pathSummary", () => {
   it("v0.11 distinguishes nothing recovered from nothing read", () => {
     expect(pathSummary({ source: "bash", entries: 12, added: 0 })).toContain("the same set");
     expect(pathSummary({ entries: 0, added: 0 })).toContain("could not be read");
+  });
+});
+
+describe("turnFailureCopy", () => {
+  // Every reason Rust can send gets a sentence; none renders as a blank alert.
+  it("v0.11.1 words every failure reason", () => {
+    const agent = "opencode";
+    const cases = [
+      { reason: "notFound", agent, binary: "opencode" },
+      { reason: "launcherBroken", agent, binary: String.raw`C:\npm\opencode.cmd`, detail: "x" },
+      { reason: "spawnFailed", agent, detail: "Access is denied. (os error 5)" },
+      { reason: "agentError", agent, message: "Model not found" },
+      { reason: "exited", agent, code: 1, detail: "boom" },
+      { reason: "silent", agent },
+    ] as const;
+    for (const failure of cases) {
+      expect(turnFailureCopy(failure).headline.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("v0.11.1 names the missing command on notFound", () => {
+    expect(turnFailureCopy({ reason: "notFound", agent: "Codex", binary: "codex" }).headline).toBe(
+      "Codex (`codex`) was not found on PATH.",
+    );
+  });
+
+  // 9009 noise reads as nothing; the fix and the proving line read as a fix.
+  it("v0.11.1 names the fix for a broken launcher and shows the line that proves it", () => {
+    const copy = turnFailureCopy({
+      reason: "launcherBroken",
+      agent: "opencode",
+      binary: String.raw`C:\npm\opencode.cmd`,
+      detail: "\n'node' is not recognized as an internal or external command,\noperable program",
+    });
+    expect(copy.headline).toContain("Reinstall Node.js, then opencode.");
+    expect(copy.detail).toBe("'node' is not recognized as an internal or external command,");
+  });
+
+  it("v0.11.1 falls back to the shim's path when a broken launcher said nothing", () => {
+    const copy = turnFailureCopy({ reason: "launcherBroken", agent: "a", binary: "b.cmd", detail: "" });
+    expect(copy.detail).toBe("b.cmd");
+  });
+
+  it("v0.11.1 shows an Agent's own error unedited", () => {
+    expect(
+      turnFailureCopy({ reason: "agentError", agent: "Codex", message: "rate limited" }),
+    ).toEqual({ headline: "rate limited", detail: null });
+  });
+
+  it("v0.11.1 says the exit code when there is one, and the stderr under it", () => {
+    expect(turnFailureCopy({ reason: "exited", agent: "Codex", code: 2, detail: " boom \n" })).toEqual({
+      headline: "Codex stopped with exit code 2.",
+      detail: "boom",
+    });
+    expect(turnFailureCopy({ reason: "exited", agent: "Codex", detail: "" })).toEqual({
+      headline: "Codex stopped before answering.",
+      detail: null,
+    });
+  });
+
+  it("v0.11.1 carries a spawn error and a silent exit", () => {
+    expect(turnFailureCopy({ reason: "spawnFailed", agent: "a", detail: "denied" })).toEqual({
+      headline: "Could not start a.",
+      detail: "denied",
+    });
+    expect(turnFailureCopy({ reason: "silent", agent: "a" }).headline).toBe("a ended without answering.");
   });
 });

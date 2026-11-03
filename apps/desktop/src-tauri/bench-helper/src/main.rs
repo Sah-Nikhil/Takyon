@@ -75,7 +75,9 @@ fn run(args: &[String]) -> Result<String, String> {
         }
         "mem" => {
             let raw = flag(rest, "--pid").ok_or_else(|| format!("mem needs --pid\n{USAGE}"))?;
-            let pid: u32 = raw.parse().map_err(|_| format!("--pid {raw:?} is not a number"))?;
+            let pid: u32 = raw
+                .parse()
+                .map_err(|_| format!("--pid {raw:?} is not a number"))?;
             Ok(mem::tree(pid)?.to_string())
         }
         "pids" => {

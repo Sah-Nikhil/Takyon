@@ -6,10 +6,10 @@
  * makes its controls searchable — `nav.ts` does the rest and a test in
  * `nav.test.ts` holds that promise.
  *
- * Pages for features that do not exist yet are deliberately absent, and every
- * page here does something today: Web Search landed with v0.9, Agents with
- * v0.8, File Search with v0.7. A disabled row for an unbuilt feature would be a dead control in a
- * window whose whole point is that none of them are.
+ * Pages for features that do not exist yet are absent, and every page here
+ * does something today. A disabled control for an unbuilt feature would be a
+ * dead control. Amended at v0.16: a static "Coming soon" line inside a page
+ * that otherwise works is allowed (Focus); a disabled control still is not.
  */
 
 import { About } from "./pages/About";
@@ -20,6 +20,7 @@ import { Applications } from "./pages/Applications";
 import { Calculator } from "./pages/Calculator";
 import { ClipboardHistory } from "./pages/ClipboardHistory";
 import { FileSearch } from "./pages/FileSearch";
+import { Focus } from "./pages/Focus";
 import { General } from "./pages/General";
 import { Keyboard } from "./pages/Keyboard";
 import { Launcher } from "./pages/Launcher";
@@ -134,8 +135,23 @@ export const PAGES: SettingsPage[] = [
     tier: "app",
     Component: About,
     controls: [
+      {
+        id: "updates",
+        label: "Software update",
+        keywords: ["update", "upgrade", "new version", "check for updates", "install"],
+      },
+      {
+        id: "update-auto",
+        label: "Check for updates automatically",
+        keywords: ["update", "daily", "background", "automatic", "privacy", "network"],
+      },
       { id: "hotkey-status", label: "Global hotkey", keywords: ["alt space", "shortcut"] },
       { id: "identity", label: "Package identity", keywords: ["version", "slug", "data folder"] },
+      {
+        id: "licences",
+        label: "Third-party licences",
+        keywords: ["licence", "license", "licenses", "notices", "attribution", "credits", "dependencies", "legal", "copyright", "open source"],
+      },
     ],
   },
   {
@@ -161,6 +177,11 @@ export const PAGES: SettingsPage[] = [
         id: "retention",
         label: "Keep history for",
         keywords: ["retention", "delete", "expiry", "how long"],
+      },
+      {
+        id: "clip-disk",
+        label: "On disk",
+        keywords: ["size", "disk", "space", "storage", "images", "screenshots"],
       },
       { id: "clip-bang", label: "Reach history with !v", keywords: ["bang", "!v"] },
       {
@@ -279,6 +300,29 @@ export const PAGES: SettingsPage[] = [
         id: "web-outbound",
         label: "Only the question, and only on Enter",
         keywords: ["network", "privacy", "outbound", "adr-0002", "offline"],
+      },
+    ],
+  },
+  {
+    id: "focus",
+    title: "Focus",
+    tier: "feature",
+    Component: Focus,
+    controls: [
+      { id: "focus-snooze", label: "Snooze duration", keywords: ["focus", "snooze", "block", "distraction"] },
+      { id: "focus-restore", label: "Restore terminated apps", keywords: ["focus", "restore", "relaunch"] },
+      { id: "focus-surface", label: "Running session", keywords: ["focus", "bar", "tray", "floating"] },
+      { id: "focus-bar-place", label: "Floating bar position", keywords: ["focus", "bar", "pill", "top", "bottom"] },
+      { id: "focus-bar-opacity", label: "Floating bar opacity", keywords: ["focus", "bar", "pill", "transparency", "opacity"] },
+      { id: "focus-bang", label: "Start with !f", keywords: ["focus", "bang", "!f"] },
+      { id: "focus-hurdle-shutdown", label: "Hold shutdown", keywords: ["focus", "strict", "shutdown", "restart"] },
+      { id: "focus-hurdle-idle", label: "Keep the PC awake", keywords: ["focus", "strict", "sleep", "awake"] },
+      { id: "focus-scheduled", label: "Scheduled sessions", keywords: ["focus", "schedule", "coming soon"] },
+      { id: "focus-locked", label: "Locked sessions", keywords: ["focus", "locked", "strict", "coming soon"] },
+      {
+        id: "focus-stats",
+        label: "Focus stats",
+        keywords: ["focus", "stats", "history", "usage", "time", "clear history"],
       },
     ],
   },

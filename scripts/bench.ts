@@ -1,43 +1,21 @@
 /**
  * `bun run bench` — the four performance budgets from IMPLEMENTATION_PLAN.md §10.
  *
- * A regression here is a failing test, not a nice-to-have: these numbers *are* the
- * product. v0.1 exists to produce them, because ADR-0003 (keep the Palette warm,
- * trim it on hide) was reasoned rather than measured, and TBC-0002 records it as
- * the least-evidenced load-bearing decision in the project.
+ * A regression is a failing test: ADR-0003 was reasoned, not measured (TBC-0002).
+ * Spans are timed in Rust on one clock (`src-tauri/src/bench.rs`). `--idle` decides
+ * ADR-0003: a tight loop never sees Windows reclaim the trimmed set. `--alt-hotkey`
+ * measures the same path where PowerToys Run or Raycast holds Alt+Space.
  *
- * ## What this measures, and what it does not
- *
- * Every span is timed inside Rust, on one clock — see `src-tauri/src/bench.rs`.
- * The frontend's only contribution is echoing back an id once it has painted. So
- * `show_to_first_pixel` **includes** one IPC hop and **excludes** DWM's final
- * composition. That gap is real and is closed by a one-off high-FPS capture,
- * recorded alongside these numbers in `docs/tbc/0002`.
- *
- * ## The measurement that actually decides ADR-0003
- *
- * `--idle <minutes>`. A benchmark run in a tight loop never sees the case a real
- * user hits: Windows has had thirty minutes to reclaim the trimmed working set,
- * and the first show after that is a different event from the second. Running only
- * the warm loop would produce four flattering numbers and answer nothing.
- *
- * Usage:
  *   bun run bench                  # 30 warm shows + idle memory
- *   bun run bench --runs 100
+ *   bun run bench --runs 100 --kill-running   # end a running Takyon first
  *   bun run bench --idle 35        # one show after 35 minutes idle
- *   bun run bench --dev            # measure the debug build (slower; not a budget)
- *   bun run bench --alt-hotkey     # bind Ctrl+Alt+F9 instead of Alt+Space
- *   bun run bench --kill-running   # end an already-running Takyon first
- *
- * `--alt-hotkey` exists because Alt+Space is contested: PowerToys Run and Raycast
- * both claim it by default, and on a machine running either, every span here
- * measures nothing. It changes only which chord `RegisterHotKey` is given — the
- * code path from hotkey handler to first pixel is identical, so the numbers are
- * comparable with a default run.
+ *   bun run bench --dev            # debug build (slower; not a budget)
+ *   bun run bench --alt-hotkey     # Ctrl+Alt+F9 instead of Alt+Space
  */
 
 import { mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { cargoTargetDir } from "./lib/cargo-target-dir";
 
 const ROOT = resolve(import.meta.dir, "..");
 const RESULTS = join(ROOT, "bench", "results");
@@ -92,11 +70,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * `cargo build -p takyon-bench` is enough and needs no separate step.
  */
 const HELPER = join(
-  ROOT,
-  "apps",
-  "desktop",
-  "src-tauri",
-  "target",
+  cargoTargetDir(ROOT),
   "release",
   process.platform === "win32" ? "takyon-bench.exe" : "takyon-bench",
 );
@@ -140,7 +114,15 @@ function readLog(path: string): Record_[] {
     .map((l) => JSON.parse(l) as Record_);
 }
 
-/** Wait until `predicate` holds over the log, or give up. */
+/** The measured process, once spawned. Read by `waitFor` so a crash is not a timeout. */
+let app: { exitCode: number | null } | null = null;
+
+/**
+ * Wait until `predicate` holds over the log, or give up.
+ *
+ * Says whether takyon.exe exited or is still running: a bare timeout hid which on
+ * the first CI run. 0xC0000409 is Rust's abort, so a panic; see `logs\panic.log`.
+ */
 async function waitFor(
   path: string,
   predicate: (rows: Record_[]) => boolean,
@@ -151,7 +133,14 @@ async function waitFor(
   for (;;) {
     const rows = readLog(path);
     if (predicate(rows)) return rows;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    const code = app?.exitCode;
+    if (code != null) {
+      const hex = `0x${(code >>> 0).toString(16).toUpperCase()}`;
+      throw new Error(`takyon.exe exited with code ${code} (${hex}) while waiting for ${what}`);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}; takyon.exe is still running (hung, not crashed)`);
+    }
     await sleep(20);
   }
 }
@@ -180,11 +169,7 @@ async function main() {
 
   const profile = args.dev ? "debug" : "release";
   const exe = join(
-    ROOT,
-    "apps",
-    "desktop",
-    "src-tauri",
-    "target",
+    cargoTargetDir(ROOT),
     profile,
     process.platform === "win32" ? "takyon.exe" : "takyon",
   );
@@ -247,6 +232,7 @@ async function main() {
     stdout: "inherit",
     stderr: "inherit",
   });
+  app = child;
 
   let failed = false;
   let entryFailed = false;
@@ -259,13 +245,9 @@ async function main() {
     );
 
     /*
-      Every span below starts at a hotkey press, so a taken `Alt+Space` means
-      this run can produce nothing at all. Checked here rather than left to
-      surface as a timeout: without it the harness waits out its full deadline
-      and reports "timed out waiting for the Palette to report a painted frame",
-      which reads as a rendering bug and is not one. `Alt+Space` is contested by
-      PowerToys Run, by Raycast and by the classic window system menu, so this is
-      an ordinary way for a bench run to be impossible.
+      Every span starts at a hotkey press, so a taken chord measures nothing.
+      Checked here, not left to a "painted frame" timeout that reads as a render
+      bug. PowerToys Run, Raycast and the window menu all contest `Alt+Space`.
     */
     if (readLog(logPath).some((r) => r.event === "hotkey_unavailable")) {
       throw new Error(
@@ -406,18 +388,17 @@ async function main() {
 
   if (failed) {
     console.error("\nAt least one budget was missed. Treat this as a failing test.");
-    process.exit(1);
+    // 2, not 1: CI warns on a missed budget but fails on 1, which is a harness
+    // that measured nothing (a thrown error exits 1). Both are non-zero here.
+    process.exit(2);
   }
 }
 
 /**
  * Type one character into the open Palette and wait for its Entries to paint.
  *
- * §10's "hotkey to first Entry" budget, measurable from v0.2 because that is when
- * a Source exists to produce one. A timeout is swallowed rather than thrown: the
- * harness's job is to report numbers, and a machine where `c` matches no
- * application is unusual but not a reason to discard the three budgets that did
- * measure. Its absence shows up as a smaller sample count, which is reported.
+ * §10's "hotkey to first Entry" budget. A timeout is swallowed: a machine where `c`
+ * matches nothing still reports the other budgets, and shows as a smaller n.
  */
 async function typeOneEntry(logPath: string, alreadySeen: number) {
   await helper(["input", "--key", "LetterC"]);

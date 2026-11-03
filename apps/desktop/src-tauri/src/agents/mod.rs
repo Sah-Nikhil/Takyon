@@ -12,6 +12,7 @@
 pub mod claude;
 pub mod codex;
 pub mod ipc;
+pub mod job;
 pub mod opencode;
 pub mod probe;
 pub mod scratch;
@@ -163,10 +164,8 @@ impl Snapshot {
 
 /// The house style every Turn answers in.
 ///
-/// A launcher answer is read in a 560px box, one keystroke from whatever the
-/// user was doing. Three paragraphs of preamble is the wrong shape for that, and
-/// no Agent's default is this terse. Sent as a system prompt where the CLI has
-/// one and prepended to the first Turn's prompt where it does not.
+/// Read in a 560px box one keystroke from other work; no Agent's default is this
+/// terse. System prompt where the CLI has one, else prepended to the first Turn.
 pub const ANSWER_STYLE: &str = "Answer in as few words as the question allows. No preamble, no restatement of the question, no closing offer, no summary of what you just said. Drop articles and filler; fragments are fine. One line when one line answers it. Prose, not bullets, unless the answer is genuinely a list. Never abbreviate identifiers, API names, file paths, error strings, names or numbers, and never drop a caveat that changes the answer.";
 
 /// The prompt for an Agent with no system-prompt flag of its own.
@@ -176,9 +175,12 @@ pub const ANSWER_STYLE: &str = "Answer in as few words as the question allows. N
 pub fn styled_prompt(req: &TurnRequest) -> String {
     match req.session {
         Some(_) => req.prompt.clone(),
-        None => format!("{ANSWER_STYLE}
+        None => format!(
+            "{ANSWER_STYLE}
 
-{}", req.prompt),
+{}",
+            req.prompt
+        ),
     }
 }
 
@@ -209,6 +211,9 @@ pub struct TurnState {
     /// opencode re-emits a growing part rather than appending; without this the
     /// answer arrives as "o", "ok", "okay" concatenated.
     pub emitted: std::collections::HashMap<String, usize>,
+    /// Claude only: a token delta arrived since the last `message_start`, so the
+    /// whole `assistant` message that follows is already on screen.
+    pub streamed: bool,
 }
 
 impl TurnState {
@@ -226,9 +231,8 @@ impl TurnState {
 
 /// One Agent, as far as the rest of Takyon is concerned.
 ///
-/// `probe` and `turn_args` are the whole SPI: everything else — spawning,
-/// timeouts, line buffering, cancellation — is shared and lives in `probe.rs`
-/// and `turn.rs`.
+/// `probe`, `turn_args` and `turn_input` are the whole SPI: spawning, timeouts,
+/// line buffering, cancellation are shared, in `probe.rs`, `job.rs`, `turn.rs`.
 pub trait AgentDriver: Send + Sync {
     fn kind(&self) -> AgentKind;
 
@@ -256,10 +260,15 @@ pub trait AgentDriver: Send + Sync {
     /// An Agent that will not say returns empty, and the picker says so.
     fn models(&self, exe: &std::path::Path) -> Vec<String>;
 
-    /// The arguments for one Turn. The prompt is included; the cwd is not,
-    /// because two of the three take it as a flag and one takes it as the
-    /// process cwd.
+    /// The arguments for one Turn. **Never** the prompt: a `.cmd` refuses a line
+    /// break in argv, and `!s`'s prompt is past `cmd.exe`'s length limit
+    /// (ADR-0032). No cwd either: two take it as a flag, one as process cwd.
     fn turn_args(&self, req: &TurnRequest) -> Vec<String>;
+
+    /// What the Turn writes to the Agent's stdin before closing it.
+    fn turn_input(&self, req: &TurnRequest) -> String {
+        styled_prompt(req)
+    }
 
     /// Whether this Agent wants the cwd as the spawned process's directory
     /// rather than as a flag. Only Claude does.
@@ -313,7 +322,12 @@ pub fn parse_order(stored: Option<&str>) -> Vec<AgentKind> {
     let named = stored
         .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
         .unwrap_or_default();
-    normalise_order(named.iter().filter_map(|n| AgentKind::from_wire(n)).collect())
+    normalise_order(
+        named
+            .iter()
+            .filter_map(|n| AgentKind::from_wire(n))
+            .collect(),
+    )
 }
 
 /// Dedupe an order and back-fill it. The only shape allowed to be stored.
@@ -338,15 +352,42 @@ pub fn route(prefs: &crate::prefs::Prefs) -> Vec<AgentKind> {
         // Seeded from the older single-choice key, so an install made before
         // the order existed keeps its Agent first.
         None => normalise_order(vec![AgentKind::parse(
-            prefs.get(crate::prefs::ASK_AGENT).unwrap_or_default().as_str(),
+            prefs
+                .get(crate::prefs::ASK_AGENT)
+                .unwrap_or_default()
+                .as_str(),
         )]),
     };
     stored
         .into_iter()
-        .filter(|kind| {
-            crate::prefs::flag(prefs, &crate::prefs::ask_enabled_key(*kind), true)
-        })
+        .filter(|kind| crate::prefs::flag(prefs, &crate::prefs::ask_enabled_key(*kind), true))
         .collect()
+}
+
+/// First run with one Agent installed: rank it first and switch it on.
+///
+/// Returns whether prefs changed, so the caller can refresh `Pipeline`'s route.
+/// Reasoning in ADR-0031.
+pub fn lead_sole_agent(prefs: &crate::prefs::Prefs, snapshots: &[Snapshot]) -> bool {
+    // Any stored choice, the legacy key included, means not a first run.
+    let chosen = prefs.get(crate::prefs::ASK_ORDER).is_some()
+        || prefs.get(crate::prefs::ASK_AGENT).is_some()
+        || AgentKind::ALL
+            .iter()
+            .any(|kind| prefs.get(&crate::prefs::ask_enabled_key(*kind)).is_some());
+    if chosen {
+        return false;
+    }
+    let mut installed = snapshots.iter().filter(|s| s.installed).map(|s| s.kind);
+    let (Some(sole), None) = (installed.next(), installed.next()) else {
+        return false;
+    };
+    // Writing the order is also what makes this one-shot: the gate above sees it.
+    let order = normalise_order(vec![sole]);
+    prefs
+        .set(&crate::prefs::ask_enabled_key(sole), "1")
+        .and_then(|()| prefs.set(crate::prefs::ASK_ORDER, &order_to_json(&order)))
+        .is_ok()
 }
 
 /// The order as `settings.db` holds it: one JSON row rather than three keys.
@@ -470,7 +511,12 @@ mod tests {
             assert!(!efforts.is_empty(), "{} offers no effort", driver.label());
             for effort in efforts {
                 assert!(!effort.is_empty());
-                assert_eq!(*effort, effort.to_lowercase(), "{} is not a wire value", effort);
+                assert_eq!(
+                    *effort,
+                    effort.to_lowercase(),
+                    "{} is not a wire value",
+                    effort
+                );
             }
         }
     }
@@ -538,7 +584,9 @@ mod tests {
     fn v0_8_switching_every_agent_off_leaves_nothing_to_ask() {
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         for kind in AgentKind::ALL {
-            prefs.set(&crate::prefs::ask_enabled_key(kind), "0").unwrap();
+            prefs
+                .set(&crate::prefs::ask_enabled_key(kind), "0")
+                .unwrap();
         }
         assert!(route(&prefs).is_empty());
     }
@@ -567,17 +615,68 @@ mod tests {
         };
         for driver in drivers() {
             let args = driver.turn_args(&base);
+            let input = driver.turn_input(&base);
             assert!(
-                args.iter().any(|a| a.contains(ANSWER_STYLE)),
+                args.iter().any(|a| a.contains(ANSWER_STYLE)) || input.contains(ANSWER_STYLE),
                 "{} sent no answer style",
                 driver.label()
             );
             // Never instead of the question.
             assert!(
-                args.iter().any(|a| a.contains("who directed fast five")),
+                input.contains("who directed fast five"),
                 "{} lost the question",
                 driver.label()
             );
+        }
+    }
+
+    /// No argument holds a line break or the prompt, for any driver or Turn shape.
+    /// A `.cmd` Agent refuses the first with `batch file arguments are invalid`.
+    #[test]
+    fn v0_11_1_no_driver_puts_the_prompt_or_a_line_break_in_argv() {
+        let prompt = "first line\r\n\nsecond line %PATH% \"quoted\" &|^";
+        let first = TurnRequest {
+            prompt: prompt.into(),
+            cwd: std::path::PathBuf::from(r"C:\Users\some one\scratch dir"),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        let shapes = [
+            first.clone(),
+            TurnRequest {
+                session: Some("s-1".into()),
+                tools: true,
+                ..first.clone()
+            },
+            TurnRequest {
+                model: Some("sonnet".into()),
+                effort: Some("high".into()),
+                ..first.clone()
+            },
+        ];
+        for driver in drivers() {
+            for req in &shapes {
+                let args = driver.turn_args(req);
+                for arg in &args {
+                    assert!(
+                        !arg.contains('\r') && !arg.contains('\n'),
+                        "{} put a line break in {arg:?}",
+                        driver.label()
+                    );
+                    assert!(
+                        !arg.contains("second line"),
+                        "{} put the prompt in argv",
+                        driver.label()
+                    );
+                }
+                assert!(
+                    driver.turn_input(req).contains(prompt),
+                    "{} dropped the prompt from stdin",
+                    driver.label()
+                );
+            }
         }
     }
 
@@ -594,7 +693,11 @@ mod tests {
             tools: true,
         };
         assert_eq!(styled_prompt(&resumed), "and the producer");
-        assert!(styled_prompt(&TurnRequest { session: None, ..resumed }).contains(ANSWER_STYLE));
+        assert!(styled_prompt(&TurnRequest {
+            session: None,
+            ..resumed
+        })
+        .contains(ANSWER_STYLE));
     }
 
     /// The style has to actually ask for brevity, or it is decoration that costs
@@ -604,6 +707,90 @@ mod tests {
         assert!(ANSWER_STYLE.contains("as few words"));
         assert!(ANSWER_STYLE.contains("No preamble"));
         assert!(ANSWER_STYLE.contains("Never abbreviate"));
+    }
+
+    /// A probe that found exactly `installed`, every other Agent missing.
+    fn probed(installed: &[AgentKind]) -> Vec<Snapshot> {
+        AgentKind::ALL
+            .iter()
+            .map(|kind| Snapshot {
+                installed: installed.contains(kind),
+                ..Snapshot::missing(*kind, "Agent", "agent")
+            })
+            .collect()
+    }
+
+    /// First run, one Agent installed: it is all `!c` can reach, so it leads.
+    #[test]
+    fn v0_11_a_sole_installed_agent_leads_on_a_fresh_install() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        assert!(lead_sole_agent(&prefs, &probed(&[AgentKind::Codex])));
+        assert_eq!(
+            route(&prefs),
+            vec![AgentKind::Codex, AgentKind::Claude, AgentKind::OpenCode]
+        );
+    }
+
+    /// Any stored Agent choice means the user has been here: theirs wins, even a
+    /// sole Agent switched off.
+    #[test]
+    fn v0_11_a_stored_agent_choice_is_never_overridden() {
+        let only_codex = probed(&[AgentKind::Codex]);
+
+        let ordered = crate::prefs::Prefs::open(None).unwrap();
+        ordered
+            .set(crate::prefs::ASK_ORDER, r#"["opencode","claude","codex"]"#)
+            .unwrap();
+        assert!(!lead_sole_agent(&ordered, &only_codex));
+        assert_eq!(
+            route(&ordered),
+            vec![AgentKind::OpenCode, AgentKind::Claude, AgentKind::Codex]
+        );
+
+        let switched = crate::prefs::Prefs::open(None).unwrap();
+        switched
+            .set(&crate::prefs::ask_enabled_key(AgentKind::Codex), "0")
+            .unwrap();
+        assert!(!lead_sole_agent(&switched, &only_codex));
+        assert_eq!(
+            route(&switched),
+            vec![AgentKind::Claude, AgentKind::OpenCode]
+        );
+
+        let legacy = crate::prefs::Prefs::open(None).unwrap();
+        legacy.set(crate::prefs::ASK_AGENT, "opencode").unwrap();
+        assert!(!lead_sole_agent(&legacy, &only_codex));
+        assert_eq!(route(&legacy)[0], AgentKind::OpenCode);
+    }
+
+    /// One-shot: switching the led Agent off afterwards sticks on the next probe.
+    #[test]
+    fn v0_11_a_sole_agent_switched_off_after_leading_stays_off() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        let only_codex = probed(&[AgentKind::Codex]);
+        assert!(lead_sole_agent(&prefs, &only_codex));
+
+        prefs
+            .set(&crate::prefs::ask_enabled_key(AgentKind::Codex), "0")
+            .unwrap();
+        assert!(!lead_sole_agent(&prefs, &only_codex));
+        assert_eq!(route(&prefs), vec![AgentKind::Claude, AgentKind::OpenCode]);
+    }
+
+    /// None or several installed decides nothing, and must not use up the first
+    /// run: a later probe that finds one Agent still leads it.
+    #[test]
+    fn v0_11_no_sole_agent_leaves_the_first_run_unspent() {
+        let prefs = crate::prefs::Prefs::open(None).unwrap();
+        assert!(!lead_sole_agent(&prefs, &probed(&[])));
+        assert!(!lead_sole_agent(
+            &prefs,
+            &probed(&[AgentKind::Claude, AgentKind::OpenCode])
+        ));
+        assert_eq!(route(&prefs), AgentKind::ALL.to_vec());
+
+        assert!(lead_sole_agent(&prefs, &probed(&[AgentKind::OpenCode])));
+        assert_eq!(route(&prefs)[0], AgentKind::OpenCode);
     }
 
     /// The missing-CLI sentence names the binary, because that is the fix.

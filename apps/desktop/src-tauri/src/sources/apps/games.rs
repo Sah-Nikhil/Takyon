@@ -12,6 +12,8 @@
 pub mod epic;
 pub mod steam;
 
+use std::path::PathBuf;
+
 use crate::entry::GameLauncher;
 
 /// One installed game, whichever launcher owns it.
@@ -22,6 +24,8 @@ pub struct Game {
     /// it must survive the game moving drive; a path never can.
     pub id: String,
     pub name: String,
+    /// Where the game lives; Focus blocks every process under it (v0.16).
+    pub install_dir: Option<PathBuf>,
 }
 
 /// One launcher's installed library.

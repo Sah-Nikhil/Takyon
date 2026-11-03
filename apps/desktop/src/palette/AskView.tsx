@@ -127,6 +127,11 @@ export function AskView({
         {state.phase === "failed" && (
           <p className="text-[13px] text-warning" role="alert">
             {state.error ?? `${label} stopped without answering.`}
+            {state.errorDetail && (
+              <span className="mt-1 block break-words font-mono text-[12px] text-fg/60">
+                {state.errorDetail}
+              </span>
+            )}
           </p>
         )}
       </div>

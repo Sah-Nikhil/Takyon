@@ -15,7 +15,9 @@ use serde_json::Value;
 
 use super::probe::{self, PROBE_TIMEOUT};
 use super::turn::TurnEvent;
-use super::{AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState};
+use super::{
+    AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState,
+};
 
 pub struct OpenCodeDriver;
 
@@ -106,8 +108,8 @@ impl AgentDriver for OpenCodeDriver {
             args.push("-s".into());
             args.push(session.clone());
         }
-        // Same as Codex: no system prompt to append to, so it leads the prompt.
-        args.push(super::styled_prompt(req));
+        // No message argument: `run` reads stdin when it is not a TTY (ADR-0032).
+        // Style leads the default `turn_input`, no system prompt to append to.
         args
     }
 
@@ -138,11 +140,16 @@ impl AgentDriver for OpenCodeDriver {
                     .delta(&id, text)
                     .map(|delta| TurnEvent::Text { delta })
             }
-            "error" => Some(TurnEvent::Failed {
-                message: text_at(&json, "message")
-                    .or_else(|| json.pointer("/error/message").and_then(Value::as_str).map(str::to_string))
+            "error" => Some(TurnEvent::agent_error(
+                LABEL,
+                text_at(&json, "message")
+                    .or_else(|| {
+                        json.pointer("/error/message")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
                     .unwrap_or_else(|| "opencode stopped with an error.".into()),
-            }),
+            )),
             _ => None,
         }
     }
@@ -178,7 +185,11 @@ pub fn snapshot_from_models(version: Option<String>, stdout: &str) -> Snapshot {
         binary: BINARY,
         installed: true,
         version,
-        health: if connected { Health::Ready } else { Health::Warning },
+        health: if connected {
+            Health::Ready
+        } else {
+            Health::Warning
+        },
         sign_in: if connected {
             SignIn {
                 status: SignInStatus::In,
@@ -191,8 +202,9 @@ pub fn snapshot_from_models(version: Option<String>, stdout: &str) -> Snapshot {
         } else {
             SignIn::out()
         },
-        message: (!connected)
-            .then(|| "No providers are connected to opencode. Run `opencode providers login`.".into()),
+        message: (!connected).then(|| {
+            "No providers are connected to opencode. Run `opencode providers login`.".into()
+        }),
         efforts: OpenCodeDriver.efforts(),
     }
 }
@@ -244,14 +256,21 @@ mod tests {
             tools: false,
         };
         let args = OpenCodeDriver.turn_args(&base);
-        let agent = args.iter().position(|a| a == "--agent").expect("agent flag");
+        let agent = args
+            .iter()
+            .position(|a| a == "--agent")
+            .expect("agent flag");
         assert_eq!(args[agent + 1], READ_ONLY_AGENT);
         let dir = args.iter().position(|a| a == "--dir").expect("dir flag");
         assert_eq!(args[dir + 1], r"C:\scratch");
-        // The prompt is last, after every flag, with the house style ahead of it.
-        assert!(args.last().unwrap().ends_with("hi"));
+        // The prompt travels on stdin, house style ahead of it.
+        assert!(!args.iter().any(|a| a.ends_with("hi")));
+        assert!(OpenCodeDriver.turn_input(&base).ends_with("hi"));
 
-        let with_tools = OpenCodeDriver.turn_args(&TurnRequest { tools: true, ..base });
+        let with_tools = OpenCodeDriver.turn_args(&TurnRequest {
+            tools: true,
+            ..base
+        });
         assert!(!with_tools.contains(&"--agent".to_string()));
     }
 
@@ -265,7 +284,10 @@ mod tests {
         );
         assert_eq!(
             event,
-            Some(TurnEvent::Started { session: Some("ses_1".into()), model: None })
+            Some(TurnEvent::Started {
+                session: Some("ses_1".into()),
+                model: None
+            })
         );
         assert_eq!(state.session.as_deref(), Some("ses_1"));
     }
@@ -284,7 +306,9 @@ mod tests {
         };
         assert_eq!(
             OpenCodeDriver.parse_line(&line("Hel"), &mut state),
-            Some(TurnEvent::Text { delta: "Hel".into() })
+            Some(TurnEvent::Text {
+                delta: "Hel".into()
+            })
         );
         assert_eq!(
             OpenCodeDriver.parse_line(&line("Hello"), &mut state),
@@ -305,7 +329,9 @@ mod tests {
         let second = r#"{"type":"text","sessionID":"ses_1","part":{"id":"p2","text":"xy"}}"#;
         assert_eq!(
             OpenCodeDriver.parse_line(first, &mut state),
-            Some(TurnEvent::Text { delta: "abcd".into() })
+            Some(TurnEvent::Text {
+                delta: "abcd".into()
+            })
         );
         assert_eq!(
             OpenCodeDriver.parse_line(second, &mut state),

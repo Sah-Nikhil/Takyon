@@ -14,7 +14,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::real_apps;
+use common::{real_apps, TempDir};
 use serde_json::Value;
 use takyon_lib::entry::{Action, EntryId};
 use takyon_lib::frecency::Frecency;
@@ -25,7 +25,9 @@ use takyon_lib::prefs::Prefs;
 use takyon_lib::query::{Pipeline, QueryResult};
 use takyon_lib::sources::recents::RecentsSource;
 use takyon_lib::sources::system::SystemSource;
-use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY};
+use tauri::test::{
+    get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
+};
 use tauri::webview::InvokeRequest;
 use tauri::Manager;
 
@@ -34,7 +36,7 @@ const QUERY_RESULT_KEYS: [&str; 3] = ["seq", "entries", "statusRow"];
 /// `interface Entry`. The optionals must be absent rather than null when Rust
 /// has none, or the frontend's `field?: T` types become `T | null`.
 const ENTRY_REQUIRED: [&str; 5] = ["id", "title", "kind", "score", "actions"];
-const ENTRY_OPTIONAL: [&str; 3] = ["subtitle", "icon", "version"];
+const ENTRY_OPTIONAL: [&str; 4] = ["subtitle", "icon", "version", "labels"];
 /// `type EntryKind`.
 const ENTRY_KINDS: [&str; 8] = [
     "app",
@@ -174,7 +176,11 @@ fn v0_6_a_settings_snapshot_carries_exactly_the_fields_ipc_ts_declares() {
 fn v0_6_a_written_preference_reads_back_across_the_seam() {
     let (_app, webview) = mock_settings();
 
-    call(&webview, "set_reduce_motion", serde_json::json!({ "on": true }));
+    call(
+        &webview,
+        "set_reduce_motion",
+        serde_json::json!({ "on": true }),
+    );
     let after = call(&webview, "settings_snapshot", serde_json::json!({}));
     assert_eq!(after["reduceMotion"].as_bool(), Some(true));
 }
@@ -195,7 +201,11 @@ fn v0_6_migration_seeds_an_empty_install_then_never_speaks_again() {
     assert_eq!(seeded["calcPolicy"].as_str(), Some("explicit"));
 
     // The user then turns motion back on in the settings window.
-    call(&webview, "set_reduce_motion", serde_json::json!({ "on": false }));
+    call(
+        &webview,
+        "set_reduce_motion",
+        serde_json::json!({ "on": false }),
+    );
 
     // A second window mounts, still holding the stale legacy key.
     let again = call(
@@ -221,7 +231,9 @@ const FILE_INDEX_OPTIONAL: [&str; 1] = ["pct"];
 /// be driven directly. Roots are empty — this asserts wire shape, not a walk.
 fn mock_file_index() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
     let app = mock_builder()
-        .invoke_handler(tauri::generate_handler![takyon_lib::index::file_index_status])
+        .invoke_handler(tauri::generate_handler![
+            takyon_lib::index::file_index_status
+        ])
         .build(mock_context(noop_assets()))
         .expect("mock app");
 
@@ -254,7 +266,10 @@ fn v0_7_the_file_index_report_matches_ipc_ts() {
                 || FILE_INDEX_OPTIONAL.contains(&key.as_str()),
             "FileIndexReport carries {key}, which ipc.ts does not declare"
         );
-        assert!(!value.is_null(), "{key} serialised as null rather than absent");
+        assert!(
+            !value.is_null(),
+            "{key} serialised as null rather than absent"
+        );
     }
 
     // Nothing walked, so this is the Building shape — and `pct` rides with it
@@ -286,7 +301,11 @@ fn v0_7_every_index_state_serialises_as_ipc_ts_spells_it() {
 #[test]
 fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "query", serde_json::json!({ "q": "e", "seq": 1u64 }));
+    let response = call(
+        &webview,
+        "query",
+        serde_json::json!({ "q": "e", "seq": 1u64 }),
+    );
 
     let object = response.as_object().expect("QueryResult is an object");
     let mut keys: Vec<_> = object.keys().map(String::as_str).collect();
@@ -299,7 +318,10 @@ fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
     assert!(object["statusRow"].is_boolean());
 
     let entries = object["entries"].as_array().expect("entries is an array");
-    assert!(!entries.is_empty(), "nothing matched, so nothing was checked");
+    assert!(
+        !entries.is_empty(),
+        "nothing matched, so nothing was checked"
+    );
     eprintln!("  {} entries checked", entries.len());
 
     for entry in entries {
@@ -315,7 +337,10 @@ fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
             // An optional the frontend reads as `field?: T` must be absent, not
             // null: `"subtitle": null` types as `string | null` and breaks the
             // `?.` the Palette uses on it.
-            assert!(!value.is_null(), "{key} serialised as null rather than absent");
+            assert!(
+                !value.is_null(),
+                "{key} serialised as null rather than absent"
+            );
         }
 
         assert!(fields["id"].is_string());
@@ -332,10 +357,21 @@ fn v0_3_a_query_response_carries_exactly_the_fields_api_ts_declares() {
 #[test]
 fn v0_3_the_action_menu_response_matches_api_ts() {
     let (_app, webview) = mock_palette();
-    let result = call(&webview, "query", serde_json::json!({ "q": "e", "seq": 1u64 }));
-    let id = result["entries"][0]["id"].as_str().expect("an Entry").to_string();
+    let result = call(
+        &webview,
+        "query",
+        serde_json::json!({ "q": "e", "seq": 1u64 }),
+    );
+    let id = result["entries"][0]["id"]
+        .as_str()
+        .expect("an Entry")
+        .to_string();
 
-    let actions = call(&webview, "actions_for", serde_json::json!({ "entryId": id }));
+    let actions = call(
+        &webview,
+        "actions_for",
+        serde_json::json!({ "entryId": id }),
+    );
     let actions = actions.as_array().expect("Action[]");
     assert!(!actions.is_empty(), "{id} offered no actions");
     eprintln!("  {} actions for {id}", actions.len());
@@ -343,33 +379,37 @@ fn v0_3_the_action_menu_response_matches_api_ts() {
     for action in actions {
         let fields = action.as_object().expect("Action is an object");
         for key in ACTION_REQUIRED {
-            assert!(fields.contains_key(key), "Action is missing {key}: {action}");
+            assert!(
+                fields.contains_key(key),
+                "Action is missing {key}: {action}"
+            );
         }
         for (key, value) in fields {
             assert!(
                 ACTION_REQUIRED.contains(&key.as_str()) || ACTION_OPTIONAL.contains(&key.as_str()),
                 "Action carries {key}, which ipc.ts does not declare"
             );
-            assert!(!value.is_null(), "{key} serialised as null rather than absent");
+            assert!(
+                !value.is_null(),
+                "{key} serialised as null rather than absent"
+            );
             assert!(value.is_string());
         }
     }
 }
 
-/// `api.ts` sends `{ entryId }` and Tauri maps it onto an `entry_id` parameter.
-///
-/// The convention, not the production signature — the handler here is a copy, so
-/// a rename in `lib.rs` would not turn this red. What it pins is that the
-/// mapping exists at all, which every camelCase argument in `api.ts` relies on.
 /// v0.4: a Calc Entry reaches the wire in the shape `ipc.ts` declares.
 ///
-/// The machine-independent half of the contract test above. A calculation is the
-/// one Entry that does not depend on what is installed, so this asserts values
-/// and not only field names.
+/// Machine-independent half of the contract test above: a calculation depends on
+/// nothing installed, so this asserts values, not only field names.
 #[test]
 fn v0_4_a_calculation_reaches_the_wire_as_a_calc_entry() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "query", serde_json::json!({ "q": "12*1.18", "seq": 1u64 }));
+    let response = call(
+        &webview,
+        "query",
+        serde_json::json!({ "q": "12*1.18", "seq": 1u64 }),
+    );
 
     let entries = response["entries"].as_array().expect("entries is an array");
     let calc = &entries[0];
@@ -385,7 +425,10 @@ fn v0_4_a_calculation_reaches_the_wire_as_a_calc_entry() {
     );
     // No icon key: an answer has no file to extract one from, and a `null` here
     // would break the `icon?: string` the row reads with `?.`.
-    assert!(calc.get("icon").is_none(), "a calculation shipped an icon: {calc}");
+    assert!(
+        calc.get("icon").is_none(),
+        "a calculation shipped an icon: {calc}"
+    );
 }
 
 /// The menu Rust hands back for an id no Source holds an index for.
@@ -395,7 +438,11 @@ fn v0_4_a_calculation_reaches_the_wire_as_a_calc_entry() {
 #[test]
 fn v0_4_the_action_menu_for_a_calculation_is_not_empty() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "actions_for", serde_json::json!({ "entryId": "calc:14.16" }));
+    let response = call(
+        &webview,
+        "actions_for",
+        serde_json::json!({ "entryId": "calc:14.16" }),
+    );
 
     let actions = response.as_array().expect("actions_for returns an array");
     assert_eq!(actions.len(), 1, "{response}");
@@ -404,12 +451,162 @@ fn v0_4_the_action_menu_for_a_calculation_is_not_empty() {
     assert_eq!(actions[0]["accelerator"].as_str(), Some("Enter"));
 }
 
+/// `api.ts` sends `{ entryId }` and Tauri maps it onto an `entry_id` parameter.
+///
+/// The convention, not the production signature: the handler is a copy, so a rename
+/// in `lib.rs` stays green. Pins that the mapping every camelCase argument needs exists.
 #[test]
 fn v0_3_camel_case_argument_names_reach_snake_case_parameters() {
     let (_app, webview) = mock_palette();
-    let response = call(&webview, "actions_for", serde_json::json!({ "entryId": "nope" }));
+    let response = call(
+        &webview,
+        "actions_for",
+        serde_json::json!({ "entryId": "nope" }),
+    );
     assert!(
         response.as_array().is_some(),
         "actions_for did not accept entryId: {response}"
+    );
+}
+
+/// A mock app with the real update commands. Its config has no updater block,
+/// which is what every local and bench build carries (ADR-0040).
+fn mock_update() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
+    let app = mock_builder()
+        .invoke_handler(tauri::generate_handler![
+            takyon_lib::update::update_check,
+            takyon_lib::update::update_install
+        ])
+        .build(mock_context(noop_assets()))
+        .expect("mock app");
+    app.manage(takyon_lib::update::Pending::default());
+    let webview = tauri::WebviewWindowBuilder::new(&app, "settings", Default::default())
+        .build()
+        .expect("mock window");
+    (app, webview)
+}
+
+/// No key, no feed: the answer comes back without a request, as `ipc.ts` spells it.
+#[test]
+fn updater_a_build_without_a_feed_says_so_instead_of_checking() {
+    let (_app, webview) = mock_update();
+    let response = call(&webview, "update_check", serde_json::json!({}));
+    assert_eq!(response, serde_json::json!({ "state": "unconfigured" }));
+}
+
+/// Install only ever acts on what a check found; it never fetches on its own.
+#[test]
+fn updater_install_before_a_check_is_refused() {
+    let (_app, webview) = mock_update();
+    let refusal = get_ipc_response(
+        &webview,
+        InvokeRequest {
+            cmd: "update_install".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(),
+            body: serde_json::json!({ "onProgress": "__CHANNEL__:7" }).into(),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    )
+    .expect_err("install ran with nothing checked");
+    assert_eq!(refusal, serde_json::json!("Check for updates first."));
+}
+
+/// `interface LicenceComponent` in `packages/shared/src/ipc.ts`.
+const LICENCE_COMPONENT_KEYS: [&str; 8] = [
+    "kind",
+    "name",
+    "version",
+    "licence",
+    "licenceName",
+    "repository",
+    "texts",
+    "canonical",
+];
+
+/// The real command. Debug builds fall back to the generator's output beside
+/// `Cargo.toml`; with none generated, the refusal must say how to make one.
+#[test]
+fn notices_the_licence_list_reaches_the_wire_as_an_object_not_a_string() {
+    let app = mock_builder()
+        .invoke_handler(tauri::generate_handler![
+            takyon_lib::notices::third_party_licences
+        ])
+        .build(mock_context(noop_assets()))
+        .expect("mock app");
+    let webview = tauri::WebviewWindowBuilder::new(&app, "settings", Default::default())
+        .build()
+        .expect("mock window");
+    let generated = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(takyon_lib::notices::FILE)
+        .is_file();
+    let response = get_ipc_response(
+        &webview,
+        InvokeRequest {
+            cmd: "third_party_licences".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(),
+            body: serde_json::json!({}).into(),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    );
+    if !generated {
+        let refusal = response.expect_err("no file, yet the command answered");
+        assert!(
+            refusal.as_str().unwrap().contains("bun run notices"),
+            "{refusal}"
+        );
+        return;
+    }
+    let body: Value = response
+        .expect("command was rejected")
+        .deserialize()
+        .expect("response was not JSON");
+    let texts = body["texts"].as_array().expect("texts is an array");
+    let components = body["components"]
+        .as_array()
+        .expect("components is an array");
+    assert!(!components.is_empty());
+    for c in components {
+        let mut keys: Vec<&str> = c.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        let mut want = LICENCE_COMPONENT_KEYS.to_vec();
+        want.sort_unstable();
+        assert_eq!(keys, want, "{c}");
+        for i in c["texts"].as_array().unwrap() {
+            assert!(
+                (i.as_u64().unwrap() as usize) < texts.len(),
+                "dangling text index in {c}"
+            );
+        }
+    }
+}
+
+#[test]
+fn notices_reader_reports_missing_and_damaged_files() {
+    let dir = TempDir::new("notices-errors");
+    let path = dir.path().join(takyon_lib::notices::FILE);
+    let err = takyon_lib::notices::read(std::slice::from_ref(&path)).unwrap_err();
+    assert!(err.contains("licence list") || err.contains(takyon_lib::notices::FILE));
+
+    std::fs::write(&path, "{\"components\": [").unwrap();
+    assert!(takyon_lib::notices::read(&[path])
+        .unwrap_err()
+        .contains("damaged"));
+}
+
+#[test]
+fn notices_reader_uses_first_existing_file_without_reencoding() {
+    let dir = TempDir::new("notices-read");
+    let path = dir.path().join(takyon_lib::notices::FILE);
+    let body = "{\"components\":[],\"texts\":[]}\n";
+    std::fs::write(&path, body).unwrap();
+    assert_eq!(
+        takyon_lib::notices::read(&[dir.path().join("absent.json"), path]).unwrap(),
+        body
     );
 }

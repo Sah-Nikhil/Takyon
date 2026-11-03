@@ -1,6 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
+# Signature covers fixture bytes; Windows checkout must keep LF.
+scripts/fixtures/updater/payload.txt text eol=lf
+
 # Generated brand rasters — binary, never diffed or line-ending normalized.
 *.png binary
 *.ico binary

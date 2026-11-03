@@ -22,7 +22,11 @@ pub const EVENT_SEARCH: &str = "takyon://search";
 /// `rename_all_fields` is load-bearing: `rename_all` renames the variants only,
 /// so without it `turnId` reaches the frontend as `turn_id` and reads undefined.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum SearchEvent {
     /// The query has left the machine. The first thing the Palette can say
     /// truthfully, and what the outbound state is drawn from (task 7).
@@ -73,6 +77,14 @@ impl Searches {
     /// timeout — WinHTTP has no cancel that is worth the handle bookkeeping.
     pub fn cancel(&self, id: u64) {
         if let Some(flag) = self.running.lock().expect("searches mutex").remove(&id) {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Stop every search. `window::hide` calls it: nothing `!s` started outlives
+    /// the Palette, and the Turn gate refuses the answer a late one would start.
+    pub fn cancel_all(&self) {
+        for (_, flag) in self.running.lock().expect("searches mutex").drain() {
             flag.store(true, Ordering::Relaxed);
         }
     }
@@ -225,11 +237,11 @@ fn run(
     let urls: Vec<String> = hits.iter().map(|hit| hit.url.clone()).collect();
     let pages = super::fetch::pages(&urls);
     /*
-      Icons, from the pages just read and the hosts already contacted (ADR-0022).
-      Before the Turn rather than after: the Agent takes seconds, so this costs
-      nothing visible, and the source list is drawn with its icons already there
-      instead of swapping them in under the reader.
-     */
+     Icons, from the pages just read and the hosts already contacted (ADR-0022).
+     Before the Turn rather than after: the Agent takes seconds, so this costs
+     nothing visible, and the source list is drawn with its icons already there
+     instead of swapping them in under the reader.
+    */
     if let Some(dir) = data_dir(app) {
         super::favicon::cache_all(&dir, &urls, &pages);
         // The rows drew letter tiles while this ran. Tell them to ask again.
@@ -338,6 +350,16 @@ mod tests {
         let flag = searches.register(1);
         searches.cancel(1);
         assert!(flag.load(Ordering::Relaxed));
+        assert!(searches.running.lock().unwrap().is_empty());
+    }
+
+    /// Dismissal stops every search at once and forgets them all.
+    #[test]
+    fn v0_11_1_cancel_all_stops_every_search() {
+        let searches = Searches::default();
+        let (a, b) = (searches.register(1), searches.register(2));
+        searches.cancel_all();
+        assert!(a.load(Ordering::Relaxed) && b.load(Ordering::Relaxed));
         assert!(searches.running.lock().unwrap().is_empty());
     }
 }

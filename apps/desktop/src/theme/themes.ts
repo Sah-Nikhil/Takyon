@@ -72,7 +72,7 @@ export interface ThemeFamily {
 export type ThemeId = "graphite" | "vela" | "cherenkov" | "aurora" | "halide";
 
 /** Both halves of the family a fresh install gets. */
-export const DEFAULT_THEME: ThemeId = "graphite";
+export const DEFAULT_THEME: ThemeId = "vela";
 
 /**
  * The warm signal, shared by four of the five families.

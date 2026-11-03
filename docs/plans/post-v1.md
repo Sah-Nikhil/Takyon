@@ -67,6 +67,63 @@ extraction for page content.
 **Pull forward when:** extraction failure rate on real queries is high enough to
 hurt answer quality, and the failures are concentrated in JS-only pages.
 
+## Focus: Locked strictness
+A Focus session the user cannot end early or escape through Task Manager.
+
+**Why deferred:** a lock that holds against the user has to run as someone else,
+which means a `LocalSystem` service registered by the installer. That amends
+ADR-0007 and needs signing and a security review: more work than the rest of
+v0.16 combined. ADR-0036 has the design.
+
+**Pull forward when:** Strict sessions are being escaped through Task Manager
+often enough that the user asks for more, and the installer is already signed.
+
+## Focus: scheduled sessions
+Focus sessions that start themselves at set times, such as weekdays 9:00 to 12:00
+with Social blocked, without anyone opening the Palette. Shown in Settings →
+Focus as Coming soon from v0.16.
+
+**Why deferred:** it needs a scheduler running while the Palette is hidden, and
+it is a separate feature that changes nothing in v0.16's design.
+
+**Pull forward when:** v0.16 has shipped and people start the same session at
+the same time every day.
+
+## Focus: Allow list
+Block everything except what is listed. Designed in
+[`v0.16-focus.md`](./v0.16-focus.md) § Allow list, including the one schema
+choice made in advance.
+
+**Why deferred:** on Windows the always-allowed set (shell, IMEs, accessibility
+tools) has to be right or the user loses their own input method.
+
+**Pull forward when:** there is a machine with an IME to verify it on.
+
+## Focus: Agent classification of apps
+Offer to sort installed apps that no Focus category covers into categories by
+asking the user's Agent.
+
+**Why deferred:** it sends the names of installed apps to an Agent, which is an
+outbound request with no Bang behind it. That needs its own ADR against the "only
+Bangs leave the machine" promise, and an explicit button rather than anything
+automatic.
+
+## Focus: built-in categories through the updater
+New built-in Focus categories arriving between releases, inside the v1.0
+updater's existing check.
+
+**Why deferred:** there is no updater yet. A separate remote category feed was
+rejected because it would be an outbound request with no Bang. Riding on the
+updater adds no new network path.
+
+## Focus on macOS
+**Why deferred:** Focus is Windows-first, like everything else.
+[`v0.16-focus.md`](./v0.16-focus.md) § macOS lists the APIs: `NSWorkspace`
+notifications and `NSRunningApplication` for apps, AppleScript and Accessibility
+for browsers, IOKit power assertions for idle sleep.
+
+**Pull forward when:** v0.12's port is running.
+
 ## macOS support
 **Why deferred:** Windows-first is the wedge. Every platform-specific subsystem
 (file index, app enumeration, global hotkey, clipboard) needs a second

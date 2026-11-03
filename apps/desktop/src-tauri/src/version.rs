@@ -37,7 +37,8 @@ pub fn of(path: &Path) -> Option<String> {
     use objc2_foundation::{NSBundle, NSString};
 
     let bundle = NSBundle::bundleWithPath(&NSString::from_str(&path.to_string_lossy()))?;
-    let value = bundle.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?;
+    let value =
+        bundle.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?;
     let text = value.downcast::<NSString>().ok()?.to_string();
     Some(tidy(&text)).filter(|v| v != "0" && !v.is_empty())
 }
@@ -152,6 +153,9 @@ mod tests {
     /// A file with no version resource has none, and that is not an error.
     #[test]
     fn v0_3_something_without_a_version_resource_reports_none() {
-        assert_eq!(of(std::path::Path::new(r"C:\this\does\not\exist.exe")), None);
+        assert_eq!(
+            of(std::path::Path::new(r"C:\this\does\not\exist.exe")),
+            None
+        );
     }
 }

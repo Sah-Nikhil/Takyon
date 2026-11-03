@@ -1,21 +1,13 @@
 /**
  * The Takyon mark: a Cherenkov wavefront. The cone is the light a particle drags
- * behind it; the dot is the particle, which has already outrun its own wake.
+ * behind it; the dot is the particle, already past its own wake.
  *
- * The geometry is locked (docs/brand.md). The same two shapes are generated into
- * every icon in the repo by `bun run --cwd brand build`, so if this ever needs to
- * change, change `brand/geometry.js` and re-run — do not edit the path here.
+ * Geometry locked (docs/brand.md) and generated into every icon by
+ * `bun run --cwd brand build`: change `brand/geometry.js`, never the path here.
  *
- * The cone paints in `currentColor`, so the mark inherits whatever colour its
- * container has. The particle paints in `--mark-particle`, which is what makes
- * the detached dot read as the live part of the mark.
- *
- * `--mark-particle` is deliberately its own token rather than one of shadcn's.
- * In that vocabulary `--accent` is a hover *surface* — it sits around 1.1:1
- * against the background by design, so a particle painted with it disappears in
- * both light and dark. Point `--mark-particle` at `--primary` (or at a dedicated
- * brand hue) in the theme layer; the fallback to `currentColor` means the mark
- * degrades to one flat colour rather than to an invisible dot.
+ * Cone paints `currentColor`; particle paints `--mark-particle`, its own token since
+ * a hover-surface token like `--accent` sits near 1.1:1 and the dot would vanish.
+ * Falls back to `currentColor`: one flat colour, never an invisible dot.
  */
 
 type MarkProps = {
@@ -77,16 +69,10 @@ export function Mark({
 }
 
 /**
- * The mark in the Palette's input field, in the slot where a search icon would
- * normally sit.
+ * The mark in the Palette's input, in the slot a search icon would take.
  *
- * 24px against 15px text. The mark is mostly negative space: the cone spans about
- * half the box and the particle an eighth of it, so the drawn glyph is roughly
- * half the nominal size. Set at the 16-17px a search icon would take here, it
- * reads as a smudge next to the placeholder.
- *
- * `pulse` is driven by the Palette being open with nothing typed yet, which is
- * the one moment the surface has nothing to say and is waiting on the user.
+ * 24px against 15px text: the glyph is mostly negative space, so at a search icon's
+ * 16-17px it reads as a smudge. `pulse` while open with nothing typed yet.
  */
 export function InputMark({ pulse = false, className }: { pulse?: boolean; className?: string }) {
   return <Mark size={24} pulse={pulse} className={className} />;

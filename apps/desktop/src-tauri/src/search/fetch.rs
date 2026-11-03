@@ -29,7 +29,7 @@ use super::SearchError;
 /// What Takyon calls itself to a server. Its own constant: a blank agent is
 /// refused outright by a noticeable share of sites.
 #[cfg(windows)]
-const AGENT: &str = "Takyon/0.9 (+https://github.com/Sah-Nikhil)";
+const AGENT: &str = "Takyon/0.9 (V3SPER)";
 
 /// Per-request timeouts, milliseconds. Resolve, connect, send, receive.
 #[cfg(windows)]
@@ -103,7 +103,11 @@ pub fn parse_url(url: &str) -> Option<(String, String, bool)> {
     }
     Some((
         host.to_string(),
-        if path.is_empty() { "/".into() } else { path.into() },
+        if path.is_empty() {
+            "/".into()
+        } else {
+            path.into()
+        },
         secure,
     ))
 }
@@ -123,6 +127,20 @@ pub fn percent_encode(value: &str) -> String {
     out
 }
 
+/// Threads for blocking network work. Never rayon's global pool: the keystroke
+/// fan-out (`query.rs`) shares it, and Focus's sixty first-launch icon fetches
+/// held all four of a CI runner's threads until the bench hung (v0.17).
+pub fn pool() -> &'static rayon::ThreadPool {
+    static POOL: std::sync::OnceLock<rayon::ThreadPool> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .thread_name(|i| format!("takyon-net-{i}"))
+            .build()
+            .expect("network thread pool")
+    })
+}
+
 /// Read several pages at once, stopping at [`DEADLINE`].
 ///
 /// Failures are per URL and kept: a page that would not load is named in the
@@ -131,20 +149,22 @@ pub fn percent_encode(value: &str) -> String {
 pub fn pages(urls: &[String]) -> Vec<Result<String, SearchError>> {
     use rayon::prelude::*;
     let started = Instant::now();
-    urls.par_iter()
-        .map(|url| {
-            if started.elapsed() >= DEADLINE {
-                return Err(SearchError::Failed("Timed out before reading.".into()));
-            }
-            get_url(url).map(|response| {
-                if response.status == 200 {
-                    response.body
-                } else {
-                    String::new()
+    pool().install(|| {
+        urls.par_iter()
+            .map(|url| {
+                if started.elapsed() >= DEADLINE {
+                    return Err(SearchError::Failed("Timed out before reading.".into()));
                 }
+                get_url(url).map(|response| {
+                    if response.status == 200 {
+                        response.body
+                    } else {
+                        String::new()
+                    }
+                })
             })
-        })
-        .collect()
+            .collect()
+    })
 }
 
 /// A POST over HTTPS with a body. Exa's API is POST-only (ADR-0021).
@@ -158,7 +178,15 @@ pub fn post(
         .iter()
         .map(|(name, value)| format!("{name}: {value}\r\n"))
         .collect();
-    send(host, path, &joined, true, "POST", Some(body.as_bytes()), MAX_BODY)
+    send(
+        host,
+        path,
+        &joined,
+        true,
+        "POST",
+        Some(body.as_bytes()),
+        MAX_BODY,
+    )
 }
 
 /// Most bytes read from one favicon. A site serving a megabyte PNG as its icon
@@ -181,7 +209,15 @@ pub fn get_icon(url: &str) -> Result<Response, SearchError> {
 }
 
 fn plain(host: &str, path: &str) -> Result<Response, SearchError> {
-    send(host, path, "Accept: text/html\r\n", false, "GET", None, MAX_BODY)
+    send(
+        host,
+        path,
+        "Accept: text/html\r\n",
+        false,
+        "GET",
+        None,
+        MAX_BODY,
+    )
 }
 
 fn request(host: &str, path: &str, headers: &str) -> Result<Response, SearchError> {
@@ -335,7 +371,9 @@ fn send(
                     .and_then(|r| r.downcast_ref::<NSHTTPURLResponse>())
                     .map(|http| http.statusCode() as u16)
                     .unwrap_or(0);
-                let bytes = unsafe { data.as_ref() }.map(|d| d.to_vec()).unwrap_or_default();
+                let bytes = unsafe { data.as_ref() }
+                    .map(|d| d.to_vec())
+                    .unwrap_or_default();
                 Ok((status, bytes))
             };
             let _ = tx.send(outcome);
@@ -397,10 +435,7 @@ fn send(
 
 /// Read the body, stopping at `cap`.
 #[cfg(windows)]
-unsafe fn read_bytes(
-    request: *mut core::ffi::c_void,
-    cap: usize,
-) -> Result<Vec<u8>, SearchError> {
+unsafe fn read_bytes(request: *mut core::ffi::c_void, cap: usize) -> Result<Vec<u8>, SearchError> {
     let mut body: Vec<u8> = Vec::new();
     loop {
         let mut available: u32 = 0;

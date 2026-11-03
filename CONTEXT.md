@@ -175,7 +175,8 @@ _Avoid_: provider, adapter, plugin, connector, harness
 The ranking of every Agent, first to last, set in Settings. `!c` asks the first
 one switched on and works down from there, so it is a preference rather than a
 choice — the second entry is what answers when the first cannot. Always holds
-every Agent exactly once, switched-off ones included.
+every Agent exactly once, switched-off ones included. On a first run with one
+Agent installed, the probe puts that Agent first (ADR-0031).
 _Avoid_: default agent, fallback chain, priority list, provider order
 
 **Switched on**:
@@ -209,3 +210,39 @@ The empty directory a Turn runs in when the user has not chosen another one. Its
 job is to be uninteresting: an Agent pointed at a directory the user did not pick
 must not find a repo there (ADR-0017).
 _Avoid_: workspace, project, sandbox, temp dir
+
+### Focus
+
+**Focus session**:
+A stretch of time with a goal, during which the apps and websites on its Block
+list cannot be used. Has a planned length, and an end that moves with every
+Pause. Either Soft or Strict, chosen when it starts (ADR-0036). At most one runs
+at a time.
+_Avoid_: session (bare), focus mode, timer, pomodoro, block
+
+**Focus category**:
+A named, reusable set of apps and websites, such as Social or Games. Built-in
+ones ship with Takyon; the user can add to them, take things out, and reset them
+to what shipped. Custom ones belong to the user outright. Always the two words together: a Group is something else entirely.
+_Avoid_: category (bare), group, list, tag, collection
+
+**Block list**:
+What one Focus session blocks: any mix of Focus categories, individual apps and
+websites.
+_Avoid_: mode, blacklist, blocklist (that is the clipboard's capture exclusions)
+
+**Allow list**:
+The inverse of a Block list, where everything is blocked except what is listed.
+Designed, not built (`docs/plans/v0.16-focus.md`).
+_Avoid_: whitelist, allow mode
+
+**Snooze**:
+Letting one blocked app or website back for a few minutes while the rest of the
+Block list stays blocked and the clock keeps running. Soft sessions only.
+_Avoid_: pause, skip, unblock
+
+**Pause**:
+Stopping a whole Focus session for a break: nothing is blocked and the clock
+stops until the break ends. Free in a Soft session, behind friction in a Strict
+one.
+_Avoid_: snooze, suspend, break mode

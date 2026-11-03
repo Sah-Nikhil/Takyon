@@ -34,10 +34,19 @@ impl SearchProvider for DdgProvider {
         let response = fetch::get(HOST, &path, &[("Accept", "text/html")])?;
         match response.status {
             200 => parse_hits(&response.body),
-            // No key to be wrong, so every refusal is the same thing: the
-            // endpoint declining to serve this request.
-            code => Err(SearchError::Failed(format!("{LABEL} answered {code}."))),
+            code => Err(refusal(code)),
         }
+    }
+}
+
+/// What a non-200 means. No key to be wrong, so it is either a wait or a failure.
+///
+/// 202 is DuckDuckGo's own throttle: a challenge page, not results, for traffic
+/// it suspects is automated. Seen on shared CI runners; it clears on its own.
+fn refusal(code: u16) -> SearchError {
+    match code {
+        202 | 429 => SearchError::RateLimited(LABEL),
+        code => SearchError::Failed(format!("{LABEL} answered {code}.")),
     }
 }
 
@@ -99,8 +108,10 @@ fn percent_decode(value: &str) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&value[i + 1..i + 3], 16) {
+        // Hex digits sliced as bytes: `&value[..]` panics off a char boundary.
+        if bytes[i] == b'%' && i + 3 <= bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+            if let Some(byte) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
                 out.push(byte);
                 i += 3;
                 continue;
@@ -146,7 +157,10 @@ mod tests {
         let hits = parse_hits(PAGE).expect("a real page parses");
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].url, "https://www.ferrari.com/en-EN/formula1");
-        assert_eq!(hits[1].url, "https://en.wikipedia.org/wiki/Scuderia_Ferrari");
+        assert_eq!(
+            hits[1].url,
+            "https://en.wikipedia.org/wiki/Scuderia_Ferrari"
+        );
     }
 
     /// The endpoint is markup for a browser, so a row's text arrives with `<b>`
@@ -164,5 +178,29 @@ mod tests {
             hits[1].description,
             "Scuderia Ferrari is the racing division of luxury Italian auto manufacturer Ferrari & the oldest team."
         );
+    }
+
+    /// Escape at end of string still decodes. `%` before multi-byte char stays
+    /// literal, no panic: `%a` then first byte of `é` is not a str boundary.
+    #[test]
+    fn v0_9_percent_decode_handles_trailing_escape_and_multibyte_after_percent() {
+        assert_eq!(percent_decode("a%41"), "aA");
+        assert_eq!(percent_decode("%aé"), "%aé");
+        assert_eq!(percent_decode("%é"), "%é");
+    }
+
+    /// 202 is DuckDuckGo holding back traffic it suspects is automated, seen on a
+    /// GitHub runner: a wait-and-retry, not an outage and not a parser change.
+    #[test]
+    fn v0_11_a_202_or_429_is_rate_limiting_and_names_duckduckgo() {
+        assert_eq!(refusal(202), SearchError::RateLimited(LABEL));
+        assert_eq!(refusal(429), SearchError::RateLimited(LABEL));
+        assert_eq!(
+            refusal(503),
+            SearchError::Failed("DuckDuckGo answered 503.".into())
+        );
+        assert!(refusal(202)
+            .message()
+            .starts_with("DuckDuckGo is rate limiting"));
     }
 }

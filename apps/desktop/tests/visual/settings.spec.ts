@@ -458,12 +458,12 @@ test("a theme family is chosen per half", async ({ page }) => {
   await expect(dark.getByRole("radio")).toHaveCount(5);
   await expect(light.getByRole("radio")).toHaveCount(5);
 
-  await dark.getByRole("radio", { name: "Vela" }).click();
-  await expect(dark.getByRole("radio", { name: "Vela" })).toHaveAttribute(
+  await dark.getByRole("radio", { name: "Graphite" }).click();
+  await expect(dark.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
     "aria-checked",
     "true",
   );
-  await expect(light.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
+  await expect(light.getByRole("radio", { name: "Vela" })).toHaveAttribute(
     "aria-checked",
     "true",
   );
@@ -547,7 +547,175 @@ test("About names the version and the identity slug", async ({ page }) => {
   // ADR-0011: what Windows keys off is the slug, never the display name.
   await expect(page.getByText("com.v3sper.takyon")).toBeVisible();
 
-  await expect(page).toHaveScreenshot("settings-about.png");
+  // Version masked: asserted exactly above, and a bump failed this baseline by 189px.
+  await expect(page).toHaveScreenshot("settings-about.png", {
+    mask: [page.getByText(`Version ${APP_VERSION}`)],
+  });
+});
+
+/** Pick what the next update check finds (`api.mock.ts`). */
+const updateScenario = (page: import("@playwright/test").Page, scenario: string) =>
+  page.evaluate((s) => {
+    (
+      window as unknown as { __takyon_mock: { setUpdateScenario: (s: string) => void } }
+    ).__takyon_mock.setUpdateScenario(s);
+  }, scenario);
+
+const updateChecks = (page: import("@playwright/test").Page) =>
+  page.evaluate(() =>
+    (
+      window as unknown as { __takyon_mock: { updateCheckCount: () => number } }
+    ).__takyon_mock.updateCheckCount(),
+  );
+
+/**
+ * ADR-0040: opening About makes no request. The button is the only way to the
+ * feed, and an available update shows its notes before anything downloads.
+ */
+test("opening About makes no check; the button checks, then offers the install", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await expect(page.getByText("Published by V3SPER")).toBeVisible();
+  await expect(page.getByText("Look for a new version now.")).toBeVisible();
+  expect(await updateChecks(page)).toBe(0);
+
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText("Takyon 1.0.0 is available.", { exact: false })).toBeVisible();
+  await expect(page.getByText("What's new in 1.0.0")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Install and restart" })).toBeEnabled();
+  expect(await updateChecks(page)).toBe(1);
+
+  await expect(page).toHaveScreenshot("settings-about-update.png", {
+    mask: [page.getByText(`Version ${APP_VERSION}`)],
+  });
+
+  // A real install exits into the installer; the row holds there with the button off.
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(page.getByText("Installing. Takyon closes and opens again by itself.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Install and restart" })).toBeDisabled();
+});
+
+/** The daily check is on unless switched off, and the switch applies on change. */
+test("the daily update check is on by default and switches off", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  const daily = page.getByRole("switch", { name: "Check for updates automatically" });
+  await expect(daily).toHaveAttribute("aria-checked", "true");
+  await daily.click();
+  await expect(daily).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("status")).toHaveText("Applied");
+});
+
+test("an update check says plainly when there is nothing newer", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "current");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText(`Takyon ${APP_VERSION} is the latest version.`)).toBeVisible();
+});
+
+/** Every local and bench build: no feed in its config, so it says so instead of failing. */
+test("a build with no update feed says it cannot update itself", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "unconfigured");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText("This build can't update itself.", { exact: false })).toBeVisible();
+});
+
+test("an unreachable feed is an error beside the button, and retrying works", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "offline");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByRole("alert")).toContainText("Couldn't reach the update feed");
+
+  await updateScenario(page, "current");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+/** A bad signature must read as "nothing ran", and leave Install there to retry. */
+test("a download that fails its signature check installs nothing", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await updateScenario(page, "badSignature");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(page.getByRole("alert")).toContainText("Nothing was installed");
+  await expect(page.getByRole("button", { name: "Install and restart" })).toBeEnabled();
+});
+
+const licenceLoads = (page: import("@playwright/test").Page) =>
+  page.evaluate(() =>
+    (
+      window as unknown as { __takyon_mock: { licenceLoadCount: () => number } }
+    ).__takyon_mock.licenceLoadCount(),
+  );
+
+/**
+ * About / Third-party licences: read only when opened, searchable by name and
+ * by licence, each row opening onto its texts. Fixture rows, not the real 356.
+ */
+test("the licence list loads only when opened, then searches and expands", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await expect(page.getByText("Third-party licences")).toBeVisible();
+  expect(await licenceLoads(page)).toBe(0);
+
+  await page.getByRole("button", { name: "View" }).click();
+  await expect(page.getByRole("button", { name: "About", exact: true }).last()).toBeVisible();
+  await expect(page.getByText("6 components")).toBeVisible();
+  // StrictMode mounts effects twice in dev; the claim is zero before opening.
+  expect(await licenceLoads(page)).toBeGreaterThan(0);
+  await expect(page).toHaveScreenshot("settings-licences.png");
+
+  const search = page.getByLabel("Search components and licences");
+  // By licence name, not only the SPDX id the row shows.
+  await search.fill("apache license");
+  await expect(page.getByText("3 of 6")).toBeVisible();
+  await search.fill("react");
+  await expect(page.getByText("2 of 6")).toBeVisible();
+  await search.fill("nothing-ships-this");
+  await expect(page.getByText("No component matches")).toBeVisible();
+  await search.press("Escape");
+  await expect(page.getByText("6 components")).toBeVisible();
+
+  const serde = page.getByRole("button", { name: /^serde/ });
+  await serde.click();
+  await expect(serde).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("MIT License (MIT) OR Apache License 2.0 (Apache-2.0)")).toBeVisible();
+  await expect(page.getByText("TERMS AND CONDITIONS FOR USE", { exact: false })).toBeVisible();
+  await expect(page).toHaveScreenshot("settings-licences-open.png");
+
+  // A package shipping no text says the standard one stands in.
+  await page.getByRole("button", { name: /^windows-link/ }).click();
+  await expect(page.getByText("ships no licence text", { exact: false })).toBeVisible();
+
+  // The crumb leads back to About's own view.
+  await page.locator("main h1").getByRole("button", { name: "About" }).click();
+  await expect(page.getByText("Published by V3SPER")).toBeVisible();
+});
+
+test("settings search finds the licence list by the American spelling", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByLabel("Search settings").fill("license");
+  await page.getByRole("button", { name: /Third-party licences/ }).click();
+  await expect(page.locator("#setting-licences")).toBeVisible();
+  expect(await licenceLoads(page)).toBe(0);
+});
+
+test("a missing licence list says so in place of the rows", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.evaluate(() =>
+    (
+      window as unknown as { __takyon_mock: { failLicences: (m: string | null) => void } }
+    ).__takyon_mock.failLicences("The licence list is missing from this install. Reinstalling Takyon restores it."),
+  );
+  await page.getByRole("button", { name: "About" }).click();
+  await page.getByRole("button", { name: "View" }).click();
+  await expect(page.getByRole("alert")).toContainText("Reinstalling Takyon restores it.");
+  await expect(page.getByLabel("Search components and licences")).toBeDisabled();
 });
 
 /**
@@ -667,4 +835,12 @@ test("the same switch works once the write is allowed again", async ({ page }) =
   await expect(startup).toHaveAttribute("aria-checked", "true");
   // The stale error must clear, or it reads as describing the write that worked.
   await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+/** v0.14: images make history heavy, so its size is a number on the page. */
+test("Clipboard History shows what history occupies on disk", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Clipboard History" }).click();
+  await expect(page.getByText("On disk")).toBeVisible();
+  await expect(page.getByText("6.0 MB")).toBeVisible();
 });

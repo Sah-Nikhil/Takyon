@@ -137,10 +137,8 @@ pub fn discover_in(dirs: &[PathBuf]) -> Vec<PathExe> {
 
 /// Drop `PATH` directories already walked, comparing case-insensitively.
 ///
-/// Not a micro-optimisation: this machine lists `C:\Windows\system32` and
-/// `C:\WINDOWS\system32` and repeats the whole Windows set four times, so the walk
-/// read 627 files four times over. Order is preserved, because
-/// first-occurrence-wins is what makes the result match the shell.
+/// This machine lists `system32` in two casings and the Windows set four times: 627
+/// files read four times over. Order kept, first occurrence wins, as in the shell.
 fn dedupe_dirs(dirs: &[PathBuf]) -> Vec<&PathBuf> {
     let mut seen = HashSet::new();
     dirs.iter().filter(|d| seen.insert(dir_key(d))).collect()
@@ -289,7 +287,9 @@ mod tests {
             }
         }
         // Case-insensitive on the name and the directory.
-        assert!(is_windows_app_duplicate(Path::new(r"c:\windows\system32\CALC.EXE")));
+        assert!(is_windows_app_duplicate(Path::new(
+            r"c:\windows\system32\CALC.EXE"
+        )));
     }
 
     /// `explorer.exe` is File Explorer's binary, and File Explorer is already a
@@ -314,7 +314,9 @@ mod tests {
         // `charmap` and `msinfo32` were checked by running them: both stay up, so
         // both are real. `bash`, `wsl` and `wslconfig` share a name with a Store
         // alias but are the launchers people actually type.
-        for exe in ["charmap", "msinfo32", "cmd", "regedit", "where", "wsl", "bash"] {
+        for exe in [
+            "charmap", "msinfo32", "cmd", "regedit", "where", "wsl", "bash",
+        ] {
             let p = format!(r"C:\Windows\System32\{exe}.exe");
             assert!(!is_windows_app_duplicate(Path::new(&p)), "{exe}");
         }
@@ -345,7 +347,10 @@ mod tests {
         let unique = dedupe_dirs(&dirs);
         assert_eq!(unique.len(), 3, "system32, Windows, bin");
         // Order survives: first-occurrence-wins is what matches the shell.
-        assert!(unique[0].to_string_lossy().to_lowercase().ends_with("system32"));
+        assert!(unique[0]
+            .to_string_lossy()
+            .to_lowercase()
+            .ends_with("system32"));
         assert_eq!(unique[2], &PathBuf::from(r"C:\bin"));
     }
 

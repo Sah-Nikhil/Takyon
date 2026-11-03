@@ -43,7 +43,31 @@ export interface ShowPayload {
    * or inspecting the Palette in devtools destroys it every time.
    */
   noFocusSteal: boolean;
+  /** The update row for the empty line, read from memory in Rust (ADR-0040). */
+  notice?: UpdateNotice;
 }
+
+/**
+ * `update::Notice`: the Palette's update row. `available` installs on Enter;
+ * `whatsNew` opens the installed version's release page.
+ */
+export type UpdateNotice =
+  | { kind: "available"; version: string }
+  | { kind: "whatsNew"; version: string; url: string };
+
+/**
+ * `update::UpdateCheck`: what an update check found (ADR-0040).
+ * `unconfigured` is every build `release.yml` did not sign: no feed, no request.
+ */
+export type UpdateCheck =
+  | { state: "unconfigured" }
+  | { state: "current"; version: string }
+  | { state: "available"; version: string; notes?: string };
+
+/** `update::UpdateProgress`: Install's progress. `total` is absent when unknown. */
+export type UpdateProgress =
+  | { phase: "downloading"; downloaded: number; total?: number }
+  | { phase: "installing" };
 
 /** Whether the global hotkey is live, and if not, why not. */
 export interface HotkeyStatus {
@@ -296,7 +320,7 @@ export type ClipRetention = "forever" | "6-months" | "1-month" | "1-week" | "1-d
  * Not a second window: a third WebView2 would cost the login budget and a large
  * share of the 150 MB ceiling. The warm Palette grows, and Escape goes back.
  */
-export type ViewKind = "clipboard-history" | "ask" | "web";
+export type ViewKind = "clipboard-history" | "ask" | "web" | "focus";
 
 /**
  * How tall a full-window View is, logical pixels. Mirrors `VIEW_HEIGHT` in
@@ -309,13 +333,13 @@ export interface ClipRow {
   id: number;
   /** Unix seconds. The surface groups by day from this. */
   createdAt: number;
-  kind: "text";
+  kind: "text" | "image";
   /**
    * The executable that owned the clipboard, or the foreground window when
    * Windows reports no owner. Plaintext, and a known metadata leak (ADR-0008).
    */
   sourceExe?: string;
-  /** Characters of the full content, not of the preview. */
+  /** Characters of the full text, or bytes of the stored PNG for an image. */
   len: number;
   /**
    * One line, capped at 160 characters. **The full content never travels with a
@@ -323,6 +347,9 @@ export interface ClipRow {
    * the webview.
    */
   preview: string;
+  /** Pixel size, images only (v0.14). */
+  width?: number;
+  height?: number;
 }
 
 /** A single actionable row in the Palette (CONTEXT.md: Entry, never "result"). */
@@ -351,6 +378,11 @@ export interface Entry {
    * row: `version.rs` explains why it is not read for everything.
    */
   version?: string;
+  /**
+   * Labels under a calculation card's halves, in place of `Expression` and
+   * `Result`. A time zone answer names both zones in words (v0.17).
+   */
+  labels?: [string, string];
 }
 
 /** One row of the `Ctrl+K` action menu. */
@@ -377,10 +409,8 @@ export interface QueryResult {
   /**
    * Reserve one row in the window for a status line.
    *
-   * **Not "the application walk is running".** It meant both until v0.9, and
-   * `!s` inherited the second meaning: two rows rendered in a window sized for
-   * one, so the list scrolled and the scrollbar covered the message. The walk
-   * reports in Settings and the tray now.
+   * **Not "the application walk is running".** Both meanings until v0.9 put two rows
+   * in a one-row window for `!s`; the walk reports in Settings and the tray now.
    */
   statusRow: boolean;
   /**
@@ -394,6 +424,8 @@ export interface QueryResult {
    * `ask`: the answer streams, so there is nothing to rank.
    */
   web?: Web;
+  /** `!f` with the Bang switched on (v0.16): the line after the Bang. */
+  focus?: { line: string };
 }
 
 /** The `!s` Mode's state for one keystroke. */
@@ -625,12 +657,37 @@ export interface AgentSettings {
   efforts: Partial<Record<AgentKind, string>>;
 }
 
+/** Why a Turn failed. Rust's `TurnFailure`; the copy is `turnFailureCopy`. */
+export type TurnFailureReason =
+  | "notFound"
+  | "launcherBroken"
+  | "spawnFailed"
+  | "agentError"
+  | "exited"
+  | "silent";
+
+/**
+ * A failed Turn's facts, flattened beside `kind`. `agent` is the display label.
+ * `binary` on notFound (the command) and launcherBroken (the shim's path).
+ */
+export interface TurnFailure {
+  reason: TurnFailureReason;
+  agent: string;
+  binary?: string;
+  /** Exit code, on `exited`. Absent when the process was killed. */
+  code?: number;
+  /** stderr's tail or the `io::Error`, capped at 2,000 characters. */
+  detail?: string;
+  /** The Agent's own words, on `agentError`. */
+  message?: string;
+}
+
 /** One thing that happened during a Turn, as Rust tags it. */
 export type TurnEvent =
   | { kind: "started"; session?: string; model?: string }
   | { kind: "text"; delta: string }
   | { kind: "done"; session?: string }
-  | { kind: "failed"; message: string };
+  | ({ kind: "failed" } & TurnFailure);
 
 /** A `TurnEvent` with the Turn it belongs to. Rust flattens the two together. */
 export type TurnMessage = TurnEvent & { turnId: number };
@@ -684,4 +741,180 @@ export interface WebSettings {
   hint?: string;
   /** Where a key comes from. In the response so provider and page move together. */
   signupUrl: string;
+}
+
+/* ------------------------------------------------------------------ Focus */
+
+/** `focus/ipc.rs`. Every Focus change, plus a block and the session ending. */
+export const EVENT_FOCUS = "takyon://focus";
+
+/** What one Focus session blocks. Keys: `site:`, `exe:`, `package:`, `entry:`. */
+export interface BlockList {
+  /** Focus category ids: built-in (`social`) or custom (`custom:3`). */
+  categories: string[];
+  items: string[];
+}
+
+/** `service::View`: the running Focus session, or `running: false`. */
+export interface FocusView {
+  running: boolean;
+  goal: string;
+  strict: boolean;
+  remainingMs: number;
+  /** Wall-clock ms. The frontend counts down from this itself. */
+  endsAt: number;
+  paused: boolean;
+  breakEndsAt?: number | null;
+  /** Keys Focus will not touch: shell, Takyon itself. */
+  refused: string[];
+  /** Strict countdown left once the goal is retyped; absent before. */
+  frictionMs?: number | null;
+}
+
+export type FocusSignal =
+  | { kind: "view"; view: FocusView }
+  | { kind: "blocked"; key: string; label: string; snoozable: boolean }
+  | { kind: "ended"; outcome: "expired" | "completed" }
+  | { kind: "bar"; opacity: number };
+
+export type FocusError =
+  | { kind: "alreadyRunning" }
+  | { kind: "notRunning" }
+  | { kind: "nothingToBlock" }
+  | { kind: "needsFriction" }
+  | { kind: "notAllowed" }
+  | { kind: "unsupported" }
+  | { kind: "duration"; reason: string }
+  | { kind: "storage"; reason: string };
+
+/** `rules::Refusal`: what the start form says Focus cannot do, before it starts. */
+export type FocusRefusal =
+  | { kind: "protected"; key: string }
+  | { kind: "elevated"; key: string; name: string }
+  | { kind: "browser"; name: string; elevated: boolean };
+
+export interface FocusItem {
+  key: string;
+  label: string;
+}
+
+export interface FocusCategory {
+  /** `social` built-in, `custom:3` custom, `""` when not yet saved. */
+  id: string;
+  name: string;
+  /** Phosphor icon name. */
+  icon: string;
+  /** `games`: plus every installed game, resolved at session start. */
+  dynamic?: string | null;
+  copiedFrom?: string | null;
+  items: FocusItem[];
+  /** Built-ins: keys the user added, also in `items`. */
+  added?: string[];
+  /** Built-ins: shipped items or detected games the user took out. */
+  removed?: FocusItem[];
+}
+
+/** `members::Member`: one thing a Focus category holds, on this machine. */
+export interface FocusMember {
+  key: string;
+  label: string;
+  kind: "site" | "app";
+  /** Apps only: found on this machine. */
+  installed: boolean;
+  icon?: string | null;
+  /** Built-ins: the user put it there. */
+  added: boolean;
+  /** Games: found through a launcher rather than listed. */
+  detected: boolean;
+}
+
+export interface FocusCategories {
+  builtins: FocusCategory[];
+  custom: FocusCategory[];
+}
+
+export interface FocusSettings {
+  /** 0 = No Snooze. */
+  snoozeMinutes: number;
+  restoreApps: boolean;
+  surface: "bar" | "tray";
+  bang: boolean;
+  hurdleShutdown: "strict" | "always" | "never";
+  hurdleIdle: "strict" | "always" | "never";
+  /** Edge the floating bar opens on, centred, unless it was dragged. */
+  barPlace: "bottom" | "top";
+  /** Floating bar panel opacity, percent, 30 to 100. */
+  barOpacity: number;
+}
+
+/** `!f` line split into goal and a trailing duration. */
+export interface FocusBangLine {
+  goal: string;
+  lengthMs?: number | null;
+  error?: string | null;
+}
+
+/** Colours the block page is painted in: the live theme half. */
+export interface PageTheme {
+  plate: string;
+  fg: string;
+  accent: string;
+}
+
+export interface FocusStartRequest {
+  goal: string;
+  lengthMs: number;
+  strict: boolean;
+  list: BlockList;
+  theme?: PageTheme;
+}
+
+/** `stats::Stats`: Focus over a range of local days. */
+export interface FocusStats {
+  focusedMs: number;
+  sessions: number;
+  fullLength: number;
+  endedEarly: number;
+  strict: number;
+  blocks: number;
+  snoozes: number;
+  /** One per day in the range, oldest first, zeros included. */
+  days: { start: number; focusedMs: number; sessions: number; blocks: number }[];
+  /** Focus category ids by focused time with them blocked, most first. */
+  categories: { id: string; focusedMs: number }[];
+  /** Block list keys by times blocked, most first, at most ten. */
+  blocked: { key: string; count: number }[];
+}
+
+/**
+ * `THIRD_PARTY_NOTICES.json`: About's licence list, generated beside the
+ * notices file by `scripts/third-party-notices.ts` from the same components.
+ * Rust passes the file through unread (`notices.rs`).
+ */
+export interface ThirdPartyLicences {
+  /** Crates first, then npm, each by name then version. */
+  components: LicenceComponent[];
+  /** Deduplicated: several components point at one text by index. */
+  texts: LicenceText[];
+}
+
+export interface LicenceComponent {
+  kind: "crate" | "npm";
+  name: string;
+  version: string;
+  /** SPDX expression as the package declares it. `null`: none declared. */
+  licence: string | null;
+  /** The expression with SPDX names expanded, e.g. `MIT License (MIT)`. */
+  licenceName: string | null;
+  repository: string | null;
+  /** Indices into `texts`. */
+  texts: number[];
+  /** True when the package ships no text and `texts` are canonical SPDX copies. */
+  canonical: boolean;
+}
+
+export interface LicenceText {
+  /** File name, e.g. `LICENSE-MIT`, or the SPDX id for a canonical text. */
+  name: string;
+  text: string;
 }

@@ -14,15 +14,15 @@
   a near-white through sRGB desaturates in the middle, which is exactly the milky
   failure those two rules exist to prevent.
 
-  The values below are Graphite's dark half, and they are only a fallback: they
+  The values below are Vela's dark half, and they are only a fallback: they
   are what a window paints in the frame before `theme/apply.ts` runs, and what
   the visual suite gets if it never runs at all.
 */
 @theme {
-  --color-plate: oklch(0.1905 0.0045 286);
-  --color-fg: oklch(0.966 0.0025 286);
+  --color-plate: oklch(0.196 0.0255 293);
+  --color-fg: oklch(0.967 0.006 293);
   /* The cool signal: selection ring, tick, "Applied", the mark's particle. */
-  --color-accent: oklch(0.762 0.118 251);
+  --color-accent: oklch(0.745 0.142 297);
   /*
     The warm counterpoint (`docs/brand.md`: cool means contained, warm means it
     left). Through v0.9 this was Tailwind's `amber-*` spelled at each of eleven
@@ -37,8 +37,8 @@
   */
   --color-warning: oklch(0.805 0.138 72);
   /* Stated by the theme, not derived: the surface order inverts between halves. */
-  --color-card: oklch(0.225 0.0055 286);
-  --color-sidebar: oklch(0.2075 0.005 286);
+  --color-card: oklch(0.232 0.029 293);
+  --color-sidebar: oklch(0.214 0.027 293);
 
   --color-control: color-mix(in oklab, var(--color-fg) 8%, transparent);
   --color-row-hover: color-mix(in oklab, var(--color-fg) 5%, transparent);
@@ -69,6 +69,14 @@
     appearance below.
   */
   --color-scrim: rgb(0 0 0 / 0.45);
+
+  /*
+    Agent health dots, the build's one traffic light. Neither derived nor
+    theme-owned: ready must read green and failed red in every family, and no
+    theme role is green. Tailwind's emerald-400 and red-400, unchanged.
+  */
+  --color-health-ready: oklch(76.5% 0.177 163.223);
+  --color-health-error: oklch(70.4% 0.191 22.216);
 
   /*
     The Palette's shadow, for the same reason: a near-black panel over a bright
@@ -344,4 +352,25 @@ input {
 [data-reduce-motion] *::after {
   animation: none !important;
   transition: none !important;
+}
+
+/* The Focus bar's block pulse (v0.16): a ring of accent that fades. */
+/* The Focus bar's long goal on hover: one copy's width plus the gap, then repeat. */
+@keyframes focus-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--marquee-shift));
+  }
+}
+
+/* Inset: the bar's panel fills its window, so an outward ring would be clipped. */
+@keyframes focus-pulse {
+  from {
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-accent) 70%, transparent);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-accent) 0%, transparent);
+  }
 }

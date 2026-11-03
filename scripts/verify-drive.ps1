@@ -14,7 +14,8 @@ that call returns. Steps needing a person are named at the end of the run.
 #>
 [CmdletBinding()]
 param(
-    [string]$Exe = "apps\desktop\src-tauri\target\release\takyon.exe",
+    # Empty: release build in cargo's target dir, which CARGO_TARGET_DIR can move.
+    [string]$Exe,
     [string]$OutDir = "$env:TEMP\takyon-verify",
     # Free chord. Alt+Space is contested by Raycast and PowerToys Run on most
     # machines this is developed on, and a failed registration adds the amber
@@ -23,6 +24,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Exe) { $Exe = Join-Path (& "$PSScriptRoot\lib\cargo-target-dir.ps1") "release\takyon.exe" }
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type -Namespace Takyon -Name Drive -MemberDefinition @'
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();

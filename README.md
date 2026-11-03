@@ -10,30 +10,28 @@ character to the front of the line and the same box reaches further: `!s` answer
 a question from the live web with every source cited, and `!c` hands it to the AI
 CLI you are already signed in to.
 
-Windows only, built on Tauri 2. Current release is **0.10.0**.
+Windows only, built on Tauri 2. Current release is **0.12.3**.
 
-![The Palette answering a query, with applications, a settings page and a recent file in one list](apps/desktop/tests/visual/__screenshots__/palette-entries.png)
+
+
+https://github.com/user-attachments/assets/b6913eb0-5b1e-408c-b6a9-f8ffae56e96b
+
+
+<!-- *Thirty-three seconds: the hotkey, an app, a calculation, clipboard history, the file index, a Windows setting, `!c` handing a line to Claude Code, and `!s` reading four pages and citing them.* -->
 
 ---
 
 ## Contents
-
-- [What it does](#what-it-does)
-- [Install](#install)
-- [Using it](#using-it)
-- [Bangs](#bangs)
-- [Connecting your AI](#connecting-your-ai)
-- [Connecting web search](#connecting-web-search)
-- [Settings](#settings)
-- [How it works](#how-it-works)
-- [Performance](#performance)
-- [Development](#development)
-- [Testing](#testing)
-- [Documentation map](#documentation-map)
-- [Status and known limits](#status-and-known-limits)
+|  |  |  |
+| ----------------------- | ------------------ | --------------------- |
+| [What it does](#what-it-does)           | [Install](#install)            | [Using it](#using-it)              |
+| [Bangs](#bangs)                   | [Connecting your AI](#connecting-your-ai) | [Connecting web search](#connecting-web-search) |
+| [Settings](#settings)               | [How it works](#how-it-works)       | [Performance](#performance)           |
+| [Development](#development)            | [Testing](#testing)           | [Documentation map](#documentation-map)     |
+|  | [Status and known limits](#status-and-known-limits)                   |                       |
 
 ---
-
+<!-- ![The settings page](apps/desktop/tests/visual/__screenshots__/settings-about.png) -->
 ## What it does
 
 **Launches things.** Start menu shortcuts, Store and UWP apps, executables on
@@ -76,7 +74,7 @@ Download `Takyon_{version}_x64-setup.exe` from the release you want and run it.
 Verify it first if you like: the SHA-256 sits beside it in `SHA256SUMS.txt`.
 
 ```powershell
-Get-FileHash .\Takyon_0.9.5_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Takyon_0.11.1_x64-setup.exe -Algorithm SHA256
 ```
 
 The installer is about 2.5 MB. Takyon starts with Windows by default, which you
@@ -128,7 +126,7 @@ Examples:
 
 ```
 chrome                          launch Chrome
-2+2*3                           14, in the first row
+2+2*3                           8, in the first row
 bluetooth                       the Windows Bluetooth page
 !e invoice                      find a file called invoice
 !v                              browse everything you have copied
@@ -143,7 +141,8 @@ bluetooth                       the Windows Bluetooth page
 Two things worth knowing about the outbound bangs. Nothing is sent while you
 type, only when you press Enter, so there is no debounce because there is no
 request to debounce. And the header of an outbound answer turns amber and says
-so, which is the only place colour appears in the Palette.
+so. Warm means it left the machine, and nothing on the Bangless path is
+ever amber.
 
 On `!s`, pressing Enter on the query row opens your own browser with the query
 instead, using that browser's default search engine, for when you would rather
@@ -216,7 +215,8 @@ own search box.
 
 | Page | What is there |
 | --- | --- |
-| General | Start at login, appearance, interface size, turn off animations |
+| General | Start at login |
+| Appearance | A theme family for each half, follow system appearance, window mode, interface size, turn off animations |
 | Launcher | Which monitor the Palette opens on, the tray icon, whether recent files are included |
 | Keyboard | The global hotkey |
 | Applications | The application walk, its status, and your aliases |
@@ -232,7 +232,7 @@ own search box.
 
 ![Settings, Appearance: five theme families, each with a light and a dark half](apps/desktop/tests/visual/__screenshots__/settings-appearance.png)
 
-![The Palette on a light theme](apps/desktop/tests/visual/__screenshots__/palette-light.png)
+![Set your own aliases to navigate even quicker](apps/desktop/tests/visual/__screenshots__/settings-aliases.png)
 
 An alias makes a name reach an app it would not otherwise match, and it applies
 without waiting for the next walk.
@@ -419,8 +419,8 @@ Four layers, because a launcher cannot be checked by one.
 | Visual regression | The React interface in a plain Vite server with the bridge mocked, driven by Playwright | `bun run test:visual` |
 | Manual scripts | Global hotkey, focus loss, tray, multi monitor, elevated windows | `docs/verify/` |
 
-Current counts: 565 Rust unit, 53 Rust integration across 7 binaries, 60
-TypeScript, 108 Playwright screenshots.
+Current counts: 633 Rust unit, 88 Rust integration across 9 binaries, 98
+TypeScript, and 48 screenshot baselines across 119 Playwright tests.
 
 The screenshot budget is a flat 150 pixels, not a percentage. The percentage it
 replaced allowed 5,702 pixels on this window, which was enough to pass a wrong
@@ -448,9 +448,9 @@ version number and two missing rows for two releases.
 
 ## Status and known limits
 
-Ten phases are built and shipped: the warm shell, applications, ranking,
+Eleven phases are built and shipped: the warm shell, applications, ranking,
 calculator, clipboard history, settings, file search, agents, web search,
-appearance.
+appearance, PATH hydration.
 
 - **The Palette will not appear over elevated windows.** That needs a signed
   UIAccess helper. The helper, its manifest and the protocol all exist and work
@@ -460,7 +460,11 @@ appearance.
 - **The Windows-key binding has not been driven by hand.** It ships off by
   default and every claim about it is reasoned rather than observed —
   `docs/verify/v0.10.md` section E, which nothing can automate.
-- **No updater.** Releases carry no `latest.json` or signature yet.
+- **Updates.** Takyon checks GitHub Releases once a day and shows a new version
+  on the Palette's empty line; Enter installs the signed installer. The check
+  carries no identifier and turns off in Settings › About. The first release
+  that carries the updater still has to be installed by hand, and
+  `docs/verify/updater.md` has not been run.
 - **Windows only.** The frontend is portable and the workspace was split for a
   second target, but 7,410 lines of the Rust core call Win32 and nothing carries
   a macOS arm. `docs/plans/v0.12-macos.md` sizes the port.
@@ -470,5 +474,23 @@ appearance.
 
 ## Licence
 
-Undecided. Open source against proprietary is still an open question, which is
-why the project avoids GPL dependencies.
+Takyon is **source-available, not open source.** Its code and documentation
+are licensed under [Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+(`CC-BY-NC-SA-4.0`). The full text is in [LICENSE](./LICENSE).
+
+- **You may** use, study and modify Takyon for any noncommercial purpose, and
+  share it or your changes for free.
+- **You must** credit Takyon, say what you changed, and share anything based
+  on it under the same licence.
+- **You may not** sell Takyon, charge for copies, or use any part of its code
+  in a commercial product or service.
+- **Using it at work is fine.** [NOTICE](./NOTICE) adds a permission for any
+  individual to run Takyon as their own productivity tool, including in their
+  job.
+
+The name and logo are not covered by the licence; see
+[TRADEMARK.md](./TRADEMARK.md). Contributions are welcome under the terms in
+[CONTRIBUTING.md](./CONTRIBUTING.md). Third-party components keep their own
+licences, and their notices ship with every installer. Why this licence, and
+not an open source one: [ADR-0039](./docs/adr/0039-source-available-under-cc-by-nc-sa.md).

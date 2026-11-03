@@ -3,7 +3,10 @@
 A local-first keyboard launcher for Windows — a Spotlight/Raycast alternative built
 on Tauri, designed so that a Bangless query never touches the network and the
 Palette appears in tens of milliseconds. Bangs (`!e`, `!s`, `!c`) are the only way
-anything leaves the machine.
+anything leaves the machine, with two stated exceptions: Focus fetches site icons
+once after first launch and when a site is added (**ADR-0037**), and
+an update check reaches GitHub Releases once a day (on by default, off switch
+in About) and when an update button is pressed (**ADR-0040**).
 
 **Status: v0.1 through v0.11 are built, and v0.12 is written but unrun.** The
 Palette is warm, the hotkey works,
@@ -19,9 +22,10 @@ an optional second binding.
 
 **CI runs.** The remote is `github.com/Sah-Nikhil/Takyon`, and `ci.yml`
 (typecheck, lint, every test layer) has executed — v0.10.1 merged through a pull
-request. Two jobs are on `windows-latest` deliberately: the product is Windows,
-and the screenshot baselines were rasterised by Windows. A third, `macos`, is a
-compile gate only.
+request. The Rust, visual, live web search and bench jobs are on `windows-latest`
+deliberately: the product is Windows, and the screenshot baselines were
+rasterised by Windows. `macos` is a compile gate only. CI also runs daily, for
+what breaks with no commit, and release.yml waits on every job.
 
 **Two verification scripts are unrun, and they are the two newest.**
 `docs/verify/v0.10.md` section E has never been executed by anyone — the
@@ -67,7 +71,7 @@ ADR-0007 on macOS), **ADR-0028** (agent app + non-activating `NSPanel`),
 clipboard, amending ADR-0006 and ADR-0008). Target is **macOS 13 Ventura, Apple
 Silicon only**.
 
-**Four phases sit between v0.10.1 and v1.0. Two are built.**
+**Seven phases sit between v0.10.1 and v1.0. v0.11 is built; v0.12 is written.**
 
 **v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
 (unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
@@ -82,12 +86,49 @@ scripts and now drives `bun run bench` on both platforms), uninstall, and the
 Cmd+Space takeover mechanism. Its § Hand-off table carries a state column saying
 which of the 15 units are open.
 
-Still ahead: `v0.13` the OS index, `v0.14` clipboard kinds. Each has a plan doc
-with a task checklist.
+Still ahead: `v0.13` the OS index, and the unfinished parts of `v0.14` clipboard
+kinds. Each has a plan doc with a task checklist.
 
-Distribution is undecided — open source vs proprietary is an open question, so
-**avoid GPL dependencies** until it is settled (this already ruled out one option;
-see ADR-0005).
+**v0.11.1 Agent spawning is in, and one Agent phase is still planned.**
+v0.11.1 fixed `!c` and `!s` for npm-installed Agents: the prompt now travels on
+stdin (**ADR-0032**), because a `.cmd` shim refuses a line break in argv with
+`batch file arguments are invalid`, and every Agent process runs in a Job Object
+that dies with the Palette (**ADR-0033**). Proven here against forwarding `.cmd`
+shims; the real npm shape still only exists on the laptop that reported it, so
+`docs/verify/v0.11.1.md` section A is unrun. **v0.15**
+(`docs/plans/v0.15-agent-streaming.md`) moves each Agent to a live two-way
+process, t3code's chat path, for token streaming and a permission UI,
+superseding v0.8's fresh process per Turn.
+
+**v0.16 Focus is built; its verify script is unrun** (`docs/plans/v0.16-focus.md`):
+Raycast-style Focus sessions that block apps and websites for a set time. Apps
+are quit and websites are caught through UI Automation on the address bar, with
+no network filtering (**ADR-0035**). Soft and Strict levels; Locked needs a
+service and is deferred (**ADR-0036**). Code under `src-tauri/src/focus/` and
+`src/focus/`. The shutdown hurdle, sleep handling and the bar's focus behaviour
+are tested on real Win32 windows (`tests/focus_power.rs`, `tests/focus_bar.rs`);
+`docs/tbd/v0.16.md` §1 lists what only a hand run proves. The live browser test
+(`--test focus_browser -- --ignored`) waits for 20 s of no input and stops if
+anyone touches the machine, so it is safe to start but only runs when idle.
+
+**v0.17 time zones are built; the verify script is unrun**
+(`docs/plans/v0.17-time-zones.md`): `12 pm utc`, `3:30pm pst to ist` and
+`time in tokyo` answer in the calculator, offline, through `jiff`'s bundled
+tzdb (**ADR-0038**; staleness watched by TBC-0016). The Calc card names both
+zones in words through `Entry.labels`. A bare time or zone never answers.
+
+**v0.14 image clips are built on Windows; only the verify script's driver has
+run** (`docs/verify/v0.14.md`); the hand-run steps have not. macOS image capture is not
+built; v0.12 row 6's text clipboard and paste-back are written. Files and link classification are also open
+(`docs/tbd/v0.14.md`).
+
+**Licence: source-available under `CC-BY-NC-SA-4.0` (ADR-0039)**, not open
+source; never call it open source in copy or docs. `LICENSE` is the verbatim CC
+text and is never edited; the work-use permission lives in `NOTICE`, the name
+and logo in `TRADEMARK.md`, contribution terms in `CONTRIBUTING.md`. **GPL
+dependencies stay banned**: GPL forbids added restrictions, so it cannot ship in
+a noncommercial binary. `bun run check:licences` enforces it over every crate and
+JS package, LGPL and CC-SA/NC included, and runs in `lint` and CI.
 
 ## Communication
 **Always use the `/homonid` skill in this repo at max setting.** Invoke it at the start of every
@@ -111,9 +152,8 @@ tradeoff), `docs/tbc/` (one we expect to revisit) or `IMPLEMENTATION_PLAN.md`,
 with a one-line pointer left at the code. A file where the prose outweighs the
 logic is a file nobody reads either half of.
 
-`bun run check:comments` finds every comment over the ceiling. **Not yet part of
-`lint`**: v0.1's files predate the rule and still fail it. Fold it into `lint`
-once they are brought across, and treat it as blocking from then on.
+`bun run check:comments` finds every comment over the ceiling. **Part of `lint`
+and of CI**, and blocking: every file was brought under the ceiling during v0.11.
 
 ```rust
 // No: six lines of essay for one guard.
@@ -151,10 +191,13 @@ under `docs/`.
   interpreting it. **A half states seven roles and nothing else**; every other
   token is a `color-mix(in oklab, …)` over `plate` and `fg` in `styles.css`, so
   adding a theme is seven numbers per half and touches no component.
-  **No file under `apps/desktop/src` may name a colour** — the one exception is
-  Windows' close-button red in `TitleBar.tsx`, and it is commented as such. That
-  rule is not style: white-at-10% borders in `palette/` were invisible on a light
-  plate and shipped that way for four phases.
+  **No file under `apps/desktop/src` may name a colour** outside `theme/themes.ts`
+  and `styles.css`. Two exceptions: Windows' close-button red in `TitleBar.tsx`,
+  and `ThemeOrb.tsx`'s lighting, which previews themes other than the active one
+  so no token can describe it. Fixed status colours (the Agent health dots) are
+  tokens in `styles.css`, like `--color-scrim`. `bun run check:colours` enforces
+  it and lists the exceptions per literal. That rule is not style: white-at-10%
+  borders in `palette/` were invisible on a light plate for four phases.
   Values are authored in **oklch** so equal lightness across families is stated
   rather than hoped for. `--color-scrim` is the one role that is neither derived
   nor theme-owned: it must darken in *both* appearances.
@@ -183,9 +226,9 @@ under `docs/`.
   retrieval only (**ADR-0021**, amending ADR-0005's choice of Brave). Exa is asked
   first when a key is stored and **any failure falls silently through to
   DuckDuckGo** — `!s` is never a dead end, at the cost of a wrong key never
-  announcing itself. `ddg.rs` parses HTML, so run
-  `cargo test --test web_search -- --ignored` before a release: a class rename
-  there breaks `!s` and only that test notices. Plus the user's own **Agent
+  announcing itself. `ddg.rs` parses HTML, so a class rename there breaks `!s`
+  and only `cargo test --test web_search -- --ignored` notices. CI's `web-search`
+  job runs it daily and on every PR, and a release waits on it. Plus the user's own **Agent
   CLIs** — `claude`, `codex`, `opencode` — as subprocesses for `!c`. Takyon never
   holds an LLM account or key of its own, and never runs an Agent's login
   (**ADR-0017**; the terminal path is `docs/tbc/0012`). The one key it does hold
@@ -196,8 +239,9 @@ under `docs/`.
 
 ## Commands
 - dev: `bun run dev`
-- check before "done": `bun run typecheck && bun run lint` (lint covers both TS and
-  `cargo clippy`)
+- check before "done": `bun run typecheck && bun run lint` (lint covers ESLint,
+  `cargo fmt --check`, `cargo clippy`, and the comment, colour and licence checks)
+- format Rust: `bun run fmt`
 - test: `bun run test` — **every layer**: Rust unit and integration, TypeScript,
   then Playwright.
   `test:visual` was added to it at v0.3, because a suite that has to be remembered
@@ -212,15 +256,22 @@ under `docs/`.
   then measures a process that was never alive. The harness detects this and says
   so; `--kill-running` ends it for you. The OS half is `takyon-bench`, a Rust
   workspace member with a Windows and a macOS arm — not PowerShell, so the
-  harness runs on both platforms.
+  harness runs on both platforms. Exits 2 on a missed budget and 1 when it
+  measured nothing; CI's `bench` job warns on 2 and fails on 1 (TBC-0015).
 - macOS compile gate: `bun run check:macos` — cross-compiles and lints for
   `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
   build unpacked locally, which not every machine has. Run it after touching
   anything with a `cfg(windows)` arm.
-- release: `bun run release` — preflight (typecheck, lint, test), `tauri build`,
-  then the installer into `releases/v{version}/` with its SHA-256. Same layout as
-  tesseract's `releases/`, and `releases/` is gitignored. No `latest.json` or
-  `.sig` yet; the updater is a v1.0 item.
+- release, local: `bun run release --local` — preflight (typecheck, lint, test),
+  `tauri build`, then the installer into `releases/v{version}/` with its SHA-256.
+  Same layout as tesseract's `releases/`, and `releases/` is gitignored. A
+  local build carries no updater key and reports updates as off; only
+  `release.yml` signs the installer and writes `latest.json` (**ADR-0040**,
+  setup in `docs/verify/updater.md` §S).
+- release, GitHub: `bun run release --git <version>` — on a `main` level with
+  `origin/main`: bump, preflight, commit the version files and `Cargo.lock` as
+  `UPDATE d<phase>.<n> version <version>`, push, wait for CI to register, then tag
+  `v<version>` and push it. `release.yml` publishes. Bare `bun run release` refuses.
 
 ## Testing
 Use the **`/tdd` skill** for writing and running tests — test-first, not
@@ -291,9 +342,11 @@ seams that actually matter are Rust traits — `FileIndex`, `AppSource`,
   `#[cfg(not(debug_assertions))]` plus `import.meta.env.DEV` is *not enough* — a
   **release** binary run from `target\release\` passes both, and `bun run bench`
   launches exactly that and then injects thirty keystrokes, one of which will
-  answer the first-run dialog for you. `firstrun::should_ask` therefore also
-  refuses when `TAKYON_BENCH_LOG` is set and when `current_exe()` sits under
-  `target\debug\` or `target\release\`. A stray `Run` key pointing into a build
+  answer the first-run dialog for you. `firstrun::may_register` therefore also
+  refuses when `TAKYON_BENCH_LOG` is set and when `current_exe()` sits in build
+  output: the profile directory build.rs recorded at compile time, which follows
+  `CARGO_TARGET_DIR` wherever it points (`D:\cargo-target\` here), or any
+  `*target\[<triple>\]debug|release\` path. A stray `Run` key pointing into a build
   directory survives `cargo clean`, deleting the repo, and installing the real
   product. (Learned the hard way in tesseract, then again here.)
 - **Autostart state lives in the OS, not in our config** — read it via
@@ -312,7 +365,8 @@ reply and stop. Committing is a manual step, always.
 
 **Forbidden outright:** `git commit`, `git push` in any form (including
 `git push -u origin <branch>` for a brand-new branch), `git merge`, `git rebase`,
-and anything that rewrites history. Staging and inspection are fine.
+and anything that rewrites history. So is `bun run release --git`, which commits,
+tags and pushes: it is the user's command to run. Staging and inspection are fine.
 
 **Format.** `<VERB> d<phase>.<n> <subject>` — one line, extremely short, no body
 unless something genuinely needs explaining.
@@ -368,6 +422,11 @@ the next.
   dark half.
 
 ## Gotchas
+- **Toolchains are pinned: `rust-toolchain.toml` for Rust, `packageManager` in
+  `package.json` for bun** (setup-bun reads it). A Rust bump touches three places
+  together: the toml and the `dtolnay/rust-toolchain@` refs in `ci.yml` and
+  `release.yml`. On `@stable`, a Rust release could add a clippy lint and fail
+  `-D warnings` on CI with no commit.
 - **Never build the release binary with bare `cargo build --release`. Always
   `bun run build`.** A bare cargo build produces a `takyon.exe` that launches,
   registers the hotkey and shows the Palette — with a **completely dead frontend**:
@@ -375,6 +434,27 @@ the next.
   in the one way that looks like a Rust bug. `tauri build` runs
   `beforeBuildCommand` and sets the `TAURI_ENV_*` the asset embedding depends on;
   cargo alone does neither. Cost an hour of chasing a phantom regression once.
+  A bare `tauri build` is wrong too: only the root `build` script passes
+  `--config src-tauri/tauri.bundle.conf.json`, which bundles
+  `THIRD_PARTY_NOTICES.txt`. Without it the installer ships no dependency
+  notices, which MIT and Apache-2.0 require (ADR-0039).
+- **An Agent's prompt never goes in argv, and nothing with a line break may.**
+  Rust routes a `.bat`/`.cmd` through `cmd.exe` and, since CVE-2024-24576,
+  refuses any argument holding `
+` or `
+` with
+  `batch file arguments are invalid` — so an npm-installed Agent failed every
+  Turn while Settings still read Ready, because the probes are all one-liners.
+  The prompt goes on stdin, which stdin must then be **closed** or the Agent
+  waits for EOF forever (ADR-0032). `cargo test --lib agents` forbids the
+  first; `tests/agents_cli.rs`'s fake `echo.cmd` Agent catches the rest.
+- **Every Agent process is spawned through `agents::job`, and dies with the
+  Palette.** One Job Object per spawn with `KILL_ON_JOB_CLOSE`, the child
+  created suspended and resumed only once assigned — `TerminateProcess` on a
+  `.cmd` kills `cmd.exe` and leaves `node` and the Agent spending tokens.
+  `Turns` has a visibility gate that defaults to closed, so a test that starts a
+  Turn must call `set_visible(true)` first or read the refusal as a regression
+  (ADR-0033).
 - **Never create a window from the main thread.** A synchronous `#[tauri::command]`
   and a tray menu handler both run on the main thread, and
   `WebviewWindowBuilder::build()` dispatches creation to the event loop and blocks
@@ -408,6 +488,18 @@ the next.
   It surfaced as `v0_3_a_fresh_pipeline_ranks_by_what_an_earlier_one_learned`
   failing on CI and passing everywhere locally. **Use `query_at` with an explicit
   `now_ms`** — that seam exists for this, as `query.rs`'s `started` field says.
+- **Blocking network work never runs on rayon's global pool.** Use
+  `search::fetch::pool()`. The keystroke fan-out (`query.rs`) shares the global
+  pool, and Focus's sixty first-launch icon fetches, 6 s timeouts each, once
+  held all four threads of a CI runner: the bench slowed show by show and hung
+  at 19 of 30. A 16-core dev machine never shows it.
+  `v0_17_slow_fetches_leave_the_keystroke_pool_free` guards it.
+- **`bun run test:visual` in a worktree can test another checkout's code.**
+  `playwright.config.ts` has `reuseExistingServer` on :1420, so a Vite dev
+  server already running from the main checkout (or any other worktree) gets
+  reused silently: existing tests pass and a new fixture never appears. Check
+  `Get-NetTCPConnection -LocalPort 1420` first; a copy of the config on another
+  port with `bunx vite --port <n> --strictPort` works without touching it.
 - Tesseract is the reference implementation for Tauri patterns here — autostart,
   tray, single-instance, updater, per-platform `tauri.conf.json` splits. Read
   `tesseract/docs/plans/launch-at-startup.md` and its ADR-0026 before rebuilding
@@ -416,3 +508,18 @@ the next.
   the classic window system menu. Rebinding must work from first launch.
 - WebView2 is not one process — expect a browser, renderer and GPU process. Any
   memory measurement that reads only the main process is wrong.
+
+
+## Orchestration
+
+@orchestration.md
+
+Apply this project orchestration policy throughout the session. Send delegation
+prompts in Homonid ultra. Every subagent invokes Homonid max, using the embedded
+rules when the Homonid skill is unavailable.
+
+**Subagents are pre-authorized here.** Delegate without asking whenever the
+`orchestration` skill says it pays, using its routing table for model and effort.
+One override: every child, Claude or Codex, spawns through T3's `delegate_task`,
+never the native `Agent` tool, even where the skill prefers native. Child prompts
+must restate the Git rules above, since a T3 child never sees this file.

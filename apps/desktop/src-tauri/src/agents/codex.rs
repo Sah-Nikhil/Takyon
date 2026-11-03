@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use super::probe::{self, PROBE_TIMEOUT};
 use super::turn::TurnEvent;
-use super::{AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState};
+use super::{
+    AgentDriver, AgentKind, Health, SignIn, SignInStatus, Snapshot, TurnRequest, TurnState,
+};
 
 pub struct CodexDriver;
 
@@ -79,11 +81,9 @@ impl AgentDriver for CodexDriver {
     }
 
     fn turn_args(&self, req: &TurnRequest) -> Vec<String> {
+        // Every flag goes on `exec`, before `resume`: the subcommand rejects
+        // `-C` and `--sandbox` with `unexpected argument '-C' found`.
         let mut args = vec!["exec".to_string()];
-        if let Some(session) = &req.session {
-            args.push("resume".into());
-            args.push(session.clone());
-        }
         args.push("--json".into());
         // Codex refuses to run outside a repository, and the Scratch directory is
         // deliberately not one.
@@ -91,7 +91,14 @@ impl AgentDriver for CodexDriver {
         args.push("-C".into());
         args.push(req.cwd.to_string_lossy().to_string());
         args.push("--sandbox".into());
-        args.push(if req.tools { "workspace-write" } else { "read-only" }.into());
+        args.push(
+            if req.tools {
+                "workspace-write"
+            } else {
+                "read-only"
+            }
+            .into(),
+        );
         if let Some(model) = &req.model {
             args.push("-m".into());
             args.push(model.clone());
@@ -101,8 +108,14 @@ impl AgentDriver for CodexDriver {
             args.push("-c".into());
             args.push(format!("model_reasoning_effort=\"{effort}\""));
         }
-        // No system-prompt flag, so the style leads the first Turn's prompt.
-        args.push(super::styled_prompt(req));
+        if let Some(session) = &req.session {
+            args.push("resume".into());
+            args.push(session.clone());
+        }
+        // Prompt on stdin (ADR-0032). `exec` reads it when the prompt is
+        // omitted; `exec resume` only with an explicit `-`, so both get one.
+        // The default `turn_input` leads with the style: Codex has no flag for it.
+        args.push("-".into());
         args
     }
 
@@ -124,17 +137,16 @@ impl AgentDriver for CodexDriver {
                 let delta = is_message.then(|| text_at(item, "text")).flatten()?;
                 Some(TurnEvent::Text { delta })
             }
-            "turn.failed" => Some(TurnEvent::Failed {
-                message: json
-                    .pointer("/error/message")
+            "turn.failed" => Some(TurnEvent::agent_error(
+                LABEL,
+                json.pointer("/error/message")
                     .and_then(Value::as_str)
-                    .unwrap_or("Codex stopped with an error.")
-                    .to_string(),
-            }),
-            "error" => Some(TurnEvent::Failed {
-                message: text_at(&json, "message")
-                    .unwrap_or_else(|| "Codex stopped with an error.".into()),
-            }),
+                    .unwrap_or("Codex stopped with an error."),
+            )),
+            "error" => Some(TurnEvent::agent_error(
+                LABEL,
+                text_at(&json, "message").unwrap_or_else(|| "Codex stopped with an error.".into()),
+            )),
             _ => None,
         }
     }
@@ -198,7 +210,11 @@ pub fn snapshot_from_login(
         binary: BINARY,
         installed: true,
         version,
-        health: if signed_in { Health::Ready } else { Health::Error },
+        health: if signed_in {
+            Health::Ready
+        } else {
+            Health::Error
+        },
         sign_in: if signed_in {
             SignIn {
                 status: SignInStatus::In,
@@ -226,7 +242,10 @@ mod tests {
             Some("Logged in using ChatGPT"),
         );
         assert_eq!(snap.sign_in.status, SignInStatus::In);
-        assert_eq!(snap.sign_in.label.as_deref(), Some("Logged in using ChatGPT"));
+        assert_eq!(
+            snap.sign_in.label.as_deref(),
+            Some("Logged in using ChatGPT")
+        );
         assert_eq!(snap.health, Health::Ready);
         assert!(snap.message.is_none());
     }
@@ -263,25 +282,55 @@ mod tests {
         assert!(args.contains(&"--skip-git-repo-check".to_string()));
         let cd = args.iter().position(|a| a == "-C").expect("cd flag");
         assert_eq!(args[cd + 1], r"C:\scratch");
-        let sandbox = args.iter().position(|a| a == "--sandbox").expect("sandbox flag");
+        let sandbox = args
+            .iter()
+            .position(|a| a == "--sandbox")
+            .expect("sandbox flag");
         assert_eq!(args[sandbox + 1], "read-only");
-        // The prompt is last, after every flag, with the house style ahead of it.
-        assert!(args.last().unwrap().ends_with("hi"));
+        // `-` last: the prompt is on stdin, house style ahead of it.
+        assert_eq!(args.last().unwrap(), "-");
+        let req = TurnRequest {
+            prompt: "hi".into(),
+            cwd: std::path::PathBuf::from(r"C:\scratch"),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        assert!(CodexDriver.turn_input(&req).ends_with("hi"));
     }
 
-    /// A follow-up is `exec resume <id>`, and the id comes right after `resume`.
+    /// A follow-up ends `resume <id> -`, every flag ahead of `resume`.
+    /// `exec resume` rejects `-C` and `--sandbox`: each follow-up Turn failed.
     #[test]
     fn v0_8_a_codex_follow_up_resumes_its_thread() {
         let args = CodexDriver.turn_args(&TurnRequest {
             prompt: "and then?".into(),
             cwd: std::path::PathBuf::from("."),
             session: Some("th-1".into()),
-            model: None,
-            effort: None,
+            model: Some("test-model".into()),
+            effort: Some("test-effort".into()),
             tools: true,
         });
-        assert_eq!(&args[..3], &["exec", "resume", "th-1"]);
-        let sandbox = args.iter().position(|a| a == "--sandbox").expect("sandbox flag");
+        assert_eq!(args[0], "exec");
+        // `resume` reads stdin only with an explicit `-`.
+        assert_eq!(&args[args.len() - 3..], &["resume", "th-1", "-"]);
+        let resume = args.iter().position(|a| a == "resume").unwrap();
+        for flag in [
+            "--json",
+            "--skip-git-repo-check",
+            "-C",
+            "--sandbox",
+            "-m",
+            "-c",
+        ] {
+            let at = args.iter().position(|a| a == flag).expect(flag);
+            assert!(at < resume, "{flag} must precede `resume`: {args:?}");
+        }
+        let sandbox = args
+            .iter()
+            .position(|a| a == "--sandbox")
+            .expect("sandbox flag");
         assert_eq!(args[sandbox + 1], "workspace-write");
     }
 
@@ -289,11 +338,16 @@ mod tests {
     #[test]
     fn v0_8_the_thread_started_event_yields_the_session() {
         let mut state = TurnState::default();
-        let event =
-            CodexDriver.parse_line(r#"{"type":"thread.started","thread_id":"th-1"}"#, &mut state);
+        let event = CodexDriver.parse_line(
+            r#"{"type":"thread.started","thread_id":"th-1"}"#,
+            &mut state,
+        );
         assert_eq!(
             event,
-            Some(TurnEvent::Started { session: Some("th-1".into()), model: None })
+            Some(TurnEvent::Started {
+                session: Some("th-1".into()),
+                model: None
+            })
         );
         assert_eq!(state.session.as_deref(), Some("th-1"));
     }
@@ -306,7 +360,9 @@ mod tests {
             r#"{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"Hello"}}"#;
         assert_eq!(
             CodexDriver.parse_line(message, &mut state),
-            Some(TurnEvent::Text { delta: "Hello".into() })
+            Some(TurnEvent::Text {
+                delta: "Hello".into()
+            })
         );
 
         let reasoning =
@@ -336,12 +392,12 @@ mod tests {
             prompt: "hi".into(),
             cwd: std::path::PathBuf::from("."),
             session: None,
-            model: Some("gpt-5.3-codex".into()),
-            effort: Some("high".into()),
+            model: Some("test-model".into()),
+            effort: Some("test-effort".into()),
             tools: false,
         });
         let flag = args.iter().position(|a| a == "-c").expect("config flag");
-        assert_eq!(args[flag + 1], "model_reasoning_effort=\"high\"");
+        assert_eq!(args[flag + 1], "model_reasoning_effort=\"test-effort\"");
     }
 
     /// Both failure shapes carry their own message through unchanged.
@@ -353,11 +409,11 @@ mod tests {
                 r#"{"type":"turn.failed","error":{"message":"rate limited"}}"#,
                 &mut state
             ),
-            Some(TurnEvent::Failed { message: "rate limited".into() })
+            Some(TurnEvent::agent_error(LABEL, "rate limited"))
         );
         assert_eq!(
             CodexDriver.parse_line(r#"{"type":"error","message":"boom"}"#, &mut state),
-            Some(TurnEvent::Failed { message: "boom".into() })
+            Some(TurnEvent::agent_error(LABEL, "boom"))
         );
     }
 }

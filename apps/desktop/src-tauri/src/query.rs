@@ -58,6 +58,17 @@ pub struct QueryResult {
     /// the same reason: the answer streams, so there is nothing to rank.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub web: Option<Web>,
+    /// Present exactly when the line is `!f` and the Bang is on (v0.16). The
+    /// frontend splits goal from duration: it holds the local clock.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus: Option<FocusLine>,
+}
+
+/// The `!f` Mode's line, untouched.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusLine {
+    pub line: String,
 }
 
 /// The `!c` Mode's state for one keystroke.
@@ -78,7 +89,6 @@ pub struct Ask {
     /// its own probe lands.
     pub order: Vec<crate::agents::AgentKind>,
 }
-
 
 /// The `!s` Mode's state for one keystroke.
 ///
@@ -155,12 +165,14 @@ pub struct Pipeline {
     /// Whether `!v` routes to clipboard history (`clips.bang`). Read every
     /// keystroke, so atomic rather than behind the Stability mutex.
     clips_bang: std::sync::atomic::AtomicBool,
+    /// Whether `!f` starts Focus sessions. Off by default (v0.16).
+    focus_bang: std::sync::atomic::AtomicBool,
     recents_on: std::sync::atomic::AtomicBool,
     /// The switched-on Agents in preference order. Cached from `settings.db` for
     /// the same reason `clips_bang` is: it is read on the keystroke path, which
     /// must not touch SQLite.
     ask_order: std::sync::Mutex<Vec<crate::agents::AgentKind>>,
-    /// Whether a Brave key is stored, cached for the keystroke path. Written at
+    /// Whether an Exa key is stored, cached for the keystroke path. Written at
     /// startup and on every Settings write, exactly as `ask_order` is.
     web_key: std::sync::atomic::AtomicBool,
     sources: Vec<Arc<dyn Source>>,
@@ -204,6 +216,7 @@ impl Pipeline {
             files: None,
             clips: None,
             clips_bang: std::sync::atomic::AtomicBool::new(true),
+            focus_bang: std::sync::atomic::AtomicBool::new(false),
             recents_on: std::sync::atomic::AtomicBool::new(true),
             ask_order: std::sync::Mutex::new(crate::agents::AgentKind::ALL.to_vec()),
             web_key: std::sync::atomic::AtomicBool::new(false),
@@ -228,6 +241,15 @@ impl Pipeline {
         self.clips_bang.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    pub fn set_focus_bang(&self, on: bool) {
+        self.focus_bang
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn focus_bang(&self) -> bool {
+        self.focus_bang.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// The Agents `!c` walks. Written by Settings, read every keystroke.
     pub fn set_ask_order(&self, order: Vec<crate::agents::AgentKind>) {
         if let Ok(mut held) = self.ask_order.lock() {
@@ -246,7 +268,7 @@ impl Pipeline {
     ///
     /// Filtered after the fan-out, not by dropping the Source: it answers from an
     /// in-memory snapshot, and rebuilding `sources` would need a lock per keystroke.
-    /// Record whether a Brave key is stored. Settings and startup call this.
+    /// Record whether an Exa key is stored. Settings and startup call this.
     pub fn set_web_key_present(&self, present: bool) {
         self.web_key
             .store(present, std::sync::atomic::Ordering::Relaxed);
@@ -300,9 +322,7 @@ impl Pipeline {
             // Off, and `!v` is text like any other: it falls through to Bangless
             // and matches nothing, rather than erroring. The command is still
             // there for anyone who types "clipboard".
-            Route::Clips(needle) if self.bang_enabled() => {
-                return self.clips_result(needle, seq)
-            }
+            Route::Clips(needle) if self.bang_enabled() => return self.clips_result(needle, seq),
             Route::Clips(_) => raw,
             // No toggle: `!e` is the door to file search, and task 11's setting
             // governs Bangless Entries rather than the Bang.
@@ -311,6 +331,18 @@ impl Pipeline {
             // Agent answers is the setting (`docs/plans/bang-registry.md`).
             Route::Ask(question) => return self.ask_result(question, seq, self.ask_order()),
             Route::Web(question) => return self.web_result(question, seq),
+            // Off, and `!f` is text: Start Focus Session is still a command.
+            Route::Focus(line) if self.focus_bang() => {
+                return QueryResult {
+                    seq,
+                    focus: Some(FocusLine {
+                        line: line.to_string(),
+                    }),
+                    status_row: true,
+                    ..QueryResult::default()
+                };
+            }
+            Route::Focus(_) => raw,
             Route::Bangless(line) => line,
         };
 
@@ -337,7 +369,8 @@ impl Pipeline {
                 // that has been deliberately left blank (ADR-0001).
                 status_row: false,
                 ask: None,
-            web: None,
+                web: None,
+                focus: None,
             };
         }
 
@@ -371,6 +404,7 @@ impl Pipeline {
             status_row: false,
             ask: None,
             web: None,
+            focus: None,
         }
     }
 
@@ -393,6 +427,7 @@ impl Pipeline {
                 order,
             }),
             web: None,
+            focus: None,
             // Reuses the flag that reserves a status row in the *native* window,
             // exactly as `files_result` does: `!c` has no Entries, and without a
             // reserved row its one line falls outside the window.
@@ -442,6 +477,7 @@ impl Pipeline {
             status_row: false,
             ask: None,
             web: None,
+            focus: None,
         }
     }
 
@@ -473,12 +509,10 @@ impl Pipeline {
             // (TBC-0006 sizes it from the row count, which the webview cannot
             // change). Which words go in that row is the frontend's business —
             // `file_index_status` tells it Building from Stale.
-            status_row: !matches!(
-                files.index().status(),
-                crate::index::IndexStatus::Ready
-            ),
+            status_row: !matches!(files.index().status(), crate::index::IndexStatus::Ready),
             ask: None,
             web: None,
+            focus: None,
         }
     }
 
@@ -496,7 +530,10 @@ impl Pipeline {
             // Same question, and it has stood still long enough to be committed
             // to. Promote the locked Entry back to the top if it is still here;
             // if it has gone, there is nothing to hold and nothing to fake.
-            Some(lock) if lock.query == raw && now_ms.saturating_sub(lock.first_seen_ms) >= LOCK_DELAY_MS => {
+            Some(lock)
+                if lock.query == raw
+                    && now_ms.saturating_sub(lock.first_seen_ms) >= LOCK_DELAY_MS =>
+            {
                 if let Some(i) = entries.iter().position(|e| e.id == lock.top) {
                     let top = entries.remove(i);
                     entries.insert(0, top);
@@ -580,6 +617,7 @@ impl Pipeline {
                 icon: app.icon,
                 score: 0.0,
                 version: app.version,
+                labels: None,
             }),
             K::System | K::SystemTask => self.system.find(id).map(|item| Entry {
                 id: item.id,
@@ -590,6 +628,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_system(),
                 version: None,
+                labels: None,
             }),
             K::Command => self.commands.find(id).map(|command| Entry {
                 id: command.id.clone(),
@@ -600,6 +639,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_command(),
                 version: None,
+                labels: None,
             }),
             K::File | K::Folder | K::Recent => self.recents.find(id).map(|recent| Entry {
                 id: recent.id,
@@ -610,6 +650,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_file(),
                 version: None,
+                labels: None,
             }),
             // A clipboard item and a calculation are both things you *did*, not
             // things you would open again from an empty line.
@@ -622,7 +663,10 @@ impl Pipeline {
     /// Sources are asked in registration order. Ids do not collide across them —
     /// an App is keyed by its executable, a Recent by its document — so the order
     /// is a formality rather than a precedence rule.
-    fn target_for(&self, id: &EntryId) -> Option<(crate::entry::LaunchTarget, crate::entry::EntryKind)> {
+    fn target_for(
+        &self,
+        id: &EntryId,
+    ) -> Option<(crate::entry::LaunchTarget, crate::entry::EntryKind)> {
         if let Some(app) = self.apps.find(id) {
             return Some((app.target, crate::entry::EntryKind::App));
         }
@@ -680,7 +724,10 @@ impl Pipeline {
                 .collect();
         }
         if CalcSource::answer_of(id).is_some() {
-            return crate::actions::for_calc().iter().filter_map(crate::actions::describe).collect();
+            return crate::actions::for_calc()
+                .iter()
+                .filter_map(crate::actions::describe)
+                .collect();
         }
         if let Some(app) = self.apps.find(id) {
             return crate::actions::for_entry(&Entry {
@@ -695,6 +742,7 @@ impl Pipeline {
                     crate::entry::LaunchTarget::Exe { .. }
                 )),
                 version: None,
+                labels: None,
             });
         }
         if let Some(entry) = self.system.find(id) {
@@ -707,6 +755,7 @@ impl Pipeline {
                 score: 0.0,
                 actions: crate::actions::for_system(),
                 version: None,
+                labels: None,
             });
         }
         let Some(recent) = self.recents.find(id) else {
@@ -721,6 +770,7 @@ impl Pipeline {
             score: 0.0,
             actions: crate::actions::for_file(),
             version: None,
+            labels: None,
         })
     }
 
@@ -749,7 +799,11 @@ impl Pipeline {
             }
             self.record_activation(id, crate::entry::EntryKind::Command, action);
             return match command {
-                CommandId::ClipboardHistory => Ok(()),
+                CommandId::ClipboardHistory
+                | CommandId::FocusStart
+                | CommandId::FocusComplete
+                | CommandId::FocusPause
+                | CommandId::FocusResume => Ok(()),
             };
         }
         if let Some(row) = clip_id(id) {
@@ -765,7 +819,9 @@ impl Pipeline {
         let _image = match action {
             a if a == crate::actions::OPEN.as_str() => crate::launch::open(&target),
             a if a == crate::actions::RUN_AS_ADMIN.as_str() => crate::launch::run_as_admin(&target),
-            a if a == crate::actions::REVEAL.as_str() => crate::launch::reveal(&target).map(|_| None),
+            a if a == crate::actions::REVEAL.as_str() => {
+                crate::launch::reveal(&target).map(|_| None)
+            }
             a if a == crate::actions::COPY_PATH.as_str() => {
                 let path = crate::launch::path_of(&target)
                     .ok_or_else(|| "That Entry has no path to copy.".to_string())?;
@@ -797,12 +853,12 @@ impl Pipeline {
             };
         }
 
-        let text = store
-            .content(row)
+        let content = store
+            .fetch(row)
             .ok_or_else(|| "That clip is no longer in the history.".to_string())?;
-        let clip = Paste {
-            kind: crate::clips::ClipKind::Text,
-            text: &text,
+        let clip = match &content {
+            crate::clips::Content::Text(text) => Paste::Text(text),
+            crate::clips::Content::Image(png) => Paste::Image(png),
         };
         match action {
             a if a == crate::actions::PASTE.as_str() => paste::paste_back(&clip),
@@ -866,19 +922,23 @@ pub fn clip_id(id: &EntryId) -> Option<i64> {
 /// One stored clip as the Palette draws it.
 ///
 /// The preview is the title, and the full content never travels: a search
-/// response would otherwise ship every matching secret into the webview.
+/// response would otherwise ship every matching secret into the webview. An
+/// image's `icon` is its row id, a `takyon-clip` thumbnail key, not an icon key.
 fn clip_entry(clip: Clip) -> Entry {
+    let icon = (clip.kind == crate::clips::ClipKind::Image)
+        .then(|| crate::entry::IconRef(clip.id.to_string()));
     Entry {
         id: EntryId(format!("{CLIP_PREFIX}{}", clip.id)),
         title: clip.preview,
         subtitle: clip.source_exe.as_deref().and_then(source_label),
         kind: crate::entry::EntryKind::Clip,
-        icon: None,
+        icon,
         // Order is recency, applied by the store's query. A score here would
         // invite something to re-sort by it.
         score: 0.0,
         actions: crate::actions::for_clip(),
         version: None,
+        labels: None,
     }
 }
 
@@ -938,7 +998,10 @@ mod tests {
         App {
             id: EntryId::for_launch(&target),
             origin: crate::sources::apps::AppOrigin::Installed,
-            hay: Haystack::new(title, PathBuf::from(path).file_stem().and_then(|s| s.to_str())),
+            hay: Haystack::new(
+                title,
+                PathBuf::from(path).file_stem().and_then(|s| s.to_str()),
+            ),
             title: title.into(),
             subtitle: Some(path.into()),
             target,
@@ -973,9 +1036,12 @@ mod tests {
                 )
                 .expect("insert");
         }
-        pipeline_with(vec![app("Notepad", r"C:\Windows
-otepad.exe")])
-            .with_clips(Arc::new(store))
+        pipeline_with(vec![app(
+            "Notepad",
+            r"C:\Windows
+otepad.exe",
+        )])
+        .with_clips(Arc::new(store))
     }
 
     /// ADR-0006, as the assertion the whole phase turns on: a Clip is unreachable
@@ -1112,8 +1178,11 @@ otepad.exe")])
     /// with a Bangless search for the letters after the Bang.
     #[test]
     fn v0_5_the_clip_bang_without_a_store_returns_nothing() {
-        let p = pipeline_with(vec![app("Notepad", r"C:\Windows
-otepad.exe")]);
+        let p = pipeline_with(vec![app(
+            "Notepad",
+            r"C:\Windows
+otepad.exe",
+        )]);
         assert!(p.query("!v notepad", 1).entries.is_empty());
     }
 
@@ -1154,10 +1223,7 @@ otepad.exe")]);
         );
 
         let entries = p.query("dis", 1).entries;
-        let seen: Vec<(String, f32)> = entries
-            .iter()
-            .map(|e| (e.title.clone(), e.score))
-            .collect();
+        let seen: Vec<(String, f32)> = entries.iter().map(|e| (e.title.clone(), e.score)).collect();
         assert_eq!(entries[0].title, "Discord", "{seen:?}");
         assert!(
             entries.iter().any(|e| e.title == "Display"),
@@ -1173,7 +1239,10 @@ otepad.exe")]);
     #[test]
     fn v0_3_a_shipped_keyword_does_not_beat_an_app_named_for_the_same_word() {
         let apps = AppSource::new();
-        apps.set_for_test(vec![app("Disk Cleanup", r"C:\Windows\System32\cleanmgr.exe")]);
+        apps.set_for_test(vec![app(
+            "Disk Cleanup",
+            r"C:\Windows\System32\cleanmgr.exe",
+        )]);
         let system = SystemSource::new();
         system.set_for_test(crate::sources::system::settings_catalog());
         let p = Pipeline::new(
@@ -1185,8 +1254,7 @@ otepad.exe")]);
         );
 
         let entries = p.query("disk", 1).entries;
-        let seen: Vec<(String, f32)> =
-            entries.iter().map(|e| (e.title.clone(), e.score)).collect();
+        let seen: Vec<(String, f32)> = entries.iter().map(|e| (e.title.clone(), e.score)).collect();
         assert_eq!(entries[0].title, "Disk Cleanup", "{seen:?}");
         // Still reachable — the keyword works, it just does not win.
         assert!(entries.iter().any(|e| e.title == "Storage"), "{seen:?}");
@@ -1223,7 +1291,10 @@ otepad.exe")]);
     #[test]
     fn v0_3_a_control_panel_task_never_outranks_an_application() {
         let apps = AppSource::new();
-        apps.set_for_test(vec![app("Disk Cleanup", r"C:\Windows\System32\cleanmgr.exe")]);
+        apps.set_for_test(vec![app(
+            "Disk Cleanup",
+            r"C:\Windows\System32\cleanmgr.exe",
+        )]);
         let system = SystemSource::new();
         system.set_for_test(vec![crate::sources::system::task_from(
             "Disk Cleanup Options",
@@ -1287,7 +1358,10 @@ otepad.exe")]);
             entries[0].id.as_str(),
             "ms-settings:display",
             "the settings page should win on match quality: {:?}",
-            entries.iter().map(|e| (e.title.clone(), e.score)).collect::<Vec<_>>()
+            entries
+                .iter()
+                .map(|e| (e.title.clone(), e.score))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1352,7 +1426,8 @@ otepad.exe")]);
         // A different Pipeline, a different Frecency, the same directory.
         let second = build();
         assert_eq!(
-            second.query_at("code", 1, 0).entries[0].id, promoted,
+            second.query_at("code", 1, 0).entries[0].id,
+            promoted,
             "usage must outlive the process that learned it"
         );
 
@@ -1376,7 +1451,10 @@ otepad.exe")]);
         let top = |p: &Pipeline| p.query_at("code", 1, 0).entries[0].title.clone();
         assert_eq!(top(&p), "T3 Code (Alpha)", "cold, the shorter name wins");
 
-        let editor = p.query_at("code", 2, 0).entries.iter()
+        let editor = p
+            .query_at("code", 2, 0)
+            .entries
+            .iter()
             .find(|e| e.title == "Visual Studio Code")
             .map(|e| e.id.clone())
             .expect("the editor is in the list, just not first");
@@ -1399,7 +1477,9 @@ otepad.exe")]);
         let first = p.query_at("code", 1, 0).entries[0].title.clone();
 
         // Settled: the same query, past the lock delay.
-        let settled = p.query_at("code", 2, LOCK_DELAY_MS).entries[0].title.clone();
+        let settled = p.query_at("code", 2, LOCK_DELAY_MS).entries[0]
+            .title
+            .clone();
         assert_eq!(settled, first, "nothing has changed yet");
 
         // Now make the other one genuinely outrank it.
@@ -1445,7 +1525,10 @@ otepad.exe")]);
 
         // A different query string entirely: the lock must not apply.
         let typed_more = p.query_at("cod", 4, LOCK_DELAY_MS + 50);
-        assert_ne!(typed_more.entries[0].title, first, "a new query ranks freshly");
+        assert_ne!(
+            typed_more.entries[0].title, first,
+            "a new query ranks freshly"
+        );
     }
 
     /// Before it settles, the list is still allowed to reorder. The lock is a
@@ -1575,7 +1658,10 @@ otepad.exe")]);
     fn v0_2_an_unknown_action_is_refused_rather_than_guessed_at() {
         let p = pipeline_with(vec![app("Notepad", r"C:\Windows\notepad.exe")]);
         let id = p.query("note", 1).entries[0].id.clone();
-        assert!(p.activate(&id, "teleport").unwrap_err().contains("Unknown action"));
+        assert!(p
+            .activate(&id, "teleport")
+            .unwrap_err()
+            .contains("Unknown action"));
     }
 
     #[test]
@@ -1632,6 +1718,21 @@ otepad.exe")]);
             .entries
             .iter()
             .all(|e| e.kind != EntryKind::Clip));
+    }
+
+    /// `!f` is off until Settings switches it on, and then hands the line to
+    /// the frontend untouched; it holds the clock that reads `until …`.
+    #[test]
+    fn v0_16_bang_f_is_text_until_switched_on() {
+        let p = pipeline_with_clips(&[]);
+        assert!(p.query("!f write report 45m", 1).focus.is_none());
+        p.set_focus_bang(true);
+        let r = p.query("!f write report 45m", 2);
+        assert_eq!(
+            r.focus.map(|f| f.line),
+            Some("write report 45m".to_string())
+        );
+        assert!(r.entries.is_empty());
     }
 
     /// The Bang is a shortcut over the command, and can be turned off.
@@ -1694,7 +1795,11 @@ otepad.exe")]);
         );
 
         p.set_recents_enabled(true);
-        assert!(p.query("report", 3).entries.iter().any(|e| e.kind == EntryKind::Recent));
+        assert!(p
+            .query("report", 3)
+            .entries
+            .iter()
+            .any(|e| e.kind == EntryKind::Recent));
     }
 
     /// Opening a command navigates rather than launching: the window stays, and
@@ -1779,8 +1884,9 @@ otepad.exe")]);
     fn v0_4_a_calculation_refuses_actions_that_are_not_copying() {
         let p = pipeline_with(vec![]);
         let id = EntryId("calc:14.16".into());
-        assert!(p.activate(&id, crate::actions::RUN_AS_ADMIN.as_str()).is_err());
+        assert!(p
+            .activate(&id, crate::actions::RUN_AS_ADMIN.as_str())
+            .is_err());
         assert!(p.activate(&id, crate::actions::REVEAL.as_str()).is_err());
     }
-
 }

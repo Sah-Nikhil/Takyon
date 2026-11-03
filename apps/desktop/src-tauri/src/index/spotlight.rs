@@ -62,10 +62,7 @@ impl SpotlightIndex {
     }
 
     fn roots(&self) -> roots::Roots {
-        self.roots
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.roots.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -241,7 +238,10 @@ mod tests {
     #[test]
     fn v0_12_an_exclusion_matches_any_component_not_just_the_name() {
         let exclude = vec!["node_modules".to_string()];
-        assert!(is_excluded("/Users/me/app/node_modules/x/index.js", &exclude));
+        assert!(is_excluded(
+            "/Users/me/app/node_modules/x/index.js",
+            &exclude
+        ));
         assert!(!is_excluded("/Users/me/app/src/index.js", &exclude));
     }
 }

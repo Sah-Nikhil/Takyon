@@ -20,6 +20,7 @@ import type {
   PathReport,
   AliasRow,
   AppAliasRow,
+  TurnFailure,
   TurnMessage,
   CalcPolicy,
   ClipRetention,
@@ -34,6 +35,22 @@ import type {
   SettingsSnapshot,
   ShowPayload,
   WebSettings,
+  BlockList,
+  FocusBangLine,
+  FocusCategories,
+  FocusCategory,
+  FocusItem,
+  FocusMember,
+  FocusRefusal,
+  FocusSettings,
+  FocusSignal,
+  FocusStartRequest,
+  FocusStats,
+  FocusView,
+  UpdateCheck,
+  UpdateNotice,
+  UpdateProgress,
+  ThirdPartyLicences,
 } from "@takyon/shared";
 
 type ShowListener = (payload: ShowPayload) => void;
@@ -100,6 +117,8 @@ export function setAnswer(text: string) {
 
 let askOrder: AgentKind[] = ["claude", "codex", "opencode"];
 let askEnabled: Record<AgentKind, boolean> = { claude: true, codex: true, opencode: true };
+/** Whether an order or switch was ever written. False is a first run (ADR-0031). */
+let askChosen = false;
 let askCwd = "";
 let askModels: Partial<Record<AgentKind, string>> = {};
 let askEfforts: Partial<Record<AgentKind, string>> = {};
@@ -201,6 +220,13 @@ export function holdSearchAtReading(on: boolean) {
   }
 }
 
+let turnFailure: TurnFailure | null = null;
+
+/** Fail every Turn with these facts, as Rust's `TurnFailure`. Null restores. */
+export function failTurns(failure: TurnFailure | null) {
+  turnFailure = failure;
+}
+
 /** Make the next search fail with this message. Null restores success. */
 export function failWebSearch(message: string | null) {
   webFailure = message;
@@ -219,6 +245,28 @@ function emitTurn(message: TurnMessage) {
  */
 export function setAskOrder(order: AgentKind[]) {
   askOrder = [...order];
+  askChosen = true;
+}
+
+/**
+ * Uninstall one Agent, so a test can reach a first run with one installed.
+ *
+ * Fixtures leave two installed, which ADR-0031's first-run ranking ignores.
+ */
+export function setAgentMissing(kind: AgentKind) {
+  agentFixtures = agentFixtures.map((snapshot) =>
+    snapshot.kind === kind
+      ? {
+          ...snapshot,
+          installed: false,
+          version: undefined,
+          health: "error" as const,
+          signIn: { status: "unknown" as const },
+          message: `${snapshot.label} (\`${snapshot.binary}\`) was not found on PATH.`,
+          efforts: [],
+        }
+      : snapshot,
+  );
 }
 
 /**
@@ -243,7 +291,11 @@ export function setAgentSignedOut(kind: AgentKind) {
  * clears and focuses it.
  */
 export function emitShow(noFocusSteal = true) {
-  const payload: ShowPayload = { showId: nextShowId++, noFocusSteal };
+  const payload: ShowPayload = {
+    showId: nextShowId++,
+    noFocusSteal,
+    ...(updateNoticeState ? { notice: updateNoticeState } : {}),
+  };
   for (const l of showListeners) l(payload);
 }
 
@@ -360,6 +412,16 @@ const CLIP_FIXTURES: Entry[] = [
     actions: ["paste", "copy_clip", "delete_clip"],
   },
   {
+    id: "clip:28",
+    title: "Image 1920 × 1080",
+    subtitle: "SnippingTool",
+    kind: "clip",
+    // An image clip's icon is its row id, a `takyon-clip` key (`query.rs`).
+    icon: "28",
+    score: 0,
+    actions: ["paste", "copy_clip", "delete_clip"],
+  },
+  {
     id: "clip:30",
     title: "SELECT id, created_at FROM clips ORDER BY created_at DESC",
     kind: "clip",
@@ -390,6 +452,55 @@ const COMMAND_FIXTURE: Entry = {
   actions: ["open_command"],
 };
 
+/**
+ * The four Focus commands (v0.16). Offered only for queries naming "focus":
+ * a narrower net than Rust's ranking, so earlier baselines keep their rows.
+ */
+const FOCUS_COMMAND_FIXTURES: Entry[] = [
+  ["focus-start", "Start Focus Session"],
+  ["focus-complete", "Complete Focus Session"],
+  ["focus-pause", "Pause Focus Session"],
+  ["focus-resume", "Resume Focus Session"],
+].map(([slug, title], i) => ({
+  id: `command:${slug}`,
+  title: title!,
+  subtitle: "Takyon",
+  kind: "command",
+  score: 690 - i,
+  actions: ["open_command"],
+}));
+
+function focusCommands(q: string): Entry[] {
+  if (!/focus/i.test(q)) return [];
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  return FOCUS_COMMAND_FIXTURES.filter((e) => words.every((w) => e.title.toLowerCase().includes(w)));
+}
+
+/**
+ * A 64x36 gradient as a PNG data URL, drawn once. Pixels are numbers rather
+ * than colour literals, and the same bytes every run keep screenshots stable.
+ */
+let mockImageUrl = "";
+/** Clip ids deleted this page load, so a delete visibly removes its row. */
+const deletedClips = new Set<string>();
+function mockImage(): string {
+  if (mockImageUrl) return mockImageUrl;
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 36;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  const data = ctx.createImageData(64, 36);
+  for (let i = 0; i < 64 * 36; i++) {
+    const x = i % 64;
+    const y = Math.floor(i / 64);
+    data.data.set([40 + x * 3, 60 + y * 4, 160 - x, 255], i * 4);
+  }
+  ctx.putImageData(data, 0, 0);
+  mockImageUrl = canvas.toDataURL("image/png");
+  return mockImageUrl;
+}
+
 /** Rows for the history surface. Day offsets so grouping has something to do. */
 const now = Math.floor(Date.now() / 1000);
 const CLIP_ROWS: ClipRow[] = [
@@ -400,6 +511,16 @@ const CLIP_ROWS: ClipRow[] = [
     sourceExe: "C:\\Program Files\\Mozilla Firefox\\firefox.exe",
     len: 44,
     preview: "https://github.com/tauri-apps/tauri/releases",
+  },
+  {
+    id: 28,
+    createdAt: now - 3_000,
+    kind: "image",
+    sourceExe: "C:\\Windows\\SystemApps\\SnippingTool.exe",
+    len: 1_482_113,
+    preview: "Image 1920 × 1080",
+    width: 1920,
+    height: 1080,
   },
   {
     id: 30,
@@ -434,7 +555,7 @@ const ACTION_LABELS: Record<string, Action> = {
   delete_clip: {
     id: "delete_clip",
     label: "Delete from history",
-    accelerator: "Ctrl+Backspace",
+    accelerator: "Ctrl+D",
   },
   open_command: { id: "open_command", label: "Open Command", accelerator: "Enter" },
 };
@@ -561,8 +682,8 @@ let snapshot: SettingsSnapshot = {
   // `colorScheme: "dark"`, so what "system" resolves to is fixed by the harness
   // rather than by whatever the machine running the suite happens to be set to.
   appearance: "system",
-  themeDark: "graphite",
-  themeLight: "graphite",
+  themeDark: "vela",
+  themeLight: "vela",
   windowMode: "compact",
   uiSize: "default",
   superHotkey: false,
@@ -639,14 +760,9 @@ function expandedSuggestions(): Entry[] {
 /**
  * Whether the browser build reports autostart as registered.
  *
- * Seeded from `__takyon_autostart` where a test set one before the page loaded:
- * the switch reads this on mount, so a value set afterwards is a value the
- * mounted switch has already missed.
- *
- * **True by default, because that is what a real install has**: `firstrun::maybe_enable`
- * turns it on and it stopped being a question at v0.6. The OS owns the answer
- * (ADR-0015) and a browser has no OS, so a false default here drew every
- * baseline showing a switch the product ships turned on.
+ * Seeded from `__takyon_autostart` set before page load: the switch reads it on mount.
+ * **True by default, as on a real install** (`firstrun::maybe_enable`, ADR-0015); a
+ * false default drew every baseline with a switch the product ships turned on.
  */
 let lastAutostart =
   (globalThis as { __takyon_autostart?: boolean }).__takyon_autostart ?? true;
@@ -666,6 +782,122 @@ export function setAutostart(on: boolean) {
 
 export function failAutostart(message: string | null) {
   autostartFailure = message;
+}
+
+/**
+ * What the next update check finds (ADR-0040). Every state needs a feed, a
+ * signature or a broken network to reach for real; `offline` and `badSignature`
+ * are the two failures About must word differently.
+ */
+export type UpdateScenario = "available" | "current" | "unconfigured" | "offline" | "badSignature";
+let updateScenario: UpdateScenario = "available";
+let updateChecks = 0;
+let updateFound = false;
+export function setUpdateScenario(scenario: UpdateScenario) {
+  updateScenario = scenario;
+}
+/** How many checks ran, so a test can prove About never checks on its own. */
+export function updateCheckCount() {
+  return updateChecks;
+}
+
+/**
+ * The Palette's update row. None by default, so every existing Palette baseline
+ * stays as it was; a test that wants one asks for it before the next show.
+ */
+let updateNoticeState: UpdateNotice | null = null;
+let autoCheck = true;
+export function setUpdateNotice(notice: UpdateNotice | null) {
+  updateNoticeState = notice;
+}
+
+/**
+ * About's licence list. A handful of real-looking rows rather than the 356 a
+ * build ships: the visual layer checks layout, search and expansion, and the
+ * Rust contract test checks the generated file.
+ */
+const MIT =
+  "MIT License\n\nCopyright (c) Meta Platforms, Inc. and affiliates.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction.";
+const LICENCES: ThirdPartyLicences = {
+  components: [
+    {
+      kind: "crate",
+      name: "jiff",
+      version: "0.2.15",
+      licence: "Unlicense OR MIT",
+      licenceName: "The Unlicense (Unlicense) OR MIT License (MIT)",
+      repository: "https://github.com/BurntSushi/jiff",
+      texts: [1, 2],
+      canonical: false,
+    },
+    {
+      kind: "crate",
+      name: "serde",
+      version: "1.0.228",
+      licence: "MIT OR Apache-2.0",
+      licenceName: "MIT License (MIT) OR Apache License 2.0 (Apache-2.0)",
+      repository: "https://github.com/serde-rs/serde",
+      texts: [3, 4],
+      canonical: false,
+    },
+    {
+      kind: "crate",
+      name: "tauri",
+      version: "2.11.5",
+      licence: "Apache-2.0 OR MIT",
+      licenceName: "Apache License 2.0 (Apache-2.0) OR MIT License (MIT)",
+      repository: "https://github.com/tauri-apps/tauri",
+      texts: [3, 4],
+      canonical: false,
+    },
+    {
+      kind: "crate",
+      name: "windows-link",
+      version: "0.2.1",
+      licence: "MIT OR Apache-2.0",
+      licenceName: "MIT License (MIT) OR Apache License 2.0 (Apache-2.0)",
+      repository: null,
+      texts: [5],
+      canonical: true,
+    },
+    {
+      kind: "npm",
+      name: "@phosphor-icons/react",
+      version: "2.1.10",
+      licence: "MIT",
+      licenceName: "MIT License (MIT)",
+      repository: "https://github.com/phosphor-icons/react",
+      texts: [2],
+      canonical: false,
+    },
+    {
+      kind: "npm",
+      name: "react",
+      version: "19.2.0",
+      licence: "MIT",
+      licenceName: "MIT License (MIT)",
+      repository: "https://github.com/facebook/react",
+      texts: [0],
+      canonical: false,
+    },
+  ],
+  texts: [
+    { name: "LICENSE", text: MIT },
+    { name: "UNLICENSE", text: "This is free and unencumbered software released into the public domain." },
+    { name: "LICENSE-MIT", text: "The MIT License (MIT)\n\nCopyright (c) 2015 Andrew Gallant" },
+    { name: "LICENSE-APACHE", text: "Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/\n\nTERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION" },
+    { name: "LICENSE-MIT", text: "Permission is hereby granted, free of charge, to any\nperson obtaining a copy of this software." },
+    { name: "MIT", text: "MIT License\n\nCopyright (c) <year> <copyright holders>" },
+  ],
+};
+let licenceLoads = 0;
+let licenceFailure: string | null = null;
+/** How many times the list was read, so a test can prove About alone reads nothing. */
+export function licenceLoadCount() {
+  return licenceLoads;
+}
+export function failLicences(message: string | null) {
+  licenceFailure = message;
 }
 
 /** The same, for a `settings.db` write. An unwritable database is the real case. */
@@ -688,7 +920,38 @@ const CALC_FIXTURES: Record<string, string> = {
   "2024": "2,024",
 };
 
+/** v0.17's time zone card, copied from `v0_17_a_time_zone_answer_is_one_calc_card`. */
+const TZ_FIXTURES: Record<string, Entry> = {
+  "time in tokyo": {
+    id: "calc:6:00 PM JST",
+    title: "6:00 PM JST",
+    subtitle: "11:00 AM CEST",
+    kind: "calc",
+    score: 1000,
+    actions: ["copy_answer"],
+    labels: [
+      "your time · Central European Summer Time, UTC+2 · Wed 7 Oct",
+      "Tokyo · Japan Standard Time, UTC+9 · Wed 7 Oct",
+    ],
+  },
+};
+
+/** Four-step date card exercises Compact value wrapping. */
+const DATE_FIXTURES: Record<string, Entry> = {
+  "1 month and 1 day and 1 month and 1 day from now": {
+    id: "calc:30 December 2026",
+    title: "30 December 2026",
+    subtitle: "today + 1 month + 1 day + 1 month + 1 day",
+    kind: "calc",
+    score: 1000,
+    actions: ["copy_answer"],
+    labels: ["today · Wed 28 Oct 2026", "Wednesday"],
+  },
+};
+
 function calcFixture(q: string): Entry[] {
+  const card = TZ_FIXTURES[q.trim()] ?? DATE_FIXTURES[q.trim()];
+  if (card) return [card];
   const answer = CALC_FIXTURES[q.trim()];
   if (!answer) return [];
   return [
@@ -702,6 +965,431 @@ function calcFixture(q: string): Entry[] {
     },
   ];
 }
+
+/* ------------------------------------------------------------------ Focus */
+
+const MIN = 60_000;
+
+/** The built-ins, trimmed: enough rows to draw every surface. */
+const FOCUS_BUILTINS: FocusCategory[] = [
+  {
+    id: "social",
+    name: "Social",
+    icon: "UsersThree",
+    items: [
+      { key: "site:x.com", label: "X" },
+      { key: "site:instagram.com", label: "Instagram" },
+      { key: "site:reddit.com", label: "Reddit" },
+      { key: "site:tiktok.com", label: "TikTok" },
+    ],
+  },
+  {
+    id: "messaging",
+    name: "Messaging",
+    icon: "ChatsCircle",
+    items: [
+      { key: "exe:discord.exe", label: "Discord" },
+      { key: "exe:slack.exe", label: "Slack" },
+      { key: "exe:whatsapp.exe", label: "WhatsApp" },
+    ],
+  },
+  {
+    id: "video",
+    name: "Video & streaming",
+    icon: "PlayCircle",
+    items: [
+      { key: "site:youtube.com", label: "YouTube" },
+      { key: "site:netflix.com", label: "Netflix" },
+      { key: "site:twitch.tv", label: "Twitch" },
+    ],
+  },
+  {
+    id: "news",
+    name: "News",
+    icon: "Newspaper",
+    items: [
+      { key: "site:news.google.com", label: "Google News" },
+      { key: "site:bbc.com", label: "BBC" },
+    ],
+  },
+  {
+    id: "shopping",
+    name: "Shopping",
+    icon: "ShoppingBag",
+    items: [
+      { key: "site:amazon.com", label: "Amazon" },
+      { key: "site:flipkart.com", label: "Flipkart" },
+    ],
+  },
+  {
+    id: "games",
+    name: "Games",
+    icon: "GameController",
+    dynamic: "games",
+    items: [{ key: "exe:steam.exe", label: "Steam" }],
+  },
+];
+
+const PROTECTED = ["exe:explorer.exe", "exe:takyon.exe"];
+
+/** Apps the mock machine has: Discord and Steam, two games through Steam. */
+const FOCUS_KNOWN = [
+  { key: "exe:discord.exe", icon: "app:discord" },
+  { key: "exe:steam.exe", icon: "app:steam" },
+];
+const FOCUS_GAMES: FocusItem[] = [
+  { key: "entry:steam:730", label: "Counter-Strike 2" },
+  { key: "entry:steam:570", label: "Dota 2" },
+];
+
+/** `with_edits`, for the mock: the user's edits over the shipped list. */
+type MockEdit = { category: string; item: FocusItem; removed: boolean };
+let focusEdits: MockEdit[] = [];
+function focusBuiltins(): FocusCategory[] {
+  return FOCUS_BUILTINS.map((c) => {
+    let items = [...c.items];
+    const added: string[] = [];
+    const removed: FocusItem[] = [];
+    for (const e of focusEdits.filter((x) => x.category === c.id)) {
+      if (e.removed) {
+        items = items.filter((i) => i.key !== e.item.key);
+        removed.push(e.item);
+      } else if (!items.some((i) => i.key === e.item.key)) {
+        items.push(e.item);
+        added.push(e.item.key);
+      }
+    }
+    return { ...c, items, added, removed };
+  });
+}
+
+let focusCustom: FocusCategory[] = [];
+let nextCustom = 1;
+let focusLast: BlockList = { categories: ["social", "video"], items: ["exe:discord.exe"] };
+const focusPrefs: FocusSettings = {
+  snoozeMinutes: 3,
+  restoreApps: false,
+  surface: "bar",
+  bang: false,
+  hurdleShutdown: "strict",
+  hurdleIdle: "strict",
+  barPlace: "bottom",
+  barOpacity: 90,
+};
+const focusListeners = new Set<(signal: FocusSignal) => void>();
+const IDLE_VIEW: FocusView = {
+  running: false,
+  goal: "",
+  strict: false,
+  remainingMs: 0,
+  endsAt: 0,
+  paused: false,
+  refused: [],
+};
+let focusNow: FocusView = IDLE_VIEW;
+/** `?refusals=1`: Discord runs as administrator and Opera GX is open. */
+let focusRefusals = false;
+let frictionAt: number | null = null;
+
+function emitFocus(signal: FocusSignal) {
+  for (const cb of focusListeners) cb(signal);
+}
+
+function focusTick(): FocusView {
+  if (!focusNow.running) return focusNow;
+  const remainingMs = focusNow.paused
+    ? focusNow.remainingMs
+    : Math.max(0, focusNow.endsAt - Date.now());
+  const frictionMs = frictionAt === null ? null : Math.max(0, frictionAt + 30_000 - Date.now());
+  return { ...focusNow, remainingMs, frictionMs };
+}
+
+function changed(view: FocusView): FocusView {
+  focusNow = view;
+  const shown = focusTick();
+  emitFocus({ kind: "view", view: shown });
+  return shown;
+}
+
+/** Strict: has the retyped goal's countdown run out? */
+function frictionReady() {
+  return !focusNow.strict || (frictionAt !== null && Date.now() - frictionAt >= 30_000);
+}
+
+/** `?focus=running|strict|paused`, `&goal=…`, `?focusbang=1`, `?refusals=1`, `?baropacity=50`. */
+(() => {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  // `?focusbang=1`: `!f` switched on, as Settings would leave it.
+  if (params.get("focusbang") === "1") focusPrefs.bang = true;
+  // `?baropacity=50`: the bar's panel at that opacity.
+  const opacity = Number(params.get("baropacity"));
+  if (opacity >= 30 && opacity <= 100) focusPrefs.barOpacity = opacity;
+  focusRefusals = params.get("refusals") === "1";
+  const mode = params.get("focus");
+  if (mode !== "running" && mode !== "strict" && mode !== "paused") return;
+  const remainingMs = 23 * MIN + 41_000;
+  focusNow = {
+    running: true,
+    goal: params.get("goal") ?? "Write Focus manual page",
+    strict: mode === "strict",
+    remainingMs,
+    endsAt: Date.now() + remainingMs,
+    paused: mode === "paused",
+    breakEndsAt: mode === "paused" ? Date.now() + 5 * MIN : null,
+    refused: [],
+  };
+})();
+
+/** Mirror of `duration.rs` for the shapes the form offers; not a full parser. */
+function mockDuration(text: string): number {
+  const t = text.trim().toLowerCase();
+  if (t.startsWith("until ")) return 150 * MIN;
+  const m =
+    /^(\d+(?:\.\d+)?)\s*(h|hr|hrs|hours?|m|min|mins|minutes?)?\s*(?:(\d+)\s*(?:m|min|mins|minutes?)?)?$/.exec(
+      t,
+    );
+  if (!m) throw "Not a length or a time";
+  const n = Number(m[1]);
+  const hours = m[2]?.startsWith("h") ?? false;
+  const ms = hours ? n * 60 * MIN + Number(m[3] ?? 0) * MIN : n * MIN;
+  if (ms === 0) throw "Too short";
+  if (ms > 24 * 60 * MIN) throw "Longer than a day";
+  return ms;
+}
+
+let focusHistoryCleared = false;
+
+/**
+ * A believable fortnight, fixed rather than random so screenshots are stable.
+ * Minutes per day, oldest first; the page clock is pinned by the fixture.
+ */
+const STATS_MINUTES = [0, 95, 140, 60, 0, 25, 180, 120, 75, 0, 210, 45, 160, 90];
+
+function mockStats(days: number): FocusStats {
+  if (focusHistoryCleared) {
+    return { focusedMs: 0, sessions: 0, fullLength: 0, endedEarly: 0, strict: 0, blocks: 0, snoozes: 0, days: [], categories: [], blocked: [] };
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const list = Array.from({ length: days }, (_, i) => {
+    const minutes = STATS_MINUTES[(STATS_MINUTES.length - days + i + STATS_MINUTES.length * 7) % STATS_MINUTES.length] ?? 0;
+    return {
+      start: today.getTime() - (days - 1 - i) * 86_400_000,
+      focusedMs: minutes * MIN,
+      sessions: minutes ? Math.ceil(minutes / 50) : 0,
+      blocks: Math.round(minutes / 9),
+    };
+  });
+  const focusedMs = list.reduce((a, d) => a + d.focusedMs, 0);
+  const sessions = list.reduce((a, d) => a + d.sessions, 0);
+  return {
+    focusedMs,
+    sessions,
+    fullLength: Math.round(sessions * 0.7),
+    endedEarly: sessions - Math.round(sessions * 0.7),
+    strict: Math.round(sessions * 0.3),
+    blocks: list.reduce((a, d) => a + d.blocks, 0),
+    snoozes: Math.round(sessions / 3),
+    days: list,
+    categories: [
+      { id: "social", focusedMs: Math.round(focusedMs * 0.8) },
+      { id: "video", focusedMs: Math.round(focusedMs * 0.55) },
+      { id: "messaging", focusedMs: Math.round(focusedMs * 0.3) },
+    ],
+    blocked: [
+      { key: "site:youtube.com", count: 41 },
+      { key: "exe:discord.exe", count: 27 },
+      { key: "site:x.com", count: 19 },
+      { key: "site:reddit.com", count: 8 },
+    ],
+  };
+}
+
+const focusMock = {
+  focusParseDuration: async (text: string) => mockDuration(text),
+  focusParseBang: async (line: string): Promise<FocusBangLine> => {
+    const m = /^(.*?)\s*(\d+(?:\.\d+)?\s*(?:h|m)\w*(?:\s*\d+\s*m\w*)?|until .+)$/i.exec(line.trim());
+    if (!m) return { goal: line.trim(), lengthMs: null, error: null };
+    try {
+      return { goal: m[1]!.trim(), lengthMs: mockDuration(m[2]!), error: null };
+    } catch (e) {
+      return { goal: m[1]!.trim(), lengthMs: null, error: String(e) };
+    }
+  },
+  focusView: async () => focusTick(),
+  focusPreview: async (list: BlockList): Promise<FocusRefusal[]> => {
+    const out: FocusRefusal[] = list.items
+      .filter((k) => PROTECTED.includes(k))
+      .map((key) => ({ kind: "protected", key }));
+    if (!focusRefusals) return out;
+    if (list.items.includes("exe:discord.exe")) out.push({ kind: "elevated", key: "exe:discord.exe", name: "Discord" });
+    const sites = list.categories.length > 0 || list.items.some((k) => k.startsWith("site:"));
+    if (sites) out.push({ kind: "browser", name: "Opera GX", elevated: false });
+    return out;
+  },
+  focusStart: async (request: FocusStartRequest) => {
+    if (focusNow.running) throw { kind: "alreadyRunning" };
+    const items = request.list.items.filter((k) => !PROTECTED.includes(k));
+    if (request.list.categories.length + items.length === 0) throw { kind: "nothingToBlock" };
+    focusLast = request.list;
+    frictionAt = null;
+    return changed({
+      running: true,
+      goal: request.goal.trim() || "Focus",
+      strict: request.strict,
+      remainingMs: request.lengthMs,
+      endsAt: Date.now() + request.lengthMs,
+      paused: false,
+      refused: request.list.items.filter((k) => PROTECTED.includes(k)),
+    });
+  },
+  focusPause: async (breakMinutes: number | null) => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    if (!frictionReady()) throw { kind: "needsFriction" };
+    frictionAt = null;
+    const remainingMs = Math.max(0, focusNow.endsAt - Date.now());
+    return changed({
+      ...focusNow,
+      paused: true,
+      remainingMs,
+      breakEndsAt: breakMinutes ? Date.now() + breakMinutes * MIN : null,
+    });
+  },
+  focusResume: async () => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    return changed({
+      ...focusNow,
+      paused: false,
+      endsAt: Date.now() + focusNow.remainingMs,
+      breakEndsAt: null,
+    });
+  },
+  focusExtend: async (minutes: number) => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    return changed({
+      ...focusNow,
+      endsAt: focusNow.endsAt + minutes * MIN,
+      remainingMs: focusNow.remainingMs + minutes * MIN,
+    });
+  },
+  focusComplete: async () => {
+    if (!focusNow.running) throw { kind: "notRunning" };
+    if (!frictionReady()) throw { kind: "needsFriction" };
+    frictionAt = null;
+    changed(IDLE_VIEW);
+    emitFocus({ kind: "ended", outcome: "completed" });
+    return IDLE_VIEW;
+  },
+  focusSnooze: async (_key: string) => {
+    if (focusNow.strict || focusPrefs.snoozeMinutes === 0) throw { kind: "notAllowed" };
+  },
+  focusTypeGoal: async (text: string) => {
+    const ok = text.trim() === focusNow.goal.trim();
+    if (ok) frictionAt = Date.now();
+    changed(focusNow);
+    return ok;
+  },
+  focusResetFriction: async () => {
+    frictionAt = null;
+  },
+  focusCategories: async (): Promise<FocusCategories> => ({
+    builtins: focusBuiltins(),
+    custom: focusCustom,
+  }),
+  focusMembers: async (id: string): Promise<FocusMember[]> => {
+    const c = [...focusBuiltins(), ...focusCustom].find((x) => x.id === id);
+    if (!c) return [];
+    const out: FocusMember[] = c.items.map((i) => {
+      const known = FOCUS_KNOWN.find((k) => k.key === i.key);
+      return {
+        ...i,
+        kind: i.key.startsWith("site:") ? "site" : "app",
+        installed: Boolean(known) || i.key.startsWith("entry:"),
+        icon: known?.icon ?? null,
+        added: (c.added ?? []).includes(i.key),
+        detected: false,
+      };
+    });
+    if (c.dynamic === "games") {
+      for (const g of FOCUS_GAMES) {
+        if ((c.removed ?? []).some((r) => r.key === g.key)) continue;
+        out.push({ ...g, kind: "app", installed: true, icon: null, added: false, detected: true });
+      }
+    }
+    return out;
+  },
+  focusEditBuiltin: async (category: string, item: FocusItem, removed: boolean) => {
+    const prior = focusEdits.find((e) => e.category === category && e.item.key === item.key);
+    focusEdits = focusEdits.filter((e) => e !== prior);
+    const shipped = FOCUS_BUILTINS.find((c) => c.id === category)?.items.some((i) => i.key === item.key);
+    const undo = removed ? prior !== undefined && !prior.removed : shipped;
+    if (!undo) focusEdits.push({ category, item, removed });
+  },
+  focusFetchIcons: async (_keys: string[]) => 0,
+  focusBarFit: async (_width: number) => {},
+  focusBarReveal: async (_side: "up" | "down" | null) => {},
+  focusResetBuiltin: async (category: string) => {
+    focusEdits = focusEdits.filter((e) => e.category !== category);
+  },
+  focusSaveCategory: async (category: FocusCategory) => {
+    if (!category.name.trim()) throw "A Focus category needs a name";
+    const saved = { ...category, id: category.id || `custom:${nextCustom++}` };
+    focusCustom = [...focusCustom.filter((c) => c.id !== saved.id), saved];
+    return saved;
+  },
+  focusDeleteCategory: async (id: string) => {
+    focusCustom = focusCustom.filter((c) => c.id !== id);
+  },
+  focusExportCategories: async (ids: string[]) =>
+    JSON.stringify(
+      {
+        version: 1,
+        categories: focusCustom.filter((c) => ids.length === 0 || ids.includes(c.id)),
+      },
+      null,
+      2,
+    ),
+  focusImportCategories: async (json: string) => {
+    const file = JSON.parse(json) as { categories: FocusCategory[] };
+    const saved: FocusCategory[] = [];
+    for (const c of file.categories) {
+      let name = c.name;
+      for (let n = 2; focusCustom.some((x) => x.name === name); n++) name = `${c.name} (${n})`;
+      const one = { ...c, id: `custom:${nextCustom++}`, name };
+      focusCustom = [...focusCustom, one];
+      saved.push(one);
+    }
+    return saved;
+  },
+  focusLastList: async () => focusLast,
+  focusSettings: async () => ({ ...focusPrefs }),
+  focusSetSetting: async (key: string, value: string) => {
+    const k = key.replace("focus.", "");
+    if (k === "snooze_minutes") focusPrefs.snoozeMinutes = Number(value);
+    if (k === "restore_apps") focusPrefs.restoreApps = value === "1";
+    if (k === "surface") focusPrefs.surface = value as FocusSettings["surface"];
+    if (k === "bang") focusPrefs.bang = value === "1";
+    if (k === "hurdle_shutdown")
+      focusPrefs.hurdleShutdown = value as FocusSettings["hurdleShutdown"];
+    if (k === "hurdle_idle") focusPrefs.hurdleIdle = value as FocusSettings["hurdleIdle"];
+    if (k === "bar_place") focusPrefs.barPlace = value as FocusSettings["barPlace"];
+    if (k === "bar_opacity") {
+      focusPrefs.barOpacity = Number(value);
+      emitFocus({ kind: "bar", opacity: focusPrefs.barOpacity });
+    }
+  },
+  focusClearHistory: async () => {
+    focusHistoryCleared = true;
+  },
+  focusStats: async (days: number): Promise<FocusStats> => mockStats(days),
+  onFocus: (cb: (signal: FocusSignal) => void) => {
+    focusListeners.add(cb);
+    return () => {
+      focusListeners.delete(cb);
+    };
+  },
+};
 
 export const mock = {
   dismiss: async () => {
@@ -720,6 +1408,10 @@ export const mock = {
         statusRow: false,
         ask: { query: ask, agent: route[0] ?? null, order: route },
       };
+    }
+    // `!f` with the Bang on: the line goes back untouched (v0.16).
+    if (focusPrefs.bang && /^!f(\s|$)/i.test(q)) {
+      return { seq, entries: [], statusRow: true, focus: { line: q.replace(/^!f\s*/i, "") } };
     }
     // `!s` carries no Entries either, and no request is made here: typing the
     // Bang sends nothing, exactly as `query.rs` does it (ADR-0002).
@@ -743,7 +1435,9 @@ export const mock = {
     if (clips !== null) {
       return {
         seq,
-        entries: CLIP_FIXTURES.filter((e) => e.title.toLowerCase().includes(clips)),
+        entries: CLIP_FIXTURES.filter(
+          (e) => !deletedClips.has(e.id) && e.title.toLowerCase().includes(clips),
+        ),
         statusRow: false,
       };
     }
@@ -753,6 +1447,7 @@ export const mock = {
         ? [
             ...calcFixture(q),
             ...[...FIXTURES, COMMAND_FIXTURE].filter((e) => matches(e, q)),
+            ...focusCommands(q),
           ]
         : // Expanded's first view (v0.10). Rust answers the empty line with the
           // top Frecency Entries in that mode only; here the same branch hands
@@ -772,7 +1467,7 @@ export const mock = {
     const entry = entryId.startsWith("calc:")
       ? { actions: ["copy_answer"] }
       : (CLIP_FIXTURES.find((e) => e.id === entryId) ??
-        [...FIXTURES, COMMAND_FIXTURE].find((e) => e.id === entryId));
+        [...FIXTURES, COMMAND_FIXTURE, ...FOCUS_COMMAND_FIXTURES].find((e) => e.id === entryId));
     // `flatMap`, not `map().filter(Boolean)`: with `noUncheckedIndexedAccess`
     // the lookup is `Action | undefined` and `filter` does not narrow it.
     // Returning `[]` for an unknown id also mirrors Rust.
@@ -797,11 +1492,12 @@ export const mock = {
   setCalcPolicy: async (mode: CalcPolicy) => {
     lastCalcPolicy = mode;
   },
-  activate: async (_entryId: string, actionId: string) => {
+  activate: async (entryId: string, actionId: string) => {
     // Launching is the one thing the browser build genuinely cannot do. Hiding is
     // what the real path does first, so the mock does that much and stops —
-    // except for the one action Rust does not hide for.
-    if (actionId !== "delete_clip") emitHide();
+    // except for the one action Rust does not hide for, which it applies.
+    if (actionId === "delete_clip") deletedClips.add(entryId);
+    else emitHide();
   },
   /** Retention, recorded rather than applied: there is no history here to sweep. */
   clipRetention: async (): Promise<ClipRetention> => lastRetention,
@@ -811,15 +1507,20 @@ export const mock = {
     return 0;
   },
   clipClear: async () => 0,
+  clipDiskBytes: async () => 6_291_456,
+  /** A drawn gradient stands in for a screenshot; no protocol handler here. */
+  clipImageUrl: (_id: number, _part: "thumb" | "full") => mockImage(),
   /** Recorded, not applied: there is no native window here to resize. */
   setView: async (view: ViewKind | null) => {
     lastView = view;
   },
   clipPage: async (query: string, limit?: number) => {
     const q = query.trim().toLowerCase();
+    // Images have no text to match, as in Rust: a query never finds one.
+    const live = CLIP_ROWS.filter((c) => !deletedClips.has(`clip:${c.id}`));
     const hits = q
-      ? CLIP_ROWS.filter((c) => c.preview.toLowerCase().includes(q))
-      : CLIP_ROWS;
+      ? live.filter((c) => c.kind === "text" && c.preview.toLowerCase().includes(q))
+      : live;
     return hits.slice(0, limit ?? 200);
   },
   clipBang: async () => lastBang,
@@ -885,6 +1586,65 @@ export const mock = {
       ? {}
       : { error: "Another application is already holding it." }),
   }),
+  updateCheck: async (): Promise<UpdateCheck> => {
+    updateChecks++;
+    updateFound = false;
+    switch (updateScenario) {
+      case "unconfigured":
+        return { state: "unconfigured" };
+      case "current":
+        return { state: "current", version: __APP_VERSION__ };
+      case "offline":
+        throw new Error("Couldn't reach the update feed. Check the connection and try again.");
+      default:
+        updateFound = true;
+        return {
+          state: "available",
+          version: "1.0.0",
+          notes: [
+            "- **Update notices.** The Palette shows when a new version is ready.",
+            "- Faster first paint.",
+          ].join("\n\n"),
+        };
+    }
+  },
+  /** Halts at `installing`, as a real one does: Windows exits into the installer. */
+  updateInstall: async (onProgress: (p: UpdateProgress) => void): Promise<void> => {
+    if (!updateFound) throw new Error("Check for updates first.");
+    const total = 8_000_000;
+    for (const downloaded of [2_000_000, 6_000_000, total]) {
+      onProgress({ phase: "downloading", downloaded, total });
+    }
+    if (updateScenario === "badSignature") {
+      throw new Error("The download failed its signature check. Nothing was installed.");
+    }
+    onProgress({ phase: "installing" });
+    await new Promise<never>(() => {});
+  },
+  /** Same rule as Rust: a row from an earlier run checks again before installing. */
+  updateInstallNow: async (onProgress: (p: UpdateProgress) => void): Promise<void> => {
+    if (!updateFound) {
+      if (updateScenario === "offline") {
+        throw new Error("Couldn't reach the update feed. Check the connection and try again.");
+      }
+      updateFound = updateScenario === "available" || updateScenario === "badSignature";
+      if (!updateFound) throw new Error("Takyon is already up to date.");
+    }
+    return mock.updateInstall(onProgress);
+  },
+  updateNotice: async () => updateNoticeState,
+  dismissUpdateNotice: async () => {
+    if (updateNoticeState?.kind === "whatsNew") updateNoticeState = null;
+  },
+  thirdPartyLicences: async (): Promise<ThirdPartyLicences> => {
+    licenceLoads++;
+    if (licenceFailure) throw new Error(licenceFailure);
+    return LICENCES;
+  },
+  updateAutoCheck: async () => autoCheck,
+  setUpdateAutoCheck: async (on: boolean) => {
+    autoCheck = on;
+  },
   reportFirstPixel: async (_showId: number) => {},
   reportFirstEntry: async (_seq: number) => {},
   autostartIsEnabled: async () => lastAutostart,
@@ -1022,7 +1782,17 @@ export const mock = {
     };
   },
   appsIndexing: async () => indexing,
-  agentSnapshots: async (): Promise<AgentSnapshot[]> => agentFixtures,
+  // Rust's `lead_sole_agent`: a first run with one Agent installed ranks it first.
+  agentSnapshots: async (): Promise<AgentSnapshot[]> => {
+    const installed = agentFixtures.filter((snapshot) => snapshot.installed);
+    const sole = installed.length === 1 ? installed[0]?.kind : undefined;
+    if (sole && !askChosen) {
+      askOrder = [sole, ...askOrder.filter((kind) => kind !== sole)];
+      askEnabled = { ...askEnabled, [sole]: true };
+      askChosen = true;
+    }
+    return agentFixtures;
+  },
   // The Windows shape, which is what the screenshots are rasterised on.
   agentPathReport: async (): Promise<PathReport | null> => ({
     source: "registry",
@@ -1040,9 +1810,11 @@ export const mock = {
   agentModels: async (agent: AgentKind) => [...AGENT_MODELS[agent]],
   setAskOrder: async (order: AgentKind[]) => {
     askOrder = [...order];
+    askChosen = true;
   },
   setAskEnabled: async (agent: AgentKind, enabled: boolean) => {
     askEnabled = { ...askEnabled, [agent]: enabled };
+    askChosen = true;
   },
   setAskCwd: async (path: string) => {
     askCwd = path.trim();
@@ -1056,6 +1828,11 @@ export const mock = {
   agentAsk: async (args: { agent: AgentKind; prompt: string; session?: string }) => {
     const turnId = nextTurnId++;
     const session = args.session ?? `mock-session-${turnId}`;
+    if (turnFailure !== null) {
+      const failure = turnFailure;
+      setTimeout(() => emitTurn({ turnId, kind: "failed", ...failure }), 10);
+      return turnId;
+    }
     // Three ticks rather than one: a single event would never catch a renderer
     // that overwrites the answer instead of appending to it.
     emitTurn({ turnId, kind: "started", session, model: "mock-model" });
@@ -1137,4 +1914,5 @@ export const mock = {
       turnListeners.delete(cb);
     };
   },
+  ...focusMock,
 };

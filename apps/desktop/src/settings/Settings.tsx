@@ -16,9 +16,19 @@ import { DISPLAY_NAME } from "@takyon/shared";
 import { navSections, searchSettings } from "./nav";
 import { PAGES } from "./pages";
 import { TitleBar } from "./TitleBar";
+import { CrumbContext, type Crumb } from "./crumb";
 
 export function Settings() {
-  const [active, setActive] = useState(PAGES[0]!.id);
+  const [active, setActivePage] = useState(PAGES[0]!.id);
+  const [crumb, setCrumb] = useState<Crumb | null>(null);
+  // A sub-view belongs to the page that opened it: every pick remounts the
+  // page, so a sidebar click on the page you are in leaves its sub-view too.
+  const [visit, setVisit] = useState(0);
+  const setActive = (id: string) => {
+    setActivePage(id);
+    setCrumb(null);
+    setVisit((v) => v + 1);
+  };
   const [query, setQuery] = useState("");
   /**
    * The control a search result asked for, so the page can scroll to it.
@@ -91,8 +101,22 @@ export function Settings() {
       </nav>
 
       <main className="flex-1 overflow-y-auto px-6 py-5" data-page={page.id}>
-        <h1 className="mb-4 text-[15px] font-medium">{page.title}</h1>
-        {Body && <Body />}
+        <h1 className="mb-4 flex items-center gap-2 text-[15px] font-medium">
+          {crumb ? (
+            <>
+              <button type="button" onClick={crumb.back} className="text-fg/55 transition-colors hover:text-fg">
+                {page.title}
+              </button>
+              <span aria-hidden className="text-fg/30">
+                /
+              </span>
+              <span>{crumb.label}</span>
+            </>
+          ) : (
+            page.title
+          )}
+        </h1>
+        <CrumbContext.Provider value={setCrumb}>{Body && <Body key={`${page.id}-${visit}`} />}</CrumbContext.Provider>
       </main>
       </div>
     </div>

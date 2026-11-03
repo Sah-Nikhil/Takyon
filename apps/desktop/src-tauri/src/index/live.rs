@@ -108,7 +108,11 @@ impl WalkIndex {
             .index
             .read()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|index| copy_roots(index, root, &mut builder)))
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(|index| copy_roots(index, root, &mut builder))
+            })
             .unwrap_or_default();
 
         // Roots the mapped index did not carry — the affected one, and any added
@@ -634,7 +638,10 @@ mod tests {
         index.rebuild().unwrap();
 
         assert!(index.search("an", 10).is_empty());
-        assert!(!index.search("re", 10).is_empty(), "README.md starts with re");
+        assert!(
+            !index.search("re", 10).is_empty(),
+            "README.md starts with re"
+        );
 
         let _ = std::fs::remove_dir_all(&tree);
         let _ = std::fs::remove_dir_all(&store);
@@ -776,7 +783,11 @@ mod tests {
         index.rescan_root(&a).unwrap();
 
         assert_eq!(index.entry_count(), before);
-        assert_eq!(index.search("bangs", 10).len(), 2, "both roots still answer");
+        assert_eq!(
+            index.search("bangs", 10).len(),
+            2,
+            "both roots still answer"
+        );
 
         let _ = std::fs::remove_dir_all(&a);
         let _ = std::fs::remove_dir_all(&b);

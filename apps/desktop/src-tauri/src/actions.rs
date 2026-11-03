@@ -46,7 +46,7 @@ const TABLE: &[(ActionId, &str, Option<&str>)] = &[
     (COPY_ANSWER, "Copy answer", Some("Enter")),
     (PASTE, "Paste", Some("Enter")),
     (COPY_CLIP, "Copy to clipboard", Some("Ctrl+Enter")),
-    (DELETE_CLIP, "Delete from history", Some("Ctrl+Backspace")),
+    (DELETE_CLIP, "Delete from history", Some("Ctrl+D")),
     (OPEN_COMMAND, "Open Command", Some("Enter")),
 ];
 
@@ -62,11 +62,14 @@ const NON_APP: &[ActionId] = &[PASTE, COPY_CLIP, DELETE_CLIP, OPEN_COMMAND];
 /// `None` for an unknown id, never a placeholder row — that would hide a Source
 /// bug behind something that looks deliberate.
 pub fn describe(id: &ActionId) -> Option<Action> {
-    TABLE.iter().find(|(aid, _, _)| aid == id).map(|(aid, label, accel)| Action {
-        id: aid.clone(),
-        label: (*label).to_string(),
-        accelerator: accel.map(|a| a.to_string()),
-    })
+    TABLE
+        .iter()
+        .find(|(aid, _, _)| aid == id)
+        .map(|(aid, label, accel)| Action {
+            id: aid.clone(),
+            label: (*label).to_string(),
+            accelerator: accel.map(|a| a.to_string()),
+        })
 }
 
 /// Every action and its label, for the footer (v0.4.5 task 4).
@@ -207,6 +210,7 @@ mod tests {
             score: 800.0,
             actions,
             version: None,
+            labels: None,
         }
     }
 
@@ -258,7 +262,9 @@ mod tests {
         ] {
             let mut seen = std::collections::HashSet::new();
             for action in menu.iter().filter_map(describe) {
-                let Some(accel) = action.accelerator else { continue };
+                let Some(accel) = action.accelerator else {
+                    continue;
+                };
                 assert!(
                     seen.insert(accel.clone()),
                     "{accel} is bound twice in one menu, once by {}",
@@ -287,7 +293,11 @@ mod tests {
             let ctrl = accel.contains("Ctrl");
             let shift = accel.contains("Shift");
             if accel.ends_with("Enter") {
-                assert_eq!(&for_modifiers(EntryKind::App, ctrl, shift), id, "{accel} disagrees");
+                assert_eq!(
+                    &for_modifiers(EntryKind::App, ctrl, shift),
+                    id,
+                    "{accel} disagrees"
+                );
             }
         }
     }
@@ -323,7 +333,11 @@ mod tests {
         let all = all();
         assert_eq!(all.len(), TABLE.len());
         for action in &all {
-            assert!(!action.label.is_empty(), "{} has no label", action.id.as_str());
+            assert!(
+                !action.label.is_empty(),
+                "{} has no label",
+                action.id.as_str()
+            );
         }
     }
 
@@ -353,6 +367,7 @@ mod tests {
             score: 1000.0,
             actions: for_calc(),
             version: None,
+            labels: None,
         });
         assert_eq!(menu.len(), 1);
         assert_eq!(menu[0].label, "Copy answer");
@@ -361,15 +376,13 @@ mod tests {
 
     /// Every accelerator the menu advertises is actually bound to something.
     ///
-    /// The Enter chords go through [`for_modifiers`]; the rest need their own
-    /// branch in the Palette's key handler. Nothing else checks that, and the
-    /// failure is silent: `Ctrl+Shift+C` sat in the menu for a whole phase doing
-    /// nothing, found only by pressing it against the real binary.
+    /// Enter chords go through [`for_modifiers`]; the rest need their own branch in
+    /// the Palette's key handler. Silent otherwise: `Ctrl+Shift+C` did nothing for a
+    /// whole phase.
     #[test]
     fn v0_2_every_advertised_accelerator_is_bound_somewhere() {
         let palette = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../src/palette/Palette.tsx"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/palette/Palette.tsx"),
         )
         .expect("apps/desktop/src/palette/Palette.tsx");
 
@@ -440,8 +453,12 @@ mod tests {
             score: 0.0,
             actions: for_clip(),
             version: None,
+            labels: None,
         });
         let labels: Vec<&str> = menu.iter().map(|a| a.label.as_str()).collect();
-        assert_eq!(labels, ["Paste", "Copy to clipboard", "Delete from history"]);
+        assert_eq!(
+            labels,
+            ["Paste", "Copy to clipboard", "Delete from history"]
+        );
     }
 }

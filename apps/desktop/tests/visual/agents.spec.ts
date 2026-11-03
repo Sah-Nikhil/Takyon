@@ -148,6 +148,74 @@ test("the agents page shows one card per agent", async ({ page }) => {
 });
 
 /**
+ * Search scrolls to `#setting-<id>` from `pages.ts`. The Agents rows are hand-built,
+ * so they write their own anchors, and until d0.11.10 none of them did.
+ */
+test("settings search lands on an agent's own row", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 400 });
+  await page.goto("/?window=settings");
+  await page.getByLabel("Search settings").fill("variant");
+  await page.getByRole("button", { name: /opencode/ }).click();
+
+  for (const id of ["ask-agent", "agent-claude", "agent-codex", "agent-opencode"]) {
+    await expect(page.locator(`#setting-${id}`)).toHaveCount(1);
+  }
+  // Last on the page, so below a 400px window unless the jump scrolled to it.
+  await expect(page.locator("#setting-agent-opencode")).toBeInViewport();
+});
+
+type AgentsMock = {
+  setAgentMissing: (k: string) => void;
+  setAskOrder: (o: string[]) => void;
+};
+
+/**
+ * ADR-0031. First run, one Agent installed: the probe ranks it first. Through
+ * Check again, not mount: StrictMode's second mount re-reads settings after the
+ * first probe, which passed this with the page's own re-read deleted.
+ */
+test("a first run with one agent installed ranks it first", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+  await expect(page.getByText("Not found", { exact: true })).toHaveCount(1);
+
+  await page.evaluate(() => {
+    (window as unknown as { __takyon_mock: AgentsMock }).__takyon_mock.setAgentMissing("claude");
+  });
+  await page.getByRole("button", { name: "Check again" }).click();
+
+  await expect(page.getByText("Not found", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^Move .* up$/ }).first()).toHaveAttribute(
+    "aria-label",
+    "Move opencode up",
+  );
+  await expect(page.getByRole("switch", { name: "Use opencode for !c" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
+/** A stored order means not a first run, and the probe leaves it alone. */
+test("a chosen agent order survives a probe that finds one agent", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.evaluate(() => {
+    const mock = (window as unknown as { __takyon_mock: AgentsMock }).__takyon_mock;
+    mock.setAskOrder(["claude", "codex", "opencode"]);
+    mock.setAgentMissing("claude");
+  });
+  await page.getByRole("button", { name: "Agents" }).click();
+
+  // Both missing Agents reporting is the probe landing.
+  await expect(page.getByText("Not found", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^Move .* up$/ }).first()).toHaveAttribute(
+    "aria-label",
+    "Move Claude Code up",
+  );
+});
+
+/**
  * The switch is what lets `!c` name its Agent on the first keystroke: a
  * switched-off Agent is skipped without being probed.
  */
@@ -289,4 +357,32 @@ test("model and effort are locked from a list, per authenticated agent", async (
   await expect(page.getByText("Sign in to choose a model")).toHaveCount(2);
 
   await expect(page).toHaveScreenshot("settings-agents-locked.png");
+});
+
+/**
+ * v0.11.1: an npm `.cmd` Agent whose Node is gone. The reason arrives as a
+ * fact; the Palette names the fix and shows the line that proves it.
+ */
+test("a broken launcher names its fix", async ({ page }) => {
+  const input = await open(page);
+  await page.evaluate(() => {
+    (
+      window as unknown as { __takyon_mock: { failTurns: (f: object) => void } }
+    ).__takyon_mock.failTurns({
+      reason: "launcherBroken",
+      agent: "Claude Code",
+      binary: String.raw`C:\Users\you\AppData\Roaming\npm\claude.cmd`,
+      detail:
+        "'node' is not recognized as an internal or external command,\noperable program or batch file.",
+    });
+  });
+  await input.fill("!c who directed titanic");
+  await input.press("Enter");
+
+  await expect(page.getByRole("status")).toHaveText("Stopped");
+  await expect(page.getByRole("alert")).toContainText("Reinstall Node.js, then Claude Code.");
+  await expect(page.getByRole("alert")).toContainText("'node' is not recognized");
+
+  await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
+  await expect(page).toHaveScreenshot("palette-ask-launcher-broken.png");
 });

@@ -8,7 +8,7 @@
  * "no network on the Bangless path" stays checkable by reading.
  */
 
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -29,6 +29,19 @@ import {
   type SearchMessage,
   type WebSettings,
   EVENT_SEARCH,
+  EVENT_FOCUS,
+  type BlockList,
+  type FocusBangLine,
+  type FocusCategories,
+  type FocusCategory,
+  type FocusItem,
+  type FocusMember,
+  type FocusRefusal,
+  type FocusSettings,
+  type FocusSignal,
+  type FocusStartRequest,
+  type FocusStats,
+  type FocusView,
   type AliasRow,
   type AppAliasRow,
   type Placement,
@@ -42,10 +55,14 @@ import {
   type ViewKind,
   type FileIndexReport,
   type HotkeyStatus,
+  type UpdateCheck,
+  type UpdateNotice,
+  type UpdateProgress,
   type QueryResult,
   type RemovalReport,
   type SettingsSnapshot,
   type ShowPayload,
+  type ThirdPartyLicences,
 } from "@takyon/shared";
 import { mock } from "./api.mock";
 
@@ -63,6 +80,51 @@ export const openSettings = () =>
 
 export const hotkeyStatus = () =>
   inTauri ? invoke<HotkeyStatus>("hotkey_status") : mock.hotkeyStatus();
+
+/**
+ * Ask the update feed whether a newer Takyon exists (ADR-0040). The only path
+ * to it is About's button: nothing calls this on mount, show or a timer.
+ */
+export const updateCheck = () =>
+  inTauri ? invoke<UpdateCheck>("update_check") : mock.updateCheck();
+
+/**
+ * Download, verify and install what the last check found. On Windows the app
+ * exits into the installer, so a resolve means it never happened there.
+ */
+export function updateInstall(onProgress: (p: UpdateProgress) => void): Promise<void> {
+  if (!inTauri) return mock.updateInstall(onProgress);
+  const channel = new Channel<UpdateProgress>();
+  channel.onmessage = onProgress;
+  return invoke<void>("update_install", { onProgress: channel });
+}
+
+/** Enter on the Palette's update row: asks the feed if this run never did. */
+export function updateInstallNow(onProgress: (p: UpdateProgress) => void): Promise<void> {
+  if (!inTauri) return mock.updateInstallNow(onProgress);
+  const channel = new Channel<UpdateProgress>();
+  channel.onmessage = onProgress;
+  return invoke<void>("update_install_now", { onProgress: channel });
+}
+
+/** The update row Rust holds in memory. The show event carries it too. */
+export const updateNotice = () =>
+  inTauri ? invoke<UpdateNotice | null>("update_notice") : mock.updateNotice();
+
+/** "See what's new" was opened; Rust drops the row until the next update. */
+export const dismissUpdateNotice = () =>
+  inTauri ? invoke<void>("update_notice_dismiss") : mock.dismissUpdateNotice();
+
+/** The daily background check (ADR-0040). On unless switched off. */
+export const updateAutoCheck = () =>
+  inTauri ? invoke<boolean>("update_auto_check") : mock.updateAutoCheck();
+
+export const setUpdateAutoCheck = (on: boolean) =>
+  inTauri ? invoke<void>("set_update_auto_check", { on }) : mock.setUpdateAutoCheck(on);
+
+/** About's licence list, read from the bundled manifest only when its view opens. */
+export const thirdPartyLicences = () =>
+  inTauri ? invoke<ThirdPartyLicences>("third_party_licences") : mock.thirdPartyLicences();
 
 /** Whether file Entries join Bangless results (v0.7 task 11). Default off. */
 export const setFilesBangless = (on: boolean) =>
@@ -389,6 +451,19 @@ export const clipPage = (query: string, limit?: number) =>
     ? invoke<ClipRow[]>("clip_page", { query, limit })
     : mock.clipPage(query, limit);
 
+/** Bytes clipboard history occupies on disk, images included (v0.14). */
+export const clipDiskBytes = () =>
+  inTauri ? invoke<number>("clip_disk_bytes") : mock.clipDiskBytes();
+
+/**
+ * The URL for an image clip's thumbnail or full image (v0.14).
+ *
+ * Served by `takyon-clip`, decrypted per request and `no-store`: a screenshot
+ * never lands in WebView2's disk cache. Bytes never ride in `clipPage`.
+ */
+export const clipImageUrl = (id: number, part: "thumb" | "full"): string =>
+  inTauri ? convertFileSrc(`${part}-${id}`, "takyon-clip") : mock.clipImageUrl(id, part);
+
 /** Whether `!v` reaches clipboard history. The command works either way. */
 export const clipBang = () =>
   inTauri ? invoke<boolean>("clip_bang") : mock.clipBang();
@@ -632,3 +707,124 @@ export function onSearch(cb: (message: SearchMessage) => void): () => void {
     void p.then((un) => un());
   };
 }
+
+/* ------------------------------------------------------------------ Focus */
+
+/** Local time of day, ms since midnight: `until 4:30pm` is read against it. */
+export const localMsOfDay = (now = new Date()) =>
+  ((now.getHours() * 60 + now.getMinutes()) * 60 + now.getSeconds()) * 1000 + now.getMilliseconds();
+
+/** Live validation for the Duration field: length in ms, or rejects with why. */
+export const focusParseDuration = (text: string) =>
+  inTauri
+    ? invoke<number>("focus_parse_duration", { text, localMsOfDay: localMsOfDay() })
+    : mock.focusParseDuration(text);
+
+export const focusParseBang = (line: string) =>
+  inTauri
+    ? invoke<FocusBangLine>("focus_parse_bang", { line, localMsOfDay: localMsOfDay() })
+    : mock.focusParseBang(line);
+
+export const focusView = () =>
+  inTauri ? invoke<FocusView>("focus_view") : mock.focusView();
+
+/** Keys on `list` that Focus will refuse, for the start form. */
+export const focusPreview = (list: BlockList) =>
+  inTauri ? invoke<FocusRefusal[]>("focus_preview", { list }) : mock.focusPreview(list);
+
+/** Rejects with a `FocusError`. */
+export const focusStart = (request: FocusStartRequest) =>
+  inTauri ? invoke<FocusView>("focus_start", { request }) : mock.focusStart(request);
+
+export const focusPause = (breakMinutes: number | null) =>
+  inTauri ? invoke<FocusView>("focus_pause", { breakMinutes }) : mock.focusPause(breakMinutes);
+
+export const focusResume = () =>
+  inTauri ? invoke<FocusView>("focus_resume") : mock.focusResume();
+
+export const focusExtend = (minutes: number) =>
+  inTauri ? invoke<FocusView>("focus_extend", { minutes }) : mock.focusExtend(minutes);
+
+export const focusComplete = () =>
+  inTauri ? invoke<FocusView>("focus_complete") : mock.focusComplete();
+
+export const focusSnooze = (key: string) =>
+  inTauri ? invoke<void>("focus_snooze", { key }) : mock.focusSnooze(key);
+
+/** Strict friction: the retyped goal. True starts the 30 s countdown. */
+export const focusTypeGoal = (text: string) =>
+  inTauri ? invoke<boolean>("focus_type_goal", { text }) : mock.focusTypeGoal(text);
+
+export const focusResetFriction = () =>
+  inTauri ? invoke<void>("focus_reset_friction") : mock.focusResetFriction();
+
+export const focusCategories = () =>
+  inTauri ? invoke<FocusCategories>("focus_categories") : mock.focusCategories();
+
+/** A Focus category's items marked installed or not, plus Games' detected games. */
+export const focusMembers = (id: string) =>
+  inTauri ? invoke<FocusMember[]>("focus_members", { id }) : mock.focusMembers(id);
+
+/** Fetch icons for sites just added (ADR-0037). Resolves to how many arrived. */
+export const focusFetchIcons = (keys: string[]) =>
+  inTauri ? invoke<number>("focus_fetch_icons", { keys }) : mock.focusFetchIcons(keys);
+
+/** Add to (`removed: false`) or take out of a built-in Focus category. */
+export const focusEditBuiltin = (category: string, item: FocusItem, removed: boolean) =>
+  inTauri
+    ? invoke<void>("focus_edit_builtin", { category, item, removed })
+    : mock.focusEditBuiltin(category, item, removed);
+
+export const focusResetBuiltin = (category: string) =>
+  inTauri ? invoke<void>("focus_reset_builtin", { category }) : mock.focusResetBuiltin(category);
+
+export const focusSaveCategory = (category: FocusCategory) =>
+  inTauri
+    ? invoke<FocusCategory>("focus_save_category", { category })
+    : mock.focusSaveCategory(category);
+
+export const focusDeleteCategory = (id: string) =>
+  inTauri ? invoke<void>("focus_delete_category", { id }) : mock.focusDeleteCategory(id);
+
+export const focusExportCategories = (ids: string[]) =>
+  inTauri ? invoke<string>("focus_export_categories", { ids }) : mock.focusExportCategories(ids);
+
+export const focusImportCategories = (json: string) =>
+  inTauri
+    ? invoke<FocusCategory[]>("focus_import_categories", { json })
+    : mock.focusImportCategories(json);
+
+export const focusLastList = () =>
+  inTauri ? invoke<BlockList>("focus_last_list") : mock.focusLastList();
+
+export const focusSettings = () =>
+  inTauri ? invoke<FocusSettings>("focus_settings") : mock.focusSettings();
+
+/** One Focus preference; Rust refuses unknown keys and values. */
+export const focusSetSetting = (key: string, value: string) =>
+  inTauri ? invoke<void>("focus_set_setting", { key, value }) : mock.focusSetSetting(key, value);
+
+/** The bar's pill measured `width` logical px; Rust sizes its window to it. */
+export const focusBarFit = (width: number) =>
+  inTauri ? invoke<void>("focus_bar_fit", { width }) : mock.focusBarFit(width);
+
+/** Open the bar's `up` or `down` dock for its hover buttons, or close both. */
+export const focusBarReveal = (side: "up" | "down" | null) =>
+  inTauri ? invoke<void>("focus_bar_reveal", { side }) : mock.focusBarReveal(side);
+
+export const focusClearHistory = () =>
+  inTauri ? invoke<void>("focus_clear_history") : mock.focusClearHistory();
+
+export function onFocus(cb: (signal: FocusSignal) => void): () => void {
+  if (!inTauri) return mock.onFocus(cb);
+  const p = listen<FocusSignal>(EVENT_FOCUS, (e) => cb(e.payload));
+  return () => {
+    void p.then((un) => un());
+  };
+}
+
+/** Focus stats over the last `days` local days; days bucket by this clock. */
+export const focusStats = (days: number) =>
+  inTauri
+    ? invoke<FocusStats>("focus_stats", { days, utcOffsetMin: -new Date().getTimezoneOffset() })
+    : mock.focusStats(days);

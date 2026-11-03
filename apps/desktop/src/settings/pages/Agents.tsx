@@ -37,14 +37,23 @@ export function Agents() {
   const [pathReport, setPathReport] = useState<PathReport | null>(null);
   const [cwd, setCwd] = useState("");
 
+  // Order and switches re-read once a probe lands: on a first run it may have
+  // ranked a sole installed Agent first (ADR-0031). Never `cwd`, maybe mid-edit.
+  const landed = useCallback((next: AgentSnapshot[]) => {
+    setSnapshots(next);
+    void api.agentSettings().then((fresh) => {
+      setSettings((s) => (s ? { ...s, order: fresh.order, enabled: fresh.enabled } : fresh));
+    });
+  }, []);
+
   // Three process spawns, so on mount and on demand — never per keystroke and
   // never at login (v0.8 Traps). The `PATH` report comes with it: a re-probe is
   // exactly when someone is asking why an Agent was not found.
   const probe = useCallback(() => {
     setSnapshots(null);
-    void api.agentSnapshots().then(setSnapshots);
+    void api.agentSnapshots().then(landed);
     void api.agentPathReport().then(setPathReport);
-  }, []);
+  }, [landed]);
 
   // Fetched here rather than through `probe`, which resets the rows to their
   // "Checking…" state synchronously — on mount they are already in it.
@@ -53,9 +62,9 @@ export function Agents() {
       setSettings(next);
       setCwd(next.cwd);
     });
-    void api.agentSnapshots().then(setSnapshots);
+    void api.agentSnapshots().then(landed);
     void api.agentPathReport().then(setPathReport);
-  }, []);
+  }, [landed]);
 
   const cwdApplied = useApplied(api.setAskCwd, async () => (await api.agentSettings()).cwd);
   const order = settings?.order ?? DEFAULT_ORDER;
@@ -78,7 +87,8 @@ export function Agents() {
   return (
     <>
       <Group>
-        <div className="flex items-start justify-between px-3.5 py-3">
+        {/* Hand-built rows, so they write `pages.ts`'s anchor ids themselves. */}
+        <div id="setting-ask-agent" className="flex items-start justify-between px-3.5 py-3">
           <div className="min-w-0 flex-1 basis-64">
             <span className="text-[14px] text-fg">Ask !c with</span>
             <p className="mt-1 text-[12.5px] leading-snug text-fg/60">
@@ -194,7 +204,7 @@ function AgentRow({
   }, [agent, usable]);
 
   return (
-    <div className="px-3.5 py-3">
+    <div id={`setting-agent-${agent}`} className="px-3.5 py-3">
       {/*
         Two lines, not one wrapping row: the pickers are wider than the space
         left beside the status text, and letting them share it dropped the

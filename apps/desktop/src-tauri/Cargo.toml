@@ -3,10 +3,11 @@ members = ["uiaccess", "bench-helper"]
 
 [package]
 name = "takyon"
-version = "0.10.0"
+version = "0.12.8"
 description = "Takyon - a local-first keyboard launcher for Windows"
-authors = ["Nikhil Sah <sah.nikhil11@gmail.com>"]
+authors = ["V3SPER"]
 edition = "2021"
+license = "CC-BY-NC-SA-4.0"
 rust-version = "1.77"
 
 [lib]
@@ -37,6 +38,15 @@ tauri-plugin-autostart = "2"
 # second of which silently loses the race.
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
+# In-app update (ADR-0040): signed NSIS installer from GitHub Releases, checked
+# only on a button press. `native-tls` is schannel on Windows, so OS trust store
+# and no rustls/ring; no `zip`, the feed points at the bare installer.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls"] }
+# Not used directly. Turns on reqwest's `system-proxy` for the updater above, so
+# it honours the Windows proxy setting the way WinHTTP does (ADR-0019).
+reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
+# Version compare for the Palette update row. Already in `Cargo.lock` via the plugin.
+semver = "1"
 serde_json = "1"
 # The fan-out in `query.rs` (§3). Sources are queried in parallel with a shared
 # deadline; a scoped pool means a slow Source burns its own thread rather than
@@ -57,6 +67,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # stays clear of the licensing question ADR-0005 left open. Pure Rust: no OpenSSL
 # to find, ship or version-match. `std` brings `OsRng` for keys and nonces.
 aes-gcm = { version = "0.10", features = ["std"] }
+# v0.17 time zones (ADR-0038). Already in `Cargo.lock`, so a name not a build.
+# Windows: tzdb bundled in the binary; macOS: `/usr/share/zoneinfo`. MIT OR
+# Unlicense. Offline either way, so the Bangless path stays clean (ADR-0002).
+jiff = "0.2"
 
 [dev-dependencies]
 # `mock_builder`/`get_ipc_response`, for the IPC contract test. **Must stay a
@@ -66,12 +80,17 @@ aes-gcm = { version = "0.10", features = ["std"] }
 tauri = { version = "2", features = ["test"] }
 
 [target.'cfg(windows)'.dev-dependencies]
-# Authoring `.lnk` fixtures for the Recents tests. Same version and a subset of
-# the features the real dependency already asks for, so nothing extra compiles.
+# Authoring `.lnk` fixtures for the Recents tests, and finding and driving a
+# browser window in the Focus live test. Same version and a subset of the
+# features the real dependency already asks for, so nothing extra compiles.
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Com",
   "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_Shutdown",
+  "Win32_System_SystemInformation",
 ] }
 
 [target.'cfg(windows)'.dependencies]
@@ -118,6 +137,25 @@ windows = { version = "0.61", features = [
   # registry's `Path` is a `REG_EXPAND_SZ` full of `%SystemRoot%` references, and
   # an unexpanded one names no directory that exists.
   "Win32_System_Environment",
+  # v0.11.1. One Job Object per Agent spawn, `KILL_ON_JOB_CLOSE`: a `.cmd`
+  # Agent is `cmd.exe` → `node` → the CLI, and killing the first leaves the
+  # other two running (ADR-0033). Toolhelp above resumes the suspended child.
+  "Win32_System_JobObjects",
+  # v0.16 Focus. `Appx` is `GetApplicationUserModelId` and `GetPackageFamilyName`,
+  # how a Store app is told apart; `RemoteDesktop` is `ProcessIdToSessionId`,
+  # so session-0 services are never quit.
+  "Win32_Storage_Packaging_Appx",
+  "Win32_System_RemoteDesktop",
+  # UI Automation on a browser's address bar and tab strip (ADR-0035).
+  # `Variant` carries the property values UIA conditions compare against.
+  "Win32_UI_Accessibility",
+  "Win32_System_Variant",
+  # Focus hurdles: `SetThreadExecutionState` holds idle sleep off, and
+  # `ShutdownBlockReasonCreate` names the session on the shutdown screen.
+  "Win32_System_Power",
+  "Win32_System_Shutdown",
+  # v0.17. `GetLocaleInfoEx(LOCALE_SSHORTTIME)`: 12- or 24-hour time answers.
+  "Win32_Globalization",
 ] }
 
 [target.'cfg(unix)'.dependencies]

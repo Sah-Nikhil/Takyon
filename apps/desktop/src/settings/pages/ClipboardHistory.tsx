@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ClipRetention } from "@takyon/shared";
 import * as api from "@/api";
+import { formatBytes } from "@/palette/clips";
 import { preferences, refresh, setClipBang } from "@/prefs";
 import { Chips, Confirm, Group, Row, Switch, useApplied } from "../controls";
 
@@ -29,12 +30,16 @@ export function ClipboardHistory() {
   const [error, setError] = useState<string | null>(null);
   /** A retention change waiting on its confirmation, with the count it destroys. */
   const [pending, setPending] = useState<{ value: ClipRetention; impact: number } | null>(null);
+  /** Bytes on disk, images included (v0.14). `null` until Rust answers. */
+  const [disk, setDisk] = useState<number | null>(null);
+  const measure = useCallback(() => void api.clipDiskBytes().then(setDisk), []);
 
   const bangApplied = useApplied(setClipBang, async () => (await refresh()).clipBang);
 
   useEffect(() => {
     void api.clipBlocklist().then(setBlocked);
-  }, []);
+    measure();
+  }, [measure]);
 
   /** Ask Rust what this would destroy before doing anything. */
   const choose = useCallback(
@@ -44,11 +49,12 @@ export function ClipboardHistory() {
       if (impact === 0) {
         await api.setClipRetention(value);
         setRetention((await refresh()).clipRetention);
+        measure();
         return;
       }
       setPending({ value, impact });
     },
-    [],
+    [measure],
   );
 
   const commit = useCallback(async () => {
@@ -56,7 +62,8 @@ export function ClipboardHistory() {
     await api.setClipRetention(pending.value);
     setPending(null);
     setRetention((await refresh()).clipRetention);
-  }, [pending]);
+    measure();
+  }, [pending, measure]);
 
   const block = useCallback(
     async (exe: string, on: boolean) => {
@@ -85,6 +92,15 @@ export function ClipboardHistory() {
             options={WINDOWS}
             onChange={(next) => void choose(next)}
           />
+        </Row>
+        <Row
+          id="clip-disk"
+          label="On disk"
+          description="Text, encrypted images and the database together. Retention and deleting a clip both shrink it."
+        >
+          <span className="text-[13px] tabular-nums text-fg/72">
+            {disk === null ? "…" : formatBytes(disk)}
+          </span>
         </Row>
         <Row
           id="clip-bang"

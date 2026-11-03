@@ -159,6 +159,7 @@ fn entry_at(path: &Path, is_dir: bool) -> Entry {
         score: 0.0,
         actions: actions::for_file(),
         version: None,
+        labels: None,
     }
 }
 

@@ -40,7 +40,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $OutDir) { $OutDir = Join-Path $repo 'bench\results' }
-$exe = Join-Path $repo 'apps\desktop\src-tauri\target\release\takyon.exe'
+$exe = Join-Path (& "$PSScriptRoot\lib\cargo-target-dir.ps1") 'release\takyon.exe'
 
 if (-not (Test-Path $exe)) { throw "no release binary at $exe -- run 'bun run build' first" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null

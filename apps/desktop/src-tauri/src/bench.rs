@@ -1,20 +1,13 @@
 //! The measurement side of `bun run bench`.
 //!
-//! v0.1 exists to produce four numbers, and how they are produced decides whether
-//! they are evidence or theatre. Two rules follow from that:
+//! **Rust owns both ends of every span.** Hotkey and first-pixel timestamps are
+//! taken here, on one clock; the frontend only echoes an id once painted.
+//! `performance.now()` minus an `Instant` is a plausible number with no meaning.
 //!
-//! **Rust owns both ends of every span.** The hotkey timestamp and the
-//! first-pixel timestamp are both taken here, on one clock. The frontend's only
-//! job is to echo an id back once it has painted. Subtracting a
-//! `performance.now()` from an `Instant` would produce a plausible number with no
-//! defined meaning, and that is the usual way a latency claim becomes fiction.
-//!
-//! **The span's edges are stated, not hidden.** What this measures is
-//! *hotkey handler entry -> the IPC call that follows the frame the renderer
-//! committed*. It therefore **includes** one IPC round trip (sub-millisecond) and
-//! **excludes** DWM's final composition and present. The manual high-FPS capture
-//! recorded in `docs/tbc/0002` is what calibrates the gap; this number alone is a
-//! regression gate, not a claim about what the user's eye sees.
+//! **Span edges, stated.** Hotkey handler entry -> IPC call after the committed
+//! frame: **includes** one IPC round trip (sub-ms), **excludes** DWM composition
+//! and present. A regression gate, not what the eye sees; the high-FPS capture in
+//! `docs/tbc/0002` calibrates the gap.
 
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -84,10 +77,8 @@ impl Bench {
 
     /// Called when the frontend reports that the frame for `id` has been painted.
     ///
-    /// A mismatched id is dropped rather than measured: it means a newer show
-    /// superseded this one, and attributing the newer show's paint to the older
-    /// show's keypress would produce a number that is too *good*, which is the
-    /// dangerous direction to be wrong in.
+    /// Mismatched id dropped, not measured: a newer show superseded it, and crediting
+    /// its paint to the older keypress reads too *good*, the dangerous direction.
     pub fn first_pixel(&self, id: u64) {
         let taken = {
             let mut slot = self.open_show.lock().unwrap_or_else(|e| e.into_inner());
@@ -115,16 +106,9 @@ impl Bench {
 
     /// Called when the frontend reports it has painted Entries for `seq`.
     ///
-    /// IMPLEMENTATION_PLAN §10's "hotkey to first Entry, Bangless" budget. What is
-    /// actually timed is *keystroke to painted Entry* — from the `query` command
-    /// being entered to the IPC call following the frame that drew its results —
-    /// because the Palette opens empty by design (ADR-0001), so there is no Entry
-    /// to paint until something has been typed. That is also the span worth
-    /// guarding: it is what regresses when a Source gets slow.
-    ///
-    /// A superseded seq is dropped rather than measured, exactly as a superseded
-    /// show is: attributing a newer keystroke's paint to an older one produces a
-    /// number that is too good.
+    /// §10's "hotkey to first Entry" budget, timed keystroke -> painted Entry: the
+    /// Palette opens empty (ADR-0001), and this span is what a slow Source regresses.
+    /// Superseded seq dropped, same reason as [`Self::first_pixel`].
     pub fn first_entry(&self, seq: u64) {
         let taken = {
             let mut slot = self.open_query.lock().unwrap_or_else(|e| e.into_inner());
@@ -152,15 +136,9 @@ impl Bench {
 
     /// Record that the hotkey could not be registered.
     ///
-    /// Every span this harness measures starts at a hotkey press, so a taken
-    /// `Alt+Space` means the run cannot produce a single number. Without this the
-    /// harness waits its full timeout and then reports "timed out waiting for the
-    /// Palette to report a painted frame" — which reads as a rendering bug and
-    /// sent one investigation down exactly that path. The binding is contested by
-    /// PowerToys Run, by Raycast and by the classic window menu, so this is a
-    /// routine way for a bench run to be impossible, not an exotic one.
-    ///
-    /// `ms` is meaningless here and written as zero; the event name is the signal.
+    /// Every span starts at a hotkey press, so the run measures nothing. Without this
+    /// the harness times out on a "painted frame", which reads as a render bug.
+    /// `ms` is meaningless, written as zero; the event name is the signal.
     pub fn hotkey_unavailable(&self) {
         self.record("hotkey_unavailable", 0.0);
     }

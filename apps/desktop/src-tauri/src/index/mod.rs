@@ -46,7 +46,9 @@ pub struct FileHit {
 pub enum IndexStatus {
     Ready,
     /// First walk in progress. `pct` is for a progress row, not a guarantee.
-    Building { pct: u8 },
+    Building {
+        pct: u8,
+    },
     /// Events were dropped and a rescan is pending. Results may be missing, and
     /// the user is told so rather than left to discover it.
     Stale,

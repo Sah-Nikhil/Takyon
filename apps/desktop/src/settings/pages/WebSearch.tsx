@@ -89,9 +89,9 @@ export function WebSearch() {
 
         {settings?.hasKey && (
           <Row
-            id="brave-key-clear"
+            id="exa-key-clear"
             label="Remove the key"
-            description="Deletes it from this machine. !s stops searching until another is added."
+            description="Deletes it from this machine. !s goes back to searching DuckDuckGo."
           >
             <button
               type="button"
