@@ -701,6 +701,8 @@ and is already proven.
 - [ ] `files_backend` setting, default per platform (walk on Windows, Spotlight on macOS), applied without a restart
 - [ ] Settings → Files rework — a status row naming which index answers, live entry counts hidden under an OS index, deep links to Indexing Options or System Settings
 - [ ] Retire `files_fallback`, migrating a stored `true`. **A settings migration that silently drops a user's choice is a bug nobody reports**, so it gets its own test
+- [ ] Every OS-index query gets a hard deadline: a worker plus `recv_timeout`, one query in flight, late results dropped; asynchronous `MDQuery` + `MDQueryStop` on macOS. A Spotlight reindex or a slow `WSearch` returns a short list, never a frozen Palette (`docs/tbd/v0.12.md` §18)
+- [ ] The app list stays fresh without a restart: FSEvents on the bundle roots (macOS), Start Menu watchers plus `PackageCatalog` install events (Windows), and a re-walk on wake as backstop (`docs/tbd/v0.12.md` §18)
 
 **Exit criteria:** switching the backend changes which index answers with no
 restart, and the Files page says plainly when the service is off.

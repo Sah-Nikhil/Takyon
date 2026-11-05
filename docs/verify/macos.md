@@ -252,6 +252,14 @@ here is a failure of the real design rather than of a stopgap.
    `/Applications`.
 4. Try an application that is already running: it comes forward rather than
    starting a second copy.
+5. **Coverage the walk owns** (`docs/tbd/v0.12.md` §17): `Feedback Assistant`
+   appears (`/System/Library/CoreServices/Applications`), a Chrome web app under
+   `~/Applications/Chrome Apps.localized` appears, and `Instruments` does **not**
+   (it lives inside `Xcode.app`).
+6. **Spotlight cannot hide an app.** With Takyon running, run
+   `sudo mdutil -E /` to force a reindex. While Spotlight's own Apps results are
+   incomplete, Takyon still finds every application it found before.
+   (Spotlight rebuilds on its own afterwards; nothing needs undoing.)
 
 ### 2. Ctrl+K actions
 

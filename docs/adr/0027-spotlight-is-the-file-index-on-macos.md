@@ -48,6 +48,14 @@ It is reachable through `core-foundation` (already in `Cargo.lock` at 0.10.1) wi
 
 ## Consequences
 
+**Applications are out of scope, permanently.** This ADR covers files only. The
+app list comes from Takyon's own `.app` walk and must never be moved onto
+Spotlight: a Spotlight reindex can hide installed apps for hours, which is the
+failure Alfred documents and the reason Takyon's app list survives one. Recorded
+2026-11-03; detail in `docs/tbd/v0.12.md` §17 and
+`docs/prior-art/spotlight-reindex.md`. The query here also needs a deadline it
+does not yet have (§18).
+
 **Scope becomes a query predicate rather than a walk boundary.** The
 `files_roots` setting maps onto `MDQuery`'s native search scopes, so the Files
 settings page keeps meaning exactly what it means on Windows — the user's chosen
