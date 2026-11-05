@@ -22,7 +22,6 @@ use crate::clips::{Clip, ClipStore};
 use crate::entry::{Entry, EntryId, Query, Source, MAX_ENTRIES, SOURCE_BUDGET};
 use crate::frecency::Frecency;
 use crate::icons::IconStore;
-use crate::index::FileIndex;
 use crate::rank;
 use crate::sources::apps::AppSource;
 use crate::sources::calc::CalcSource;

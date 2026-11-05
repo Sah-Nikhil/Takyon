@@ -102,7 +102,23 @@ fn default_browser() -> Option<std::path::PathBuf> {
     }
 }
 
-#[cfg(not(windows))]
+/// The `.app` registered for `http`, or `None` when nothing is.
+///
+/// `URLForApplicationToOpenURL:` rather than row 10's
+/// `LSCopyDefaultApplicationURLForURL`: same Launch Services answer through a
+/// framework already linked. The bundle path is what `launch::open` wants.
+#[cfg(target_os = "macos")]
+fn default_browser() -> Option<std::path::PathBuf> {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSString, NSURL};
+
+    let probe = NSURL::URLWithString(&NSString::from_str("https://example.com"))?;
+    let app = NSWorkspace::sharedWorkspace().URLForApplicationToOpenURL(&probe)?;
+    let path = std::path::PathBuf::from(app.path()?.to_string());
+    path.is_dir().then_some(path)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn default_browser() -> Option<std::path::PathBuf> {
     None
 }

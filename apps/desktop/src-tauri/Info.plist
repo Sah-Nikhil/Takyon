@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Agent app: no Dock icon, no app menu (ADR-0028). Tauri merges this into
+	     the bundle's generated Info.plist. Bundle only, so `bun run dev` still
+	     gets a Dock icon; set_activation_policy in lib.rs covers that half. -->
+	<key>LSUIElement</key>
+	<true/>
+</dict>
+</plist>

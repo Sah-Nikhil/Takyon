@@ -14,6 +14,8 @@
 pub mod live;
 pub mod overlay;
 pub mod roots;
+#[cfg(target_os = "macos")]
+pub mod spotlight;
 pub mod store;
 pub mod walker;
 pub mod watcher;
@@ -60,7 +62,10 @@ pub struct IndexReport {
     pub status: IndexStatus,
     /// Entries in the mapped file. Settings shows it live, and TBC-0005's
     /// triggers are stated in it.
-    pub entries: u32,
+    ///
+    /// `None` where the index is the OS's own: Spotlight reports no count, and
+    /// asking per root is work for a number nobody acts on (ADR-0027).
+    pub entries: Option<u32>,
     pub generation: u64,
 }
 
@@ -70,12 +75,25 @@ pub struct IndexReport {
 /// walk's schedule, not the user's, so riding the keystroke path would ship the
 /// same three words on every keypress.
 #[tauri::command]
-pub fn file_index_status(index: tauri::State<'_, std::sync::Arc<live::WalkIndex>>) -> IndexReport {
+pub fn file_index_status(
+    index: tauri::State<'_, std::sync::Arc<crate::settings::ConfiguredIndex>>,
+) -> IndexReport {
     IndexReport {
         status: index.status(),
-        entries: index.entry_count(),
+        entries: entry_count(&index),
         generation: index.generation(),
     }
+}
+
+/// How many entries the index holds, where that is a question it can answer.
+#[cfg(not(target_os = "macos"))]
+fn entry_count(index: &live::WalkIndex) -> Option<u32> {
+    Some(index.entry_count())
+}
+
+#[cfg(target_os = "macos")]
+fn entry_count(_index: &spotlight::SpotlightIndex) -> Option<u32> {
+    None
 }
 
 /// The seam every acquisition strategy sits behind (§2).

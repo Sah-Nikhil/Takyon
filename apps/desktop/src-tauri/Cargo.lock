@@ -3855,13 +3855,20 @@ name = "takyon"
 version = "0.12.8"
 dependencies = [
  "aes-gcm",
+ "block2",
  "jiff",
  "libc",
  "memmap2",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
  "png 0.17.16",
  "rayon",
  "reqwest",
  "rusqlite",
+ "security-framework",
  "semver",
  "serde",
  "serde_json",
@@ -3872,6 +3879,16 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "windows",
+]
+
+[[package]]
+name = "takyon-bench"
+version = "0.10.0"
+dependencies = [
+ "libc",
+ "objc2-core-graphics",
+ "serde_json",
  "windows",
 ]
 
