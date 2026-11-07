@@ -143,17 +143,18 @@ export function ClipboardHistory({ onClose }: { onClose: () => void }) {
   const current = clips.find((c) => c.id === selected);
 
   // Scroll the list only, never the page: scrollIntoView would also move
-  // ancestors (see Select.tsx). First row of a day brings its heading too.
+  // ancestors (see Select.tsx). First row of a day brings its heading too:
+  // heading top to row bottom, never the whole group, whose end can be pages down.
   useEffect(() => {
     const list = listRef.current;
     const row = list?.querySelector<HTMLElement>("[data-selected]");
     if (!list || !row) return;
     const group = row.parentElement;
     const first = group?.querySelector('[role="option"]') === row;
-    const target = first && group ? group : row;
+    const r = row.getBoundingClientRect();
+    const top = first && group ? group.getBoundingClientRect().top : r.top;
     const box = list.getBoundingClientRect();
-    const r = target.getBoundingClientRect();
-    if (r.top < box.top) list.scrollTop -= box.top - r.top;
+    if (top < box.top) list.scrollTop -= box.top - top;
     else if (r.bottom > box.bottom) list.scrollTop += r.bottom - box.bottom;
   }, [selected]);
 

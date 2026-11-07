@@ -239,6 +239,28 @@ test("arrow keys scroll the history list to keep the selected row in view", asyn
   ).toBe(true);
 });
 
+/**
+ * Opened mid-list: newest row is first of its day, so the follow-scroll aimed at
+ * the whole day group and, when that group outgrew the list, scrolled to its end.
+ */
+test("history opens at the top when the first day outgrows the list", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("clipboard");
+  await page.setViewportSize({ width: 640, height: 185 });
+  await input.press("Enter");
+
+  const list = page.getByRole("listbox", { name: "Clipboard history" });
+  const rows = list.getByRole("option");
+  await expect(rows.first()).toHaveAttribute("aria-selected", "true");
+  // Precondition: the first day group alone is taller than the list.
+  expect(
+    await list.evaluate((el) => el.firstElementChild!.scrollHeight > el.clientHeight),
+  ).toBe(true);
+  expect(
+    await list.evaluate((el) => el.scrollTop <= parseFloat(getComputedStyle(el).paddingTop)),
+  ).toBe(true);
+});
+
 test("Ctrl+K on a clip offers paste, copy and delete", async ({ page }) => {
   const input = await open(page);
   await input.fill("!v");
