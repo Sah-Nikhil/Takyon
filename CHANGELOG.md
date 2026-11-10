@@ -9,6 +9,11 @@ in `ROADMAP.md`. A finished phase may advance the release minor, while partial
 phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
 renumbering below records a separate change to the phase plan.
 
+## v0.12.9 — Focus celebration and Clipboard History scrolling
+
+- Completing a Focus session now fires confetti from both lower corners. Turning Confetti off, or disabling animation effects, shows a small completion notice instead. Settings → Focus controls the confetti amount from 40% to 100%.
+- Clipboard History now opens with the selected clip visible at the top. Arrow-key selection still scrolls to keep the selected clip and its day heading visible.
+
 ## v0.12.8 — Clipboard History selection
 
 - Arrow-key selection now scrolls Clipboard History to keep the selected row visible, including its day heading when the row starts a group.
