@@ -8,7 +8,8 @@ once after first launch and when a site is added (**ADR-0037**), and
 an update check reaches GitHub Releases once a day (on by default, off switch
 in About) and when an update button is pressed (**ADR-0040**).
 
-**Status: v0.1 through v0.10 are built.** The Palette is warm, the hotkey works,
+**Status: v0.1 through v0.11 are built, and v0.12 is written but unrun.** The
+Palette is warm, the hotkey works,
 and it finds and launches applications, files, clipboard history and
 calculations, with Frecency, settings and a `Ctrl+K` action menu. v0.8 adds
 **Agents**: `!c` drives Claude Code, Codex or opencode as a subprocess, answers
@@ -47,29 +48,46 @@ Two things are outstanding rather than done: a real code-signing certificate for
 the UIAccess helper (a v1.0 blocker), and v0.2's manual verification pass, whose
 Steam steps are blocked because this machine's library holds no game.
 
-**macOS compiles, has never run, and is fully specified.** `bun run check:macos`
-is clean for `aarch64-apple-darwin` — library, unit tests, integration tests,
-`-D warnings`. Four rows are written: identity, the `.app` bundle walk, launch
-and reveal, and the System Settings panes; the clipboard reads and writes. Icons,
-the file index, clipboard history, `!s` retrieval and paste-back refuse in words.
+**macOS is written and has never run.** `bun run check:macos` is clean for
+`aarch64-apple-darwin` — library, unit tests, integration tests, `-D warnings` —
+and every one of v0.12's twelve rows now has a real implementation rather than a
+stub: icons, Spotlight, `URLSession`, the clipboard and paste-back included.
+**"Written" means it compiles and nothing more.** Not one line has executed on a
+Mac, so treat every macOS claim in this file as reasoning until
+`docs/verify/macos.md` has been run.
 
-Every architectural decision is now made and none of them is open: **ADR-0026**
-(`objc2` direct, zero new crates — they are already in `Cargo.lock` via Tauri),
-**ADR-0027** (Spotlight through `MDQuery`, superseding ADR-0007 on macOS),
-**ADR-0028** (agent app + non-activating `NSPanel`), **ADR-0029** (`URLSession`,
-amending ADR-0019), **ADR-0030** (the macOS clipboard, amending ADR-0006 and
-ADR-0008). Target is **macOS 13 Ventura, Apple Silicon only**.
+Two things are deliberately unwritten and both are recorded rather than skipped:
+the `NSPanel` class swap (`docs/tbd/v0.12.md` §9 — four checks on hardware decide
+whether it is needed at all, and doing it wrong is undefined behaviour), and the
+blocking first-run screen for the Cmd+Space takeover, whose mechanism is built
+and whose surface is not (§15). `docs/tbd/v0.12.md` carries sixteen entries and
+is the first thing to read before touching the port.
 
-**Seven phases sit between v0.10.1 and v1.0, and the first of them is built.**
+Every architectural decision is made and none is open: **ADR-0026** (`objc2`
+direct, zero new crates — `security-framework` is the one sanctioned exception,
+named by ADR-0030), **ADR-0027** (Spotlight through `MDQuery`, superseding
+ADR-0007 on macOS), **ADR-0028** (agent app + non-activating `NSPanel`),
+**ADR-0029** (`URLSession`, amending ADR-0019), **ADR-0030** (the macOS
+clipboard, amending ADR-0006 and ADR-0008). Target is **macOS 13 Ventura, Apple
+Silicon only**.
+
+**Seven phases sit between v0.10.1 and v1.0. v0.11 is built; v0.12 is written.**
+
 **v0.11 PATH hydration** is in: `agents/shellenv.rs` asks the user's login shell
 (unix) or the registry (Windows) for the `PATH` a GUI process never inherits,
 caches it off the startup path, and hands it to `probe::resolve`, to every
 spawned Agent, and to Row 2's `PATH` walk. **The Windows half is measured; the
 unix half compiles and has never run** — `docs/verify/v0.11.md` §B is unexecuted,
-and `docs/tbd/v0.11.md` §1 says what that costs. Still ahead: `v0.12` macOS,
-`v0.13` the OS index, and the unfinished parts of `v0.14` clipboard kinds. Each
-has a plan doc with a task checklist, and `v0.12-macos.md` carries a § Hand-off
-table breaking the port into 15 agent-sized units with the files each one needs.
+and `docs/tbd/v0.11.md` §1 says what that costs.
+
+**v0.12 macOS is written**, per the section above — every row, plus the bench
+harness ported to Rust as `takyon-bench` (which replaced three PowerShell
+scripts and now drives `bun run bench` on both platforms), uninstall, and the
+Cmd+Space takeover mechanism. Its § Hand-off table carries a state column saying
+which of the 15 units are open.
+
+Still ahead: `v0.13` the OS index, and the unfinished parts of `v0.14` clipboard
+kinds. Each has a plan doc with a task checklist.
 
 **v0.11.1 Agent spawning is in, and one Agent phase is still planned.**
 v0.11.1 fixed `!c` and `!s` for npm-installed Agents: the prompt now travels on
@@ -100,8 +118,8 @@ tzdb (**ADR-0038**; staleness watched by TBC-0016). The Calc card names both
 zones in words through `Entry.labels`. A bare time or zone never answers.
 
 **v0.14 image clips are built on Windows; only the verify script's driver has
-run** (`docs/verify/v0.14.md`); the hand-run steps have not. macOS image capture and paste-back are not built;
-v0.12 row 6 remains open. Files and link classification are also open
+run** (`docs/verify/v0.14.md`); the hand-run steps have not. macOS image capture is not
+built; v0.12 row 6's text clipboard and paste-back are written. Files and link classification are also open
 (`docs/tbd/v0.14.md`).
 
 **Licence: source-available under `CC-BY-NC-SA-4.0` (ADR-0039)**, not open
@@ -233,9 +251,13 @@ under `docs/`.
   and the limit**: it cannot reach ranking, Frecency or anything else in Rust.
 - perf harness: `bun run bench` — the four budgets below. Treat a regression here
   as a failing test, not a nice-to-have. Add `--alt-hotkey` where something else
-  already owns `Alt+Space`, which is most machines. Exits 2 on a missed budget
-  and 1 when it measured nothing; CI's `bench` job warns on 2 and fails on 1
-  (TBC-0015).
+  already owns `Alt+Space`, which is most machines. **Quit an installed Takyon
+  first**: single-instance makes the spawned copy hand off and exit, and the run
+  then measures a process that was never alive. The harness detects this and says
+  so; `--kill-running` ends it for you. The OS half is `takyon-bench`, a Rust
+  workspace member with a Windows and a macOS arm — not PowerShell, so the
+  harness runs on both platforms. Exits 2 on a missed budget and 1 when it
+  measured nothing; CI's `bench` job warns on 2 and fails on 1 (TBC-0015).
 - macOS compile gate: `bun run check:macos` — cross-compiles and lints for
   `aarch64-apple-darwin` from Windows through zig. Not in `lint`: it needs a zig
   build unpacked locally, which not every machine has. Run it after touching

@@ -31,7 +31,11 @@ function describe(report: FileIndexReport | null): string {
       // to trust it, which is worse than having no index (ADR-0007).
       return "Some changes were missed. Rescanning — results may be incomplete.";
     default:
-      return `${report.entries.toLocaleString()} files and folders indexed`;
+      // No count where the OS owns the index: Spotlight does not report one,
+      // and the scopes below still mean exactly what they mean on Windows.
+      return report.entries === null
+        ? "Searching through Spotlight"
+        : `${report.entries.toLocaleString()} files and folders indexed`;
   }
 }
 
