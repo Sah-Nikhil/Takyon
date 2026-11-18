@@ -112,7 +112,7 @@ fn call(webview: &tauri::WebviewWindow<MockRuntime>, cmd: &str, body: Value) -> 
 }
 
 /// `interface SettingsSnapshot` in `packages/shared/src/ipc.ts`.
-const SNAPSHOT_KEYS: [&str; 17] = [
+const SNAPSHOT_KEYS: [&str; 18] = [
     "reduceMotion",
     "calcPolicy",
     "recents",
@@ -130,6 +130,7 @@ const SNAPSHOT_KEYS: [&str; 17] = [
     "filesFallback",
     "filesRoots",
     "filesExcludes",
+    "platform",
 ];
 
 /// A mock app managing only a `Prefs`, for the settings commands.

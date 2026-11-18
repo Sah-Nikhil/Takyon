@@ -68,10 +68,11 @@ if ($objcDupes) {
     exit 1
 }
 
-# `-p takyon`, never `--workspace`: the uiaccess helper is Windows-only by
-# definition and has no macOS half to check.
+# Named packages, never `--workspace`: the uiaccess helper is Windows-only by
+# definition and has no macOS half to check. `takyon-bench` does have one, and
+# it is the only place `CGEventPost` is called, so it has to be gated here.
 & cargo clippy `
     --manifest-path $manifest `
-    --target $target -p takyon --all-targets -- -D warnings
+    --target $target -p takyon -p takyon-bench --all-targets -- -D warnings
 
 exit $LASTEXITCODE
