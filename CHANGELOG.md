@@ -9,33 +9,51 @@ in `ROADMAP.md`. A finished phase may advance the release minor, while partial
 phase work ships in patches (see `ROADMAP.md`'s 0.2.x policy). The v0.8
 renumbering below records a separate change to the phase plan.
 
+**One feature per bullet, labelled:** `- **Short name.** One or two sentences
+on what the user can now do.` The label is what Settings › About › Release
+notes and the GitHub release set in bold, so it names the feature, not the
+change. A `**Still open.**` paragraph after the bullets says what is not done.
+`## Unreleased` collects work not yet released; rename it to the version when
+releasing, since `bun run release` publishes only a `## v{version}` section.
+
+## Unreleased
+
+- **Agent fallback.** When the first Agent in your order can't answer (out of usage, signed out, missing, or a model it refuses), `!c` and `!s` hand the question to the next one and say so in one line. With every Agent out, the Palette tells you to sign in to one with usage left.
+- **Skipped while unavailable.** An Agent that just failed is asked last until its usage window resets, so the next `!c` names and asks the one that can answer straight away.
+- **Faster `!s`.** Pages are read for at most 3.5 seconds instead of waiting for the slowest one, an Exa key skips page reading entirely, and site icons load beside the answer.
+- **A model for `!s`.** Each Agent writes `!s` answers with its own fast model by default (`haiku`, `gpt-6-luna`, `opencode/big-pickle`). Settings › Agents switches it, including back to the `!c` model.
+- **Answers stay open.** A `!c` or `!s` answer stays on screen when you click into another window, so you can copy from it. The hotkey brings it back to the front. Settings › Agents turns this off.
+- **opencode 2.** `!c` and `!s` work with opencode 2.4, which refused the flags Takyon used to send.
+- **Release notes in Settings.** Settings › About › Release notes lists what changed in recent versions, offline.
+- **A quieter "See what's new".** After an update, the Palette shows the row on the next two summons, then retires it.
+
 ## v0.12.9 — Focus celebration and Clipboard History scrolling
 
-- Completing a Focus session now fires confetti from both lower corners. Turning Confetti off, or disabling animation effects, shows a small completion notice instead. Settings → Focus controls the confetti amount from 40% to 100%.
-- Clipboard History now opens with the selected clip visible at the top. Arrow-key selection still scrolls to keep the selected clip and its day heading visible.
+- **Focus confetti.** Completing a Focus session fires confetti from both lower corners. Turning Confetti off, or disabling animation effects, shows a small completion notice instead. Settings → Focus controls the confetti amount from 40% to 100%.
+- **Clipboard History opens at the top.** The selected clip is visible when the view opens. Arrow-key selection still scrolls to keep the selected clip and its day heading visible.
 
 ## v0.12.8 — Clipboard History selection
 
-- Arrow-key selection now scrolls Clipboard History to keep the selected row visible, including its day heading when the row starts a group.
+- **Clipboard History follows the selection.** Arrow keys scroll it to keep the selected row visible, including its day heading when the row starts a group.
 
 ## v0.12.7 — Third-party licences
 
-- Settings › About now lists bundled dependencies, versions, and licences. Search the list and read available licence texts offline.
+- **Third-party licences.** Settings › About lists bundled dependencies, versions, and licences. Search the list and read available licence texts offline.
 
 ## v0.12.6 — More calendar questions
 
-- Count weeks until, since, or between dates as whole weeks plus remaining days. Count business or working days as Monday through Friday, excluding the start date and including the target; holidays are not excluded.
-- Ask for last or this weekday, a weekday in a number of weeks, the day after tomorrow, a date next year, or days left in a month or year. Compound shifts apply units in the order written. Yearless date spans use a coherent forward range.
-- Ask whether a year is a leap year, find a numbered weekday in a month, or calculate age and days until a birthday when the birth date appears in the query. The calculator stores no birth date.
-- Long compound calculations remain visible in the Compact Palette. Date answers still run offline and copy with Enter.
+- **Weeks and business days.** Count weeks until, since, or between dates as whole weeks plus remaining days. Count business or working days as Monday through Friday, excluding the start date and including the target; holidays are not excluded.
+- **More ways to name a day.** Ask for last or this weekday, a weekday in a number of weeks, the day after tomorrow, a date next year, or days left in a month or year. Compound shifts apply units in the order written. Yearless date spans use a coherent forward range.
+- **Leap years, birthdays and ages.** Ask whether a year is a leap year, find a numbered weekday in a month, or calculate age and days until a birthday when the birth date appears in the query. The calculator stores no birth date.
+- **Long calculations stay visible.** Long compound calculations remain visible in the Compact Palette. Date answers still run offline and copy with Enter.
 
 **Still open.** `docs/verify/v0.18.md` has not been run by hand. Holidays require a future calendar source; localized month names remain outside the grammar.
 
 ## v0.12.5 — Date questions
 
-- The calculator answers date shifts (`30 days from now`, `45 days ago was?`), day counts (`how many days until 20 September 2027`), weekdays (`what day of the week is 20 Sep 2027?`), and signed spans (`days between 21 Dec 2027 and 5 Apr 2039`). Enter copies the answer.
-- `next Friday` means the first Friday strictly after today. `two weeks from Friday` starts at that Friday. Dates without a year use the next occurrence for future questions and the previous occurrence for past questions. Spans require years on calendar endpoints.
-- Answers use the local calendar date and run offline. Incomplete questions and ambiguous numeric dates stay searches.
+- **Date questions.** The calculator answers date shifts (`30 days from now`, `45 days ago was?`), day counts (`how many days until 20 September 2027`), weekdays (`what day of the week is 20 Sep 2027?`), and signed spans (`days between 21 Dec 2027 and 5 Apr 2039`). Enter copies the answer.
+- **Relative days, read literally.** `next Friday` means the first Friday strictly after today. `two weeks from Friday` starts at that Friday. Dates without a year use the next occurrence for future questions and the previous occurrence for past questions. Spans require years on calendar endpoints.
+- **Offline and unambiguous.** Answers use the local calendar date and run offline. Incomplete questions and ambiguous numeric dates stay searches.
 
 **Still open.** `docs/verify/v0.18.md` has not been run by hand. Business days, holidays, and localized month names remain outside the date grammar.
 
@@ -47,10 +65,11 @@ renumbering below records a separate change to the phase plan.
   an update, the same place offers "See what's new". Settings › About checks on
   demand and has a switch that turns the daily check off. This release has to
   be installed by hand; later ones install from the Palette or About.
-- Installer and executable name **V3SPER** as the publisher. `!s` requests
-  identify as `Takyon/0.9 (V3SPER)`.
-- Release notes lead with this file's section; GitHub then credits pull request
-  authors, including the maintainer, in its generated list.
+- **Named publisher.** Installer and executable name V3SPER as the publisher.
+  `!s` requests identify as `Takyon/0.9 (V3SPER)`.
+- **Release notes from this file.** Release notes lead with this file's section;
+  GitHub then credits pull request authors, including the maintainer, in its
+  generated list.
 
 ## v0.12.3 — Windows image clips (pending release)
 

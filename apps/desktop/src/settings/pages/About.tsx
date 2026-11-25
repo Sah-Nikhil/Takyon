@@ -8,17 +8,19 @@
  *
  * Mounting this page makes no request (ADR-0040). The feed is reached from the
  * button below, the Palette's update row, and the daily check the switch governs.
- * The licence list is a sub-view and reads its file only when opened.
+ * The licence list and release notes are sub-views, each reading its file only
+ * when opened.
  */
 
 import { useCallback, useContext, useEffect, useState } from "react";
-import { Answer } from "@/components/Answer";
 import { Lockup } from "@/components/Lockup";
 import * as api from "@/api";
 import type { HotkeyStatus, UpdateCheck } from "@takyon/shared";
 import { Group, Row, Switch, useApplied } from "../controls";
 import { CrumbContext } from "../crumb";
+import { parseSection } from "../releaseNotes";
 import { Licences } from "./Licences";
+import { ReleaseItems, ReleaseNotes } from "./ReleaseNotes";
 
 /** ADR-0011: the slug is what Windows keys off, and it is not the display name. */
 const IDENTITY = "com.v3sper.takyon";
@@ -37,6 +39,7 @@ export function About() {
   const [error, setError] = useState<string | null>(null);
   const [autoCheck, setAutoCheck] = useState<boolean | null>(null);
   const [licences, setLicences] = useState(false);
+  const [releases, setReleases] = useState(false);
   const setCrumb = useContext(CrumbContext);
   const daily = useApplied(api.setUpdateAutoCheck, api.updateAutoCheck);
   const toggleDaily = useCallback(
@@ -83,7 +86,13 @@ export function About() {
     setCrumb({ label: "Third-party licences", back: () => (setLicences(false), setCrumb(null)) });
   };
 
+  const openReleases = () => {
+    setReleases(true);
+    setCrumb({ label: "Release notes", back: () => (setReleases(false), setCrumb(null)) });
+  };
+
   if (licences) return <Licences />;
+  if (releases) return <ReleaseNotes />;
 
   return (
     <>
@@ -107,12 +116,26 @@ export function About() {
         {available?.notes && (
           <div className="px-3.5 py-3">
             <p className="mb-1.5 text-[12.5px] font-medium text-fg/70">What's new in {available.version}</p>
-            <Answer
-              text={available.notes}
-              className="max-h-40 overflow-y-auto text-[12.5px] leading-snug text-fg/70"
-            />
+            {/* The feed's notes are the CHANGELOG section: same labelled bullets. */}
+            <div className="max-h-48 overflow-y-auto">
+              <ReleaseItems {...parseSection(available.notes)} />
+            </div>
           </div>
         )}
+        <Row
+          id="release-notes"
+          label="Release notes"
+          description="What changed in recent versions, one line per feature. Reads the notes bundled with this copy, so it works offline."
+        >
+          <button
+            type="button"
+            onClick={openReleases}
+            aria-label="View release notes"
+            className="rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg/86 transition-colors hover:text-fg"
+          >
+            View
+          </button>
+        </Row>
         <Row
           id="update-auto"
           label="Check for updates automatically"
@@ -165,6 +188,7 @@ export function About() {
           <button
             type="button"
             onClick={openLicences}
+            aria-label="View third-party licences"
             className="rounded-control bg-control px-2.5 py-1 text-[12.5px] text-fg/86 transition-colors hover:text-fg"
           >
             View

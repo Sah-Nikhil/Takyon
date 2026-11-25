@@ -250,6 +250,10 @@ under `docs/`.
   `origin/main`: bump, preflight, commit the version files and `Cargo.lock` as
   `UPDATE d<phase>.<n> version <version>`, push, wait for CI to register, then tag
   `v<version>` and push it. `release.yml` publishes. Bare `bun run release` refuses.
+- release notes: before releasing, rename `CHANGELOG.md`'s `## Unreleased` to
+  `## v<version> — <title>`. One feature per bullet, `- **Label.** Sentence.`:
+  the label is bold on GitHub and in Settings › About › Release notes. The GitHub
+  body adds a commit tally and the folded commit list itself (`scripts/updater.ts body`).
 
 ## Testing
 Use the **`/tdd` skill** for writing and running tests — test-first, not

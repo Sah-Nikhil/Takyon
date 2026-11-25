@@ -148,6 +148,11 @@ export const PAGES: SettingsPage[] = [
       { id: "hotkey-status", label: "Global hotkey", keywords: ["alt space", "shortcut"] },
       { id: "identity", label: "Package identity", keywords: ["version", "slug", "data folder"] },
       {
+        id: "release-notes",
+        label: "Release notes",
+        keywords: ["what's new", "changelog", "changes", "version", "release", "update"],
+      },
+      {
         id: "licences",
         label: "Third-party licences",
         keywords: ["licence", "license", "licenses", "notices", "attribution", "credits", "dependencies", "legal", "copyright", "open source"],

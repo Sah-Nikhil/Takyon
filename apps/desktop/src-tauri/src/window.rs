@@ -485,7 +485,8 @@ pub fn show(app: &AppHandle, bench: &Bench) {
     place_on_cursor_monitor(app, &win);
 
     // Expanded has a fixed-height row; Compact keeps its one-line height.
-    let notice = crate::update::notice();
+    // Counted: a What's-new row retires after `update::WHATS_NEW_SHOWS` shows.
+    let notice = crate::update::notice_for_show(app);
 
     // Stamped before `show()`, not after: the stray focus event can be delivered
     // while we are still inside these calls.

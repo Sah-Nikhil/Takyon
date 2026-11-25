@@ -214,8 +214,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # For scripts/updater.ts and CHANGELOG.md. No `bun install`: the script
-      # imports nothing outside the repo.
+      # imports nothing outside the repo. Full history and tags: the release
+      # body lists every commit since the previous tag.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - uses: actions/download-artifact@v8
         with:
@@ -228,12 +231,14 @@ jobs:
         env:
           TAKYON_UPDATER_PUBKEY: ${{ vars.TAKYON_UPDATER_PUBKEY }}
         run: bun scripts/updater.ts manifest dist "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/notes.md"
-      # CHANGELOG.md's section leads; GitHub's generated "What's Changed" and
-      # "New Contributors" follow it (softprops appends them to `body_path`).
+      # t3code's shape: a counted header, CHANGELOG.md's labelled bullets, then
+      # every NEW/FIX/UPDATE commit folded under "Full changelog". Our own fold
+      # replaces GitHub's generated list, which cannot be folded.
       - name: Assemble the release body
         run: |
+          bun scripts/updater.ts body "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP/summary.md"
           {
-            cat "$RUNNER_TEMP/notes.md"
+            cat "$RUNNER_TEMP/summary.md"
             echo
             echo "---"
             echo
@@ -245,5 +250,5 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
-          generate_release_notes: true
+          generate_release_notes: false
           body_path: ${{ runner.temp }}/body.md

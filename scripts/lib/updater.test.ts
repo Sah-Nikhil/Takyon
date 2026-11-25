@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { manifest, releaseNotes, updaterConfig, verifySignature } from "./updater";
+import { manifest, releaseBody, releaseNotes, updaterConfig, verifySignature } from "./updater";
 
 /**
  * Signed by `tauri signer sign` with a throwaway key generated for this fixture
@@ -134,3 +134,36 @@ describe("releaseNotes", () => {
     expect(() => releaseNotes(CHANGELOG, "9.9.9")).toThrow("CHANGELOG");
   });
 });
+
+describe("releaseBody", () => {
+  const notes = "- **Agent fallback.** The next Agent answers.\n- **Faster `!s`.** Pages stop at 3.5 s.";
+  const commits = [
+    { subject: "NEW d0.11.74 agent fallback, !s fast model", hash: "a1b2c3d" },
+    { subject: "FIX d0.11.75 what's new row retires", hash: "b2c3d4e" },
+    { subject: "FIX d0.11.76 opencode v2 flags", hash: "c3d4e5f" },
+    { subject: "Merge pull request #33 from Sah-Nikhil/t3/x", hash: "d4e5f60" },
+    { subject: "Update demo_vid.mp4", hash: "e5f6071" },
+    { subject: "UPDATE d0.11.77 version 0.12.10", hash: "f607182" },
+  ];
+
+  test("leads with a counted header, then the labelled bullets, then the folded list", () => {
+    const body = releaseBody("0.12.10", notes, commits);
+    expect(body.startsWith("**v0.12.10** · 1 new, 2 fixes\n\n- **Agent fallback.**")).toBe(true);
+    expect(body).toContain("<details>\n<summary>Full changelog</summary>");
+    expect(body).toContain("- NEW agent fallback, !s fast model (a1b2c3d)");
+    expect(body).toContain("- FIX opencode v2 flags (c3d4e5f)");
+  });
+
+  test("leaves merges and other commits out of the count and the list", () => {
+    const body = releaseBody("0.12.10", notes, commits);
+    expect(body).not.toContain("Merge pull request");
+    expect(body).not.toContain("demo_vid");
+    expect(body).not.toContain("version 0.12.10");
+  });
+
+  test("a range with no conventional commits has no tally and no fold", () => {
+    const body = releaseBody("0.12.10", notes, [{ subject: "Update demo_vid.mp4", hash: "e5f6071" }]);
+    expect(body).toBe(`**v0.12.10**\n\n${notes}\n`);
+  });
+});
+
