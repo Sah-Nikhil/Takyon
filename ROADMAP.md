@@ -652,8 +652,9 @@ starts writing seconds sooner. Reasoning in ADR-0041.
 - [x] **`!s` has its own model per Agent, fast by default**: `haiku`, `gpt-6-luna`, `opencode/big-pickle`, switchable in Settings → Agents, with "same as `!c`" one choice away. A model other than `!c`'s takes the quick effort (`low` for Claude and Codex), never `!c`'s; the prompt budget goes from 24,000 to 16,000 characters
 - [x] **opencode v2 flags**: v2.4.1 refuses `--dir` and `--variant` with `Unrecognized flag`, so every opencode Turn failed. It now runs in the process cwd and the variant rides on `-m provider/model#variant`
 - [x] **Tools-off Claude Turns start no MCP servers** (`--strict-mcp-config`)
-- [x] ADR-0041, written with the code
-- [ ] [`docs/verify/v0.11.2.md`](./docs/verify/v0.11.2.md): 5 of 16 boxes confirmed by `scripts/verify-drive-v0.11.2.ps1` against the release build, 1 partly. The rest need Settings writes or an Agent that has really hit its limit
+- [x] **Answers stay open on a click away** (ADR-0042, a user request): a `!c` or `!s` answer survives focus loss so it can be copied from or worked beside. On by default, off in Settings → Agents. The hotkey brings a pinned answer back to the front; the list still closes on a click away
+- [x] ADR-0041 and ADR-0042, written with the code
+- [ ] [`docs/verify/v0.11.2.md`](./docs/verify/v0.11.2.md): 10 of 21 boxes confirmed by `scripts/verify-drive-v0.11.2.ps1` against the release build, 1 partly. The rest need Settings writes or an Agent that has really hit its limit
 
 **Exit criteria:** with Claude Code out of usage and Codex ranked second, `!c`
 and `!s` answer from Codex, and the second `!c` names Codex before Enter. With

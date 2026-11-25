@@ -170,6 +170,11 @@ export interface SettingsSnapshot {
    * against a 20 ms budget (TBC-0005).
    */
   filesFallback: boolean;
+  /**
+   * Whether a `!c` or `!s` answer stays open when you click away (ADR-0042).
+   * Default on. The plain list still closes on a click away (ADR-0001).
+   */
+  pinAnswers: boolean;
   /** Indexed roots, and the names skipped inside them (TBC-0005). */
   filesRoots: string[];
   filesExcludes: string[];
@@ -674,10 +679,11 @@ export type TurnEvent =
   | { kind: "done"; session?: string }
   | ({ kind: "failed" } & TurnFailure)
   /**
-   * `agent` (the failure's) wrote nothing and could not answer; `to` is asked
-   * next (ADR-0041). A session from its `started` was the failed Agent's: drop it.
+   * `from` wrote nothing and could not answer; `to` is asked next (ADR-0041).
+   * `agent` is `from`'s display label, `label` is `to`'s. A session from its
+   * `started` was the failed Agent's: drop it.
    */
-  | ({ kind: "fallback"; to: AgentKind; label: string } & AgentTurnFailure);
+  | ({ kind: "fallback"; from: AgentKind; to: AgentKind; label: string } & AgentTurnFailure);
 
 /** A `TurnEvent` with the Turn it belongs to. Rust flattens the two together. */
 export type TurnMessage = TurnEvent & { turnId: number };

@@ -273,6 +273,26 @@ pub fn current_view() -> Option<View> {
     SHAPE.lock().unwrap_or_else(|e| e.into_inner()).view
 }
 
+/// `prefs::PIN_ANSWERS`, cached: read on every focus loss, never from SQLite.
+static PIN_ANSWERS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_pin_answers(on: bool) {
+    PIN_ANSWERS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Does the open View outlive a click away? Only an answer, only when pinned:
+/// the list, clipboard history and Focus still close (ADR-0042).
+fn answer_is_pinned(pin: bool, view: Option<View>) -> bool {
+    pin && matches!(view, Some(View::Ask) | Some(View::Web))
+}
+
+fn pinned_now() -> bool {
+    answer_is_pinned(
+        PIN_ANSWERS.load(std::sync::atomic::Ordering::Relaxed),
+        current_view(),
+    )
+}
+
 /// Forget the last query's shape, on hide.
 ///
 /// ADR-0001: the Palette opens empty. A shape still describing eight rows would
@@ -306,6 +326,10 @@ static EXPANDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// Load all three from storage. Called at startup and whenever one changes.
 pub fn cache_layout_prefs(prefs: &crate::prefs::Prefs) {
     use std::sync::atomic::Ordering::Relaxed;
+    PIN_ANSWERS.store(
+        crate::prefs::flag(prefs, crate::prefs::PIN_ANSWERS, true),
+        Relaxed,
+    );
     UI_SCALE.store(
         crate::prefs::ui_scale_percent(prefs.get(crate::prefs::UI_SIZE).as_deref()),
         Relaxed,
@@ -407,10 +431,10 @@ static LAST_SHOWN: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Should a `Focused(false)` event actually dismiss the Palette?
 ///
-/// Three reasons it might not: the debug flag is on, the window is not visible
-/// anyway, or the event arrived inside [`FOCUS_GRACE`] of a show.
+/// Four reasons it might not: the debug flag is on, an answer is pinned, the
+/// window is not visible anyway, or the event arrived inside [`FOCUS_GRACE`].
 pub fn should_hide_on_focus_loss(app: &AppHandle) -> bool {
-    if no_focus_steal() {
+    if no_focus_steal() || pinned_now() {
         return false;
     }
     if !palette(app)
@@ -476,14 +500,7 @@ pub fn show(app: &AppHandle, bench: &Bench) {
     }
 
     if !no_focus_steal() {
-        let _ = win.set_focus();
-        // UIPI refuses foreground to a medium-integrity process while an elevated
-        // window has it, and refuses silently. Ask the signed helper only when the
-        // cheap path demonstrably failed, so a normal show never pays for the pipe.
-        #[cfg(windows)]
-        if !is_foreground(&win) {
-            crate::uiaccess::request_foreground(&win);
-        }
+        take_foreground(&win);
     }
 
     let _ = win.emit(
@@ -494,6 +511,18 @@ pub fn show(app: &AppHandle, bench: &Bench) {
             notice,
         },
     );
+}
+
+/// Focus the Palette, through the signed helper if the cheap path fails.
+///
+/// UIPI refuses foreground to a medium-integrity process while an elevated window
+/// has it, and refuses silently. The helper is asked only after a real failure.
+fn take_foreground(win: &WebviewWindow) {
+    let _ = win.set_focus();
+    #[cfg(windows)]
+    if !is_foreground(win) {
+        crate::uiaccess::request_foreground(win);
+    }
 }
 
 /// Hide the Palette. Never destroy it.
@@ -543,13 +572,31 @@ fn stop_agents(app: &AppHandle) {
 /// Three ways out (hotkey, Escape, click away), all must work. Visibility is read from
 /// the window, never mirrored: focus loss hides it anytime, and a stale flag no-ops.
 pub fn toggle(app: &AppHandle, bench: &Bench) {
-    let visible = palette(app)
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false);
-    if visible {
-        hide(app, "hotkey toggle");
-    } else {
-        show(app, bench);
+    let Some(win) = palette(app) else { return };
+    let visible = win.is_visible().unwrap_or(false);
+    let focused = win.is_focused().unwrap_or(true);
+    match toggle_action(visible, focused, pinned_now()) {
+        Toggle::Show => show(app, bench),
+        Toggle::Hide => hide(app, "hotkey toggle"),
+        Toggle::Refocus => take_foreground(&win),
+    }
+}
+
+/// What the hotkey does to the Palette.
+#[derive(Debug, PartialEq, Eq)]
+enum Toggle {
+    Show,
+    Hide,
+    /// A pinned answer behind other windows comes back rather than closing:
+    /// the hotkey is how anyone reaches for it again (ADR-0042).
+    Refocus,
+}
+
+fn toggle_action(visible: bool, focused: bool, pinned: bool) -> Toggle {
+    match (visible, focused, pinned) {
+        (false, _, _) => Toggle::Show,
+        (true, false, true) => Toggle::Refocus,
+        (true, _, _) => Toggle::Hide,
     }
 }
 
@@ -707,6 +754,27 @@ fn collect_descendants(root: u32, pairs: &[(u32, u32)]) -> Vec<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ADR-0042: only an answer survives a click away, and only when pinned.
+    #[test]
+    fn v0_11_2_only_a_pinned_answer_survives_focus_loss() {
+        assert!(answer_is_pinned(true, Some(View::Ask)));
+        assert!(answer_is_pinned(true, Some(View::Web)));
+        assert!(!answer_is_pinned(false, Some(View::Ask)));
+        for view in [None, Some(View::ClipboardHistory), Some(View::Focus)] {
+            assert!(!answer_is_pinned(true, view), "{view:?}");
+        }
+    }
+
+    /// The hotkey brings a pinned answer back instead of closing it; every
+    /// other state toggles as before.
+    #[test]
+    fn v0_11_2_the_hotkey_refocuses_a_pinned_answer_behind_other_windows() {
+        assert_eq!(toggle_action(false, false, true), Toggle::Show);
+        assert_eq!(toggle_action(true, false, true), Toggle::Refocus);
+        assert_eq!(toggle_action(true, true, true), Toggle::Hide);
+        assert_eq!(toggle_action(true, false, false), Toggle::Hide);
+    }
 
     /// The event names cross a language boundary with no compiler between them.
     /// This is the cheapest possible contract test, and it is the exact drift

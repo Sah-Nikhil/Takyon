@@ -246,6 +246,11 @@ export const PAGES: SettingsPage[] = [
         keywords: ["working directory", "folder", "scratch", "project", "cwd"],
       },
       {
+        id: "pin-answers",
+        label: "Keep answers open when you click away",
+        keywords: ["pin", "persistent", "stay open", "click away", "focus", "copy", "dismiss"],
+      },
+      {
         id: "agent-claude",
         label: "Claude Code",
         keywords: ["claude", "anthropic", "sign in", "model", "effort", "subscription", "search model", "!s", "haiku"],

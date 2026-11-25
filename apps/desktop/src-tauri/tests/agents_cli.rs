@@ -656,10 +656,13 @@ fn v0_11_2_a_missing_agent_falls_through_to_the_next_one() {
 
     match &events[0] {
         TurnEvent::Fallback {
+            from,
             to,
             label: next,
             failure: TurnFailure::NotFound { agent, .. },
         } => {
+            // `Missing` claims Claude's kind; the id names the Agent that failed.
+            assert_eq!(*from, AgentKind::Claude);
             assert_eq!(*to, AgentKind::OpenCode);
             assert_eq!(next, &label);
             assert_eq!(agent, "Missing");

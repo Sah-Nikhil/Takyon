@@ -152,8 +152,11 @@ export function turnFailureCopy(failure: TurnFailure): AgentSummary {
   }
 }
 
-/** The line shown when one Agent hands a Turn to the next (ADR-0041). */
-export function fallbackNotice(failed: string, next: string): string {
+/**
+ * The line shown when one Agent hands a Turn to the next (ADR-0041). Short ids
+ * (`claude`, `codex`, `opencode`), the names the answer header uses.
+ */
+export function fallbackNotice(failed: AgentKind, next: AgentKind): string {
   return `${failed} couldn't answer, so ${next} is.`;
 }
 

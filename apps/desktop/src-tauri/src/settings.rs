@@ -49,6 +49,8 @@ pub struct Snapshot {
     pub files_bangless: bool,
     /// Whether Windows Search answers outside the roots. Default off (task 9).
     pub files_fallback: bool,
+    /// Whether a `!c` or `!s` answer stays open on a click away. Default on.
+    pub pin_answers: bool,
     /// Indexed roots, and the names skipped inside them (TBC-0005). Both
     /// user-editable, and both shown with the live entry count beside them.
     pub files_roots: Vec<String>,
@@ -139,6 +141,7 @@ impl Snapshot {
             super_hotkey: prefs::flag(prefs, prefs::SUPER_HOTKEY, false),
             files_bangless: prefs::flag(prefs, prefs::FILES_BANGLESS, false),
             files_fallback: prefs::flag(prefs, prefs::FILES_FALLBACK, false),
+            pin_answers: prefs::flag(prefs, prefs::PIN_ANSWERS, true),
             files_roots: stored_roots(prefs)
                 .include
                 .iter()
@@ -235,6 +238,15 @@ pub fn set_files_fallback(
     if let Some(files) = &pipeline.files {
         files.set_fallback(on);
     }
+}
+
+/// Whether a `!c` or `!s` answer stays open when focus leaves (ADR-0042).
+#[tauri::command]
+pub fn set_pin_answers(on: bool, prefs: tauri::State<'_, Arc<Prefs>>) {
+    if let Err(e) = prefs.set(prefs::PIN_ANSWERS, if on { "1" } else { "0" }) {
+        eprintln!("[takyon] the pin setting could not be saved: {e}");
+    }
+    crate::window::set_pin_answers(on);
 }
 
 /// Replace the indexed roots and exclusions, then rebuild (TBC-0005).
@@ -562,6 +574,7 @@ mod tests {
                 "filesExcludes",
                 "filesFallback",
                 "filesRoots",
+                "pinAnswers",
                 "placement",
                 "recents",
                 "reduceMotion",

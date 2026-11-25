@@ -23,7 +23,9 @@ param(
     [string]$OutDir = "$env:TEMP\takyon-verify-v0.11.2",
     [string]$Hotkey = "Ctrl+Alt+Shift+F9",
     [string]$Installed = "D:\Takyon\takyon.exe",
-    [int]$AnswerSeconds = 30
+    [int]$AnswerSeconds = 30,
+    # A, B, C, E: the phases to run. E is the pinned answer (ADR-0042).
+    [string[]]$Only = @("A", "B", "C", "E")
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,6 +36,7 @@ Add-Type -Namespace Takyon -Name Drive112 -MemberDefinition @'
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr h, out int pid);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll", SetLastError=true)] public static extern void keybd_event(byte vk, byte sc, uint f, System.UIntPtr x);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
 '@
@@ -77,7 +80,10 @@ function Send-Text([string]$Text) {
 
 function Summon {
     for ($i = 0; $i -lt 3; $i++) {
-        if ((Get-FrontName) -eq "takyon") { return }
+        if ((Get-FrontName) -eq "takyon") {
+            $script:PaletteHwnd = [Takyon.Drive112]::GetForegroundWindow()
+            return
+        }
         Send-Chord @($VK.Ctrl, $VK.Alt, $VK.Shift) $VK.F9
         Start-Sleep -Milliseconds 700
     }
@@ -166,8 +172,28 @@ Get-Process takyon -ErrorAction SilentlyContinue | ForEach-Object {
 }
 Start-Sleep -Milliseconds 500
 
+# Whether the Palette's own window is visible. Its handle, captured while it had
+# the foreground: `MainWindowHandle` can name another window of the process.
+function Test-PaletteVisible([int]$ProcId) {
+    if (-not $script:PaletteHwnd) { throw "no Palette handle captured yet" }
+    [Takyon.Drive112]::IsWindowVisible($script:PaletteHwnd)
+}
+
+# A window that has just launched is given the foreground by Windows itself,
+# the one way a script can take it from the Palette.
+function Start-Elsewhere {
+    $w = Start-Process notepad -PassThru
+    for ($i = 0; $i -lt 20 -and (Get-FrontName) -eq "takyon"; $i++) { Start-Sleep -Milliseconds 300 }
+    $w
+}
+
 $app = $null
+$failures = 0
+function Check([bool]$Ok, [string]$What) {
+    if ($Ok) { Write-Output "ok: $What" } else { Write-Warning "FAILED: $What"; $script:failures++ }
+}
 try {
+  if ($Only -contains "A") {
     # A: Claude's !c model does not exist, Codex is second.
     Set-Prefs @{
         "agents.order"        = '["claude","codex","opencode"]'
@@ -193,7 +219,8 @@ try {
     Save-Shot "a3-search-codex"
     Stop-Process -Id $app.Id -Force; $app = $null
     Start-Sleep -Milliseconds 800
-
+  }
+  if ($Only -contains "B") {
     # B: a fresh process has no bench, Claude's !c model is restored, and !s
     # writes with the fast default. Shots on a clock show when it answers.
     Set-Prefs @{} -Remove @("agents.model.claude")
@@ -210,7 +237,8 @@ try {
     }
     Stop-Process -Id $app.Id -Force; $app = $null
     Start-Sleep -Milliseconds 800
-
+  }
+  if ($Only -contains "C") {
     # C: opencode first. v2.4.1 refused every Turn before v0.11.2.
     Set-Prefs @{ "agents.order" = '["opencode","claude","codex"]' }
     $app = Start-UnderTest "c"
@@ -221,6 +249,52 @@ try {
     Save-AgentArgs "c-opencode"
     Start-Sleep -Seconds ($AnswerSeconds - 2)
     Save-Shot "c1-opencode"
+    Stop-Process -Id $app.Id -Force; $app = $null
+    Start-Sleep -Milliseconds 800
+  }
+  if ($Only -contains "E") {
+    # E: an answer survives a click away; the hotkey brings it back, then hides.
+    Set-Prefs @{ "agents.order" = '["claude","codex","opencode"]' } -Remove @("agents.model.claude", "palette.pinAnswers")
+    $app = Start-UnderTest "e"
+    Reset-Input
+    Send-Text "!c Name every planet in the solar system, one line each."
+    Send-Key $VK.Enter 600
+    Start-Sleep -Seconds 3
+    $away = Start-Elsewhere
+    Start-Sleep -Seconds 2
+    Check ((Get-FrontName) -ne "takyon") "E.1 focus moved to $(Get-FrontName)"
+    Check (Test-PaletteVisible $app.Id) "E.1 the answer is still on screen after the click away"
+    Send-Chord @($VK.Ctrl, $VK.Alt, $VK.Shift) $VK.F9
+    Start-Sleep -Milliseconds 800
+    Check ((Get-FrontName) -eq "takyon") "E.2 the hotkey brought the answer back to the front"
+    Save-Shot "e2-refocused"
+    Send-Chord @($VK.Ctrl, $VK.Alt, $VK.Shift) $VK.F9
+    Start-Sleep -Milliseconds 800
+    Check (-not (Test-PaletteVisible $app.Id)) "E.3 the hotkey on a focused answer hides it"
+    Stop-Process -Id $away.Id -Force -ErrorAction SilentlyContinue
+
+    # E.4: the list, no Bang, still closes on a click away.
+    Reset-Input
+    Send-Text "notepad"
+    $away = Start-Elsewhere
+    Start-Sleep -Seconds 1
+    Check (-not (Test-PaletteVisible $app.Id)) "E.4 the plain list closed on a click away"
+    Stop-Process -Id $away.Id -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $app.Id -Force; $app = $null
+    Start-Sleep -Milliseconds 800
+
+    # E.5: switched off, an answer closes on a click away like everything else.
+    Set-Prefs @{ "palette.pinAnswers" = "0" }
+    $app = Start-UnderTest "e5"
+    Reset-Input
+    Send-Text "!c Name every planet in the solar system, one line each."
+    Send-Key $VK.Enter 600
+    Start-Sleep -Seconds 3
+    $away = Start-Elsewhere
+    Start-Sleep -Seconds 1
+    Check (-not (Test-PaletteVisible $app.Id)) "E.5 with the setting off, the answer closed on a click away"
+    Stop-Process -Id $away.Id -Force -ErrorAction SilentlyContinue
+  }
 }
 finally {
     if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
@@ -230,4 +304,4 @@ finally {
         Write-Output "relaunched $Installed"
     }
 }
-Write-Output "Done. Read the shots in $OutDir against docs/verify/v0.11.2.md."
+Write-Output "$failures automated check(s) failed. Read the shots in $OutDir against docs/verify/v0.11.2.md."

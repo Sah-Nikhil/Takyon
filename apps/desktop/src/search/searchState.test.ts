@@ -146,6 +146,7 @@ it("v0.11.2 a fallback renames the writer and explains it", () => {
   const state = reduceTurn(answering(), {
     turnId: 7,
     kind: "fallback",
+    from: "claude",
     to: "codex",
     label: "Codex",
     reason: "notFound",
@@ -153,5 +154,5 @@ it("v0.11.2 a fallback renames the writer and explains it", () => {
     binary: "claude",
   });
   expect(state).toMatchObject({ phase: "answering", agent: "Codex", answer: "" });
-  expect(state.notice).toBe("Claude Code couldn't answer, so Codex is.");
+  expect(state.notice).toBe("claude couldn't answer, so codex is.");
 });

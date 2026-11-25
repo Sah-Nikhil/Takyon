@@ -42,6 +42,7 @@ let current: SettingsSnapshot = {
   superHotkey: false,
   filesBangless: false,
   filesFallback: false,
+  pinAnswers: true,
   filesRoots: [],
   filesExcludes: [],
 };
@@ -165,6 +166,11 @@ export async function setFilesBangless(on: boolean): Promise<void> {
 export async function setFilesFallback(on: boolean): Promise<void> {
   await api.setFilesFallback(on);
   current = { ...current, filesFallback: on };
+}
+
+export async function setPinAnswers(on: boolean): Promise<void> {
+  await api.setPinAnswers(on);
+  current = { ...current, pinAnswers: on };
 }
 
 export async function setFilesRoots(roots: string[], excludes: string[]): Promise<void> {

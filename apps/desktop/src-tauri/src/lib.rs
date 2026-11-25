@@ -758,6 +758,7 @@ pub fn run() {
             settings::migrate_local_prefs,
             settings::set_files_bangless,
             settings::set_files_fallback,
+            settings::set_pin_answers,
             settings::set_files_roots,
             settings::reset_files_roots,
             settings::opened_count,

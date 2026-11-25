@@ -51,9 +51,10 @@ pub enum TurnEvent {
         #[serde(flatten)]
         failure: TurnFailure,
     },
-    /// `failure.agent` could not answer and wrote nothing; `to` is asked next.
-    /// Any session a `started` gave belongs to the Agent that failed: drop it.
+    /// `from` could not answer and wrote nothing; `to` is asked next. Any
+    /// session a `started` gave belongs to the Agent that failed: drop it.
     Fallback {
+        from: AgentKind,
         to: AgentKind,
         label: String,
         #[serde(flatten)]
@@ -362,6 +363,7 @@ impl Turns {
             match attempts.peek() {
                 Some(_) if slot.is_cancelled() => return None,
                 Some(next) => emit(TurnEvent::Fallback {
+                    from: kind,
                     to: next.driver.kind(),
                     label: next.driver.label().to_string(),
                     failure,
@@ -654,6 +656,7 @@ mod tests {
         let fallback = serde_json::to_value(Envelope {
             turn_id: 4,
             event: TurnEvent::Fallback {
+                from: AgentKind::Claude,
                 to: AgentKind::Codex,
                 label: "Codex".into(),
                 failure: missing.clone(),
@@ -665,6 +668,7 @@ mod tests {
             serde_json::json!({
                 "turnId": 4,
                 "kind": "fallback",
+                "from": "claude",
                 "to": "codex",
                 "label": "Codex",
                 "reason": "notFound",

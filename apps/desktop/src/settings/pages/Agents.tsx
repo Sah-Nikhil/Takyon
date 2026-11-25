@@ -18,6 +18,7 @@ import type { AgentKind, AgentSettings, AgentSnapshot, PathReport } from "@takyo
 import { SEARCH_MODEL_SAME } from "@takyon/shared";
 
 import * as api from "@/api";
+import { preferences, refresh, setPinAnswers } from "@/prefs";
 import {
   AGENT_LABELS,
   agentSummary,
@@ -37,6 +38,8 @@ export function Agents() {
   const [snapshots, setSnapshots] = useState<AgentSnapshot[] | null>(null);
   const [pathReport, setPathReport] = useState<PathReport | null>(null);
   const [cwd, setCwd] = useState("");
+  const [pinned, setPinned] = useState(() => preferences().pinAnswers);
+  const pinApplied = useApplied(setPinAnswers, async () => (await refresh()).pinAnswers);
 
   // Order and switches re-read once a probe lands: on a first run it may have
   // ranked a sole installed Agent first (ADR-0031). Never `cwd`, maybe mid-edit.
@@ -147,6 +150,19 @@ export function Agents() {
             placeholder={settings?.scratch ?? ""}
             aria-label="Run agents in"
             className="h-8 w-80 max-w-full rounded-md border border-edge bg-control px-2.5 text-[13px] text-fg outline-none placeholder:text-fg/46"
+          />
+        </Row>
+        <Row
+          id="pin-answers"
+          label="Keep answers open when you click away"
+          applied={pinApplied.applied}
+          error={pinApplied.error}
+          description="A !c or !s answer stays on screen while you copy from it or work in the window behind. Press the hotkey to bring it back to the front, Esc to close it. The plain launcher still closes when you click away."
+        >
+          <Switch
+            label="Keep answers open when you click away"
+            checked={pinned}
+            onChange={(on) => void pinApplied.apply(on, setPinned)}
           />
         </Row>
       </Group>

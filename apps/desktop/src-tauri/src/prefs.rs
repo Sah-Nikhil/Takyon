@@ -56,6 +56,11 @@ pub const FILES_BANGLESS: &str = "files.bangless";
 /// against a 20 ms budget — TBC-0005's amendment carries the measurement.
 pub const FILES_FALLBACK: &str = "files.fallback";
 
+/// Whether a `!c` or `!s` answer stays open when focus leaves the Palette.
+/// Default on: an answer is read beside other work, copied into it, written
+/// down. The plain list still closes on a click away (ADR-0001, ADR-0042).
+pub const PIN_ANSWERS: &str = "palette.pinAnswers";
+
 /// Index roots, as a JSON array of paths. Absent means the probed defaults.
 pub const FILES_ROOTS: &str = "files.roots";
 

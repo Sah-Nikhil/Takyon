@@ -17,6 +17,7 @@ import type { AgentKind, AgentSnapshot } from "@takyon/shared";
 import { agentSummary, HEALTH_DOT } from "@/agents/status";
 import { Answer } from "@/components/Answer";
 import { useTurn } from "@/agents/useTurn";
+import { preferences } from "@/prefs";
 
 interface Message {
   role: "you" | "agent";
@@ -55,7 +56,9 @@ export function AskView({
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = state.phase === "asking" || state.phase === "answering";
   const shown = current === agent ? snapshot : snapshots?.find((s) => s.kind === current);
-  const label = state.agentLabel ?? shown?.label ?? current;
+  // The short id of the Agent answering, `claude` / `codex` / `opencode`: one
+  // name per Agent from the first frame, following a fallback when one happens.
+  const label = current;
 
   /*
     Once, for the question that opened this view. Guarded by a ref rather than by
@@ -177,7 +180,10 @@ export function AskView({
             Stop
           </button>
         ) : (
-          <span className="shrink-0 text-[12px] text-fg/50">Esc to go back</span>
+          <span className="shrink-0 text-[12px] text-fg/50">
+            {/* ADR-0042: a pinned answer outlives a click away, so it says so. */}
+            {preferences().pinAnswers ? "Stays open when you click away · Esc to go back" : "Esc to go back"}
+          </span>
         )}
       </div>
     </div>

@@ -69,6 +69,7 @@ describe("reduce", () => {
     state = reduce(state, {
       turnId: 1,
       kind: "fallback",
+      from: "claude",
       to: "codex",
       label: "Codex",
       reason: "exited",
@@ -81,7 +82,7 @@ describe("reduce", () => {
       answer: "",
       agent: "codex",
       agentLabel: "Codex",
-      notice: "Claude Code couldn't answer, so Codex is.",
+      notice: "claude couldn't answer, so codex is.",
     });
     expect(state.session).toBeUndefined();
 
@@ -89,7 +90,7 @@ describe("reduce", () => {
     state = reduce(state, { turnId: 1, kind: "text", delta: "Answer." });
     state = reduce(state, { turnId: 1, kind: "done" });
     expect(state).toMatchObject({ phase: "done", session: "codex-s", agent: "codex" });
-    expect(state.notice).toContain("Codex");
+    expect(state.notice).toContain("codex");
   });
 
   // Every Agent out of usage is the case the user hits at the end of a week:
@@ -115,6 +116,7 @@ describe("reduce", () => {
     let state = reduce(idle, {
       turnId: 1,
       kind: "fallback",
+      from: "claude",
       to: "codex",
       label: "Codex",
       reason: "notFound",

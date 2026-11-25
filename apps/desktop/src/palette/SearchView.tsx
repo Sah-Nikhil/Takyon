@@ -23,6 +23,7 @@ import { InlineText } from "@/components/Answer";
 import { Favicon } from "@/search/Favicon";
 import { FindingIcon } from "@/search/FindingIcon";
 import { parseAnswer } from "@/search/findings";
+import { preferences } from "@/prefs";
 import { useSearch } from "@/search/useSearch";
 
 /** Cards in the strip. Six is two screens of horizontal scroll, not a carousel. */
@@ -222,7 +223,10 @@ export function SearchView({
       </div>
 
       <div className="flex items-center gap-3 border-t border-seam px-4 py-2.5">
-        <span className="text-[12px] text-fg/50">Esc to go back</span>
+        <span className="text-[12px] text-fg/50">
+          {/* ADR-0042: a pinned answer outlives a click away, so it says so. */}
+          {preferences().pinAnswers ? "Stays open when you click away · Esc to go back" : "Esc to go back"}
+        </span>
         {busy && (
           <button
             type="button"

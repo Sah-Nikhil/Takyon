@@ -131,6 +131,10 @@ export const setFilesBangless = (on: boolean) =>
 export const setFilesFallback = (on: boolean) =>
   inTauri ? invoke<void>("set_files_fallback", { on }) : mock.setFilesFallback(on);
 
+/** Whether a `!c` or `!s` answer stays open on a click away (ADR-0042). */
+export const setPinAnswers = (on: boolean) =>
+  inTauri ? invoke<void>("set_pin_answers", { on }) : mock.setPinAnswers(on);
+
 /** Replace the indexed roots and exclusions, then rebuild in the background. */
 export const setFilesRoots = (roots: string[], excludes: string[]) =>
   inTauri

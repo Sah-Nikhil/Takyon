@@ -70,7 +70,7 @@ export function reduce(previous: TurnState, message: TurnMessage): TurnState {
         session: undefined,
         agent: message.to,
         agentLabel: message.label,
-        notice: fallbackNotice(message.agent, message.label),
+        notice: fallbackNotice(message.from, message.to),
       };
   }
 }

@@ -229,11 +229,16 @@ export function failTurns(failure: TurnFailure | null) {
   turnFailure = failure;
 }
 
-let turnFallback: { to: AgentKind; label: string; failure: AgentTurnFailure } | null = null;
+let turnFallback: {
+  from: AgentKind;
+  to: AgentKind;
+  label: string;
+  failure: AgentTurnFailure;
+} | null = null;
 
 /** Make the asked Agent fail with `failure` and hand over to `to` (ADR-0041). */
 export function fallBackTurns(
-  fallback: { to: AgentKind; label: string; failure: AgentTurnFailure } | null,
+  fallback: { from: AgentKind; to: AgentKind; label: string; failure: AgentTurnFailure } | null,
 ) {
   turnFallback = fallback;
 }
@@ -700,6 +705,7 @@ let snapshot: SettingsSnapshot = {
   superHotkey: false,
   filesBangless: false,
   filesFallback: false,
+  pinAnswers: true,
   filesRoots: ["C:\\Users\\you\\Documents", "C:\\Programming"],
   filesExcludes: ["node_modules", ".git", "target"],
 };
@@ -1558,6 +1564,9 @@ export const mock = {
   setFilesFallback: async (on: boolean) => {
     snapshot = { ...snapshot, filesFallback: on };
   },
+  setPinAnswers: async (on: boolean) => {
+    snapshot = { ...snapshot, pinAnswers: on };
+  },
   setFilesRoots: async (roots: string[], excludes: string[]) => {
     snapshot = { ...snapshot, filesRoots: roots, filesExcludes: excludes };
   },
@@ -1845,8 +1854,8 @@ export const mock = {
     // falls back before `agentAsk` returns, and `useTurn` must buffer it.
     const handover = turnFallback;
     if (handover) {
-      const { to, label, failure } = handover;
-      emitTurn({ turnId, kind: "fallback", to, label, ...failure });
+      const { from, to, label, failure } = handover;
+      emitTurn({ turnId, kind: "fallback", from, to, label, ...failure });
     }
     for (const [i, delta] of MOCK_ANSWER.entries()) {
       setTimeout(() => emitTurn({ turnId, kind: "text", delta }), 10 * (i + 1));

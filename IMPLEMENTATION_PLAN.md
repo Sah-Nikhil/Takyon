@@ -677,8 +677,9 @@ its own event. A chain of two or more that fails all the way ends in
 `exhausted`:
 
 ```ts
-// { turnId, kind: "fallback", to: AgentKind, label: string, ...TurnFailure }
-//   TurnFailure.agent is the Agent that failed; `label` is the one asked next.
+// { turnId, kind: "fallback", from: AgentKind, to: AgentKind, label: string, ...TurnFailure }
+//   `from` failed (TurnFailure.agent is its display label); `label` is `to`'s.
+//   The Palette names both by id: "claude couldn't answer, so codex is."
 //   Any session from the failed Agent's `started` must be dropped.
 type TurnFailure = {
   reason: /* as above */ | "exhausted";
@@ -699,6 +700,11 @@ answer, while `order` stays the preference and the skipped one is named.
 default, `"@ask"` is `!c`'s model) and `searchDefaults` (each driver's
 `search_model()`), written by `set_search_model(agent, model)`. `!s` only;
 `agent_ask` never reads them.
+
+`SettingsSnapshot` gains `pinAnswers` (default true), written by
+`set_pin_answers(on)` and cached in `window::PIN_ANSWERS`. While it is on and the
+open View is `ask` or `web`, `Focused(false)` does not hide the Palette, and the
+hotkey focuses a visible, unfocused Palette instead of hiding it (ADR-0042).
 
 **`file_index_status` is not a field on `QueryResult`.** The state changes on the
 walk's schedule rather than the user's, so riding the keystroke path would ship

@@ -109,7 +109,7 @@ export function reduceTurn(state: SearchState, message: TurnMessage): SearchStat
         phase: "answering",
         answer: "",
         agent: message.label,
-        notice: fallbackNotice(message.agent, message.label),
+        notice: fallbackNotice(message.from, message.to),
       };
   }
 }
