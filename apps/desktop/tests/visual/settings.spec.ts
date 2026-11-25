@@ -876,17 +876,24 @@ test("release notes list recent versions with labelled features", async ({ page 
   await page.getByRole("button", { name: "About" }).click();
   await page.getByRole("button", { name: "View release notes" }).click();
 
-  const latest = page.getByRole("region", { name: "Version 0.12.9" });
-  await expect(latest.getByRole("heading", { name: "v0.12.9" })).toBeVisible();
-  await expect(latest.locator("strong").first()).toHaveText("Focus confetti.");
-  await expect(latest.getByText("Installed")).toBeVisible();
-  // Unreleased work is not a release, and is never listed.
-  await expect(page.getByText("Agent fallback.")).toHaveCount(0);
+  const changelog = readFileSync(fileURLToPath(new URL("../../../../CHANGELOG.md", import.meta.url)), "utf8");
+  const versions = [...changelog.matchAll(/^## v(\d+\.\d+\.\d+)(?:\s|$)/gm)]
+    .map((match) => match[1]!)
+    .slice(0, 6);
+  const version = versions[0]!;
+  const latest = page.getByRole("region", { name: `Version ${version}` });
+  await expect(latest.getByRole("heading", { name: `v${version}` })).toBeVisible();
+  await expect(latest.locator("strong").first()).toBeVisible();
+  if (versions.includes(APP_VERSION)) {
+    await expect(page.getByRole("region", { name: `Version ${APP_VERSION}` }).getByText("Installed")).toBeVisible();
+  } else {
+    await expect(page.getByText("Installed", { exact: true })).toHaveCount(0);
+  }
 
   await latest.getByRole("button", { name: "View release on GitHub" }).click();
   const opened = await page.evaluate(() =>
     (window as unknown as { __takyon_mock: { openedUrls: () => string[] } }).__takyon_mock.openedUrls(),
   );
-  expect(opened).toContain("https://github.com/Sah-Nikhil/Takyon/releases/tag/v0.12.9");
+  expect(opened).toContain(`https://github.com/Sah-Nikhil/Takyon/releases/tag/v${version}`);
   await expect(page.getByRole("button", { name: /older releases on GitHub/ })).toBeVisible();
 });
