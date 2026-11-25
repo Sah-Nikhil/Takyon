@@ -671,6 +671,35 @@ sentences. `silent` is a clean exit with no text. When the parser already emitte
 the Agent's own `agentError`, the exit adds nothing, and a cancelled Turn emits
 nothing at all.
 
+v0.11.2 makes a Turn a chain of Agents (ADR-0041). An Agent that fails before
+writing any text hands over to the next one in the order, and Rust says so with
+its own event. A chain of two or more that fails all the way ends in
+`exhausted`:
+
+```ts
+// { turnId, kind: "fallback", to: AgentKind, label: string, ...TurnFailure }
+//   TurnFailure.agent is the Agent that failed; `label` is the one asked next.
+//   Any session from the failed Agent's `started` must be dropped.
+type TurnFailure = {
+  reason: /* as above */ | "exhausted";
+  tried?: string[];     // exhausted: every Agent asked, in order, by label
+  last?: TurnFailure;   // exhausted: why the final one failed
+  /* other fields as above */
+};
+```
+
+`agent_ask` takes the Agent the Palette named and walks the rest of the
+switched-on order after it, unless `session` is set: a follow-up stays with the
+Agent that holds its session. `Ask` gains `benched: AgentKind[]`, the Agents
+in `order` that failed recently (`agents::fallback::Bench`). The Palette moves
+them last before `pickAgent`, so the row names the Agent that will actually
+answer, while `order` stays the preference and the skipped one is named.
+
+`AgentSettings` gains `searchModels` (stored per Agent: absent is the fast
+default, `"@ask"` is `!c`'s model) and `searchDefaults` (each driver's
+`search_model()`), written by `set_search_model(agent, model)`. `!s` only;
+`agent_ask` never reads them.
+
 **`file_index_status` is not a field on `QueryResult`.** The state changes on the
 walk's schedule rather than the user's, so riding the keystroke path would ship
 the same three words on every keypress. It is asked when `!e` is typed and

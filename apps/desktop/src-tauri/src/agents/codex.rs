@@ -66,6 +66,16 @@ impl AgentDriver for CodexDriver {
         ]
     }
 
+    /// Codex's small model, in the bundled catalogue and accepted on a
+    /// ChatGPT sign-in, which not every catalogue model is.
+    fn search_model(&self) -> Option<&'static str> {
+        Some("gpt-6-luna")
+    }
+
+    fn quick_effort(&self) -> Option<&'static str> {
+        Some("low")
+    }
+
     /// `codex debug models --bundled`, which renders the catalogue as JSON.
     ///
     /// `--bundled` deliberately: the refreshing form goes to the network, and a

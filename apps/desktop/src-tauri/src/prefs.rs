@@ -99,6 +99,14 @@ pub fn ask_model_key(kind: crate::agents::AgentKind) -> String {
     format!("agents.model.{}", kind.as_str())
 }
 
+/// The model one Agent writes `!s` answers with: `agents.searchModel.claude`.
+///
+/// `!s` only. Absent or blank is that Agent's fast default
+/// (`AgentDriver::search_model`); `agents::SEARCH_MODEL_SAME` means `!c`'s model.
+pub fn search_model_key(kind: crate::agents::AgentKind) -> String {
+    format!("agents.searchModel.{}", kind.as_str())
+}
+
 /// The effort level one Agent must use: `agents.effort.claude`.
 ///
 /// Locked the same way and for the same reason as the model. Each Agent spells

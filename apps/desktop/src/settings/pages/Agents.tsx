@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { AgentKind, AgentSettings, AgentSnapshot, PathReport } from "@takyon/shared";
+import { SEARCH_MODEL_SAME } from "@takyon/shared";
 
 import * as api from "@/api";
 import {
@@ -119,6 +120,8 @@ export function Agents() {
             snapshot={snapshots?.find((s) => s.kind === agent)}
             model={settings?.models[agent] ?? ""}
             effort={settings?.efforts[agent] ?? ""}
+            searchModel={settings?.searchModels[agent] ?? ""}
+            searchDefault={settings?.searchDefaults[agent]}
             canMoveUp={i > 0}
             canMoveDown={i < order.length - 1}
             onMove={(delta) => reorder(i, i + delta)}
@@ -164,6 +167,8 @@ function AgentRow({
   snapshot,
   model,
   effort,
+  searchModel,
+  searchDefault,
   canMoveUp,
   canMoveDown,
   onMove,
@@ -176,6 +181,8 @@ function AgentRow({
   snapshot: AgentSnapshot | undefined;
   model: string;
   effort: string;
+  searchModel: string;
+  searchDefault: string | undefined;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMove: (delta: number) => void;
@@ -283,6 +290,36 @@ function AgentRow({
               void api.setAskEffort(agent, next);
               onSettings((s) => ({ ...s, efforts: { ...s.efforts, [agent]: next } }));
             }}
+          />
+          {/*
+            `!s` only. Defaults fast rather than to `!c`'s model: summarising
+            pages already read needs speed, not depth (ADR-0041).
+          */}
+          <Select
+            label={`Model for !s with ${label}`}
+            value={searchModel}
+            disabled={models === null}
+            placeholder={
+              models === null
+                ? "Reading models…"
+                : searchDefault
+                  ? `!s: ${searchDefault} (fast)`
+                  : "!s: same as !c"
+            }
+            options={[
+              { value: SEARCH_MODEL_SAME, label: "!s: same as !c" },
+              ...(models ?? [])
+                .filter((m) => m !== searchDefault)
+                .map((m) => ({ value: m, label: `!s: ${m}` })),
+            ]}
+            onChange={(next) => {
+              void api.setSearchModel(agent, next);
+              onSettings((s) => ({
+                ...s,
+                searchModels: { ...s.searchModels, [agent]: next },
+              }));
+            }}
+            className="w-52 max-w-full"
           />
         </div>
       ) : (

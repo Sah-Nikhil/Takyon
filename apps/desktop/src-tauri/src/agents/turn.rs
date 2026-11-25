@@ -8,6 +8,8 @@
 //! A Turn runs only while the Palette is shown (ADR-0033). `window::hide` clears
 //! the gate and kills every job in Rust, so dismissal never waits on React.
 //! Rust reports failures as facts (`TurnFailure`); TypeScript owns the copy.
+//! A Turn is a chain of Attempts: one that fails before any text hands over to
+//! the next Agent in the order (ADR-0041).
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -20,8 +22,9 @@ use std::thread::JoinHandle;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use super::fallback::Bench;
 use super::job::{self, Job};
-use super::{probe, AgentDriver, TurnRequest, TurnState};
+use super::{probe, AgentDriver, AgentKind, TurnRequest, TurnState};
 
 /// The event every Turn streams over. One channel, `turnId` discriminates.
 pub const EVENT_TURN: &str = "takyon://turn";
@@ -45,6 +48,14 @@ pub enum TurnEvent {
     Done { session: Option<String> },
     /// The Turn ended without an answer. Facts only; copy is `turnFailureCopy`.
     Failed {
+        #[serde(flatten)]
+        failure: TurnFailure,
+    },
+    /// `failure.agent` could not answer and wrote nothing; `to` is asked next.
+    /// Any session a `started` gave belongs to the Agent that failed: drop it.
+    Fallback {
+        to: AgentKind,
+        label: String,
         #[serde(flatten)]
         failure: TurnFailure,
     },
@@ -87,6 +98,12 @@ pub enum TurnFailure {
     },
     /// Exited cleanly having produced no text.
     Silent { agent: String },
+    /// Every Agent in a chain of two or more failed. `last` says why the final
+    /// one did; the earlier ones each had a `fallback` event of their own.
+    Exhausted {
+        tried: Vec<String>,
+        last: Box<TurnFailure>,
+    },
 }
 
 /// What the frontend receives: an event plus the Turn it belongs to.
@@ -143,6 +160,7 @@ impl Slot {
     }
 
     /// Hand over the job. False, with the tree killed, when already cancelled.
+    /// A fallback attaches again: the failed Attempt's job is already dead.
     fn attach(&self, job: Arc<Job>) -> bool {
         let mut held = self.job.lock().expect("slot mutex");
         if self.is_cancelled() {
@@ -158,32 +176,68 @@ impl Slot {
     }
 }
 
+/// One Agent a Turn may be answered by. `exe` overrides resolution, for tests.
+pub struct Attempt {
+    pub driver: Box<dyn AgentDriver>,
+    pub exe: Option<PathBuf>,
+    pub req: TurnRequest,
+}
+
+/// How one Attempt ended, before the chain decides what the Palette hears.
+enum End {
+    Done(Option<String>),
+    Failed(TurnFailure),
+    Cancelled,
+}
+
+/// One Attempt's end, plus what the chain needs to judge it.
+struct Ran {
+    end: End,
+    /// Text reached the Palette. Past this point no fallback: it would restart
+    /// an answer the user is already reading.
+    texted: bool,
+    /// The Agent's own usage-window reset, Unix seconds, if it reported one.
+    resets_at: Option<u64>,
+}
+
 /// Every Turn currently running, and the gate that says whether one may.
-#[derive(Default)]
 pub struct Turns {
     running: Mutex<HashMap<u64, Arc<Slot>>>,
     /// False while the Palette is hidden. Defaults hidden: tests set it first.
     visible: AtomicBool,
+    /// Agents that failed recently. Shared with the Palette in production.
+    bench: Arc<Bench>,
+}
+
+/// A private bench, so a test's failed Turn cannot reorder another test's `!c`.
+impl Default for Turns {
+    fn default() -> Self {
+        Turns::with_bench(Arc::new(Bench::default()))
+    }
 }
 
 impl Turns {
+    pub fn with_bench(bench: Arc<Bench>) -> Self {
+        Turns {
+            running: Mutex::default(),
+            visible: AtomicBool::new(false),
+            bench,
+        }
+    }
+
+    pub fn bench(&self) -> &Arc<Bench> {
+        &self.bench
+    }
+
     /// Spawn a Turn and stream it. Returns immediately; events arrive later.
     ///
     /// Never blocks the caller: a `#[tauri::command]` runs on the main thread and
     /// an Agent takes seconds to answer.
-    pub fn start(
-        self: &Arc<Self>,
-        app: AppHandle,
-        turn_id: u64,
-        driver: Box<dyn AgentDriver>,
-        req: TurnRequest,
-    ) {
-        self.start_with(turn_id, driver, None, req, move |id, event| {
-            emit(&app, id, event)
-        });
+    pub fn start(self: &Arc<Self>, app: AppHandle, turn_id: u64, attempts: Vec<Attempt>) {
+        self.start_chain_with(turn_id, attempts, move |id, event| emit(&app, id, event));
     }
 
-    /// `start`, with the executable and the event sink supplied by the caller.
+    /// One Agent, no fallback, with the executable and the event sink supplied.
     ///
     /// `None` when refused because the Palette is hidden; refusal emits nothing.
     pub fn start_with(
@@ -194,7 +248,17 @@ impl Turns {
         req: TurnRequest,
         sink: impl Fn(u64, TurnEvent) + Send + 'static,
     ) -> Option<JoinHandle<()>> {
-        if !self.is_visible() {
+        self.start_chain_with(turn_id, vec![Attempt { driver, exe, req }], sink)
+    }
+
+    /// Walk `attempts` until one answers. `None` when the Palette is hidden.
+    pub fn start_chain_with(
+        self: &Arc<Self>,
+        turn_id: u64,
+        attempts: Vec<Attempt>,
+        sink: impl Fn(u64, TurnEvent) + Send + 'static,
+    ) -> Option<JoinHandle<()>> {
+        if !self.is_visible() || attempts.is_empty() {
             return None;
         }
         let slot = Arc::new(Slot::default());
@@ -204,7 +268,7 @@ impl Turns {
             .insert(turn_id, slot.clone());
         let turns = self.clone();
         Some(std::thread::spawn(move || {
-            let last = turns.run(&slot, driver.as_ref(), exe, &req, &|event| {
+            let last = turns.walk(&slot, attempts, &|event| {
                 if !slot.is_cancelled() {
                     sink(turn_id, event)
                 }
@@ -259,8 +323,65 @@ impl Turns {
         job
     }
 
-    /// Run one Turn to its end. Returns the closing event, or `None` when there
-    /// is nothing to add: cancelled, or the Agent already reported its failure.
+    /// Run Attempts in order until one answers. Returns the closing event.
+    ///
+    /// A failure with no text behind it benches that Agent and, if another is
+    /// left, emits `fallback` and asks it. Text means no fallback, ever.
+    fn walk(
+        &self,
+        slot: &Slot,
+        attempts: Vec<Attempt>,
+        emit: &dyn Fn(TurnEvent),
+    ) -> Option<TurnEvent> {
+        let chained = attempts.len() > 1;
+        let mut tried = Vec::with_capacity(attempts.len());
+        let mut attempts = attempts.into_iter().peekable();
+        while let Some(attempt) = attempts.next() {
+            let kind = attempt.driver.kind();
+            tried.push(attempt.driver.label().to_string());
+            let ran = self.run(
+                slot,
+                attempt.driver.as_ref(),
+                attempt.exe,
+                &attempt.req,
+                emit,
+            );
+            let failure = match ran.end {
+                End::Cancelled => return None,
+                End::Done(session) => {
+                    self.bench.clear(kind);
+                    return Some(TurnEvent::Done { session });
+                }
+                End::Failed(failure) => failure,
+            };
+            if ran.texted {
+                return Some(TurnEvent::Failed { failure });
+            }
+            self.bench
+                .bench(kind, ran.resets_at, std::time::Instant::now());
+            match attempts.peek() {
+                Some(_) if slot.is_cancelled() => return None,
+                Some(next) => emit(TurnEvent::Fallback {
+                    to: next.driver.kind(),
+                    label: next.driver.label().to_string(),
+                    failure,
+                }),
+                None if chained => {
+                    return Some(TurnEvent::Failed {
+                        failure: TurnFailure::Exhausted {
+                            tried,
+                            last: Box::new(failure),
+                        },
+                    })
+                }
+                None => return Some(TurnEvent::Failed { failure }),
+            }
+        }
+        None
+    }
+
+    /// Run one Attempt to its end. Failures are returned, never emitted: only
+    /// the chain knows whether another Agent will be asked.
     fn run(
         &self,
         slot: &Slot,
@@ -268,31 +389,37 @@ impl Turns {
         exe: Option<PathBuf>,
         req: &TurnRequest,
         emit: &dyn Fn(TurnEvent),
-    ) -> Option<TurnEvent> {
+    ) -> Ran {
         let agent = driver.label().to_string();
-        let failed = |failure| Some(TurnEvent::Failed { failure });
+        let ran = |end, texted, resets_at| Ran {
+            end,
+            texted,
+            resets_at,
+        };
         let Some(exe) = exe.or_else(|| probe::resolve(driver.binary())) else {
-            return failed(TurnFailure::NotFound {
+            let failure = TurnFailure::NotFound {
                 agent,
                 binary: driver.binary().to_string(),
-            });
+            };
+            return ran(End::Failed(failure), false, None);
         };
         if slot.is_cancelled() {
-            return None;
+            return ran(End::Cancelled, false, None);
         }
 
         let Spawned { mut child, job } = match spawn(driver, &exe, req) {
             Ok(spawned) => spawned,
             Err(e) => {
-                return failed(TurnFailure::SpawnFailed {
+                let failure = TurnFailure::SpawnFailed {
                     agent,
                     detail: e.to_string(),
-                })
+                };
+                return ran(End::Failed(failure), false, None);
             }
         };
         if !slot.attach(job.clone()) {
             let _ = child.wait();
-            return None;
+            return ran(End::Cancelled, false, None);
         }
         // A hide between `start`'s check and here: `cancel_all` may have missed us.
         if !self.is_visible() {
@@ -314,16 +441,24 @@ impl Turns {
         });
 
         let mut state = TurnState::default();
-        let (mut texted, mut reported) = (false, false);
+        let mut texted = false;
+        // The Agent's own error event. First one wins: it is the cause, and the
+        // exit code after it is the consequence.
+        let mut reported: Option<TurnFailure> = None;
         if let Some(stdout) = child.stdout.take() {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 if line.trim().is_empty() {
                     continue;
                 }
-                if let Some(event) = driver.parse_line(&line, &mut state) {
-                    texted |= matches!(event, TurnEvent::Text { .. });
-                    reported |= matches!(event, TurnEvent::Failed { .. });
-                    emit(event);
+                match driver.parse_line(&line, &mut state) {
+                    Some(TurnEvent::Failed { failure }) => {
+                        reported.get_or_insert(failure);
+                    }
+                    Some(event) => {
+                        texted |= matches!(event, TurnEvent::Text { .. });
+                        emit(event);
+                    }
+                    None => {}
                 }
             }
         }
@@ -334,33 +469,37 @@ impl Turns {
         if let Some(drain) = drain {
             let _ = drain.join();
         }
-        if reported || slot.is_cancelled() {
-            return None;
+        let resets_at = state.resets_at;
+        if slot.is_cancelled() {
+            return ran(End::Cancelled, texted, resets_at);
+        }
+        if let Some(failure) = reported {
+            return ran(End::Failed(failure), texted, resets_at);
         }
 
         let code = status.and_then(|s| s.code());
         if status.is_some_and(|s| s.success()) {
             if !texted {
-                return failed(TurnFailure::Silent { agent });
+                return ran(End::Failed(TurnFailure::Silent { agent }), false, resets_at);
             }
-            return Some(TurnEvent::Done {
-                session: state.session,
-            });
+            return ran(End::Done(state.session), true, resets_at);
         }
         let tail = tail.lock().expect("stderr mutex");
         let detail = last_chars(tail.trim(), DETAIL_MAX_CHARS);
-        if cfg!(windows) && launcher_broken(code, &detail) {
-            return failed(TurnFailure::LauncherBroken {
+        let failure = if cfg!(windows) && launcher_broken(code, &detail) {
+            TurnFailure::LauncherBroken {
                 agent,
                 binary: exe.to_string_lossy().to_string(),
                 detail,
-            });
-        }
-        failed(TurnFailure::Exited {
-            agent,
-            code,
-            detail,
-        })
+            }
+        } else {
+            TurnFailure::Exited {
+                agent,
+                code,
+                detail,
+            }
+        };
+        ran(End::Failed(failure), texted, resets_at)
     }
 }
 
@@ -501,6 +640,55 @@ mod tests {
             let json = serde_json::to_value(TurnEvent::Failed { failure }).unwrap();
             assert_eq!(json["reason"], reason);
         }
+    }
+
+    /// The two ADR-0041 shapes exactly as `packages/shared/src/ipc.ts` reads
+    /// them: `fallback` flat beside the failed Agent's facts, `exhausted` with
+    /// no `agent` and its last failure nested whole.
+    #[test]
+    fn v0_11_2_fallback_and_exhausted_serialise_as_the_frontend_reads_them() {
+        let missing = TurnFailure::NotFound {
+            agent: "Claude Code".into(),
+            binary: "claude".into(),
+        };
+        let fallback = serde_json::to_value(Envelope {
+            turn_id: 4,
+            event: TurnEvent::Fallback {
+                to: AgentKind::Codex,
+                label: "Codex".into(),
+                failure: missing.clone(),
+            },
+        })
+        .unwrap();
+        assert_eq!(
+            fallback,
+            serde_json::json!({
+                "turnId": 4,
+                "kind": "fallback",
+                "to": "codex",
+                "label": "Codex",
+                "reason": "notFound",
+                "agent": "Claude Code",
+                "binary": "claude",
+            })
+        );
+
+        let exhausted = serde_json::to_value(TurnEvent::Failed {
+            failure: TurnFailure::Exhausted {
+                tried: vec!["Claude Code".into(), "Codex".into()],
+                last: Box::new(missing),
+            },
+        })
+        .unwrap();
+        assert_eq!(
+            exhausted,
+            serde_json::json!({
+                "kind": "failed",
+                "reason": "exhausted",
+                "tried": ["Claude Code", "Codex"],
+                "last": { "reason": "notFound", "agent": "Claude Code", "binary": "claude" },
+            })
+        );
     }
 
     /// 9009 and each of t3code's six localised sentences mean the launcher broke.

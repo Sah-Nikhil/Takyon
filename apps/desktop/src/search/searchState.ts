@@ -9,6 +9,7 @@
 
 import type { SearchHit, SearchMessage, TurnMessage } from "@takyon/shared";
 
+import { fallbackNotice } from "../agents/status";
 import { failureFields } from "../agents/turnState";
 
 export type SearchPhase =
@@ -36,6 +37,8 @@ export interface SearchState {
   error?: string;
   /** The line under a failed Turn's headline, when it has one. */
   errorDetail?: string;
+  /** Set when the first Agent could not write the answer and the next one is. */
+  notice?: string;
   /** The Turn carrying the answer, so it can be cancelled. */
   turnId?: number;
   /**
@@ -100,5 +103,13 @@ export function reduceTurn(state: SearchState, message: TurnMessage): SearchStat
       return { ...state, phase: "done" };
     case "failed":
       return { ...state, phase: "failed", ...failureFields(message) };
+    case "fallback":
+      return {
+        ...state,
+        phase: "answering",
+        answer: "",
+        agent: message.label,
+        notice: fallbackNotice(message.agent, message.label),
+      };
   }
 }

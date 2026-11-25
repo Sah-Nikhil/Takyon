@@ -27,14 +27,24 @@ export function AskView({
   agent,
   question,
   snapshot,
+  snapshots,
   onClose,
 }: {
   agent: AgentKind;
   question: string;
   snapshot: AgentSnapshot | undefined;
+  /** Every probed Agent, so the header can follow a fallback (ADR-0041). */
+  snapshots?: AgentSnapshot[] | null;
   onClose: () => void;
 }) {
   const { state, ask, cancel } = useTurn();
+  /*
+    The Agent holding this conversation. Moves once, if the first Turn fell back:
+    every follow-up resumes that Agent's session, never the one asked first.
+    Held across Turns because a new Turn's state starts without `agent`.
+   */
+  const [held, setHeld] = useState(agent);
+  const current = state.agent ?? held;
   /** Everything already answered. The live Turn is rendered from `state`. */
   const [history, setHistory] = useState<Message[]>([]);
   /** The question being answered right now, above the streaming reply. */
@@ -44,7 +54,8 @@ export function AskView({
   const transcriptRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = state.phase === "asking" || state.phase === "answering";
-  const label = snapshot?.label ?? agent;
+  const shown = current === agent ? snapshot : snapshots?.find((s) => s.kind === current);
+  const label = state.agentLabel ?? shown?.label ?? current;
 
   /*
     Once, for the question that opened this view. Guarded by a ref rather than by
@@ -82,8 +93,9 @@ export function AskView({
     setPending(text);
     const resume = state.session ?? session;
     setSession(resume);
+    setHeld(current);
     // Tools on: a follow-up is an explicit act, not a reflex.
-    void ask({ agent, prompt: text, session: resume, tools: true });
+    void ask({ agent: current, prompt: text, session: resume, tools: true });
   };
 
   return (
@@ -101,7 +113,7 @@ export function AskView({
       <header className="flex items-center gap-2.5 border-b border-seam px-4 py-3">
         <span
           aria-hidden
-          className={`size-2 shrink-0 rounded-full ${HEALTH_DOT[snapshot?.health ?? "warning"]}`}
+          className={`size-2 shrink-0 rounded-full ${HEALTH_DOT[shown?.health ?? "warning"]}`}
         />
         <span className="shrink-0 text-[13px] text-fg/80">{label}</span>
         <span className="ms-auto shrink-0 text-[12px] text-fg/56" role="status">
@@ -111,7 +123,7 @@ export function AskView({
               ? "Answering…"
               : state.phase === "failed"
                 ? "Stopped"
-                : agentSummary(snapshot).headline}
+                : agentSummary(shown).headline}
         </span>
       </header>
 
@@ -120,6 +132,11 @@ export function AskView({
           <Bubble key={i} role={message.role} text={message.text} />
         ))}
         <Bubble role="you" text={pending} />
+        {state.notice && (
+          <p className="text-[12px] text-fg/56" data-testid="fallback-notice">
+            {state.notice}
+          </p>
+        )}
         <Bubble
           role="agent"
           text={state.answer || (state.phase === "failed" ? "" : `Asking ${label}…`)}

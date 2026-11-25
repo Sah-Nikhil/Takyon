@@ -235,30 +235,73 @@ fn run(
         },
     );
     let urls: Vec<String> = hits.iter().map(|hit| hit.url.clone()).collect();
-    let pages = super::fetch::pages(&urls);
+    // Only pages the provider sent no text for. With an Exa key that is none,
+    // and reading pages was most of the wait (ADR-0041).
+    let unread: Vec<String> = hits
+        .iter()
+        .filter(|hit| hit.text.is_none())
+        .map(|hit| hit.url.clone())
+        .collect();
+    let mut read = super::fetch::pages(&unread).into_iter();
+    let pages: Vec<Result<String, SearchError>> = hits
+        .iter()
+        .map(|hit| match hit.text {
+            Some(_) => Ok(String::new()),
+            None => read
+                .next()
+                .unwrap_or_else(|| Err(SearchError::Failed("Not read.".into()))),
+        })
+        .collect();
     /*
      Icons, from the pages just read and the hosts already contacted (ADR-0022).
-     Before the Turn rather than after: the Agent takes seconds, so this costs
-     nothing visible, and the source list is drawn with its icons already there
-     instead of swapping them in under the reader.
+     Off this thread: they once ran before the Turn, so each new host's icon
+     fetch, six-second timeouts and all, stood between the pages and the answer.
     */
     if let Some(dir) = data_dir(app) {
-        super::favicon::cache_all(&dir, &urls, &pages);
-        // The rows drew letter tiles while this ran. Tell them to ask again.
-        emit(app, id, SearchEvent::Icons);
+        let (app, urls) = (app.clone(), urls.clone());
+        let pages = pages.clone();
+        std::thread::spawn(move || {
+            super::favicon::cache_all(&dir, &urls, &pages);
+            // The rows drew letter tiles while this ran. Tell them to ask again.
+            emit(&app, id, SearchEvent::Icons);
+        });
     }
     let citations = synth::citations(hits, pages);
     if cancelled.load(Ordering::Relaxed) {
         return Ok(());
     }
 
-    let agent = synth::agent(prefs).ok_or_else(|| {
-        SearchError::Failed(
+    let chain = synth::chain(prefs, turns.bench());
+    let prompt = synth::prompt(query, &citations);
+    let mut attempts = crate::agents::ipc::attempts(prefs, &chain, |_| TurnRequest {
+        prompt: prompt.clone(),
+        // Scratch and tools off, exactly as `!c`'s first Turn: summarising
+        // pages is a read, and nothing about it needs to touch a disk.
+        cwd: crate::agents::scratch::dir(),
+        session: None,
+        model: None,
+        effort: None,
+        tools: false,
+    });
+    for attempt in &mut attempts {
+        // `!s`'s own model, fast by default: reasoning over pages already read
+        // is most of an answer's wait (ADR-0041). `attempts` filled `!c`'s pair.
+        let kind = attempt.driver.kind();
+        let stored = prefs.get(&crate::prefs::search_model_key(kind));
+        let (model, effort) = crate::agents::search_pair(
+            attempt.driver.as_ref(),
+            stored.as_deref(),
+            attempt.req.model.take(),
+            attempt.req.effort.take(),
+        );
+        attempt.req.model = model;
+        attempt.req.effort = effort;
+    }
+    let Some(first) = attempts.first() else {
+        return Err(SearchError::Failed(
             "Every Agent is switched off, so there is nothing to write the answer.".into(),
-        )
-    })?;
-    let driver = crate::agents::driver_for(agent)
-        .ok_or_else(|| SearchError::Failed("This build does not ship that Agent.".into()))?;
+        ));
+    };
 
     let turn_id = crate::agents::ipc::next_turn_id();
     emit(
@@ -266,28 +309,10 @@ fn run(
         id,
         SearchEvent::Answering {
             turn_id,
-            agent: driver.label().to_string(),
+            agent: first.driver.label().to_string(),
         },
     );
-    turns.clone().start(
-        app.clone(),
-        turn_id,
-        driver,
-        TurnRequest {
-            prompt: synth::prompt(query, &citations),
-            // Scratch and tools off, exactly as `!c`'s first Turn: summarising
-            // pages is a read, and nothing about it needs to touch a disk.
-            cwd: crate::agents::scratch::dir(),
-            session: None,
-            model: prefs
-                .get(&crate::prefs::ask_model_key(agent))
-                .filter(|m| !m.trim().is_empty()),
-            effort: prefs
-                .get(&crate::prefs::ask_effort_key(agent))
-                .filter(|e| !e.trim().is_empty()),
-            tools: false,
-        },
-    );
+    turns.clone().start(app.clone(), turn_id, attempts);
     Ok(())
 }
 

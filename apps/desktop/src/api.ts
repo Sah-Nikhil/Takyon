@@ -595,6 +595,10 @@ export const setAskModel = (agent: AgentKind, model: string) =>
 export const setAskEffort = (agent: AgentKind, effort: string) =>
   inTauri ? invoke<void>("set_ask_effort", { agent, effort }) : mock.setAskEffort(agent, effort);
 
+/** The model `!s` writes with. Blank restores the fast default. */
+export const setSearchModel = (agent: AgentKind, model: string) =>
+  inTauri ? invoke<void>("set_search_model", { agent, model }) : mock.setSearchModel(agent, model);
+
 /**
  * Start a Turn. Resolves with its id; the answer arrives on `onTurn`.
  *

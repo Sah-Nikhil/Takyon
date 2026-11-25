@@ -127,6 +127,11 @@ export function SearchView({
         {/* The question, set as the thing that was asked rather than as a
             caption. Arc keeps it in the search field; there is no field here. */}
         <p className="text-[13px] text-fg/60">{query}</p>
+        {state.notice && (
+          <p className="mt-1 text-[12px] text-fg/56" data-testid="fallback-notice">
+            {state.notice}
+          </p>
+        )}
 
         {reading && state.sources.length > 0 && <Reading sources={state.sources} icons={state.icons} />}
 

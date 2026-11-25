@@ -8,7 +8,11 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use super::{scratch, turn::Turns, AgentKind, Snapshot, TurnRequest};
+use super::{
+    fallback, scratch,
+    turn::{Attempt, Turns},
+    AgentKind, Snapshot, TurnRequest,
+};
 use crate::prefs::{self, Prefs};
 
 /// The Agent preferences a window reads on mount.
@@ -33,6 +37,11 @@ pub struct AgentSettings {
     pub models: std::collections::HashMap<String, String>,
     /// The locked-in effort level per Agent, same keying and same rule.
     pub efforts: std::collections::HashMap<String, String>,
+    /// The `!s` model per Agent as stored: absent is the fast default,
+    /// `SEARCH_MODEL_SAME` is `!c`'s model.
+    pub search_models: std::collections::HashMap<String, String>,
+    /// Each Agent's fast `!s` default, so Settings can name it.
+    pub search_defaults: std::collections::HashMap<String, String>,
 }
 
 /// Probe every Agent. Three process spawns, so never on the login path.
@@ -81,6 +90,19 @@ pub fn agent_settings(prefs: tauri::State<'_, Arc<Prefs>>) -> AgentSettings {
                 .map(|effort| (kind.as_str().to_string(), effort))
         })
         .collect();
+    let search_models = AgentKind::ALL
+        .iter()
+        .filter_map(|kind| {
+            prefs
+                .get(&prefs::search_model_key(*kind))
+                .filter(|model| !model.trim().is_empty())
+                .map(|model| (kind.as_str().to_string(), model))
+        })
+        .collect();
+    let search_defaults = super::drivers()
+        .iter()
+        .filter_map(|d| Some((d.kind().as_str().to_string(), d.search_model()?.to_string())))
+        .collect();
     let enabled = AgentKind::ALL
         .iter()
         .map(|kind| {
@@ -95,6 +117,8 @@ pub fn agent_settings(prefs: tauri::State<'_, Arc<Prefs>>) -> AgentSettings {
         scratch: scratch::dir().to_string_lossy().to_string(),
         models,
         efforts,
+        search_models,
+        search_defaults,
     }
 }
 
@@ -124,6 +148,8 @@ pub fn set_ask_order(
     // Recomputed from what was just stored rather than from `order`, so the
     // cached list and the switches can never disagree.
     pipeline.set_ask_order(super::route(&prefs));
+    // A new order is a new preference: it must win over yesterday's bench.
+    fallback::shared().clear_all();
     Ok(())
 }
 
@@ -145,6 +171,7 @@ pub fn set_ask_enabled(
         )
         .map_err(|e| e.to_string())?;
     pipeline.set_ask_order(super::route(&prefs));
+    fallback::shared().clear(agent);
     Ok(())
 }
 
@@ -167,7 +194,24 @@ pub fn set_ask_model(
 ) -> Result<(), String> {
     prefs
         .set(&prefs::ask_model_key(agent), model.trim())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // A wrong model fails every Turn and benches the Agent; fixing it unbenches.
+    fallback::shared().clear(agent);
+    Ok(())
+}
+
+/// The model `!s` writes with. Blank restores the fast default.
+#[tauri::command(async)]
+pub fn set_search_model(
+    agent: AgentKind,
+    model: String,
+    prefs: tauri::State<'_, Arc<Prefs>>,
+) -> Result<(), String> {
+    prefs
+        .set(&prefs::search_model_key(agent), model.trim())
+        .map_err(|e| e.to_string())?;
+    fallback::shared().clear(agent);
+    Ok(())
 }
 
 /// Lock in the effort level. Refused unless the Agent accepts that word — each
@@ -188,14 +232,16 @@ pub fn set_ask_effort(
     }
     prefs
         .set(&prefs::ask_effort_key(agent), effort)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    fallback::shared().clear(agent);
+    Ok(())
 }
 
 /// Start a Turn. Returns its id immediately; the answer arrives as events.
 ///
 /// `tools` is false for the first Turn and true for every follow-up: the answer
 /// you get by reflex, one keystroke from the global hotkey, has no tools; asking
-/// again is an explicit act (ADR-0017).
+/// again is an explicit act (ADR-0017). `agent` leads; the route follows it.
 #[tauri::command(async)]
 pub fn agent_ask(
     app: tauri::AppHandle,
@@ -206,29 +252,64 @@ pub fn agent_ask(
     turns: tauri::State<'_, Arc<Turns>>,
     prefs: tauri::State<'_, Arc<Prefs>>,
 ) -> Result<u64, String> {
-    let driver = super::driver_for(agent).ok_or("This build does not ship that Agent.")?;
     let prompt = prompt.trim().to_string();
     if prompt.is_empty() {
         return Err("Nothing to ask.".into());
     }
-    let request = TurnRequest {
-        prompt,
-        cwd: scratch::resolve(prefs.get(prefs::ASK_CWD).as_deref()),
-        session,
-        // Read from `settings.db` here, never taken from the caller: the model
-        // and effort are locked in Settings and are the only pair a Turn can
-        // use, so the frontend has no say in them.
-        model: prefs
-            .get(&prefs::ask_model_key(agent))
-            .filter(|model| !model.trim().is_empty()),
-        effort: prefs
-            .get(&prefs::ask_effort_key(agent))
-            .filter(|effort| !effort.trim().is_empty()),
+    let route = turns
+        .bench()
+        .arrange(&super::route(&prefs), std::time::Instant::now());
+    let chain = fallback::chain(agent, &route, session.is_some());
+    let cwd = scratch::resolve(prefs.get(prefs::ASK_CWD).as_deref());
+    let attempts = attempts(&prefs, &chain, |kind| TurnRequest {
+        prompt: prompt.clone(),
+        cwd: cwd.clone(),
+        // Only the Agent the session belongs to: a chain with one is length one.
+        session: session.clone().filter(|_| kind == agent),
+        model: None,
+        effort: None,
         tools,
-    };
+    });
+    if attempts.is_empty() {
+        return Err("This build does not ship that Agent.".into());
+    }
     let turn_id = next_turn_id();
-    turns.inner().clone().start(app, turn_id, driver, request);
+    turns.inner().clone().start(app, turn_id, attempts);
     Ok(turn_id)
+}
+
+/// One Attempt per Agent in `chain`, each with its own locked model and effort.
+///
+/// Read from `settings.db` here, never taken from the caller: the pair is locked
+/// in Settings and is per Agent, so a fallback carries its own, not the first's.
+pub fn attempts(
+    prefs: &Prefs,
+    chain: &[AgentKind],
+    request: impl Fn(AgentKind) -> TurnRequest,
+) -> Vec<Attempt> {
+    chain
+        .iter()
+        .filter_map(|kind| {
+            let driver = super::driver_for(*kind)?;
+            let mut req = request(*kind);
+            req.model = req
+                .model
+                .or_else(|| locked(prefs, &prefs::ask_model_key(*kind)));
+            req.effort = req
+                .effort
+                .or_else(|| locked(prefs, &prefs::ask_effort_key(*kind)));
+            Some(Attempt {
+                driver,
+                exe: None,
+                req,
+            })
+        })
+        .collect()
+}
+
+/// A stored, non-blank preference. Blank is the Agent's own default.
+fn locked(prefs: &Prefs, key: &str) -> Option<String> {
+    prefs.get(key).filter(|value| !value.trim().is_empty())
 }
 
 /// Stop a Turn. Only this does — never the Palette's Escape.

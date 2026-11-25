@@ -58,6 +58,16 @@ impl AgentDriver for ClaudeDriver {
         &["low", "medium", "high", "xhigh", "max"]
     }
 
+    /// Claude's own alias for its newest Haiku: the CLI resolves it, so it
+    /// never goes stale the way a dated id would.
+    fn search_model(&self) -> Option<&'static str> {
+        Some("haiku")
+    }
+
+    fn quick_effort(&self) -> Option<&'static str> {
+        Some("low")
+    }
+
     /// The aliases `--model` documents, not a catalogue.
     ///
     /// `claude` has no models command, and an alias always resolves to the
@@ -92,9 +102,11 @@ impl AgentDriver for ClaudeDriver {
         ];
         if !req.tools {
             // A real switch, unlike Codex and opencode, which only have a
-            // read-only posture. `""` removes the whole built-in set.
+            // read-only posture. `""` removes the whole built-in set; MCP
+            // servers are separate, and starting them costs seconds per Turn.
             args.push("--tools".into());
             args.push(String::new());
+            args.push("--strict-mcp-config".into());
         }
         if let Some(model) = &req.model {
             args.push("--model".into());
@@ -152,6 +164,15 @@ impl AgentDriver for ClaudeDriver {
                     _ => None,
                 }
             }
+            // The CLI's own error, dressed as an assistant message: model
+            // `<synthetic>`, an `error` code beside it. Not answer text, or the
+            // Turn reads as answered and never falls back (ADR-0041).
+            "assistant" if is_synthetic_error(&json) => {
+                if let Some(at) = blocked_until(&json) {
+                    state.resets_at = Some(at);
+                }
+                None
+            }
             // Text blocks arrive whole, one per assistant message: rendered only
             // when no delta streamed them, else the answer doubles. Thinking
             // blocks sit in the same array and are dropped.
@@ -165,6 +186,15 @@ impl AgentDriver for ClaudeDriver {
                     .collect();
                 (!delta.is_empty()).then_some(TurnEvent::Text { delta })
             }
+            // A refused usage window. Not an error by itself (the `result` line
+            // says that); its reset is how long the fallback bench holds.
+            "rate_limit_event" => {
+                let info = json.get("rate_limit_info")?;
+                if info.get("status").and_then(Value::as_str) == Some("rejected") {
+                    state.resets_at = info.get("resetsAt").and_then(Value::as_u64);
+                }
+                None
+            }
             // The result line repeats the whole answer, which is already on
             // screen. Only its error form is news.
             "result" if json.get("is_error").and_then(Value::as_bool) == Some(true) => {
@@ -177,6 +207,23 @@ impl AgentDriver for ClaudeDriver {
             _ => None,
         }
     }
+}
+
+/// An assistant line the CLI wrote itself to report a failure.
+fn is_synthetic_error(json: &Value) -> bool {
+    json.get("error").is_some_and(|e| !e.is_null())
+        || json.pointer("/message/model").and_then(Value::as_str) == Some("<synthetic>")
+}
+
+/// A blocked request's reset, Unix seconds: `api_error_params.rate_limit_info`
+/// with `status: "rejected"`, which t3code reads off the same line.
+fn blocked_until(json: &Value) -> Option<u64> {
+    let info = json
+        .pointer("/api_error_params/rate_limit_info")
+        .or_else(|| json.pointer("/message/api_error_params/rate_limit_info"))?;
+    (info.get("status").and_then(Value::as_str) == Some("rejected"))
+        .then(|| info.get("resetsAt").and_then(Value::as_u64))
+        .flatten()
 }
 
 fn text_at(json: &Value, key: &str) -> Option<String> {
@@ -542,6 +589,70 @@ mod tests {
             ..base.clone()
         });
         assert!(!with_tools.contains(&"--tools".to_string()));
+    }
+
+    /// Tools off means MCP off too: `--tools ""` leaves MCP servers running,
+    /// and starting them is the slow half of a cold Claude spawn.
+    #[test]
+    fn v0_11_2_the_inline_path_starts_no_mcp_servers() {
+        let base = TurnRequest {
+            prompt: "hi".into(),
+            cwd: std::path::PathBuf::from("."),
+            session: None,
+            model: None,
+            effort: None,
+            tools: false,
+        };
+        let strict = "--strict-mcp-config".to_string();
+        assert!(ClaudeDriver.turn_args(&base).contains(&strict));
+        let follow_up = ClaudeDriver.turn_args(&TurnRequest {
+            tools: true,
+            ..base
+        });
+        assert!(!follow_up.contains(&strict));
+    }
+
+    /// The CLI's own failure arrives as a `<synthetic>` assistant message. It
+    /// is not answer text: counted as text, the Turn could never fall back.
+    /// Captured from Claude Code 2.1.331 with a model that does not exist.
+    #[test]
+    fn v0_11_2_a_synthetic_error_message_is_not_answer_text() {
+        let mut state = TurnState::default();
+        let synthetic = r#"{"type":"assistant","message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"There's an issue with the selected model (x). It may not exist or you may not have access to it."}]},"error":"model_not_found","session_id":"s"}"#;
+        assert_eq!(ClaudeDriver.parse_line(synthetic, &mut state), None);
+
+        // A usage limit, same shape, carrying its reset the way t3code reads it.
+        let limited = r#"{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"You've hit your limit"}]},"error":"rate_limit","api_error_params":{"rate_limit_info":{"status":"rejected","resetsAt":1795569600}}}"#;
+        assert_eq!(ClaudeDriver.parse_line(limited, &mut state), None);
+        assert_eq!(state.resets_at, Some(1_795_569_600));
+
+        // The `result` line after it is what fails the Turn, in the CLI's words.
+        let result = r#"{"type":"result","subtype":"success","is_error":true,"api_error_status":404,"result":"There's an issue with the selected model (x)."}"#;
+        assert!(matches!(
+            ClaudeDriver.parse_line(result, &mut state),
+            Some(TurnEvent::Failed { .. })
+        ));
+
+        // A real answer is still text.
+        let real = r#"{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"ok"}]}}"#;
+        assert_eq!(
+            ClaudeDriver.parse_line(real, &mut TurnState::default()),
+            Some(TurnEvent::Text { delta: "ok".into() })
+        );
+    }
+
+    /// A rejected window records its reset for the fallback bench and emits
+    /// nothing; an allowed one, warning or not, records nothing.
+    #[test]
+    fn v0_11_2_a_rejected_rate_limit_records_its_reset() {
+        let mut state = TurnState::default();
+        let warning = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1795845600}}"#;
+        assert_eq!(ClaudeDriver.parse_line(warning, &mut state), None);
+        assert_eq!(state.resets_at, None);
+
+        let rejected = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1795569600,"rateLimitType":"five_hour"}}"#;
+        assert_eq!(ClaudeDriver.parse_line(rejected, &mut state), None);
+        assert_eq!(state.resets_at, Some(1_795_569_600));
     }
 
     /// Model and effort are both flags on Claude, and both are sent when locked.

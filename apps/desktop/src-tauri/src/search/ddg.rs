@@ -68,6 +68,7 @@ pub fn parse_hits(html: &str) -> Result<Vec<Hit>, SearchError> {
                 .and_then(|at| anchor_text(&block[at..]))
                 .map(|text| super::strip_markup(&text))
                 .unwrap_or_default(),
+            text: None,
         });
         if hits.len() == MAX_HITS {
             break;

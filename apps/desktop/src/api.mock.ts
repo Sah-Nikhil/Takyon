@@ -15,6 +15,7 @@
 import type {
   Action,
   AgentKind,
+  AgentTurnFailure,
   AgentSettings,
   AgentSnapshot,
   PathReport,
@@ -122,6 +123,7 @@ let askChosen = false;
 let askCwd = "";
 let askModels: Partial<Record<AgentKind, string>> = {};
 let askEfforts: Partial<Record<AgentKind, string>> = {};
+let searchModels: Partial<Record<AgentKind, string>> = {};
 
 /** What each Agent would report from its own model listing. */
 const AGENT_MODELS: Record<AgentKind, string[]> = {
@@ -225,6 +227,15 @@ let turnFailure: TurnFailure | null = null;
 /** Fail every Turn with these facts, as Rust's `TurnFailure`. Null restores. */
 export function failTurns(failure: TurnFailure | null) {
   turnFailure = failure;
+}
+
+let turnFallback: { to: AgentKind; label: string; failure: AgentTurnFailure } | null = null;
+
+/** Make the asked Agent fail with `failure` and hand over to `to` (ADR-0041). */
+export function fallBackTurns(
+  fallback: { to: AgentKind; label: string; failure: AgentTurnFailure } | null,
+) {
+  turnFallback = fallback;
 }
 
 /** Make the next search fail with this message. Null restores success. */
@@ -1793,6 +1804,9 @@ export const mock = {
     scratch: String.raw`C:\Users\you\AppData\Local\v3sper\takyon\scratch`,
     models: { ...askModels },
     efforts: { ...askEfforts },
+    searchModels: { ...searchModels },
+    // Rust's `AgentDriver::search_model` defaults, as the real call returns them.
+    searchDefaults: { claude: "haiku", codex: "gpt-6-luna", opencode: "opencode/big-pickle" },
   }),
   agentModels: async (agent: AgentKind) => [...AGENT_MODELS[agent]],
   setAskOrder: async (order: AgentKind[]) => {
@@ -1812,6 +1826,9 @@ export const mock = {
   setAskEffort: async (agent: AgentKind, effort: string) => {
     askEfforts = { ...askEfforts, [agent]: effort.trim() };
   },
+  setSearchModel: async (agent: AgentKind, model: string) => {
+    searchModels = { ...searchModels, [agent]: model.trim() };
+  },
   agentAsk: async (args: { agent: AgentKind; prompt: string; session?: string }) => {
     const turnId = nextTurnId++;
     const session = args.session ?? `mock-session-${turnId}`;
@@ -1823,6 +1840,14 @@ export const mock = {
     // Three ticks rather than one: a single event would never catch a renderer
     // that overwrites the answer instead of appending to it.
     emitTurn({ turnId, kind: "started", session, model: "mock-model" });
+    // Rust's order on a fallback: the failed Agent's `started`, then `fallback`,
+    // then the next Agent's answer. Synchronous on purpose: a missing Agent
+    // falls back before `agentAsk` returns, and `useTurn` must buffer it.
+    const handover = turnFallback;
+    if (handover) {
+      const { to, label, failure } = handover;
+      emitTurn({ turnId, kind: "fallback", to, label, ...failure });
+    }
     for (const [i, delta] of MOCK_ANSWER.entries()) {
       setTimeout(() => emitTurn({ turnId, kind: "text", delta }), 10 * (i + 1));
     }

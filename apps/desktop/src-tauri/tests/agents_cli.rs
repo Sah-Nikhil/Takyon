@@ -564,3 +564,331 @@ fn v0_8_the_scratch_directory_is_under_our_data_directory() {
         assert!(scratch.starts_with(data));
     }
 }
+
+/// An Agent this machine does not have, for the fallback chain (ADR-0041).
+struct Missing;
+
+impl agents::AgentDriver for Missing {
+    fn kind(&self) -> AgentKind {
+        AgentKind::Claude
+    }
+    fn label(&self) -> &'static str {
+        "Missing"
+    }
+    fn binary(&self) -> &'static str {
+        "takyon-fallback-agent-that-does-not-exist"
+    }
+    fn probe(&self, _: &std::path::Path) -> agents::Snapshot {
+        unreachable!()
+    }
+    fn efforts(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn models(&self, _: &std::path::Path) -> Vec<String> {
+        Vec::new()
+    }
+    fn turn_args(&self, _: &agents::TurnRequest) -> Vec<String> {
+        Vec::new()
+    }
+    fn parse_line(&self, _: &str, _: &mut agents::TurnState) -> Option<agents::turn::TurnEvent> {
+        None
+    }
+}
+
+/// Walk `attempts` on a fresh, visible `Turns` and return it with every event.
+fn walk(
+    attempts: Vec<agents::turn::Attempt>,
+) -> (
+    std::sync::Arc<agents::turn::Turns>,
+    Vec<agents::turn::TurnEvent>,
+) {
+    let turns = std::sync::Arc::new(agents::turn::Turns::default());
+    turns.set_visible(true);
+    let (tx, rx) = std::sync::mpsc::channel();
+    turns
+        .start_chain_with(9_000, attempts, move |_, e| {
+            let _ = tx.send(e);
+        })
+        .expect("the gate is open")
+        .join()
+        .unwrap();
+    let events = rx.try_iter().collect();
+    (turns, events)
+}
+
+/// An opencode-shaped `.cmd` Agent that answers `hello`, then exits `code`.
+/// Two lines: opencode's first session-bearing event is `started` alone.
+#[cfg(windows)]
+fn answering_agent(dir: &std::path::Path, name: &str, code: u8) -> std::path::PathBuf {
+    fake_agent(
+        dir,
+        name,
+        &format!(
+            "@echo {{\"type\":\"step_start\",\"sessionID\":\"s-9\"}}
+@echo {{\"type\":\"text\",\"sessionID\":\"s-9\",\"part\":{{\"id\":\"p1\",\"text\":\"hello\"}}}}\r\n@exit /b {code}"
+        ),
+    )
+}
+
+/// An Agent that is not there hands the Turn to the next, which answers. The
+/// missing one is benched; the one that answered is not.
+#[cfg(windows)]
+#[test]
+fn v0_11_2_a_missing_agent_falls_through_to_the_next_one() {
+    use agents::turn::{Attempt, TurnEvent, TurnFailure};
+
+    let temp = common::TempDir::new("agent-fallback");
+    let ok = answering_agent(temp.path(), "ok.cmd", 0);
+    let opencode = agents::driver_for(AgentKind::OpenCode).unwrap();
+    let label = opencode.label().to_string();
+    let (turns, events) = walk(vec![
+        Attempt {
+            driver: Box::new(Missing),
+            exe: None,
+            req: request("hi", temp.path()),
+        },
+        Attempt {
+            driver: opencode,
+            exe: Some(ok),
+            req: request("hi", temp.path()),
+        },
+    ]);
+
+    match &events[0] {
+        TurnEvent::Fallback {
+            to,
+            label: next,
+            failure: TurnFailure::NotFound { agent, .. },
+        } => {
+            assert_eq!(*to, AgentKind::OpenCode);
+            assert_eq!(next, &label);
+            assert_eq!(agent, "Missing");
+        }
+        other => panic!("expected a fallback first, got {other:?}"),
+    }
+    assert!(events.contains(&TurnEvent::Text {
+        delta: "hello".into()
+    }));
+    assert_eq!(
+        events.last(),
+        Some(&TurnEvent::Done {
+            session: Some("s-9".into())
+        })
+    );
+    let now = Instant::now();
+    assert!(turns.bench().is_benched(AgentKind::Claude, now));
+    assert!(!turns.bench().is_benched(AgentKind::OpenCode, now));
+}
+
+/// Every Agent failing is one `exhausted` failure naming each, with the last
+/// one's reason inside it. Never a silent end.
+#[cfg(windows)]
+#[test]
+fn v0_11_2_every_agent_failing_is_exhausted() {
+    use agents::turn::{Attempt, TurnEvent, TurnFailure};
+
+    let temp = common::TempDir::new("agent-exhausted");
+    let fail = fake_agent(
+        temp.path(),
+        "fail.cmd",
+        "@echo out of usage 1>&2\r\n@exit /b 3",
+    );
+    let opencode = agents::driver_for(AgentKind::OpenCode).unwrap();
+    let opencode_label = opencode.label().to_string();
+    let (turns, events) = walk(vec![
+        Attempt {
+            driver: Box::new(Missing),
+            exe: None,
+            req: request("hi", temp.path()),
+        },
+        Attempt {
+            driver: opencode,
+            exe: Some(fail),
+            req: request("hi", temp.path()),
+        },
+    ]);
+
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, TurnEvent::Fallback { .. }))
+            .count(),
+        1
+    );
+    match events.last() {
+        Some(TurnEvent::Failed {
+            failure: TurnFailure::Exhausted { tried, last },
+        }) => {
+            assert_eq!(tried, &vec!["Missing".to_string(), opencode_label]);
+            match last.as_ref() {
+                TurnFailure::Exited { code, detail, .. } => {
+                    assert_eq!(*code, Some(3));
+                    assert!(detail.contains("out of usage"), "{detail}");
+                }
+                other => panic!("expected exited inside, got {other:?}"),
+            }
+        }
+        other => panic!("expected exhausted, got {other:?}"),
+    }
+    assert!(turns
+        .bench()
+        .is_benched(AgentKind::OpenCode, Instant::now()));
+}
+
+/// Text on screen means no fallback: a second Agent would restart an answer
+/// the user is already reading. The failure stands as the first Agent's own.
+#[cfg(windows)]
+#[test]
+fn v0_11_2_an_agent_that_answered_and_then_failed_is_not_replaced() {
+    use agents::turn::{Attempt, TurnEvent, TurnFailure};
+
+    let temp = common::TempDir::new("agent-halfway");
+    let halfway = answering_agent(temp.path(), "halfway.cmd", 5);
+    let (_, events) = walk(vec![
+        Attempt {
+            driver: agents::driver_for(AgentKind::OpenCode).unwrap(),
+            exe: Some(halfway),
+            req: request("hi", temp.path()),
+        },
+        Attempt {
+            driver: Box::new(Missing),
+            exe: None,
+            req: request("hi", temp.path()),
+        },
+    ]);
+
+    assert!(!events
+        .iter()
+        .any(|e| matches!(e, TurnEvent::Fallback { .. })));
+    match events.last() {
+        Some(TurnEvent::Failed {
+            failure: TurnFailure::Exited { code, .. },
+        }) => assert_eq!(*code, Some(5)),
+        other => panic!("expected the first Agent's exit, got {other:?}"),
+    }
+}
+
+/// One Agent alone fails with its own reason, not `exhausted`: there was no
+/// order to exhaust, and the sentence should name what to fix.
+#[test]
+fn v0_11_2_a_chain_of_one_fails_with_its_own_reason() {
+    use agents::turn::{Attempt, TurnEvent, TurnFailure};
+
+    let temp = common::TempDir::new("agent-single");
+    let (_, events) = walk(vec![Attempt {
+        driver: Box::new(Missing),
+        exe: None,
+        req: request("hi", temp.path()),
+    }]);
+    assert!(matches!(
+        events.last(),
+        Some(TurnEvent::Failed {
+            failure: TurnFailure::NotFound { .. }
+        })
+    ));
+}
+
+/// The real fallback: Claude refuses a model that does not exist, writes
+/// nothing, and Codex answers. `#[ignore]`: real Agents, real tokens.
+#[test]
+#[ignore]
+fn v0_11_2_a_real_claude_that_cannot_answer_hands_over_to_codex() {
+    use agents::turn::{Attempt, TurnEvent};
+
+    let snapshots = agents::snapshots();
+    let ready = |kind| {
+        snapshots
+            .iter()
+            .any(|s| s.kind == kind && s.sign_in.status == SignInStatus::In)
+    };
+    if !ready(AgentKind::Claude) || !ready(AgentKind::Codex) {
+        eprintln!("[takyon] needs Claude Code and Codex signed in; skipped");
+        return;
+    }
+    let temp = common::TempDir::new("agent-fallback-live");
+    let started = Instant::now();
+    let (_, events) = walk(vec![
+        Attempt {
+            driver: agents::driver_for(AgentKind::Claude).unwrap(),
+            exe: None,
+            req: agents::TurnRequest {
+                model: Some("takyon-model-that-does-not-exist".into()),
+                ..request("Reply with the single word: ok", temp.path())
+            },
+        },
+        Attempt {
+            driver: agents::driver_for(AgentKind::Codex).unwrap(),
+            exe: None,
+            req: agents::TurnRequest {
+                effort: Some("low".into()),
+                ..request("Reply with the single word: ok", temp.path())
+            },
+        },
+    ]);
+    eprintln!(
+        "[takyon] {} events in {:?}",
+        events.len(),
+        started.elapsed()
+    );
+    for event in &events {
+        eprintln!("[takyon]   {event:?}");
+    }
+    assert!(
+        matches!(
+            events.first(),
+            Some(TurnEvent::Started { .. }) | Some(TurnEvent::Fallback { .. })
+        ),
+        "{events:?}"
+    );
+    assert!(events.iter().any(|e| matches!(
+        e,
+        TurnEvent::Fallback {
+            to: AgentKind::Codex,
+            ..
+        }
+    )));
+    assert!(
+        matches!(events.last(), Some(TurnEvent::Done { .. })),
+        "{events:?}"
+    );
+}
+
+/// Every signed-in Agent answers with its fast `!s` default and quick effort,
+/// through Takyon's own argv. Catches a default the CLI has dropped, and
+/// opencode v2's refusal of `--dir`. `#[ignore]`: real Agents, real tokens.
+#[test]
+#[ignore]
+fn v0_11_2_every_fast_search_default_answers() {
+    use agents::turn::{Attempt, TurnEvent};
+
+    let temp = common::TempDir::new("agent-search-defaults");
+    for snapshot in agents::snapshots() {
+        if snapshot.sign_in.status != SignInStatus::In {
+            eprintln!("[takyon] {} is not signed in; skipped", snapshot.label);
+            continue;
+        }
+        let driver = agents::driver_for(snapshot.kind).unwrap();
+        let (model, effort) = agents::search_pair(driver.as_ref(), None, None, None);
+        let started = Instant::now();
+        let (_, events) = walk(vec![Attempt {
+            driver,
+            exe: None,
+            req: agents::TurnRequest {
+                model: model.clone(),
+                effort: effort.clone(),
+                ..request("Reply with the single word: ok", temp.path())
+            },
+        }]);
+        eprintln!(
+            "[takyon] {} {model:?} {effort:?}: {:?} in {:?}",
+            snapshot.label,
+            events.last(),
+            started.elapsed()
+        );
+        assert!(
+            matches!(events.last(), Some(TurnEvent::Done { .. })),
+            "{}: {events:?}",
+            snapshot.label
+        );
+    }
+}

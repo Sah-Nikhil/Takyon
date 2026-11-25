@@ -63,10 +63,16 @@ impl AgentDriver for OpenCodeDriver {
         }
     }
 
-    /// `--variant` from `opencode run --help`: provider-specific reasoning
-    /// effort, and its help text names exactly these three.
+    /// The model's variant: provider-specific reasoning effort. v2 dropped the
+    /// `--variant` flag for `-m provider/model#variant`; the words are unchanged.
     fn efforts(&self) -> &'static [&'static str] {
         &["minimal", "high", "max"]
+    }
+
+    /// A model on opencode's own Zen provider: the one every install
+    /// reaches without connecting a provider of its own.
+    fn search_model(&self) -> Option<&'static str> {
+        Some("opencode/big-pickle")
     }
 
     /// `opencode models`, which prints one `provider/model` per line.
@@ -88,21 +94,21 @@ impl AgentDriver for OpenCodeDriver {
             .collect()
     }
 
+    /// No `--dir` and no `--variant`: opencode v2.4 refuses both with
+    /// `Unrecognized flag`. The cwd is the process's, the variant rides on `-m`.
     fn turn_args(&self, req: &TurnRequest) -> Vec<String> {
         let mut args = vec!["run".to_string(), "--format".into(), "json".into()];
-        args.push("--dir".into());
-        args.push(req.cwd.to_string_lossy().to_string());
         if !req.tools {
             args.push("--agent".into());
             args.push(READ_ONLY_AGENT.into());
         }
         if let Some(model) = &req.model {
             args.push("-m".into());
-            args.push(model.clone());
-        }
-        if let Some(effort) = &req.effort {
-            args.push("--variant".into());
-            args.push(effort.clone());
+            // A variant needs a model to hang on; alone it has nowhere to go.
+            args.push(match &req.effort {
+                Some(effort) => format!("{model}#{effort}"),
+                None => model.clone(),
+            });
         }
         if let Some(session) = &req.session {
             args.push("-s".into());
@@ -111,6 +117,11 @@ impl AgentDriver for OpenCodeDriver {
         // No message argument: `run` reads stdin when it is not a TTY (ADR-0032).
         // Style leads the default `turn_input`, no system prompt to append to.
         args
+    }
+
+    /// v2 has no directory flag on `run`; it works where it is started.
+    fn cwd_is_process_cwd(&self) -> bool {
+        true
     }
 
     fn parse_line(&self, line: &str, state: &mut TurnState) -> Option<TurnEvent> {
@@ -261,8 +272,7 @@ mod tests {
             .position(|a| a == "--agent")
             .expect("agent flag");
         assert_eq!(args[agent + 1], READ_ONLY_AGENT);
-        let dir = args.iter().position(|a| a == "--dir").expect("dir flag");
-        assert_eq!(args[dir + 1], r"C:\scratch");
+        assert!(OpenCodeDriver.cwd_is_process_cwd());
         // The prompt travels on stdin, house style ahead of it.
         assert!(!args.iter().any(|a| a.ends_with("hi")));
         assert!(OpenCodeDriver.turn_input(&base).ends_with("hi"));
@@ -272,6 +282,37 @@ mod tests {
             ..base
         });
         assert!(!with_tools.contains(&"--agent".to_string()));
+    }
+
+    /// opencode v2.4.1 exits with `Unrecognized flag: --dir in command opencode
+    /// run`, and has no `--variant`: neither may be sent. Effort rides on `-m`.
+    #[test]
+    fn v0_11_2_opencode_sends_no_flag_v2_refuses() {
+        let base = TurnRequest {
+            prompt: "hi".into(),
+            cwd: std::path::PathBuf::from(r"C:\scratch"),
+            session: None,
+            model: Some("opencode/big-pickle".into()),
+            effort: Some("high".into()),
+            tools: false,
+        };
+        let args = OpenCodeDriver.turn_args(&base);
+        assert!(
+            !args.iter().any(|a| a == "--dir" || a == "--variant"),
+            "{args:?}"
+        );
+        let model = args.iter().position(|a| a == "-m").expect("model flag");
+        assert_eq!(args[model + 1], "opencode/big-pickle#high");
+
+        // Effort with no model has nothing to attach to, so nothing is sent.
+        let bare = OpenCodeDriver.turn_args(&TurnRequest {
+            model: None,
+            ..base
+        });
+        assert!(
+            !bare.iter().any(|a| a == "-m" || a.contains('#')),
+            "{bare:?}"
+        );
     }
 
     /// The first event carrying a session id is what a follow-up resumes.

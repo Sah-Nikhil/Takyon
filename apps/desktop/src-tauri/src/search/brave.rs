@@ -81,6 +81,7 @@ pub fn parse_hits(body: &str) -> Result<Vec<Hit>, SearchError> {
                         .and_then(|d| d.as_str())
                         .unwrap_or(""),
                 ),
+                text: None,
             })
         })
         .take(MAX_HITS)

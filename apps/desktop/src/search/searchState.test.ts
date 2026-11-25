@@ -140,3 +140,18 @@ it("an icons event bumps the epoch without touching the phase", () => {
   expect(state.phase).toBe("reading");
   expect(state.sources).toEqual(sources);
 });
+
+// ADR-0041: the header follows the Agent actually writing, and says why.
+it("v0.11.2 a fallback renames the writer and explains it", () => {
+  const state = reduceTurn(answering(), {
+    turnId: 7,
+    kind: "fallback",
+    to: "codex",
+    label: "Codex",
+    reason: "notFound",
+    agent: "Claude Code",
+    binary: "claude",
+  });
+  expect(state).toMatchObject({ phase: "answering", agent: "Codex", answer: "" });
+  expect(state.notice).toBe("Claude Code couldn't answer, so Codex is.");
+});

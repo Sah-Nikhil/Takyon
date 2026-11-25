@@ -33,7 +33,7 @@ import type {
   UpdateNotice,
   ViewKind,
 } from "@takyon/shared";
-import { AGENT_LABELS, agentSummary, blockedReason, pickAgent } from "@/agents/status";
+import { AGENT_LABELS, agentSummary, benchedLast, blockedReason, pickAgent } from "@/agents/status";
 import { AskView } from "./AskView";
 import { SearchView } from "./SearchView";
 import { CalcCard } from "./CalcCard";
@@ -391,7 +391,7 @@ export function Palette() {
     if (!ask || !ask.query) return;
     // The resolved Agent, not the first preference: the row already names the
     // one that will answer, and the view must ask that same one.
-    const agent = pickAgent(ask.order, agents);
+    const agent = pickAgent(benchedLast(ask.order, ask.benched), agents);
     if (!agent) return;
     // Refuses only on a probe that came back and said no. Before it lands the
     // Turn goes ahead and the Agent's own error is the answer.
@@ -606,7 +606,9 @@ export function Palette() {
     The one row `!c` shows before Enter: which Agent would answer, and whether it
     can. A signed-out Agent gets the sentence and no row to press (ADR-0017).
    */
-  const askKind = ask ? pickAgent(ask.order, agents) : null;
+  // Benched Agents last, the order a Turn walks; `skipped` still reads the
+  // preference, so a benched first choice is named as unavailable.
+  const askKind = ask ? pickAgent(benchedLast(ask.order, ask.benched), agents) : null;
   const askAgent = askKind ? agents?.find((a) => a.kind === askKind) : undefined;
   // Amber and unpressable, in the only two states that earn it: nothing is
   // switched on, or the probe came back and the Agent it named cannot answer.
@@ -743,6 +745,7 @@ export function Palette() {
           agent={asking.agent}
           question={asking.query}
           snapshot={agents?.find((a) => a.kind === asking.agent)}
+          snapshots={agents}
           onClose={closeView}
         />
       </div>

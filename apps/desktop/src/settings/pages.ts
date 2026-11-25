@@ -248,17 +248,17 @@ export const PAGES: SettingsPage[] = [
       {
         id: "agent-claude",
         label: "Claude Code",
-        keywords: ["claude", "anthropic", "sign in", "model", "effort", "subscription"],
+        keywords: ["claude", "anthropic", "sign in", "model", "effort", "subscription", "search model", "!s", "haiku"],
       },
       {
         id: "agent-codex",
         label: "Codex",
-        keywords: ["codex", "openai", "chatgpt", "sign in", "model", "effort", "reasoning"],
+        keywords: ["codex", "openai", "chatgpt", "sign in", "model", "effort", "reasoning", "search model", "!s"],
       },
       {
         id: "agent-opencode",
         label: "opencode",
-        keywords: ["opencode", "providers", "sign in", "model", "effort", "variant"],
+        keywords: ["opencode", "providers", "sign in", "model", "effort", "variant", "search model", "!s"],
       },
     ],
   },

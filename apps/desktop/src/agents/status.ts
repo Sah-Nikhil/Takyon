@@ -110,6 +110,16 @@ function firstLine(text: string | undefined): string | null {
  * gets its fix named, because 9009 noise reads as nothing at all.
  */
 export function turnFailureCopy(failure: TurnFailure): AgentSummary {
+  if (failure.reason === "exhausted") {
+    // The last Agent's own sentence is the detail: it is usually the one
+    // that names the limit or the sign-in, and the fix is in it.
+    const last = turnFailureCopy(failure.last);
+    const tried = failure.tried.length ? ` Tried ${failure.tried.join(", ")}.` : "";
+    return {
+      headline: `No Agent could answer.${tried} Sign in to one with usage left, or switch one on in Settings → Agents.`,
+      detail: [last.headline, last.detail].filter(Boolean).join(" "),
+    };
+  }
   const { agent } = failure;
   switch (failure.reason) {
     case "notFound":
@@ -142,6 +152,11 @@ export function turnFailureCopy(failure: TurnFailure): AgentSummary {
   }
 }
 
+/** The line shown when one Agent hands a Turn to the next (ADR-0041). */
+export function fallbackNotice(failed: string, next: string): string {
+  return `${failed} couldn't answer, so ${next} is.`;
+}
+
 /**
  * Whether `!c` can actually reach this Agent right now.
  *
@@ -161,6 +176,15 @@ export function canAsk(snapshot: AgentSnapshot | undefined): boolean {
  * probe lands a signed-out one is stepped over. **Never waits** — an unprobed
  * `!c` asks anyway and lets the Agent's own error speak (ADR-0018).
  */
+/** `order` with benched Agents moved last, each half in order (ADR-0041). */
+export function benchedLast(
+  order: readonly AgentKind[],
+  benched: readonly AgentKind[] | undefined,
+): AgentKind[] {
+  const out = benched?.length ? benched : [];
+  return [...order.filter((k) => !out.includes(k)), ...order.filter((k) => out.includes(k))];
+}
+
 export function pickAgent(
   order: readonly AgentKind[],
   snapshots: AgentSnapshot[] | null,
