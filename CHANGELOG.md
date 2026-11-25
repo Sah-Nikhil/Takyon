@@ -16,7 +16,7 @@ change. A `**Still open.**` paragraph after the bullets says what is not done.
 `## Unreleased` collects work not yet released; rename it to the version when
 releasing, since `bun run release` publishes only a `## v{version}` section.
 
-## Unreleased
+## v0.13.0
 
 - **Agent fallback.** When the first Agent in your order can't answer (out of usage, signed out, missing, or a model it refuses), `!c` and `!s` hand the question to the next one and say so in one line. With every Agent out, the Palette tells you to sign in to one with usage left.
 - **Skipped while unavailable.** An Agent that just failed is asked last until its usage window resets, so the next `!c` names and asks the one that can answer straight away.
