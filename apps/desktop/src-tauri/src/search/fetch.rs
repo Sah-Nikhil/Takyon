@@ -5,8 +5,8 @@
 //! call is blocking and runs on a Turn's thread, never the main one.
 //!
 //! Two limits are the point. `WinHttpSetTimeouts` bounds one request, and
-//! `pages` stops reading at `DEADLINE` however many are still in flight — one
-//! slow page must not hold the whole answer (v0.9 Traps).
+//! `pages` returns at `DEADLINE` however many are still in flight — one slow
+//! page must not hold the whole answer (v0.9 Traps, ADR-0041).
 //!
 //! [`send`] is the transport and the only Windows-specific thing here; URL
 //! parsing, encoding and the `pages` fan-out are portable. macOS answer is
@@ -32,11 +32,15 @@ use super::SearchError;
 const AGENT: &str = "Takyon/0.9 (V3SPER)";
 
 /// Per-request timeouts, milliseconds. Resolve, connect, send, receive.
-#[cfg(windows)]
 const TIMEOUT_MS: i32 = 6_000;
 
-/// Total budget for reading pages, whatever is still in flight.
-pub const DEADLINE: Duration = Duration::from_secs(12);
+/// Per-request timeouts for one `!s` page. Shorter than `TIMEOUT_MS`: a page
+/// still connecting at 3 s misses `DEADLINE` anyway, and frees its thread sooner.
+const PAGE_TIMEOUT_MS: i32 = 3_000;
+
+/// Total budget for reading pages. Past it the answer is written from what
+/// arrived; the rest go in as their snippets. Was 12 s, and waited for all.
+pub const DEADLINE: Duration = Duration::from_millis(3_500);
 
 /// Most bytes read from one page. Extraction only ever reads the first screens
 /// of prose, and an unbounded read is how one video file stalls an answer.
@@ -78,6 +82,25 @@ pub fn get_url(url: &str) -> Result<Response, SearchError> {
         return plain(&host, &path);
     }
     request(&host, &path, "Accept: text/html\r\n")
+}
+
+/// `get_url`, under `PAGE_TIMEOUT_MS`, reading no body past `until`. The `!s`
+/// page read: a host trickling bytes inside each timeout cannot outlive it.
+fn get_page(url: &str, until: Instant) -> Result<Response, SearchError> {
+    let (host, path, secure) = parse_url(url)
+        .ok_or_else(|| SearchError::Failed(format!("{url} is not a URL Takyon can read.")))?;
+    let headers = "Accept: text/html\r\n";
+    send(
+        &host,
+        &path,
+        headers,
+        secure,
+        "GET",
+        None,
+        MAX_BODY,
+        PAGE_TIMEOUT_MS,
+        Some(until),
+    )
 }
 
 /// Host, path and whether it is HTTPS. `None` for anything not http(s).
@@ -137,30 +160,89 @@ pub fn pool() -> &'static rayon::ThreadPool {
     })
 }
 
-/// Read several pages at once, stopping at [`DEADLINE`].
+/// Read several pages at once, returning at [`DEADLINE`] or when all are in.
 ///
 /// Failures are per URL and kept: a page that would not load is named in the
-/// answer rather than dropped, or a thinner answer reads as a complete one
-/// (v0.9 Traps).
+/// answer rather than dropped (v0.9 Traps). A straggler finishes on its own
+/// thread, unread, under its own `PAGE_TIMEOUT_MS`.
 pub fn pages(urls: &[String]) -> Vec<Result<String, SearchError>> {
-    use rayon::prelude::*;
-    let started = Instant::now();
-    pool().install(|| {
-        urls.par_iter()
-            .map(|url| {
-                if started.elapsed() >= DEADLINE {
-                    return Err(SearchError::Failed("Timed out before reading.".into()));
+    pages_with(urls, DEADLINE, get_page)
+}
+
+/// `pages`, with the deadline and the reader supplied. For tests.
+pub fn pages_with(
+    urls: &[String],
+    deadline: Duration,
+    read: fn(&str, Instant) -> Result<Response, SearchError>,
+) -> Vec<Result<String, SearchError>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let until = Instant::now() + deadline;
+    for (i, url) in urls.iter().enumerate() {
+        let Some(slot) = PageSlot::take() else {
+            // Earlier searches' stragglers hold every slot. Snippet, not a thread.
+            let _ = tx.send((
+                i,
+                Err(SearchError::Failed("Too many pages in flight.".into())),
+            ));
+            continue;
+        };
+        let (tx, url) = (tx.clone(), url.clone());
+        // A thread each, not `pool()`: Focus's icon fetches can hold every pool
+        // thread for seconds, and a page queued behind them misses `DEADLINE`.
+        std::thread::spawn(move || {
+            let _slot = slot;
+            let body = read(&url, until).map(|r| {
+                if r.status == 200 {
+                    r.body
+                } else {
+                    String::new()
                 }
-                get_url(url).map(|response| {
-                    if response.status == 200 {
-                        response.body
-                    } else {
-                        String::new()
-                    }
-                })
-            })
-            .collect()
-    })
+            });
+            // Past the deadline the receiver is gone, and nobody wants this.
+            let _ = tx.send((i, body));
+        });
+    }
+    drop(tx);
+    let mut out: Vec<Option<Result<String, SearchError>>> = urls.iter().map(|_| None).collect();
+    let mut left = urls.len();
+    while left > 0 {
+        let wait = until.saturating_duration_since(Instant::now());
+        let Ok((i, body)) = rx.recv_timeout(wait) else {
+            break;
+        };
+        out[i] = Some(body);
+        left -= 1;
+    }
+    out.into_iter()
+        .map(|body| {
+            body.unwrap_or_else(|| Err(SearchError::Failed("Timed out before reading.".into())))
+        })
+        .collect()
+}
+
+/// Most page threads alive at once, across every search. Stragglers from earlier
+/// searches count, so a burst of `!s` on slow hosts cannot pile up threads.
+pub const MAX_PAGE_WORKERS: usize = 24;
+
+static PAGE_WORKERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// One of `MAX_PAGE_WORKERS`, given back when its thread ends.
+struct PageSlot;
+
+impl PageSlot {
+    fn take() -> Option<PageSlot> {
+        use std::sync::atomic::Ordering::SeqCst;
+        PAGE_WORKERS
+            .fetch_update(SeqCst, SeqCst, |n| (n < MAX_PAGE_WORKERS).then_some(n + 1))
+            .ok()
+            .map(|_| PageSlot)
+    }
+}
+
+impl Drop for PageSlot {
+    fn drop(&mut self) {
+        PAGE_WORKERS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// A POST over HTTPS with a body. Exa's API is POST-only (ADR-0021).
@@ -182,6 +264,8 @@ pub fn post(
         "POST",
         Some(body.as_bytes()),
         MAX_BODY,
+        TIMEOUT_MS,
+        None,
     )
 }
 
@@ -201,6 +285,8 @@ pub fn get_icon(url: &str) -> Result<Response, SearchError> {
         "GET",
         None,
         MAX_ICON,
+        TIMEOUT_MS,
+        None,
     )
 }
 
@@ -213,11 +299,15 @@ fn plain(host: &str, path: &str) -> Result<Response, SearchError> {
         "GET",
         None,
         MAX_BODY,
+        TIMEOUT_MS,
+        None,
     )
 }
 
 fn request(host: &str, path: &str, headers: &str) -> Result<Response, SearchError> {
-    send(host, path, headers, true, "GET", None, MAX_BODY)
+    send(
+        host, path, headers, true, "GET", None, MAX_BODY, TIMEOUT_MS, None,
+    )
 }
 
 /// The WinHTTP call itself.
@@ -225,6 +315,7 @@ fn request(host: &str, path: &str, headers: &str) -> Result<Response, SearchErro
 /// Every handle is closed on every path, including the error ones: a leaked
 /// session holds a connection and a thread, and nothing reports it.
 #[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
 fn send(
     host: &str,
     path: &str,
@@ -233,6 +324,8 @@ fn send(
     method: &str,
     body: Option<&[u8]>,
     cap: usize,
+    timeout_ms: i32,
+    until: Option<Instant>,
 ) -> Result<Response, SearchError> {
     let host_w = wide(host);
     let path_w = wide(path);
@@ -252,7 +345,7 @@ fn send(
             return Err(last_error("Could not start an HTTP session"));
         }
         let _session = Handle(session);
-        WinHttpSetTimeouts(session, TIMEOUT_MS, TIMEOUT_MS, TIMEOUT_MS, TIMEOUT_MS)
+        WinHttpSetTimeouts(session, timeout_ms, timeout_ms, timeout_ms, timeout_ms)
             .map_err(|e| SearchError::Failed(format!("Could not set timeouts: {e}")))?;
 
         let port = if secure { 443 } else { 80 };
@@ -309,7 +402,7 @@ fn send(
         )
         .map_err(|e| SearchError::Failed(format!("{host} sent no status: {e}")))?;
 
-        let bytes = read_bytes(request, cap)?;
+        let bytes = read_bytes(request, cap, until)?;
         Ok(Response {
             status: status as u16,
             body: String::from_utf8_lossy(&bytes).into_owned(),
@@ -324,6 +417,7 @@ fn send(
 /// still parses, retrieval still runs its own error path, and the Palette shows
 /// this sentence instead of an empty answer. TBC-0013 owns the real one.
 #[cfg(not(windows))]
+#[allow(clippy::too_many_arguments)]
 fn send(
     _host: &str,
     _path: &str,
@@ -332,6 +426,8 @@ fn send(
     _method: &str,
     _body: Option<&[u8]>,
     _cap: usize,
+    _timeout_ms: i32,
+    _until: Option<Instant>,
 ) -> Result<Response, SearchError> {
     Err(SearchError::Failed(
         "HTTP is only implemented on Windows; macOS needs URLSession (TBC-0013).".into(),
@@ -340,9 +436,17 @@ fn send(
 
 /// Read the body, stopping at `cap`.
 #[cfg(windows)]
-unsafe fn read_bytes(request: *mut core::ffi::c_void, cap: usize) -> Result<Vec<u8>, SearchError> {
+unsafe fn read_bytes(
+    request: *mut core::ffi::c_void,
+    cap: usize,
+    until: Option<Instant>,
+) -> Result<Vec<u8>, SearchError> {
     let mut body: Vec<u8> = Vec::new();
     loop {
+        // Each read is bounded by the receive timeout; the whole body only by this.
+        if until.is_some_and(|until| Instant::now() >= until) {
+            break;
+        }
         let mut available: u32 = 0;
         if WinHttpQueryDataAvailable(request, &mut available).is_err() || available == 0 {
             break;
@@ -433,6 +537,81 @@ mod tests {
         assert_eq!(parse_url("javascript:alert(1)"), None);
         assert_eq!(parse_url("example.com"), None);
         assert_eq!(parse_url(""), None);
+    }
+
+    fn fake_read(url: &str, _until: Instant) -> Result<Response, SearchError> {
+        let ok = |body: &str| Response {
+            status: 200,
+            body: body.into(),
+            bytes: Vec::new(),
+        };
+        match url {
+            "slow" => {
+                std::thread::sleep(Duration::from_millis(1_500));
+                Ok(ok("late"))
+            }
+            "dead" => Err(SearchError::Failed("no such host".into())),
+            "missing" => Ok(Response {
+                status: 404,
+                ..ok("not found page")
+            }),
+            other => Ok(ok(other)),
+        }
+    }
+
+    /// One slow page must not hold the answer: `pages` returns at its deadline
+    /// with what arrived, in order, and names the straggler as unread.
+    #[test]
+    fn v0_11_2_pages_return_at_the_deadline_without_the_straggler() {
+        let urls: Vec<String> = ["a", "slow", "dead", "b", "missing"]
+            .iter()
+            .map(|u| u.to_string())
+            .collect();
+        let started = Instant::now();
+        let bodies = pages_with(&urls, Duration::from_millis(400), fake_read);
+        assert!(
+            started.elapsed() < Duration::from_millis(1_200),
+            "waited for the straggler"
+        );
+        assert_eq!(bodies.len(), 5);
+        assert_eq!(bodies[0].as_deref(), Ok("a"));
+        let late = bodies[1].as_ref().unwrap_err().message();
+        assert!(late.contains("Timed out"), "{late}");
+        assert!(bodies[2].is_err());
+        assert_eq!(bodies[3].as_deref(), Ok("b"));
+        // A non-200 reads as empty, never as its error page's prose.
+        assert_eq!(bodies[4].as_deref(), Ok(""));
+    }
+
+    /// Every reader gets the same absolute deadline the caller stops at, so a
+    /// page trickling bytes stops reading then rather than at its own leisure.
+    #[test]
+    fn v0_11_2_every_page_read_is_given_the_callers_deadline() {
+        fn checked(_: &str, until: Instant) -> Result<Response, SearchError> {
+            let left = until.saturating_duration_since(Instant::now());
+            assert!(left > Duration::ZERO && left <= Duration::from_secs(5));
+            Ok(Response {
+                status: 200,
+                body: "ok".into(),
+                bytes: Vec::new(),
+            })
+        }
+        let urls = vec!["a".to_string(), "b".to_string()];
+        let bodies = pages_with(&urls, Duration::from_secs(5), checked);
+        assert!(
+            bodies.iter().all(|b| b.as_deref() == Ok("ok")),
+            "{bodies:?}"
+        );
+    }
+
+    /// Everything in before the deadline returns at once, not at the deadline.
+    #[test]
+    fn v0_11_2_pages_return_as_soon_as_every_page_is_in() {
+        let urls = vec!["a".to_string(), "b".to_string()];
+        let started = Instant::now();
+        let bodies = pages_with(&urls, Duration::from_secs(5), fake_read);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(bodies.iter().all(Result::is_ok));
     }
 
     /// Credentials in a URL are a phishing shape. Refused, never stripped and

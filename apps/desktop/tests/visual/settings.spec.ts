@@ -663,7 +663,7 @@ test("the licence list loads only when opened, then searches and expands", async
   await expect(page.getByText("Third-party licences")).toBeVisible();
   expect(await licenceLoads(page)).toBe(0);
 
-  await page.getByRole("button", { name: "View" }).click();
+  await page.getByRole("button", { name: "View third-party licences" }).click();
   await expect(page.getByRole("button", { name: "About", exact: true }).last()).toBeVisible();
   await expect(page.getByText("6 components")).toBeVisible();
   // StrictMode mounts effects twice in dev; the claim is zero before opening.
@@ -713,7 +713,7 @@ test("a missing licence list says so in place of the rows", async ({ page }) => 
     ).__takyon_mock.failLicences("The licence list is missing from this install. Reinstalling Takyon restores it."),
   );
   await page.getByRole("button", { name: "About" }).click();
-  await page.getByRole("button", { name: "View" }).click();
+  await page.getByRole("button", { name: "View third-party licences" }).click();
   await expect(page.getByRole("alert")).toContainText("Reinstalling Takyon restores it.");
   await expect(page.getByLabel("Search components and licences")).toBeDisabled();
 });
@@ -792,6 +792,27 @@ test("a refused preference write leaves the switch on what is stored", async ({ 
   await expect(page.locator("html")).not.toHaveAttribute("data-reduce-motion", "");
 });
 
+test("refused Agent preferences retain saved values", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents", exact: true }).click();
+  const pin = page.getByRole("switch", { name: "Keep answers open when you click away" });
+  const model = page.getByRole("combobox", { name: "Model for !s with Claude Code" });
+  await expect(model).toBeEnabled();
+  const savedModel = await model.textContent();
+  await page.evaluate(() => {
+    (window as unknown as { __takyon_mock: { failPreferenceWrite: (m: string) => void } })
+      .__takyon_mock.failPreferenceWrite("settings.db is read-only");
+  });
+  await pin.click();
+  await expect(page.getByRole("alert")).toContainText("read-only");
+  await expect(pin).toHaveAttribute("aria-checked", "true");
+  await model.click();
+  await page.getByRole("option", { name: "!s: same as !c" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(2);
+  await expect(page.getByRole("alert").last()).toContainText("read-only");
+  await expect(model).toHaveText(savedModel ?? "");
+});
+
 /**
  * tbd v0.1 §3, the fix this slice owed.
  *
@@ -843,4 +864,29 @@ test("Clipboard History shows what history occupies on disk", async ({ page }) =
   await page.getByRole("button", { name: "Clipboard History" }).click();
   await expect(page.getByText("On disk")).toBeVisible();
   await expect(page.getByText("6.0 MB")).toBeVisible();
+});
+
+/**
+ * v0.11.2: About / Release notes, t3code-style. Reads the real CHANGELOG.md, so
+ * it asserts structure rather than a screenshot that every release would move.
+ */
+test("release notes list recent versions with labelled features", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 900 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "About" }).click();
+  await page.getByRole("button", { name: "View release notes" }).click();
+
+  const latest = page.getByRole("region", { name: "Version 0.12.9" });
+  await expect(latest.getByRole("heading", { name: "v0.12.9" })).toBeVisible();
+  await expect(latest.locator("strong").first()).toHaveText("Focus confetti.");
+  await expect(latest.getByText("Installed")).toBeVisible();
+  // Unreleased work is not a release, and is never listed.
+  await expect(page.getByText("Agent fallback.")).toHaveCount(0);
+
+  await latest.getByRole("button", { name: "View release on GitHub" }).click();
+  const opened = await page.evaluate(() =>
+    (window as unknown as { __takyon_mock: { openedUrls: () => string[] } }).__takyon_mock.openedUrls(),
+  );
+  expect(opened).toContain("https://github.com/Sah-Nikhil/Takyon/releases/tag/v0.12.9");
+  await expect(page.getByRole("button", { name: /older releases on GitHub/ })).toBeVisible();
 });

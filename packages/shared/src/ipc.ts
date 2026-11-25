@@ -170,6 +170,11 @@ export interface SettingsSnapshot {
    * against a 20 ms budget (TBC-0005).
    */
   filesFallback: boolean;
+  /**
+   * Whether a `!c` or `!s` answer stays open when you click away (ADR-0042).
+   * Default on. The plain list still closes on a click away (ADR-0001).
+   */
+  pinAnswers: boolean;
   /** Indexed roots, and the names skipped inside them (TBC-0005). */
   filesRoots: string[];
   filesExcludes: string[];
@@ -412,6 +417,11 @@ export interface Ask {
    * refines the choice once its own probe lands.
    */
   order: AgentKind[];
+  /**
+   * Agents in `order` that failed recently and are asked last (ADR-0041). Kept
+   * apart from `order` so the row can name the preference it skipped.
+   */
+  benched?: AgentKind[];
 }
 
 /**
@@ -612,7 +622,17 @@ export interface AgentSettings {
   models: Partial<Record<AgentKind, string>>;
   /** The locked-in effort level per Agent. Same rule as the model. */
   efforts: Partial<Record<AgentKind, string>>;
+  /**
+   * The model each Agent writes `!s` answers with, as stored. Absent is the fast
+   * default in `searchDefaults`; `SEARCH_MODEL_SAME` is `!c`'s model (ADR-0041).
+   */
+  searchModels: Partial<Record<AgentKind, string>>;
+  /** Each Agent's fast `!s` default, named so Settings can show it. */
+  searchDefaults: Partial<Record<AgentKind, string>>;
 }
+
+/** The stored `!s` model meaning "whatever `!c` uses". Rust's `SEARCH_MODEL_SAME`. */
+export const SEARCH_MODEL_SAME = "@ask";
 
 /** Why a Turn failed. Rust's `TurnFailure`; the copy is `turnFailureCopy`. */
 export type TurnFailureReason =
@@ -621,14 +641,16 @@ export type TurnFailureReason =
   | "spawnFailed"
   | "agentError"
   | "exited"
-  | "silent";
+  | "silent"
+  /** Every Agent in a chain of two or more failed (ADR-0041). */
+  | "exhausted";
 
 /**
- * A failed Turn's facts, flattened beside `kind`. `agent` is the display label.
+ * One Agent's failure, flattened beside `kind`. `agent` is the display label.
  * `binary` on notFound (the command) and launcherBroken (the shim's path).
  */
-export interface TurnFailure {
-  reason: TurnFailureReason;
+export interface AgentTurnFailure {
+  reason: Exclude<TurnFailureReason, "exhausted">;
   agent: string;
   binary?: string;
   /** Exit code, on `exited`. Absent when the process was killed. */
@@ -639,12 +661,29 @@ export interface TurnFailure {
   message?: string;
 }
 
+/** Every Agent in a chain failed. Names no one Agent, so it has no `agent`. */
+export interface ExhaustedTurnFailure {
+  reason: "exhausted";
+  /** Each Agent asked, in order, by display label. */
+  tried: readonly string[];
+  /** Why the last one failed. The others each had a `fallback` event. */
+  last: AgentTurnFailure;
+}
+
+export type TurnFailure = AgentTurnFailure | ExhaustedTurnFailure;
+
 /** One thing that happened during a Turn, as Rust tags it. */
 export type TurnEvent =
   | { kind: "started"; session?: string; model?: string }
   | { kind: "text"; delta: string }
   | { kind: "done"; session?: string }
-  | ({ kind: "failed" } & TurnFailure);
+  | ({ kind: "failed" } & TurnFailure)
+  /**
+   * `from` wrote nothing and could not answer; `to` is asked next (ADR-0041).
+   * `agent` is `from`'s display label, `label` is `to`'s. A session from its
+   * `started` was the failed Agent's: drop it.
+   */
+  | ({ kind: "fallback"; from: AgentKind; to: AgentKind; label: string } & AgentTurnFailure);
 
 /** A `TurnEvent` with the Turn it belongs to. Rust flattens the two together. */
 export type TurnMessage = TurnEvent & { turnId: number };

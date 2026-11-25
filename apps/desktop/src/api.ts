@@ -131,6 +131,10 @@ export const setFilesBangless = (on: boolean) =>
 export const setFilesFallback = (on: boolean) =>
   inTauri ? invoke<void>("set_files_fallback", { on }) : mock.setFilesFallback(on);
 
+/** Whether a `!c` or `!s` answer stays open on a click away (ADR-0042). */
+export const setPinAnswers = (on: boolean) =>
+  inTauri ? invoke<void>("set_pin_answers", { on }) : mock.setPinAnswers(on);
+
 /** Replace the indexed roots and exclusions, then rebuild in the background. */
 export const setFilesRoots = (roots: string[], excludes: string[]) =>
   inTauri
@@ -594,6 +598,10 @@ export const setAskModel = (agent: AgentKind, model: string) =>
 /** Lock in the effort level, from that Agent's own vocabulary. */
 export const setAskEffort = (agent: AgentKind, effort: string) =>
   inTauri ? invoke<void>("set_ask_effort", { agent, effort }) : mock.setAskEffort(agent, effort);
+
+/** The model `!s` writes with. Blank restores the fast default. */
+export const setSearchModel = (agent: AgentKind, model: string) =>
+  inTauri ? invoke<void>("set_search_model", { agent, model }) : mock.setSearchModel(agent, model);
 
 /**
  * Start a Turn. Resolves with its id; the answer arrives on `onTurn`.

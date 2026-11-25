@@ -30,6 +30,12 @@ const AVAILABLE: &str = "update.available";
 const LAST_RUN: &str = "update.last_run";
 /// Version whose "See what's new" row has not been opened yet.
 const WHATS_NEW: &str = "update.whats_new";
+/// Summons that have shown that row, so a restart does not reset the count.
+const WHATS_NEW_SHOWN: &str = "update.whats_new_shown";
+
+/// Summons a "See what's new" row is shown for before it retires unopened.
+/// A row that stays until clicked turns into furniture on the launcher.
+pub const WHATS_NEW_SHOWS: u32 = 2;
 
 /// One feed request a day at most, however often Takyon starts.
 pub const CHECK_EVERY_MS: u64 = 24 * 60 * 60 * 1000;
@@ -98,9 +104,49 @@ impl Pending {
 /// In memory, not `settings.db`: `window::show` reads it on every summon.
 static NOTICE: Mutex<Option<Notice>> = Mutex::new(None);
 
+/// Summons that have shown the current "See what's new" row. Mirrors
+/// [`WHATS_NEW_SHOWN`], which is written off the show path.
+static SHOWN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Whether a What's-new row shows on this summon, and whether it then retires.
+/// `shown` is how many summons have shown it already.
+pub fn whats_new_show(shown: u32) -> (bool, bool) {
+    let show = shown < WHATS_NEW_SHOWS;
+    (show, shown + 1 >= WHATS_NEW_SHOWS)
+}
+
 /// The Palette's update row, if any. Never touches disk or network.
 pub fn notice() -> Option<Notice> {
     NOTICE.lock().unwrap_or_else(|p| p.into_inner()).clone()
+}
+
+/// The row for one summon, counting it. `window::show` calls this, once per show.
+///
+/// A What's-new row shows on [`WHATS_NEW_SHOWS`] summons, then retires as if
+/// opened. Memory first; the count reaches `settings.db` on a thread of its own.
+pub fn notice_for_show<R: Runtime>(app: &AppHandle<R>) -> Option<Notice> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let mut held = NOTICE.lock().unwrap_or_else(|p| p.into_inner());
+    if !matches!(*held, Some(Notice::WhatsNew { .. })) {
+        return held.clone();
+    }
+    let (show, retire) = whats_new_show(SHOWN.fetch_add(1, SeqCst));
+    let shown = if show { held.clone() } else { None };
+    if retire {
+        *held = None;
+    }
+    drop(held);
+    let app = app.clone();
+    let count = SHOWN.load(SeqCst);
+    std::thread::spawn(move || {
+        let Some(prefs) = prefs(&app) else { return };
+        let _ = prefs.set(WHATS_NEW_SHOWN, &count.to_string());
+        if retire {
+            let _ = prefs.remove(WHATS_NEW);
+            refresh_notice(&app);
+        }
+    });
+    shown
 }
 
 /// Whether `plugins.updater` names a key and at least one feed.
@@ -243,7 +289,11 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
         let last_run = prefs.get(LAST_RUN);
         if let Some(version) = whats_new_after(&current, last_run.as_deref()) {
             let _ = prefs.set(WHATS_NEW, &version);
+            // A new version's row starts its own count.
+            let _ = prefs.set(WHATS_NEW_SHOWN, "0");
         }
+        let shown = prefs.get(WHATS_NEW_SHOWN).and_then(|v| v.parse().ok());
+        SHOWN.store(shown.unwrap_or(0), std::sync::atomic::Ordering::SeqCst);
         if last_run.as_deref() != Some(current.as_str()) {
             let _ = prefs.set(LAST_RUN, &current);
         }
@@ -542,6 +592,16 @@ mod tests {
         // Notes for another version, or no feed to link to: no row.
         assert_eq!(pick_notice("1.0.0", None, Some("0.9.0"), feed), None);
         assert_eq!(pick_notice("1.0.0", None, Some("1.0.0"), None), None);
+    }
+
+    /// Shown on the first two summons, retired by the second, gone on the third.
+    #[test]
+    fn a_whats_new_row_shows_twice_then_retires() {
+        assert_eq!(WHATS_NEW_SHOWS, 2);
+        assert_eq!(whats_new_show(0), (true, false));
+        assert_eq!(whats_new_show(1), (true, true));
+        // A count past the limit, from a crash between show and retire, shows nothing.
+        assert_eq!(whats_new_show(2), (false, true));
     }
 
     #[test]

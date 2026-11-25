@@ -637,6 +637,38 @@ release build: hotkey, Escape, focus loss, `!s`, and killing Takyon outright.
 
 ---
 
+## v0.11.2 — Agent fallback and a faster `!s`
+
+**Goal:** an Agent that is out of usage, signed out or missing never decides a
+`!c` or `!s` answer while another ranked Agent can still give one. A `!s` answer
+starts writing seconds sooner. Reasoning in ADR-0041.
+
+- [x] **A Turn is a chain of Attempts.** An Agent that fails before any text hands over to the next switched-on one with a `fallback` event, which carries that Agent's own model and effort. Text on screen means no fallback, and a follow-up never changes Agent
+- [x] **`exhausted`**, when every Agent in a chain of two or more failed: "No Agent could answer", the Agents tried, and to sign in to one with usage left, with the last one's own reason underneath
+- [x] **Failed Agents are benched**, moved last until Claude's reported reset time (from its `rate_limit_event` `rejected` frame, the signal t3code reads) or ten minutes. The `!c` row reads the same bench, so it names who will answer. Cleared on success, on a Settings change to that Agent, and on a reorder
+- [x] **`!s` pages against a 3.5 s deadline**, returning once every page is in, with 3 s per-request timeouts and a thread per page instead of the shared pool. Previously 12 s, and it waited for the slowest page
+- [x] **A keyed `!s` fetches no page**: Exa's page text is asked for at a full prompt share and used directly
+- [x] **Favicons off the critical path**, cached on their own thread after the pages instead of before the Turn
+- [x] **`!s` has its own model per Agent, fast by default**: `haiku`, `gpt-6-luna`, `opencode/big-pickle`, switchable in Settings → Agents, with "same as `!c`" one choice away. A model other than `!c`'s takes the quick effort (`low` for Claude and Codex), never `!c`'s; the prompt budget goes from 24,000 to 16,000 characters
+- [x] **opencode v2 flags**: v2.4.1 refuses `--dir` and `--variant` with `Unrecognized flag`, so every opencode Turn failed. It now runs in the process cwd and the variant rides on `-m provider/model#variant`
+- [x] **Tools-off Claude Turns start no MCP servers** (`--strict-mcp-config`)
+- [x] **Answers stay open on a click away** (ADR-0042, a user request): a `!c` or `!s` answer survives focus loss so it can be copied from or worked beside. On by default, off in Settings → Agents. The hotkey brings a pinned answer back to the front; the list still closes on a click away
+- [x] **"See what's new" retires after two summons** instead of staying until clicked (`update::WHATS_NEW_SHOWS`), counted in memory and saved off the show path
+- [x] **Release notes, t3code's shape.** CHANGELOG.md bullets are `- **Label.** Sentence.`; the GitHub release body is a counted header, those bullets, and every NEW/FIX/UPDATE commit folded under "Full changelog" (`scripts/updater.ts body`). Settings › About › Release notes lists recent versions offline from the bundled CHANGELOG.md
+- [x] ADR-0041 and ADR-0042, written with the code
+- [ ] [`docs/verify/v0.11.2.md`](./docs/verify/v0.11.2.md): 10 of 21 boxes confirmed by `scripts/verify-drive-v0.11.2.ps1` against the release build, 1 partly. The rest need Settings writes or an Agent that has really hit its limit
+
+**Exit criteria:** with Claude Code out of usage and Codex ranked second, `!c`
+and `!s` answer from Codex, and the second `!c` names Codex before Enter. With
+every Agent out, the Palette says to sign in to one with usage left.
+
+**Where it stands:** built and covered by unit tests, fake `.cmd` Agent chains in
+`tests/agents_cli.rs`, and a visual baseline of the handover. No real usage limit
+has been hit during the work, so the exact limit output of each CLI is untested.
+Any pre-text failure falls through, which is why that output does not need parsing.
+
+---
+
 ## v0.12 — macOS
 
 **Goal:** 1:1 with Windows on Apple Silicon. Plan:

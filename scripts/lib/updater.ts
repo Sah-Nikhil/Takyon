@@ -107,3 +107,38 @@ export function releaseNotes(changelog: string, version: string): string {
   const end = rest.findIndex((l) => l.startsWith("## "));
   return (end < 0 ? rest : rest.slice(0, end)).join("\n").trim();
 }
+
+/** One commit in a release's range: its subject and short hash. */
+export interface ReleaseCommit {
+  subject: string;
+  hash: string;
+}
+
+/** `NEW d0.11.74 agent fallback` -> verb and the words after the dev number. */
+const COMMIT = /^(NEW|FIX|UPDATE) d\d+\.\d+\.\d+\s+(.+)$/;
+
+/**
+ * The GitHub release body, in t3code's shape: a counted header, the CHANGELOG
+ * section's labelled bullets, then every NEW/FIX/UPDATE commit folded under
+ * "Full changelog". Merges, asset uploads and the version bump are left out.
+ */
+export function releaseBody(version: string, notes: string, commits: ReleaseCommit[]): string {
+  const changes = commits.flatMap((c) => {
+    const m = COMMIT.exec(c.subject.trim());
+    // `bun run release --git` commits the bump as `UPDATE dX version X.Y.Z`: not a change.
+    if (!m || /^version \d/.test(m[2]!)) return [];
+    return [{ verb: m[1] as "NEW" | "FIX" | "UPDATE", text: m[2]!, hash: c.hash }];
+  });
+  const count = (verb: string, one: string, many: string) => {
+    const n = changes.filter((c) => c.verb === verb).length;
+    return n === 0 ? [] : [`${n} ${n === 1 ? one : many}`];
+  };
+  const tally = [...count("NEW", "new", "new"), ...count("FIX", "fix", "fixes"), ...count("UPDATE", "update", "updates")];
+  const header = `**v${version}**${tally.length ? ` · ${tally.join(", ")}` : ""}`;
+  const parts = [header, notes.trim()];
+  if (changes.length) {
+    const list = changes.map((c) => `- ${c.verb} ${c.text} (${c.hash})`).join("\n");
+    parts.push(`<details>\n<summary>Full changelog</summary>\n\n${list}\n\n</details>`);
+  }
+  return `${parts.filter(Boolean).join("\n\n")}\n`;
+}

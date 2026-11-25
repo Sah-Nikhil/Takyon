@@ -3,6 +3,7 @@ import type { AgentSnapshot } from "@takyon/shared";
 
 import {
   agentSummary,
+  benchedLast,
   blockedReason,
   canAsk,
   pathSummary,
@@ -191,6 +192,7 @@ describe("turnFailureCopy", () => {
       { reason: "agentError", agent, message: "Model not found" },
       { reason: "exited", agent, code: 1, detail: "boom" },
       { reason: "silent", agent },
+      { reason: "exhausted", tried: ["Claude Code", agent], last: { reason: "silent", agent } },
     ] as const;
     for (const failure of cases) {
       expect(turnFailureCopy(failure).headline.length).toBeGreaterThan(0);
@@ -243,5 +245,19 @@ describe("turnFailureCopy", () => {
       detail: "denied",
     });
     expect(turnFailureCopy({ reason: "silent", agent: "a" }).headline).toBe("a ended without answering.");
+  });
+});
+
+describe("benchedLast", () => {
+  // ADR-0041: a benched Agent is asked last, never dropped, and the rest keep
+  // the user's order. `pickAgent` then names the Agent a Turn will reach.
+  it("v0.11.2 moves benched Agents last without dropping them", () => {
+    expect(benchedLast(["claude", "codex", "opencode"], ["claude"])).toEqual([
+      "codex",
+      "opencode",
+      "claude",
+    ]);
+    expect(benchedLast(["claude", "codex"], undefined)).toEqual(["claude", "codex"]);
+    expect(pickAgent(benchedLast(["claude", "codex"], ["claude"]), null)).toBe("codex");
   });
 });

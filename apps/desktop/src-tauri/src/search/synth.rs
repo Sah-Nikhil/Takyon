@@ -2,7 +2,7 @@
 //!
 //! Takyon holds no LLM account (ADR-0017), so the summariser is whichever Agent
 //! `!c` would have asked — the ranked, switched-on list, tools off, in the
-//! Scratch directory. A machine with only Codex installed still gets `!s`.
+//! Scratch directory, falling through it as `!c` does (ADR-0041).
 //!
 //! Citations are numbered and the Agent is told to cite those numbers, so the
 //! Palette can turn `[2]` into the second Hit's URL without parsing prose.
@@ -26,15 +26,22 @@ pub struct Citation {
 ///
 /// A budget rather than per-citation arithmetic: ten pages at `extract::MAX_CHARS`
 /// each would be 120,000 characters, which is a bill and a slow first token.
-pub const PROMPT_BUDGET: usize = 24_000;
+/// 16,000 since v0.11.2: the answer is six lines, and 24,000 bought none of them.
+pub const PROMPT_BUDGET: usize = 16_000;
 
 /// Turn Hits and their fetched bodies into Citations.
+///
+/// Text the provider sent with a Hit wins over its body, which for those Hits
+/// was never fetched and is a placeholder.
 pub fn citations(hits: Vec<Hit>, bodies: Vec<Result<String, SearchError>>) -> Vec<Citation> {
     hits.into_iter()
         .zip(bodies)
-        .map(|(hit, body)| Citation {
-            hit,
-            text: body.ok().and_then(|html| extract::readable(&html)),
+        .map(|(hit, body)| {
+            let text = hit
+                .text
+                .clone()
+                .or_else(|| body.ok().and_then(|html| extract::readable(&html)));
+            Citation { hit, text }
         })
         .collect()
 }
@@ -103,9 +110,13 @@ pub fn prompt(question: &str, citations: &[Citation]) -> String {
     out
 }
 
-/// Which Agent answers: the first switched-on one, exactly as `!c` picks.
-pub fn agent(prefs: &crate::prefs::Prefs) -> Option<crate::agents::AgentKind> {
-    crate::agents::route(prefs).first().copied()
+/// Which Agents may answer, in order: the switched-on ones, benched last,
+/// exactly as `!c` walks them.
+pub fn chain(
+    prefs: &crate::prefs::Prefs,
+    bench: &crate::agents::fallback::Bench,
+) -> Vec<crate::agents::AgentKind> {
+    bench.arrange(&crate::agents::route(prefs), std::time::Instant::now())
 }
 
 #[cfg(test)]
@@ -117,6 +128,7 @@ mod tests {
             title: format!("Source {n}"),
             url: format!("https://example.com/{n}"),
             description: format!("Snippet {n}."),
+            text: None,
         }
     }
 
@@ -211,11 +223,41 @@ mod tests {
     /// `!s` asks whoever `!c` would ask, so a Codex-only machine still answers.
     #[test]
     fn v0_9_the_summariser_is_the_agent_c_would_have_asked() {
+        use crate::agents::AgentKind::{Claude, Codex, OpenCode};
         let prefs = crate::prefs::Prefs::open(None).unwrap();
         prefs
             .set(crate::prefs::ASK_ORDER, r#"["codex","claude","opencode"]"#)
             .unwrap();
-        assert_eq!(agent(&prefs), Some(crate::agents::AgentKind::Codex));
+        let bench = crate::agents::fallback::Bench::default();
+        assert_eq!(chain(&prefs, &bench), vec![Codex, Claude, OpenCode]);
+
+        // A benched Codex is asked last, as `!c` would.
+        bench.bench(Codex, None, std::time::Instant::now());
+        assert_eq!(chain(&prefs, &bench), vec![Claude, OpenCode, Codex]);
+    }
+
+    /// Text the provider sent is what the summariser reads; the placeholder
+    /// body for that Hit is ignored. A Hit without text still reads its page.
+    #[test]
+    fn v0_11_2_provider_text_wins_over_a_fetched_body() {
+        let mut sent = hit(1);
+        sent.text = Some("Exa sent this.".into());
+        let cited = citations(
+            vec![sent, hit(2)],
+            vec![
+                Ok(String::new()),
+                Ok(format!(
+                    "<article><p>Fetched and read. {}</p></article>",
+                    "More prose. ".repeat(30)
+                )),
+            ],
+        );
+        assert_eq!(cited[0].text.as_deref(), Some("Exa sent this."));
+        assert!(cited[1]
+            .text
+            .as_deref()
+            .unwrap_or("")
+            .contains("Fetched and read."));
     }
 
     /// Every Agent switched off is the one state `!s` cannot synthesise in, and
@@ -228,6 +270,7 @@ mod tests {
                 .set(&crate::prefs::ask_enabled_key(kind), "0")
                 .unwrap();
         }
-        assert_eq!(agent(&prefs), None);
+        let bench = crate::agents::fallback::Bench::default();
+        assert!(chain(&prefs, &bench).is_empty());
     }
 }

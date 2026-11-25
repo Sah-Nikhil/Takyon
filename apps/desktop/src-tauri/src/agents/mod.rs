@@ -11,6 +11,7 @@
 
 pub mod claude;
 pub mod codex;
+pub mod fallback;
 pub mod ipc;
 pub mod job;
 pub mod opencode;
@@ -168,6 +169,34 @@ impl Snapshot {
 /// terse. System prompt where the CLI has one, else prepended to the first Turn.
 pub const ANSWER_STYLE: &str = "Answer in as few words as the question allows. No preamble, no restatement of the question, no closing offer, no summary of what you just said. Drop articles and filler; fragments are fine. One line when one line answers it. Prose, not bullets, unless the answer is genuinely a list. Never abbreviate identifiers, API names, file paths, error strings, names or numbers, and never drop a caveat that changes the answer.";
 
+/// The stored `!s` model that means "whatever `!c` uses". Not a model id any
+/// CLI could have: ids never start with `@`.
+pub const SEARCH_MODEL_SAME: &str = "@ask";
+
+/// The model and effort one `!s` Turn uses, from what Settings stored.
+///
+/// A model other than `!c`'s never takes `!c`'s effort: that effort was picked
+/// for another model, and an opencode variant is per model. It gets the quick one.
+pub fn search_pair(
+    driver: &dyn AgentDriver,
+    stored: Option<&str>,
+    ask_model: Option<String>,
+    ask_effort: Option<String>,
+) -> (Option<String>, Option<String>) {
+    let quick = || driver.quick_effort().map(str::to_string);
+    let chosen = stored.map(str::trim).filter(|s| !s.is_empty());
+    match chosen.or(driver.search_model()) {
+        Some(SEARCH_MODEL_SAME) | None => {
+            let effort = ask_effort.or_else(quick);
+            (ask_model, effort)
+        }
+        Some(model) if Some(model) == ask_model.as_deref() => {
+            (ask_model, ask_effort.or_else(quick))
+        }
+        Some(model) => (Some(model.to_string()), quick()),
+    }
+}
+
 /// The prompt for an Agent with no system-prompt flag of its own.
 ///
 /// First Turn only: a resumed session already carries the style, and repeating
@@ -214,6 +243,9 @@ pub struct TurnState {
     /// Claude only: a token delta arrived since the last `message_start`, so the
     /// whole `assistant` message that follows is already on screen.
     pub streamed: bool,
+    /// When the Agent's refused usage window reopens, Unix seconds. Set only by
+    /// an Agent that says; it sets how long the fallback bench holds (ADR-0041).
+    pub resets_at: Option<u64>,
 }
 
 impl TurnState {
@@ -252,6 +284,20 @@ pub trait AgentDriver: Send + Sync {
     /// a spawn behind it would cost the Settings page a round trip for a list
     /// that cannot change between releases.
     fn efforts(&self) -> &'static [&'static str];
+
+    /// The model `!s` uses unless Settings chose another: a fast one, because
+    /// summarising pages it was handed needs speed, not depth (ADR-0041).
+    /// `None` means `!s` uses the same model as `!c`.
+    fn search_model(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// The effort `!s` uses when Settings locked none: summarising pages it was
+    /// handed needs little reasoning, and thinking is most of its wait. `None`
+    /// where the vocabulary is per provider and no one word is safe.
+    fn quick_effort(&self) -> Option<&'static str> {
+        None
+    }
 
     /// Models this Agent will answer with, for the Settings picker.
     ///
@@ -519,6 +565,57 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `!s`'s default effort is a word that Agent accepts, or a Turn fails on
+    /// a setting nobody chose.
+    #[test]
+    fn v0_11_2_a_quick_effort_is_in_its_agents_vocabulary() {
+        for driver in drivers() {
+            if let Some(quick) = driver.quick_effort() {
+                assert!(driver.efforts().contains(&quick), "{}", driver.label());
+            }
+        }
+        assert_eq!(
+            driver_for(AgentKind::Claude).unwrap().quick_effort(),
+            Some("low")
+        );
+    }
+
+    /// Every Agent has a fast `!s` default, and it never names the sentinel.
+    #[test]
+    fn v0_11_2_every_agent_has_a_fast_search_model() {
+        for driver in drivers() {
+            let model = driver.search_model().expect("a default for !s");
+            assert!(!model.is_empty() && !model.starts_with('@'), "{model}");
+        }
+    }
+
+    /// Unchosen is the fast default with the quick effort; `@ask` is `!c`'s own
+    /// pair; a chosen model gets the quick effort, never `!c`'s.
+    #[test]
+    fn v0_11_2_the_search_pair_follows_what_settings_stored() {
+        let claude = driver_for(AgentKind::Claude).unwrap();
+        let ask = || (Some("opus".to_string()), Some("max".to_string()));
+        let pair = |stored: Option<&str>| {
+            let (m, e) = ask();
+            search_pair(claude.as_ref(), stored, m, e)
+        };
+        let fast = (Some("haiku".to_string()), Some("low".to_string()));
+        assert_eq!(pair(None), fast);
+        assert_eq!(pair(Some("  ")), fast);
+        assert_eq!(pair(Some(SEARCH_MODEL_SAME)), ask());
+        assert_eq!(
+            pair(Some("sonnet")),
+            (Some("sonnet".into()), Some("low".into()))
+        );
+        // Choosing `!c`'s own model by name is the same as `@ask`.
+        assert_eq!(pair(Some("opus")), ask());
+        // `@ask` with nothing locked for `!c`: the Agent's default, quick effort.
+        assert_eq!(
+            search_pair(claude.as_ref(), Some(SEARCH_MODEL_SAME), None, None),
+            (None, Some("low".into()))
+        );
     }
 
     /// The three vocabularies genuinely differ, which is why the list is per

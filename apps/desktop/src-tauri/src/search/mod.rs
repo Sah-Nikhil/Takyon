@@ -40,6 +40,11 @@ pub struct Hit {
     pub url: String,
     /// The provider's own snippet, with its highlight markup stripped.
     pub description: String,
+    /// The page's text, when the provider sent it with the Hit (Exa does). Its
+    /// page is then never fetched: that read is most of `!s`'s wait. Not sent
+    /// over IPC; the row shows `description`.
+    #[serde(skip)]
+    pub text: Option<String>,
 }
 
 /// What went wrong, in words the Palette shows as written.
@@ -231,6 +236,7 @@ mod tests {
                     title: label.into(),
                     url: format!("https://{label}/"),
                     description: String::new(),
+                    text: None,
                 }]),
             }
         }

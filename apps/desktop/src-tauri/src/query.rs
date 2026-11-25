@@ -89,6 +89,9 @@ pub struct Ask {
     /// this is built on the keystroke path. The Palette refines the choice once
     /// its own probe lands.
     pub order: Vec<crate::agents::AgentKind>,
+    /// Agents in `order` that failed recently and are asked last (ADR-0041).
+    /// Apart from `order`, so the row can say which preference it skipped.
+    pub benched: Vec<crate::agents::AgentKind>,
 }
 
 /// The `!s` Mode's state for one keystroke.
@@ -330,7 +333,10 @@ impl Pipeline {
             Route::Files(needle) => return self.files_result(needle, seq),
             // No toggle either: `!c` is the only door to an Agent, and which
             // Agent answers is the setting (`docs/plans/bang-registry.md`).
-            Route::Ask(question) => return self.ask_result(question, seq, self.ask_order()),
+            Route::Ask(question) => {
+                let bench = crate::agents::fallback::shared();
+                return self.ask_result(question, seq, self.ask_order(), &bench);
+            }
             Route::Web(question) => return self.web_result(question, seq),
             // Off, and `!f` is text: Start Focus Session is still a command.
             Route::Focus(line) if self.focus_bang() => {
@@ -418,14 +424,23 @@ impl Pipeline {
         question: &str,
         seq: u64,
         order: Vec<crate::agents::AgentKind>,
+        bench: &crate::agents::fallback::Bench,
     ) -> QueryResult {
-        let agent = order.first().copied();
+        let now = std::time::Instant::now();
+        // The Agent a Turn will ask: benched ones last, as `agent_ask` walks.
+        let agent = bench.arrange(&order, now).first().copied();
+        let benched = order
+            .iter()
+            .copied()
+            .filter(|kind| bench.is_benched(*kind, now))
+            .collect();
         QueryResult {
             seq,
             ask: Some(Ask {
                 query: question.to_string(),
                 agent,
                 order,
+                benched,
             }),
             web: None,
             focus: None,
@@ -1022,6 +1037,29 @@ mod tests {
             Arc::new(IconStore::new(None)),
             Arc::new(Frecency::open(None).unwrap()),
         )
+    }
+
+    /// ADR-0041: the `!c` row's Agent is the one a Turn will ask, benched ones
+    /// last, while `order` stays the preference so the row can name the skip.
+    #[test]
+    fn v0_11_2_the_ask_row_names_who_answers_past_a_benched_agent() {
+        use crate::agents::AgentKind::{Claude, Codex, OpenCode};
+        let pipeline = pipeline_with(Vec::new());
+        let bench = crate::agents::fallback::Bench::default();
+        bench.bench(Claude, None, std::time::Instant::now());
+        let result = pipeline.ask_result("hi", 1, vec![Claude, Codex, OpenCode], &bench);
+        let ask = result.ask.expect("an ask row");
+        assert_eq!(ask.agent, Some(Codex));
+        assert_eq!(ask.order, vec![Claude, Codex, OpenCode]);
+        assert_eq!(ask.benched, vec![Claude]);
+
+        let clear = crate::agents::fallback::Bench::default();
+        let ask = pipeline
+            .ask_result("hi", 2, vec![Claude, Codex], &clear)
+            .ask
+            .unwrap();
+        assert_eq!(ask.agent, Some(Claude));
+        assert!(ask.benched.is_empty());
     }
 
     /// A pipeline that knows one application and holds three clips.

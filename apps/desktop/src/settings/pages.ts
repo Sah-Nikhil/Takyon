@@ -148,6 +148,11 @@ export const PAGES: SettingsPage[] = [
       { id: "hotkey-status", label: "Global hotkey", keywords: ["alt space", "shortcut"] },
       { id: "identity", label: "Package identity", keywords: ["version", "slug", "data folder"] },
       {
+        id: "release-notes",
+        label: "Release notes",
+        keywords: ["what's new", "changelog", "changes", "version", "release", "update"],
+      },
+      {
         id: "licences",
         label: "Third-party licences",
         keywords: ["licence", "license", "licenses", "notices", "attribution", "credits", "dependencies", "legal", "copyright", "open source"],
@@ -246,19 +251,24 @@ export const PAGES: SettingsPage[] = [
         keywords: ["working directory", "folder", "scratch", "project", "cwd"],
       },
       {
+        id: "pin-answers",
+        label: "Keep answers open when you click away",
+        keywords: ["pin", "persistent", "stay open", "click away", "focus", "copy", "dismiss"],
+      },
+      {
         id: "agent-claude",
         label: "Claude Code",
-        keywords: ["claude", "anthropic", "sign in", "model", "effort", "subscription"],
+        keywords: ["claude", "anthropic", "sign in", "model", "effort", "subscription", "search model", "!s", "haiku"],
       },
       {
         id: "agent-codex",
         label: "Codex",
-        keywords: ["codex", "openai", "chatgpt", "sign in", "model", "effort", "reasoning"],
+        keywords: ["codex", "openai", "chatgpt", "sign in", "model", "effort", "reasoning", "search model", "!s"],
       },
       {
         id: "agent-opencode",
         label: "opencode",
-        keywords: ["opencode", "providers", "sign in", "model", "effort", "variant"],
+        keywords: ["opencode", "providers", "sign in", "model", "effort", "variant", "search model", "!s"],
       },
     ],
   },

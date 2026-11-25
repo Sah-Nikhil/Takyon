@@ -758,6 +758,7 @@ pub fn run() {
             settings::migrate_local_prefs,
             settings::set_files_bangless,
             settings::set_files_fallback,
+            settings::set_pin_answers,
             settings::set_files_roots,
             settings::reset_files_roots,
             settings::opened_count,
@@ -788,6 +789,7 @@ pub fn run() {
             agents::ipc::set_ask_cwd,
             agents::ipc::set_ask_model,
             agents::ipc::set_ask_effort,
+            agents::ipc::set_search_model,
             agents::ipc::agent_models,
             agents::ipc::agent_ask,
             agents::ipc::agent_cancel,
@@ -977,7 +979,10 @@ pub fn run() {
             window::cache_layout_prefs(&prefs);
             app.manage(Arc::new(pipeline));
             // Empty at startup: a Turn only exists once someone asks for one.
-            app.manage(Arc::new(agents::turn::Turns::default()));
+            // The shared bench, so the `!c` row names the Agent a Turn will ask.
+            app.manage(Arc::new(agents::turn::Turns::with_bench(
+                agents::fallback::shared(),
+            )));
             // Same shape as `Turns`: nothing runs until someone types `!s`.
             app.manage(Arc::new(search::ipc::Searches::default()));
 

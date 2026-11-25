@@ -5,16 +5,18 @@
  *   bun scripts/updater.ts config <out.json>              the `--config` overlay for a signed build
  *   bun scripts/updater.ts verify <installer.exe>         its `.sig` checks out under the pubkey
  *   bun scripts/updater.ts manifest <dir> <version> <notes.md>   latest.json + release notes
+ *   bun scripts/updater.ts body <version> <notes.md> <out.md>    the GitHub release body
  *
  * Reads `TAKYON_UPDATER_PUBKEY` (public, a repository variable) and, for
  * `config`/`manifest`, `GITHUB_REPOSITORY`. Never reads or prints the private key:
  * that reaches `tauri build` alone, as `TAURI_SIGNING_PRIVATE_KEY`.
  */
 
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
-import { manifest, releaseNotes, updaterConfig, verifySignature } from "./lib/updater";
+import { manifest, releaseBody, releaseNotes, updaterConfig, verifySignature } from "./lib/updater";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -48,7 +50,8 @@ function check(installer: string): string {
 }
 
 const [command, first, second, third] = process.argv.slice(2);
-const usage = "usage: config <out.json> | verify <installer.exe> | manifest <dir> <version> <notes.md>";
+const usage =
+  "usage: config <out.json> | verify <installer.exe> | manifest <dir> <version> <notes.md> | body <version> <notes.md> <out.md>";
 
 if (command === "config" && first) {
   let config: ReturnType<typeof updaterConfig>;
@@ -64,8 +67,31 @@ if (command === "config" && first) {
   console.log(`updater: ${basename(first)} signature verified`);
 } else if (command === "manifest" && first && second && third) {
   publish(first, second, third);
+} else if (command === "body" && first && second && third) {
+  writeFileSync(third, releaseBody(first, readFileSync(second, "utf8"), commitsSince(`v${first}`)));
+  console.log(`updater: release body for v${first} -> ${third}`);
 } else {
   fail(usage);
+}
+
+/** Commits after the tag before `tag`, oldest first. Every commit when there is none. */
+function commitsSince(tag: string): { subject: string; hash: string }[] {
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
+  let previous = "";
+  try {
+    previous = git("describe", "--tags", "--abbrev=0", `${tag}^`);
+  } catch {
+    // First release: no earlier tag, so the whole history is the range.
+  }
+  const range = previous ? `${previous}..${tag}` : tag;
+  const out = git("log", "--reverse", "--format=%h%x09%s", range);
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [hash = "", ...subject] = line.split("\t");
+      return { hash, subject: subject.join("\t") };
+    });
 }
 
 /** latest.json beside the installer, and the notes the release body uses. */

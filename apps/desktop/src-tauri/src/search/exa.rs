@@ -2,8 +2,8 @@
 //! choice of Brave).
 //!
 //! One POST to `/search` with the key in `x-api-key`. Exa returns page text
-//! alongside each result, which is asked for and used as the snippet; the pages
-//! are still read by `fetch` because the summariser wants more than a snippet.
+//! alongside each result: its head is the row's snippet, the whole of it what
+//! the summariser reads, so a keyed `!s` fetches no page at all (ADR-0041).
 //!
 //! Parsed rather than deserialised into a mirror of Exa's schema: three fields
 //! are used, and a shape change elsewhere must not break `!s`.
@@ -19,9 +19,16 @@ pub const SIGNUP_URL: &str = "https://dashboard.exa.ai/api-keys";
 const HOST: &str = "api.exa.ai";
 const PATH: &str = "/search";
 
-/// Snippet length asked of Exa. Long enough to be a useful row, short enough
-/// that ten of them do not dominate the response.
+/// Snippet length for the row. Long enough to be useful, short enough that ten
+/// of them do not dominate every IPC message.
 const SNIPPET_CHARS: usize = 400;
+
+/// Page text asked of Exa per Hit: the summariser's whole share of the prompt
+/// budget, so nothing it would read is left on the server.
+pub const PAGE_CHARS: usize = super::synth::PROMPT_BUDGET / MAX_HITS;
+
+/// A page share smaller than the row's snippet would starve the summariser.
+const _: () = assert!(PAGE_CHARS > SNIPPET_CHARS);
 
 pub struct ExaProvider;
 
@@ -41,7 +48,7 @@ impl SearchProvider for ExaProvider {
         let body = serde_json::json!({
             "query": query.trim(),
             "numResults": MAX_HITS,
-            "contents": { "text": { "maxCharacters": SNIPPET_CHARS } },
+            "contents": { "text": { "maxCharacters": PAGE_CHARS } },
         })
         .to_string();
         let response = fetch::post(
@@ -83,10 +90,14 @@ pub fn parse_hits(body: &str) -> Result<Vec<Hit>, SearchError> {
             if url.is_empty() {
                 return None;
             }
+            let text = hit.get("text").and_then(|t| t.as_str()).unwrap_or("");
+            let body = strip_markup(text);
             Some(Hit {
                 title: strip_markup(hit.get("title").and_then(|t| t.as_str()).unwrap_or(url)),
                 url: url.to_string(),
-                description: snippet(hit.get("text").and_then(|t| t.as_str()).unwrap_or("")),
+                description: snippet(text),
+                // Blank is no text: that page is still fetched and read.
+                text: (!body.is_empty()).then_some(body),
             })
         })
         .take(MAX_HITS)
@@ -173,6 +184,21 @@ mod tests {
         assert_eq!(hits[0].title, "gnp.exe");
         assert!(!hits[0].title.chars().any(char::is_control));
         assert_eq!(hits[0].description, "lineone two");
+    }
+
+    /// The row gets a snippet, the summariser the whole text: a keyed `!s`
+    /// reads no page. Blank text is no text, so that page is fetched instead.
+    #[test]
+    fn v0_11_2_a_hit_keeps_its_whole_page_text_for_the_summariser() {
+        let long = "wordy ".repeat(200);
+        let body = format!(
+            r#"{{"results":[{{"title":"t","url":"https://e.x/a","text":"{long}"}},{{"title":"u","url":"https://e.x/b","text":"  "}}]}}"#
+        );
+        let hits = parse_hits(&body).expect("parses");
+        let text = hits[0].text.as_deref().expect("text kept");
+        assert_eq!(text, long.trim());
+        assert!(text.len() > hits[0].description.len());
+        assert_eq!(hits[1].text, None);
     }
 
     #[test]

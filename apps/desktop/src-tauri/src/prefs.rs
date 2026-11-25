@@ -56,6 +56,11 @@ pub const FILES_BANGLESS: &str = "files.bangless";
 /// against a 20 ms budget — TBC-0005's amendment carries the measurement.
 pub const FILES_FALLBACK: &str = "files.fallback";
 
+/// Whether a `!c` or `!s` answer stays open when focus leaves the Palette.
+/// Default on: an answer is read beside other work, copied into it, written
+/// down. The plain list still closes on a click away (ADR-0001, ADR-0042).
+pub const PIN_ANSWERS: &str = "palette.pinAnswers";
+
 /// Index roots, as a JSON array of paths. Absent means the probed defaults.
 pub const FILES_ROOTS: &str = "files.roots";
 
@@ -97,6 +102,14 @@ pub fn ask_enabled_key(kind: crate::agents::AgentKind) -> String {
 /// answer for anyone who has not chosen.
 pub fn ask_model_key(kind: crate::agents::AgentKind) -> String {
     format!("agents.model.{}", kind.as_str())
+}
+
+/// The model one Agent writes `!s` answers with: `agents.searchModel.claude`.
+///
+/// `!s` only. Absent or blank is that Agent's fast default
+/// (`AgentDriver::search_model`); `agents::SEARCH_MODEL_SAME` means `!c`'s model.
+pub fn search_model_key(kind: crate::agents::AgentKind) -> String {
+    format!("agents.searchModel.{}", kind.as_str())
 }
 
 /// The effort level one Agent must use: `agents.effort.claude`.

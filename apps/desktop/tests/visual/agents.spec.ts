@@ -360,6 +360,83 @@ test("model and effort are locked from a list, per authenticated agent", async (
 });
 
 /**
+ * v0.11.2 (ADR-0042): answers stay open on a click away by default, the answer
+ * says so in its footer, and the Agents page turns it off.
+ */
+test("an answer says it stays open, and Settings can turn that off", async ({ page }) => {
+  const input = await open(page);
+  await input.fill("!c who directed titanic");
+  await input.press("Enter");
+  await expect(page.getByText("Stays open when you click away · Esc to go back")).toBeVisible();
+
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+  const pin = page.getByRole("switch", { name: "Keep answers open when you click away" });
+  await expect(pin).toBeChecked();
+  await pin.click();
+  await expect(pin).not.toBeChecked();
+});
+
+/**
+ * v0.11.2 (ADR-0041): `!s` has its own model per Agent, fast by default and
+ * named, with `!c`'s model one choice away. The default is not listed twice.
+ */
+test("!s has its own model, fast by default", async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 620 });
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents" }).click();
+
+  const search = page.getByRole("combobox", { name: "Model for !s with Claude Code" });
+  await expect(search).toBeEnabled();
+  await expect(search).toHaveText("!s: haiku (fast)");
+  await search.click();
+  const options = page.getByRole("listbox", { name: "Model for !s with Claude Code" });
+  await expect(options.getByRole("option")).toHaveText([
+    "!s: haiku (fast)",
+    "!s: same as !c",
+    "!s: opus",
+    "!s: sonnet",
+    "!s: fable",
+  ]);
+  await options.getByRole("option", { name: "!s: same as !c" }).click();
+  await expect(search).toHaveText("!s: same as !c");
+});
+
+/**
+ * v0.11.2 (ADR-0041): Claude Code is out of usage, so Codex answers. The header
+ * follows the Agent writing, and one line says why it is not the asked one.
+ */
+test("an agent out of usage hands over to the next", async ({ page }) => {
+  const input = await open(page);
+  await page.evaluate(() => {
+    (
+      window as unknown as { __takyon_mock: { fallBackTurns: (f: object) => void } }
+    ).__takyon_mock.fallBackTurns({
+      from: "claude",
+      to: "codex",
+      label: "Codex",
+      failure: {
+        reason: "agentError",
+        agent: "Claude Code",
+        message: "Claude AI usage limit reached",
+      },
+    });
+  });
+  await input.fill("!c who directed titanic");
+  await input.press("Enter");
+
+  await expect(page.getByTestId("fallback-notice")).toHaveText(
+    "claude couldn't answer, so codex is.",
+  );
+  await expect(page.getByRole("status")).not.toHaveText("Thinking…");
+  await expect(page.locator("header")).toContainText("codex");
+
+  await page.setViewportSize({ width: 640, height: VIEW_HEIGHT });
+  await expect(page).toHaveScreenshot("palette-ask-fallback.png");
+});
+
+/**
  * v0.11.1: an npm `.cmd` Agent whose Node is gone. The reason arrives as a
  * fact; the Palette names the fix and shows the line that proves it.
  */

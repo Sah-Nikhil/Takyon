@@ -22,6 +22,7 @@ import {
   failPreferenceWrite,
   menuRequest,
   failTurns,
+  fallBackTurns,
   failWebSearch,
   holdSearchAtReading,
   openedUrls,
@@ -97,6 +98,8 @@ if (!inTauri) {
     failWebSearch,
     // A Turn failing with a given reason. Real failures need a broken install.
     failTurns,
+    // The asked Agent failing and the next one answering. Real ones need a limit.
+    fallBackTurns,
     // Hold a search at its reading phase, which otherwise lasts 20ms.
     holdSearchAtReading,
     // What the mock Agent answers, so the renderer can be driven with markdown.

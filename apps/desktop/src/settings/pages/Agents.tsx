@@ -15,8 +15,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { AgentKind, AgentSettings, AgentSnapshot, PathReport } from "@takyon/shared";
+import { SEARCH_MODEL_SAME } from "@takyon/shared";
 
 import * as api from "@/api";
+import { preferences, refresh, setPinAnswers } from "@/prefs";
 import {
   AGENT_LABELS,
   agentSummary,
@@ -36,6 +38,8 @@ export function Agents() {
   const [snapshots, setSnapshots] = useState<AgentSnapshot[] | null>(null);
   const [pathReport, setPathReport] = useState<PathReport | null>(null);
   const [cwd, setCwd] = useState("");
+  const [pinned, setPinned] = useState(() => preferences().pinAnswers);
+  const pinApplied = useApplied(setPinAnswers, async () => (await refresh()).pinAnswers);
 
   // Order and switches re-read once a probe lands: on a first run it may have
   // ranked a sole installed Agent first (ADR-0031). Never `cwd`, maybe mid-edit.
@@ -119,6 +123,8 @@ export function Agents() {
             snapshot={snapshots?.find((s) => s.kind === agent)}
             model={settings?.models[agent] ?? ""}
             effort={settings?.efforts[agent] ?? ""}
+            searchModel={settings?.searchModels[agent] ?? ""}
+            searchDefault={settings?.searchDefaults[agent]}
             canMoveUp={i > 0}
             canMoveDown={i < order.length - 1}
             onMove={(delta) => reorder(i, i + delta)}
@@ -146,6 +152,19 @@ export function Agents() {
             className="h-8 w-80 max-w-full rounded-md border border-edge bg-control px-2.5 text-[13px] text-fg outline-none placeholder:text-fg/46"
           />
         </Row>
+        <Row
+          id="pin-answers"
+          label="Keep answers open when you click away"
+          applied={pinApplied.applied}
+          error={pinApplied.error}
+          description="A !c or !s answer stays on screen while you copy from it or work in the window behind. Press the hotkey to bring it back to the front, Esc to close it. The plain launcher still closes when you click away."
+        >
+          <Switch
+            label="Keep answers open when you click away"
+            checked={pinned}
+            onChange={(on) => void pinApplied.apply(on, setPinned)}
+          />
+        </Row>
       </Group>
     </>
   );
@@ -164,6 +183,8 @@ function AgentRow({
   snapshot,
   model,
   effort,
+  searchModel,
+  searchDefault,
   canMoveUp,
   canMoveDown,
   onMove,
@@ -176,6 +197,8 @@ function AgentRow({
   snapshot: AgentSnapshot | undefined;
   model: string;
   effort: string;
+  searchModel: string;
+  searchDefault: string | undefined;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMove: (delta: number) => void;
@@ -183,6 +206,8 @@ function AgentRow({
   onSettings: (next: (s: AgentSettings) => AgentSettings) => void;
 }) {
   const [models, setModels] = useState<string[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchSaving, setSearchSaving] = useState(false);
   const label = snapshot?.label ?? AGENT_LABELS[agent];
   const summary = agentSummary(snapshot);
   const version = versionLabel(snapshot?.version);
@@ -284,6 +309,45 @@ function AgentRow({
               onSettings((s) => ({ ...s, efforts: { ...s.efforts, [agent]: next } }));
             }}
           />
+          {/*
+            `!s` only. Defaults fast rather than to `!c`'s model: summarising
+            pages already read needs speed, not depth (ADR-0041).
+          */}
+          <Select
+            label={`Model for !s with ${label}`}
+            value={searchModel}
+            disabled={models === null || searchSaving}
+            placeholder={
+              models === null
+                ? "Reading models…"
+                : searchDefault
+                  ? `!s: ${searchDefault} (fast)`
+                  : "!s: same as !c"
+            }
+            options={[
+              { value: SEARCH_MODEL_SAME, label: "!s: same as !c" },
+              ...(models ?? [])
+                .filter((m) => m !== searchDefault)
+                .map((m) => ({ value: m, label: `!s: ${m}` })),
+            ]}
+            onChange={(next) => {
+              setSearchError(null);
+              setSearchSaving(true);
+              void api.setSearchModel(agent, next).then(
+                () => onSettings((s) => ({
+                  ...s,
+                  searchModels: { ...s.searchModels, [agent]: next },
+                })),
+                (error: unknown) => setSearchError(error instanceof Error ? error.message : String(error)),
+              ).finally(() => setSearchSaving(false));
+            }}
+            className="w-52 max-w-full"
+          />
+          {searchError && (
+            <p className="basis-full text-[12.5px] text-warning" role="alert">
+              {searchError}
+            </p>
+          )}
         </div>
       ) : (
         enabled && (
