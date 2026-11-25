@@ -206,6 +206,8 @@ function AgentRow({
   onSettings: (next: (s: AgentSettings) => AgentSettings) => void;
 }) {
   const [models, setModels] = useState<string[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchSaving, setSearchSaving] = useState(false);
   const label = snapshot?.label ?? AGENT_LABELS[agent];
   const summary = agentSummary(snapshot);
   const version = versionLabel(snapshot?.version);
@@ -314,7 +316,7 @@ function AgentRow({
           <Select
             label={`Model for !s with ${label}`}
             value={searchModel}
-            disabled={models === null}
+            disabled={models === null || searchSaving}
             placeholder={
               models === null
                 ? "Reading models…"
@@ -329,14 +331,23 @@ function AgentRow({
                 .map((m) => ({ value: m, label: `!s: ${m}` })),
             ]}
             onChange={(next) => {
-              void api.setSearchModel(agent, next);
-              onSettings((s) => ({
-                ...s,
-                searchModels: { ...s.searchModels, [agent]: next },
-              }));
+              setSearchError(null);
+              setSearchSaving(true);
+              void api.setSearchModel(agent, next).then(
+                () => onSettings((s) => ({
+                  ...s,
+                  searchModels: { ...s.searchModels, [agent]: next },
+                })),
+                (error: unknown) => setSearchError(error instanceof Error ? error.message : String(error)),
+              ).finally(() => setSearchSaving(false));
             }}
             className="w-52 max-w-full"
           />
+          {searchError && (
+            <p className="basis-full text-[12.5px] text-warning" role="alert">
+              {searchError}
+            </p>
+          )}
         </div>
       ) : (
         enabled && (

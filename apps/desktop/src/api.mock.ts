@@ -1565,6 +1565,7 @@ export const mock = {
     snapshot = { ...snapshot, filesFallback: on };
   },
   setPinAnswers: async (on: boolean) => {
+    if (preferenceFailure !== null) throw new Error(preferenceFailure);
     snapshot = { ...snapshot, pinAnswers: on };
   },
   setFilesRoots: async (roots: string[], excludes: string[]) => {
@@ -1836,6 +1837,7 @@ export const mock = {
     askEfforts = { ...askEfforts, [agent]: effort.trim() };
   },
   setSearchModel: async (agent: AgentKind, model: string) => {
+    if (preferenceFailure !== null) throw new Error(preferenceFailure);
     searchModels = { ...searchModels, [agent]: model.trim() };
   },
   agentAsk: async (args: { agent: AgentKind; prompt: string; session?: string }) => {

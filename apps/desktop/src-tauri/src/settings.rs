@@ -242,11 +242,12 @@ pub fn set_files_fallback(
 
 /// Whether a `!c` or `!s` answer stays open when focus leaves (ADR-0042).
 #[tauri::command]
-pub fn set_pin_answers(on: bool, prefs: tauri::State<'_, Arc<Prefs>>) {
-    if let Err(e) = prefs.set(prefs::PIN_ANSWERS, if on { "1" } else { "0" }) {
-        eprintln!("[takyon] the pin setting could not be saved: {e}");
-    }
+pub fn set_pin_answers(on: bool, prefs: tauri::State<'_, Arc<Prefs>>) -> Result<(), String> {
+    prefs
+        .set(prefs::PIN_ANSWERS, if on { "1" } else { "0" })
+        .map_err(|e| e.to_string())?;
     crate::window::set_pin_answers(on);
+    Ok(())
 }
 
 /// Replace the indexed roots and exclusions, then rebuild (TBC-0005).

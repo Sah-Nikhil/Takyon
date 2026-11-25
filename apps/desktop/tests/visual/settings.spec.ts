@@ -792,6 +792,27 @@ test("a refused preference write leaves the switch on what is stored", async ({ 
   await expect(page.locator("html")).not.toHaveAttribute("data-reduce-motion", "");
 });
 
+test("refused Agent preferences retain saved values", async ({ page }) => {
+  await page.goto("/?window=settings");
+  await page.getByRole("button", { name: "Agents", exact: true }).click();
+  const pin = page.getByRole("switch", { name: "Keep answers open when you click away" });
+  const model = page.getByRole("combobox", { name: "Model for !s with Claude Code" });
+  await expect(model).toBeEnabled();
+  const savedModel = await model.textContent();
+  await page.evaluate(() => {
+    (window as unknown as { __takyon_mock: { failPreferenceWrite: (m: string) => void } })
+      .__takyon_mock.failPreferenceWrite("settings.db is read-only");
+  });
+  await pin.click();
+  await expect(page.getByRole("alert")).toContainText("read-only");
+  await expect(pin).toHaveAttribute("aria-checked", "true");
+  await model.click();
+  await page.getByRole("option", { name: "!s: same as !c" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(2);
+  await expect(page.getByRole("alert").last()).toContainText("read-only");
+  await expect(model).toHaveText(savedModel ?? "");
+});
+
 /**
  * tbd v0.1 §3, the fix this slice owed.
  *
